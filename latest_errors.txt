@@ -1,0 +1,49 @@
+←[2m2025-12-12T22:54:07.719657Z←[0m ←[31mERROR←[0m ←[2mbevy_render::render_resource::pipeline_cache←[0m←[2m:←[0m failed to process shader:
+←[0m←[1m←[38;5;9merror←[0m←[1m: name `mut` is a reserved keyword←[0m
+    ←[0m←[36m┌─←[0m src\render\shaders/object_material.wgsl:199:9
+    ←[0m←[36m│←[0m
+←[0m←[36m199←[0m ←[0m←[36m│←[0m     let ←[0m←[31mmut←[0m final_color = rose_client::zone_lighting::apply_zone_lighting(in.world_position, in.world_normal, output_color, view_z);
+    ←[0m←[36m│←[0m         ←[0m←[31m^^^←[0m ←[0m←[31mdefinition of `mut`←[0m
+    ←[0m←[36m│←[0m
+    ←[0m←[36m=←[0m name `mut` is a reserved keyword
+
+
+←[2m2025-12-12T22:54:07.720881Z←[0m ←[31mERROR←[0m ←[2mbevy_render::render_resource::pipeline_cache←[0m←[2m:←[0m failed to process shader:
+←[0m←[1m←[38;5;9merror←[0m←[1m: name `mut` is a reserved keyword←[0m
+    ←[0m←[36m┌─←[0m src\render\shaders/object_material.wgsl:199:9
+    ←[0m←[36m│←[0m
+←[0m←[36m199←[0m ←[0m←[36m│←[0m     let ←[0m←[31mmut←[0m final_color = rose_client::zone_lighting::apply_zone_lighting(in.world_position, in.world_normal, output_color, view_z);
+    ←[0m←[36m│←[0m         ←[0m←[31m^^^←[0m ←[0m←[31mdefinition of `mut`←[0m
+    ←[0m←[36m│←[0m
+    ←[0m←[36m=←[0m name `mut` is a reserved keyword
+
+
+←[2m2025-12-12T22:54:07.722009Z←[0m ←[31mERROR←[0m ←[2mbevy_render::render_resource::pipeline_cache←[0m←[2m:←[0m failed to process shader:
+←[0m←[1m←[38;5;9merror←[0m←[1m: name `mut` is a reserved keyword←[0m
+    ←[0m←[36m┌─←[0m src\render\shaders/object_material.wgsl:199:9
+    ←[0m←[36m│←[0m
+←[0m←[36m199←[0m ←[0m←[36m│←[0m     let ←[0m←[31mmut←[0m final_color = rose_client::zone_lighting::apply_zone_lighting(in.world_position, in.world_normal, output_color, view_z);
+    ←[0m←[36m│←[0m         ←[0m←[31m^^^←[0m ←[0m←[31mdefinition of `mut`←[0m
+    ←[0m←[36m│←[0m
+    ←[0m←[36m=←[0m name `mut` is a reserved keyword
+
+
+←[2m2025-12-12T22:54:07.723103Z←[0m ←[31mERROR←[0m ←[2mbevy_render::render_resource::pipeline_cache←[0m←[2m:←[0m failed to process shader:
+←[0m←[1m←[38;5;9merror←[0m←[1m: name `mut` is a reserved keyword←[0m
+    ←[0m←[36m┌─←[0m src\render\shaders/object_material.wgsl:199:9
+    ←[0m←[36m│←[0m
+←[0m←[36m199←[0m ←[0m←[36m│←[0m     let ←[0m←[31mmut←[0m final_color = rose_client::zone_lighting::apply_zone_lighting(in.world_position, in.world_normal, output_color, view_z);
+    ←[0m←[36m│←[0m         ←[0m←[31m^^^←[0m ←[0m←[31mdefinition of `mut`←[0m
+    ←[0m←[36m│←[0m
+    ←[0m←[36m=←[0m name `mut` is a reserved keyword
+
+
+←[2m2025-12-12T22:54:07.724114Z←[0m ←[31mERROR←[0m ←[2mbevy_render::render_resource::pipeline_cache←[0m←[2m:←[0m failed to process shader:
+←[0m←[1m←[38;5;9merror←[0m←[1m: name `mut` is a reserved keyword←[0m
+    ←[0m←[36m┌─←[0m src\render\shaders/object_material.wgsl:199:9
+    ←[0m←[36m│←[0m
+←[0m←[36m199←[0m ←[0m←[36m│←[0m     let ←[0m←[31mmut←[0m final_color = rose_client::zone_lighting::apply_zone_lighting(in.world_position, in.world_normal, output_color, view_z);
+    ←[0m←[36m│←[0m         ←[0m←[31m^^^←[0m ←[0m←[31mdefinition of `mut`←[0m
+    ←[0m←[36m│←[0m
+    ←[0m←[36m=←[0m name `mut` is a reserved keyword
+

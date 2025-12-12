@@ -104,5 +104,21 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  return in.color * textureSample(base_color_texture, base_color_sampler, in.uv);
+  var base_color = in.color * textureSample(base_color_texture, base_color_sampler, in.uv);
+  
+  // Add glow effect for bright particles (additive blending simulation)
+  if (base_color.r > 0.8 && base_color.g > 0.8 && base_color.b > 0.8) {
+    let glow = pow(base_color.rgb, vec3<f32>(2.0)) * 0.3;
+    base_color = vec4<f32>(mix(base_color.rgb, base_color.rgb + glow, 0.5), base_color.a);
+  }
+  
+  // Add subtle rim lighting for better particle definition
+  let edge = pow(1.0 - saturate(length(in.uv - vec2<f32>(0.5, 0.5)) * 2.0), 2.0) * 0.15;
+  base_color = vec4<f32>(base_color.rgb + edge * base_color.rgb * 0.5, base_color.a);
+  
+  // Soft particle effect - fade edges based on depth
+  let depth_factor = smoothstep(0.95, 1.0, in.uv.x * in.uv.y * (1.0 - in.uv.x) * (1.0 - in.uv.y));
+  base_color.a *= depth_factor * 0.8 + 0.2;
+  
+  return base_color;
 }

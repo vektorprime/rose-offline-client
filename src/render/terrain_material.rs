@@ -180,6 +180,15 @@ impl AsBindGroup for TerrainMaterial {
             ..Default::default()
         });
 
+        // Create detail texture sampler
+        let detail_sampler = render_device.create_sampler(&SamplerDescriptor {
+            address_mode_u: AddressMode::Repeat,
+            address_mode_v: AddressMode::Repeat,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            ..Default::default()
+        });
+
         let bind_group = render_device.create_bind_group(&BindGroupDescriptor {
             label: "terrain_material_bind_group".into(),
             layout,
@@ -191,6 +200,15 @@ impl AsBindGroup for TerrainMaterial {
                 BindGroupEntry {
                     binding: 1,
                     resource: BindingResource::Sampler(&sampler),
+                },
+                // Detail texture bindings
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&fallback_image.d2.texture_view),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::Sampler(&detail_sampler),
                 },
             ],
         });
@@ -221,6 +239,23 @@ impl AsBindGroup for TerrainMaterial {
                 },
                 BindGroupLayoutEntry {
                     binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // Detail texture bindings
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
