@@ -1,7 +1,8 @@
 use std::{cmp::Ordering, ops::Range};
 
 use bevy::{
-    asset::{load_internal_asset, Handle, HandleId},
+    asset::{load_internal_asset, Handle},
+    render::render_resource::Shader,
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         query::ROQueryItem,
@@ -12,13 +13,12 @@ use bevy::{
     },
     pbr::MeshPipelineKey,
     prelude::{
-        App, Assets, Color, Commands, Component, ComputedVisibility, FromWorld, GlobalTransform,
-        HandleUntyped, IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3,
-        World,
+        App, Assets, Color, Commands, Component, FromWorld, GlobalTransform,
+        IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3,
+        Visibility, World,
     },
     reflect::TypeUuid,
     render::{
-        prelude::Shader,
         render_asset::RenderAssets,
         render_phase::{
             AddRenderCommand, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult,
@@ -47,8 +47,8 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::render::zone_lighting::{SetZoneLightingBindGroup, ZoneLightingUniformMeta};
 
-pub const WORLD_UI_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 0xd5cdda11c713e3a7);
+pub const WORLD_UI_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u64(Shader::TYPE_UUID, 0xd5cdda11c713e3a7);
 
 #[derive(Default)]
 pub struct WorldUiRenderPlugin;
@@ -99,7 +99,7 @@ pub struct ExtractedRect {
     pub world_position: Vec3,
     pub screen_offset: Vec2,
     pub screen_size: Vec2,
-    pub image_handle_id: HandleId,
+    pub image_handle: Handle<Image>,
     pub uv_min: Vec2,
     pub uv_max: Vec2,
     pub color: Color,
@@ -122,7 +122,7 @@ impl Default for ExtractedWorldUi {
 fn extract_world_ui_rects(
     mut extracted_world_ui: ResMut<ExtractedWorldUi>,
     images: Extract<Res<Assets<Image>>>,
-    query: Extract<Query<(&ComputedVisibility, &GlobalTransform, &WorldUiRect)>>,
+    query: Extract<Query<(&Visibility, &GlobalTransform, &WorldUiRect)>>,
 ) {
     extracted_world_ui.rects.clear();
     for (visible, global_transform, rect) in query.iter() {
@@ -138,7 +138,7 @@ fn extract_world_ui_rects(
             world_position: global_transform.translation(),
             screen_offset: rect.screen_offset,
             screen_size: rect.screen_size,
-            image_handle_id: rect.image.id(),
+            image_handle: rect.image.clone(),
             uv_min: rect.uv_min,
             uv_max: rect.uv_max,
             color: rect.color,
@@ -358,7 +358,7 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWorldUiMaterialBindGr
             I,
             image_bind_groups
                 .values
-                .get(&Handle::weak(sprite_batch.image_handle_id))
+                .get(&sprite_batch.image_handle)
                 .unwrap(),
             &[],
         );
@@ -419,7 +419,7 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWorldUiViewBindGroup<
 
 #[derive(Component, Eq, PartialEq, Clone)]
 pub struct WorldUiBatch {
-    image_handle_id: HandleId,
+    image_handle: Handle<Image>,
     vertex_range: Range<u32>,
 }
 
@@ -495,7 +495,7 @@ pub fn queue_world_ui_meshes(
 
         for rect in extracted_world_ui.rects.iter() {
             let gpu_image =
-                if let Some(gpu_image) = gpu_images.get(&Handle::weak(rect.image_handle_id)) {
+                if let Some(gpu_image) = gpu_images.get(&rect.image_handle) {
                     gpu_image
                 } else {
                     // Image not ready yet, ignore
@@ -559,14 +559,14 @@ pub fn queue_world_ui_meshes(
 
             let visible_entity = commands
                 .spawn(WorldUiBatch {
-                    image_handle_id: rect.image_handle_id,
+                    image_handle: rect.image_handle.clone(),
                     vertex_range: item_start..item_end,
                 })
                 .id();
 
             image_bind_groups
                 .values
-                .entry(Handle::weak(rect.image_handle_id))
+                .entry(rect.image_handle.clone())
                 .or_insert_with(|| {
                     render_device.create_bind_group(&BindGroupDescriptor {
                         entries: &[

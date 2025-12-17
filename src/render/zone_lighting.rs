@@ -1,5 +1,6 @@
 use bevy::{
-    asset::load_internal_asset,
+    asset::{load_internal_asset, Handle},
+    render::render_resource::Shader,
     ecs::{
         query::ROQueryItem,
         system::{lifetimeless::SRes, SystemParamItem},
@@ -8,8 +9,8 @@ use bevy::{
     pbr::CascadeShadowConfig,
     prelude::{
         AmbientLight, App, Color, Commands, DirectionalLight, DirectionalLightBundle, EulerRot,
-        FromWorld, HandleUntyped, IntoSystemConfigs, Plugin, Quat, ReflectResource, Res, ResMut,
-        Resource, Shader, Startup, Transform, World,
+        FromWorld, IntoSystemConfigs, Plugin, Quat, ReflectResource, Res, ResMut,
+        Resource, Startup, Transform, World,
     },
     reflect::{Reflect, TypeUuid},
     render::{
@@ -25,8 +26,8 @@ use bevy::{
     },
 };
 
-pub const ZONE_LIGHTING_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 0x444949d32b35d5d9);
+pub const ZONE_LIGHTING_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u64(Shader::TYPE_UUID, 0x444949d32b35d5d9);
 
 fn default_light_transform() -> Transform {
     Transform::from_rotation(Quat::from_euler(

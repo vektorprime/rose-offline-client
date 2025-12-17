@@ -6,14 +6,15 @@ use std::{
 use anyhow::Result;
 use arrayvec::ArrayVec;
 use bevy::{
-    asset::{AssetLoader, BoxedFuture, LoadContext, LoadState, LoadedAsset},
+    asset::{Asset, AssetLoader, BoxedFuture, LoadContext, LoadState, LoadedAsset, UntypedHandle, AsyncReadExt},
+    asset::io::Reader,
     ecs::system::SystemParam,
     hierarchy::{BuildChildren, DespawnRecursiveExt},
     math::{Quat, Vec2, Vec3},
     pbr::{NotShadowCaster, NotShadowReceiver},
     prelude::{
-        AssetServer, Assets, Commands, ComputedVisibility, Entity, EventReader, EventWriter,
-        GlobalTransform, Handle, HandleUntyped, Image, Local, Mesh, Res, ResMut, Transform,
+        AssetServer, Assets, Commands, Entity, EventReader, EventWriter,
+        GlobalTransform, Handle, Image, Local, Mesh, Res, ResMut, Transform,
         Visibility,
     },
     reflect::{TypePath, TypeUuid},
@@ -79,7 +80,7 @@ pub struct ZoneNpc {
     pub npc_id: NpcId,
 }
 
-#[derive(TypeUuid, TypePath)]
+#[derive(TypeUuid, TypePath, Asset)]
 #[uuid = "596e2c17-f2dd-4276-8df4-1e94dc0d056b"]
 pub struct ZoneLoaderAsset {
     pub zone_id: ZoneId,
@@ -159,13 +160,20 @@ pub struct ZoneLoader {
 }
 
 impl AssetLoader for ZoneLoader {
+    type Asset = ZoneLoaderAsset;
+    type Settings = ();
+    type Error = anyhow::Error;
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
         load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<()>> {
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            load_zone(self, ZoneId::new(bytes[0] as u16).unwrap(), load_context).await
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
+            Ok(load_zone(self, ZoneId::new(bytes[0] as u16).unwrap(), load_context).await?)
         })
     }
 
@@ -178,7 +186,7 @@ async fn load_zone<'a, 'b>(
     zone_loader: &'a ZoneLoader,
     zone_id: ZoneId,
     load_context: &'a mut LoadContext<'b>,
-) -> Result<(), anyhow::Error> {
+) -> Result<ZoneLoaderAsset, anyhow::Error> {
     let zone_list_entry = zone_loader
         .zone_list
         .get_zone(zone_id)
@@ -263,7 +271,7 @@ async fn load_zone<'a, 'b>(
         blocks[index] = Some(block);
     }
 
-    load_context.set_default_asset(LoadedAsset::new(ZoneLoaderAsset {
+    Ok(ZoneLoaderAsset {
         zone_path: zone_path.into(),
         zone_id,
         zon,
@@ -271,8 +279,7 @@ async fn load_zone<'a, 'b>(
         zsc_deco,
         blocks,
         npcs,
-    }));
-    Ok(())
+    })
 }
 
 async fn load_block_files<'a>(
@@ -373,7 +380,7 @@ pub struct LoadingZone {
     pub state: LoadingZoneState,
     pub handle: Handle<ZoneLoaderAsset>,
     pub despawn_other_zones: bool,
-    pub zone_assets: Vec<HandleUntyped>,
+    pub zone_assets: Vec<UntypedHandle>,
     pub ready_frames: usize,
 }
 
@@ -490,17 +497,14 @@ pub fn zone_loader_system(
                             index += 1;
                         }
                     }
-                    LoadState::Unloaded | LoadState::Failed => {
+                    Some(LoadState::Failed) => {
                         loading_zones.remove(index);
                     }
                 }
             }
             LoadingZoneState::Spawned => {
                 let is_loading = loading_zone.zone_assets.iter().any(|handle| {
-                    matches!(
-                        spawn_zone_params.asset_server.get_load_state(handle),
-                        LoadState::NotLoaded | LoadState::Loading
-                    )
+                    spawn_zone_params.asset_server.get_load_state(handle.id()).unwrap_or(LoadState::Loaded) != LoadState::Loaded
                 });
 
                 if is_loading {
@@ -526,7 +530,7 @@ pub fn zone_loader_system(
 pub fn spawn_zone(
     params: &mut SpawnZoneParams,
     zone_data: &ZoneLoaderAsset,
-) -> Result<(Entity, Vec<HandleUntyped>), anyhow::Error> {
+) -> Result<(Entity, Vec<UntypedHandle>), anyhow::Error> {
     let SpawnZoneParams {
         commands,
         asset_server,
@@ -569,14 +573,14 @@ pub fn spawn_zone(
         })
     };
 
-    let mut zone_loading_assets: Vec<HandleUntyped> = Vec::default();
+    let mut zone_loading_assets: Vec<UntypedHandle> = Vec::default();
     let zone_entity = commands
         .spawn((
             Zone {
                 id: zone_data.zone_id,
             },
             Visibility::default(),
-            ComputedVisibility::default(),
+            Visibility::default(),
             Transform::default(),
             GlobalTransform::default(),
         ))
@@ -789,7 +793,6 @@ fn spawn_skybox(
             Transform::from_scale(Vec3::splat(SKYBOX_MODEL_SCALE)),
             GlobalTransform::default(),
             Visibility::default(),
-            ComputedVisibility::default(),
             NoFrustumCulling,
         ))
         .id()
@@ -1000,7 +1003,6 @@ fn spawn_terrain(
             Transform::from_xyz(offset_x, 0.0, -offset_y),
             GlobalTransform::default(),
             Visibility::default(),
-            ComputedVisibility::default(),
             NotShadowCaster,
             RigidBody::Fixed,
             Collider::trimesh(collider_verts, collider_indices),
@@ -1071,7 +1073,6 @@ fn spawn_water(
             Transform::default(),
             GlobalTransform::default(),
             Visibility::default(),
-            ComputedVisibility::default(),
             NotShadowCaster,
             NotShadowReceiver,
             RigidBody::Fixed,
@@ -1084,7 +1085,7 @@ fn spawn_water(
 fn spawn_object(
     commands: &mut Commands,
     asset_server: &AssetServer,
-    zone_loading_assets: &mut Vec<HandleUntyped>,
+    zone_loading_assets: &mut Vec<UntypedHandle>,
     vfs_resource: &VfsResource,
     effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
     particle_materials: &mut Assets<ParticleMaterial>,
@@ -1134,7 +1135,6 @@ fn spawn_object(
         object_transform,
         GlobalTransform::default(),
         Visibility::default(),
-        ComputedVisibility::default(),
         RigidBody::Fixed,
     ));
 
@@ -1168,7 +1168,7 @@ fn spawn_object(
                 mesh_cache.insert(mesh_id, Some(handle.clone()));
                 handle
             });
-            zone_loading_assets.push(mesh.clone_untyped());
+            zone_loading_assets.push(mesh.clone_weak().untyped());
             let lit_part = lit_object.and_then(|lit_object| {
                 for part in lit_object.parts.iter() {
                     if part_index == part.object_part_index as usize {
@@ -1285,7 +1285,6 @@ fn spawn_object(
                 part_transform,
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
                 NotShadowCaster,
                 ColliderParent::new(object_entity),
                 AsyncCollider(ComputedColliderShape::TriMesh),
@@ -1436,7 +1435,6 @@ fn spawn_animated_object(
             NotShadowCaster,
             GlobalTransform::default(),
             Visibility::default(),
-            ComputedVisibility::default(),
             AsyncCollider(ComputedColliderShape::TriMesh),
             CollisionGroups::new(COLLISION_GROUP_ZONE_OBJECT, COLLISION_FILTER_INSPECTABLE),
         ))
@@ -1479,7 +1477,6 @@ fn spawn_effect_object(
             object_transform,
             GlobalTransform::from(object_transform),
             Visibility::default(),
-            ComputedVisibility::default(),
         ))
         .id();
 
@@ -1528,7 +1525,6 @@ fn spawn_sound_object(
             object_transform,
             GlobalTransform::from(object_transform),
             Visibility::default(),
-            ComputedVisibility::default(),
         ))
         .id();
 

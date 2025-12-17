@@ -1,7 +1,8 @@
 use std::{ffi::OsString, num::NonZeroU16, path::PathBuf};
 
 use bevy::{
-    asset::{AssetLoader, BoxedFuture, LoadContext, LoadedAsset},
+    asset::{Asset, AssetLoader, BoxedFuture, LoadContext, LoadedAsset, AsyncReadExt},
+    asset::io::Reader,
     math::{Quat, Vec3},
     prelude::{Handle, Image},
     reflect::{Reflect, TypeUuid},
@@ -32,7 +33,7 @@ pub struct ZmoAssetAnimationTexture {
     pub has_uv1_channel: bool,
 }
 
-#[derive(Reflect, TypeUuid)]
+#[derive(Reflect, TypeUuid, Asset)]
 #[uuid = "120cb5ff-e72d-4730-9756-648d0001fdfa"]
 pub struct ZmoAsset {
     pub num_frames: usize,
@@ -121,13 +122,20 @@ impl ZmoAsset {
 }
 
 impl AssetLoader for ZmoAssetLoader {
+    type Asset = ZmoAsset;
+    type Settings = ();
+    type Error = anyhow::Error;
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
         load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            match <ZmoFile as RoseFile>::read(bytes.into(), &Default::default()) {
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
+            match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(zmo) => {
                     // First count how many transform channels there are
                     let mut max_bone_id = 0;
@@ -177,7 +185,7 @@ impl AssetLoader for ZmoAssetLoader {
                             _ => {}
                         }
                     }
-                    load_context.set_default_asset(LoadedAsset::new(ZmoAsset {
+                    Ok(ZmoAsset {
                         num_frames: zmo.num_frames,
                         fps: zmo.fps,
                         bones,
@@ -187,8 +195,7 @@ impl AssetLoader for ZmoAssetLoader {
                             / 1000.0)
                             .max(0.0001),
                         animation_texture: None,
-                    }));
-                    Ok(())
+                    })
                 }
                 Err(error) => Err(error),
             }
@@ -213,17 +220,24 @@ impl ZmoTextureAssetLoader {
 }
 
 impl AssetLoader for ZmoTextureAssetLoader {
+    type Asset = ZmoAsset;
+    type Settings = ();
+    type Error = anyhow::Error;
+
     fn extensions(&self) -> &[&str] {
         &["zmo_texture"]
     }
 
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
         load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            match <ZmoFile as RoseFile>::read(bytes.into(), &Default::default()) {
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
+            match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(zmo) => {
                     let mut num_vertices = 0;
                     let mut has_position_channel = false;
@@ -305,9 +319,9 @@ impl AssetLoader for ZmoTextureAssetLoader {
                         }
                     }
 
-                    let texture_handle = load_context.set_labeled_asset(
-                        "image",
-                        LoadedAsset::new(Image::new(
+                    let texture_handle = load_context.add_labeled_asset(
+                        "image".to_string(),
+                        Image::new(
                             Extent3d {
                                 width: stride as u32,
                                 height: num_vertices as u32,
@@ -316,10 +330,10 @@ impl AssetLoader for ZmoTextureAssetLoader {
                             TextureDimension::D2,
                             image_data,
                             TextureFormat::Rgba32Float,
-                        )),
+                        ),
                     );
 
-                    load_context.set_default_asset(LoadedAsset::new(ZmoAsset {
+                    Ok(ZmoAsset {
                         num_frames: zmo.num_frames,
                         fps: zmo.fps,
                         frame_events: zmo.frame_events,
@@ -336,9 +350,7 @@ impl AssetLoader for ZmoTextureAssetLoader {
                             has_alpha_channel,
                             has_uv1_channel,
                         }),
-                    }));
-
-                    Ok(())
+                    })
                 }
                 Err(error) => Err(error),
             }

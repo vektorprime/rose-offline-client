@@ -1,5 +1,5 @@
 use bevy::prelude::{
-    Commands, ComputedVisibility, DespawnRecursiveExt, Entity, EventWriter, GlobalTransform, Local,
+    Commands, DespawnRecursiveExt, Entity, EventWriter, GlobalTransform, Local,
     Query, Res, ResMut, Transform, Visibility, With,
 };
 use bevy_egui::{egui, EguiContexts};
@@ -162,7 +162,6 @@ pub fn ui_debug_effect_list_system(
                                             transform,
                                             GlobalTransform::default(),
                                             Visibility::default(),
-                                            ComputedVisibility::default(),
                                         ))
                                         .id();
 

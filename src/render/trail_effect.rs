@@ -2,7 +2,8 @@ use std::collections::VecDeque;
 
 use bevy::{
     app::prelude::*,
-    asset::{load_internal_asset, Assets, Handle, HandleUntyped},
+    asset::{load_internal_asset, Assets, Handle},
+    render::render_resource::Shader,
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         prelude::*,
@@ -11,7 +12,7 @@ use bevy::{
     },
     math::prelude::*,
     pbr::MeshPipelineKey,
-    prelude::{Color, GlobalTransform, Msaa, Shader},
+    prelude::{Color, GlobalTransform, Msaa, Visibility},
     reflect::TypeUuid,
     render::{
         render_asset::RenderAssets,
@@ -23,7 +24,7 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         texture::{BevyDefault, Image},
         view::{
-            ComputedVisibility, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
+            ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
             ViewUniforms,
         },
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
@@ -35,8 +36,8 @@ use std::{collections::HashMap, ops::Range};
 
 use crate::resources::RenderConfiguration;
 
-pub const TRAIL_EFFECT_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 3042057527543835453);
+pub const TRAIL_EFFECT_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u64(Shader::TYPE_UUID, 3042057527543835453);
 
 pub struct TrailEffectRenderPlugin;
 
@@ -470,7 +471,7 @@ fn extract_trail_effects(
     images: Extract<Res<Assets<Image>>>,
     query: Extract<
         Query<(
-            &ComputedVisibility,
+            &Visibility,
             &TrailEffect,
             &TrailEffectPositionHistory,
         )>,

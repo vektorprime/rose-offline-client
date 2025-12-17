@@ -1,5 +1,4 @@
 use bevy::{
-    asset::HandleId,
     prelude::{AssetServer, Assets, Handle, Local, Res, ResMut},
 };
 use bevy_egui::{egui, EguiContexts};
@@ -14,7 +13,7 @@ use crate::ui::{
 pub struct UiStateDebugDialogs {
     draw_dialog: Option<Handle<Dialog>>,
     filter_name: String,
-    filtered_dialogs: Vec<(String, HandleId)>,
+    filtered_dialogs: Vec<(String, Handle<Dialog>)>,
 }
 
 pub fn ui_debug_dialog_list_system(

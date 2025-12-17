@@ -1,4 +1,4 @@
-use bevy::reflect::{TypePath, TypeUuid};
+use bevy::{asset::Asset, reflect::{TypePath, TypeUuid}};
 use bevy_egui::egui;
 use serde::{Deserialize, Deserializer};
 
@@ -39,6 +39,7 @@ where
 #[uuid = "95ddb227-6e9f-43ee-8026-28ddb6fc9634"]
 #[serde(rename = "Root_Element")]
 #[serde(default)]
+#[derive(Asset)]
 pub struct Dialog {
     #[serde(deserialize_with = "default_on_error")]
     #[serde(rename = "X")]

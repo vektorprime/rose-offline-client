@@ -1,23 +1,23 @@
-use bevy::asset::{AssetIo, AssetIoError, BoxedFuture, ChangeWatcher, Metadata};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use bevy::asset::io::{AssetReader, AssetReaderError, PathStream, Reader};
+use bevy::utils::BoxedFuture;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rose_file_readers::{VfsFile, VirtualFilesystem};
 
-pub struct VfsAssetIo {
+pub struct VfsAssetReader {
     vfs: Arc<VirtualFilesystem>,
 }
 
-impl VfsAssetIo {
+impl VfsAssetReader {
     pub fn new(vfs: Arc<VirtualFilesystem>) -> Self {
         Self { vfs }
     }
 }
 
-impl AssetIo for VfsAssetIo {
-    fn load_path<'a>(&'a self, path: &'a Path) -> BoxedFuture<'a, Result<Vec<u8>, AssetIoError>> {
+impl AssetReader for VfsAssetReader {
+    fn read<'a>(&'a self, path: &'a Path) -> BoxedFuture<'a, Result<Box<Reader<'a>>, AssetReaderError>> {
+        let vfs = self.vfs.clone();
         Box::pin(async move {
             // bevy plsssss whyyy
             // HACK: zone_loader.rs relies on a custom asset loader with extension .zone_loader
@@ -28,38 +28,27 @@ impl AssetIo for VfsAssetIo {
                 .trim_end_matches(".zmo_texture");
             if path.ends_with(".zone_loader") {
                 let zone_id = path.trim_end_matches(".zone_loader").parse::<u8>().unwrap();
-                Ok(vec![zone_id])
-            } else if let Ok(file) = self.vfs.open_file(path) {
+                Ok(Box::new(Reader::from_bytes(vec![zone_id])))
+            } else if let Ok(file) = vfs.open_file(path) {
                 match file {
-                    VfsFile::Buffer(buffer) => Ok(buffer),
-                    VfsFile::View(view) => Ok(view.into()),
+                    VfsFile::Buffer(buffer) => Ok(Box::new(Reader::from_bytes(buffer))),
+                    VfsFile::View(view) => Ok(Box::new(Reader::from_bytes(view.into()))),
                 }
             } else {
-                Err(AssetIoError::NotFound(path.into()))
+                Err(AssetReaderError::NotFound(path.into()))
             }
         })
     }
 
-    fn read_directory(
-        &self,
-        _path: &Path,
-    ) -> Result<Box<dyn Iterator<Item = PathBuf>>, AssetIoError> {
-        Ok(Box::new(std::iter::empty::<PathBuf>()))
+    fn read_meta<'a>(&'a self, path: &'a Path) -> BoxedFuture<'a, Result<Box<Reader<'a>>, AssetReaderError>> {
+        Box::pin(async move { Err(AssetReaderError::NotFound(path.into())) })
     }
 
-    fn get_metadata(&self, path: &Path) -> Result<Metadata, AssetIoError> {
-        Err(AssetIoError::NotFound(path.to_path_buf()))
+    fn read_directory<'a>(&'a self, path: &'a Path) -> BoxedFuture<'a, Result<Box<PathStream>, AssetReaderError>> {
+        Box::pin(async move { Ok(Box::new(PathStream::empty())) })
     }
 
-    fn watch_path_for_changes(
-        &self,
-        _to_watch: &Path,
-        _to_reload: Option<PathBuf>,
-    ) -> Result<(), AssetIoError> {
-        Ok(())
-    }
-
-    fn watch_for_changes(&self, _configuration: &ChangeWatcher) -> Result<(), AssetIoError> {
-        Ok(())
+    fn is_directory<'a>(&'a self, path: &'a Path) -> BoxedFuture<'a, Result<bool, AssetReaderError>> {
+        Box::pin(async move { Ok(false) })
     }
 }

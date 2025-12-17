@@ -3,7 +3,7 @@ use bevy::{
     ecs::event::Events,
     math::{Quat, Vec3},
     prelude::{
-        Commands, ComputedVisibility, DespawnRecursiveExt, Entity, EventWriter, GlobalTransform,
+        Commands, DespawnRecursiveExt, Entity, EventWriter, GlobalTransform,
         Mut, NextState, Res, ResMut, State, Transform, Visibility, World,
     },
 };
@@ -208,7 +208,6 @@ pub fn game_connection_system(
                             ),
                             GlobalTransform::default(),
                             Visibility::default(),
-                            ComputedVisibility::default(),
                         )))
                         .id()
                 );
@@ -318,7 +317,6 @@ pub fn game_connection_system(
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ComputedVisibility::default(),
                         VisibleStatusEffects::default(),
                     ),))
                     .id();
@@ -400,7 +398,6 @@ pub fn game_connection_system(
                         )),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ComputedVisibility::default(),
                     ),
                     ))
                     .id();
@@ -483,7 +480,6 @@ pub fn game_connection_system(
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ComputedVisibility::default(),
                     ),))
                     .id();
 
@@ -518,7 +514,6 @@ pub fn game_connection_system(
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ComputedVisibility::default(),
                     ))
                     .id();
 

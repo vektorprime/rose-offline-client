@@ -1,6 +1,7 @@
 use bevy::{
     app::prelude::*,
-    asset::{load_internal_asset, Assets, Handle, HandleUntyped},
+    asset::{load_internal_asset, Assets, Handle},
+    render::render_resource::Shader,
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         prelude::*,
@@ -8,7 +9,7 @@ use bevy::{
         system::{lifetimeless::*, SystemParamItem},
     },
     math::prelude::*,
-    prelude::{Msaa, Shader},
+    prelude::{Msaa, Visibility},
     reflect::TypeUuid,
     render::{
         primitives::Aabb,
@@ -21,7 +22,7 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         texture::{BevyDefault, Image},
         view::{
-            ComputedVisibility, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
+            ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
             ViewUniforms, VisibilitySystems,
         },
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
@@ -36,8 +37,8 @@ use crate::render::{
     ParticleMaterial,
 };
 
-pub const PARTICLE_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 3032357527543835453);
+pub const PARTICLE_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u64(Shader::TYPE_UUID, 3032357527543835453);
 
 pub struct ParticleRenderPlugin;
 
@@ -422,7 +423,7 @@ fn extract_particles(
     images: Extract<Res<Assets<Image>>>,
     query: Extract<
         Query<(
-            &ComputedVisibility,
+            &Visibility,
             &ParticleRenderData,
             &Handle<ParticleMaterial>,
         )>,

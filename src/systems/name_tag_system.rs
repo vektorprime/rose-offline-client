@@ -4,7 +4,7 @@ use arrayvec::ArrayVec;
 use bevy::{
     ecs::query::WorldQuery,
     prelude::{
-        Assets, BuildChildren, Changed, Color, Commands, ComputedVisibility, DespawnRecursiveExt,
+        Assets, BuildChildren, Changed, Color, Commands, DespawnRecursiveExt,
         Entity, EventReader, GlobalTransform, Handle, Image, Local, Query, Res, ResMut, Transform,
         Vec2, Vec3, Visibility, With, Without,
     },
@@ -493,7 +493,6 @@ pub fn name_tag_system(
                 } else {
                     Visibility::Hidden
                 },
-                ComputedVisibility::default(),
                 Transform::from_translation(Vec3::new(0.0, object.model_height.height, 0.0)),
                 GlobalTransform::default(),
                 NoFrustumCulling,
@@ -645,7 +644,6 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::default(),
-                    ComputedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -659,7 +657,6 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    ComputedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -673,7 +670,6 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    ComputedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -691,7 +687,6 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    ComputedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);

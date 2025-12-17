@@ -1,6 +1,6 @@
 use bevy::{
     prelude::{
-        Commands, ComputedVisibility, EventReader, EventWriter, GlobalTransform, Query, Res,
+        Commands, EventReader, EventWriter, GlobalTransform, Query, Res,
         Transform, Visibility,
     },
     render::mesh::skinning::SkinnedMesh,
@@ -68,7 +68,6 @@ pub fn spawn_projectile_system(
                 Transform::from_translation(source_global_transform.translation()),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
             ))
             .id();
 

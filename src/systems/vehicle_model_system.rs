@@ -1,6 +1,6 @@
 use bevy::{
     prelude::{
-        AssetServer, Assets, BuildChildren, Changed, Commands, ComputedVisibility,
+        AssetServer, Assets, BuildChildren, Changed, Commands,
         DespawnRecursiveExt, Entity, GlobalTransform, Query, Res, ResMut, Transform, Visibility,
         World,
     },
@@ -114,7 +114,6 @@ pub fn vehicle_model_system(
             let vehicle_model_entity = commands
                 .spawn((
                     Visibility::Inherited,
-                    ComputedVisibility::default(),
                     Transform::default(),
                     GlobalTransform::default(),
                 ))

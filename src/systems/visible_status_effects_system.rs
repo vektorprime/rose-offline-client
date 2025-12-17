@@ -1,7 +1,7 @@
 use bevy::{
     hierarchy::{BuildChildren, DespawnRecursiveExt},
     prelude::{
-        Changed, Commands, ComputedVisibility, Entity, EventWriter, GlobalTransform, Query, Res,
+        Changed, Commands, Entity, EventWriter, GlobalTransform, Query, Res,
         Transform, Visibility,
     },
 };
@@ -53,7 +53,6 @@ pub fn visible_status_effects_system(
                                 Transform::default(),
                                 GlobalTransform::default(),
                                 Visibility::default(),
-                                ComputedVisibility::default(),
                             ))
                             .id();
 

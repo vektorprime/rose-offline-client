@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use bevy::{
     input::Input,
     prelude::{
-        AssetServer, Camera, Camera3d, Commands, Component, ComputedVisibility,
+        AssetServer, Camera, Camera3d, Commands, Component,
         DespawnRecursiveExt, Entity, EventReader, EventWriter, GlobalTransform, Handle, Local,
         MouseButton, NextState, Query, Res, ResMut, Resource, Visibility, With,
     },
@@ -76,7 +76,6 @@ pub fn character_select_enter_system(
                 *transform,
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
             ))
             .id();
         models.push((None, entity));

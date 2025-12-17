@@ -7,7 +7,7 @@ use bevy::{
     ecs::event::Events,
     log::Level,
     prelude::{
-        apply_deferred, in_state, AddAsset, App, AssetServer, Assets, Camera, Camera3dBundle,
+        apply_deferred, in_state, App, AssetServer, Assets, Camera, Camera3dBundle,
         Color, Commands, IntoSystemConfigs, IntoSystemSetConfigs, Msaa, OnEnter, OnExit,
         PluginGroup, PostStartup, PostUpdate, PreUpdate, Quat, Res, ResMut, Startup, State,
         SystemSet, Transform, Update, Vec3,
@@ -112,7 +112,7 @@ use ui::{
     ui_window_sound_system, widgets::Dialog, DialogLoader, UiSoundEvent, UiStateDebugWindows,
     UiStateDragAndDrop, UiStateWindows,
 };
-use vfs_asset_io::VfsAssetIo;
+use vfs_asset_io::VfsAssetReader;
 use zms_asset_loader::{ZmsAssetLoader, ZmsMaterialNumFaces, ZmsNoSkinAssetLoader};
 use zone_loader::{zone_loader_system, ZoneLoader, ZoneLoaderAsset};
 
@@ -468,7 +468,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.insert_resource(VfsResource {
         vfs: virtual_filesystem.clone(),
     })
-    .insert_resource(AssetServer::new(VfsAssetIo::new(virtual_filesystem)));
+    .init_resource::<AssetServer>()
+    .init_asset_reader::<VfsAssetReader>(VfsAssetReader::new(virtual_filesystem));
 
     // Initialise bevy engine
     app.insert_resource(Msaa::Off)

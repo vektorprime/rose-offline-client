@@ -7,7 +7,7 @@ use bevy::{
     },
     window::{CursorGrabMode, CursorIcon, PrimaryWindow, Window},
 };
-use bevy_egui::{egui, EguiContexts, EguiRequestedCursor};
+use bevy_egui::{egui, EguiContexts};
 use enum_map::{enum_map, Enum, EnumMap};
 
 use rose_file_readers::{IdFile, TsiFile, TsiSprite, VirtualFilesystem};
@@ -568,7 +568,7 @@ pub fn load_ui_resources(
 pub fn ui_requested_cursor_apply_system(
     mut query_window: Query<&mut Window, With<PrimaryWindow>>,
     ui_requested_cursor: Res<UiRequestedCursor>,
-    egui_requested_cursor: Res<EguiRequestedCursor>,
+    // egui_requested_cursor: Res<EguiRequestedCursor>,
     ui_resources: Res<UiResources>,
     mut egui_ctx: EguiContexts,
 ) {
@@ -578,7 +578,7 @@ pub fn ui_requested_cursor_apply_system(
 
     if egui_ctx.ctx_mut().wants_pointer_input() {
         // Allow text selection cursor, otherwise use the default in game cursor icon
-        let requested_icon = match egui_requested_cursor.cursor {
+        let requested_icon = match ui_requested_cursor.cursor {
             CursorIcon::Text => &CursorIcon::Text,
             _ => ui_resources.cursors[UiCursorType::Default]
                 .cursor

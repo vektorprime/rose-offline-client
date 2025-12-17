@@ -4,7 +4,7 @@ use bevy::{
     math::Vec3,
     pbr::{AlphaMode, StandardMaterial},
     prelude::{
-        shape, Assets, Camera, Camera3d, Color, Commands, ComputedVisibility, GlobalTransform,
+        shape, Assets, Camera, Camera3d, Color, Commands, GlobalTransform,
         Handle, KeyCode, Local, Mesh, Query, Res, ResMut, Time, Transform, Visibility, With,
     },
     window::{PrimaryWindow, Window},
@@ -242,7 +242,6 @@ pub fn ui_debug_physics_system(
                                 )),
                                 GlobalTransform::default(),
                                 Visibility::default(),
-                                ComputedVisibility::default(),
                                 CollisionGroups::new(
                                     COLLISION_GROUP_PHYSICS_TOY,
                                     bevy_rapier3d::geometry::Group::all(),
@@ -261,7 +260,6 @@ pub fn ui_debug_physics_system(
                                 )),
                                 GlobalTransform::default(),
                                 Visibility::default(),
-                                ComputedVisibility::default(),
                             ))
                             .id();
 

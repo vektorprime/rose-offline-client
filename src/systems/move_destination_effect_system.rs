@@ -1,5 +1,5 @@
 use bevy::prelude::{
-    AssetServer, Assets, Commands, ComputedVisibility, DespawnRecursiveExt, Entity, EventReader,
+    AssetServer, Assets, Commands, DespawnRecursiveExt, Entity, EventReader,
     GlobalTransform, Local, Res, ResMut, Transform, Visibility,
 };
 use rose_data::EffectFileId;
@@ -43,7 +43,6 @@ pub fn move_destination_effect_system(
                             Transform::from_translation(*position),
                             GlobalTransform::default(),
                             Visibility::default(),
-                            ComputedVisibility::default(),
                         ))
                         .id();
                     state.last_effect_entity = Some(effect_entity);

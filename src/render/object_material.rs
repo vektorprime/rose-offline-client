@@ -1,5 +1,6 @@
 use bevy::{
-    asset::{load_internal_asset, Handle},
+    asset::{Asset, load_internal_asset, Handle},
+    render::render_resource::Shader,
     ecs::{
         query::{QueryItem, ROQueryItem},
         system::{
@@ -13,14 +14,13 @@ use bevy::{
         SetMeshViewBindGroup,
     },
     prelude::{
-        AddAsset, App, Component, FromWorld, HandleUntyped, Material, MaterialPlugin, Mesh, Plugin,
+        App, Component, FromWorld, Material, MaterialPlugin, Mesh, Plugin,
         Vec3, With, World,
     },
     reflect::{Reflect, TypeUuid},
     render::{
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         mesh::{GpuBufferInfo, MeshVertexBufferLayout},
-        prelude::Shader,
         render_asset::RenderAssets,
         render_phase::{
             PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
@@ -41,8 +41,8 @@ use crate::render::{
     MESH_ATTRIBUTE_UV_1,
 };
 
-pub const OBJECT_MATERIAL_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 0xb7ebbc00ea16d3c7);
+pub const OBJECT_MATERIAL_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u64(Shader::TYPE_UUID, 0xb7ebbc00ea16d3c7);
 
 #[derive(Default)]
 pub struct ObjectMaterialPlugin {
@@ -261,7 +261,7 @@ impl From<ZscMaterialGlow> for ObjectMaterialGlow {
     }
 }
 
-#[derive(Debug, Clone, TypeUuid, Reflect, AsBindGroup)]
+#[derive(Debug, Clone, TypeUuid, Reflect, AsBindGroup, Asset)]
 #[uniform(0, ObjectMaterialUniformData)]
 #[bind_group_data(ObjectMaterialKey)]
 #[uuid = "62a496fa-33e8-41a8-9a44-237d70214227"]
@@ -308,8 +308,6 @@ impl FromWorld for ObjectMaterialPipelineData {
 }
 
 impl Material for ObjectMaterial {
-    type PipelineData = ObjectMaterialPipelineData;
-
     fn vertex_shader() -> ShaderRef {
         OBJECT_MATERIAL_SHADER_HANDLE.typed().into()
     }

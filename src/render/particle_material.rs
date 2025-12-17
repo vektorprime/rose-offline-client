@@ -1,6 +1,6 @@
 use bevy::{
     app::{App, Plugin},
-    asset::{AddAsset, Handle},
+    asset::{Asset, Handle},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     reflect::{TypePath, TypeUuid},
     render::{
@@ -10,7 +10,7 @@ use bevy::{
     },
 };
 
-#[derive(Debug, Clone, TypeUuid, TypePath)]
+#[derive(Debug, Clone, TypeUuid, TypePath, Asset)]
 #[uuid = "0078f73d-8715-427e-aa65-dc8e1f485d3d"]
 pub struct ParticleMaterial {
     pub texture: Handle<Image>,

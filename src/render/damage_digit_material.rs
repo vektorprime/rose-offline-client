@@ -1,6 +1,6 @@
 use bevy::{
     app::{App, Plugin},
-    asset::{AddAsset, Handle},
+    asset::{Asset, Handle, AssetApp},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     reflect::{TypePath, TypeUuid},
     render::{
@@ -10,7 +10,7 @@ use bevy::{
     },
 };
 
-#[derive(Debug, Clone, TypeUuid, TypePath)]
+#[derive(Debug, Clone, TypeUuid, TypePath, Asset)]
 #[uuid = "83077909-bf71-4f14-9a86-16f65d611ce9"]
 pub struct DamageDigitMaterial {
     pub texture: Handle<Image>,
@@ -21,7 +21,7 @@ pub struct DamageDigitMaterialPlugin;
 impl Plugin for DamageDigitMaterialPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(RenderAssetPlugin::<DamageDigitMaterial>::default())
-            .add_asset::<DamageDigitMaterial>();
+            .init_asset::<DamageDigitMaterial>();
     }
 }
 

@@ -1,5 +1,6 @@
 use bevy::{
-    asset::{AssetLoader, BoxedFuture, LoadContext, LoadedAsset},
+    asset::{Asset, AssetLoader, BoxedFuture, LoadContext, LoadedAsset, AsyncReadExt},
+    asset::io::Reader,
     prelude::{AssetEvent, Assets, EventReader, Handle, Local, Res, ResMut},
 };
 
@@ -12,16 +13,22 @@ use crate::{
 pub struct DialogLoader;
 
 impl AssetLoader for DialogLoader {
+    type Asset = Dialog;
+    type Settings = ();
+    type Error = anyhow::Error;
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
         load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            let bytes_str = std::str::from_utf8(bytes)?;
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
+            let bytes_str = std::str::from_utf8(&bytes)?;
             let dialog: Dialog = quick_xml::de::from_str(bytes_str)?;
-            load_context.set_default_asset(LoadedAsset::new(dialog));
-            Ok(())
+            Ok(dialog)
         })
     }
 

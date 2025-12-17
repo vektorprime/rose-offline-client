@@ -4,7 +4,8 @@ use std::{
 };
 
 use bevy::{
-    asset::{AssetLoader, BoxedFuture, LoadContext, LoadedAsset},
+    asset::{Asset, AssetLoader, BoxedFuture, LoadContext, LoadedAsset, AsyncReadExt},
+    asset::io::Reader,
     prelude::Mesh,
     reflect::{TypePath, TypeUuid},
     render::{
@@ -16,7 +17,7 @@ use rose_file_readers::{RoseFile, ZmsFile};
 
 use crate::render::{MESH_ATTRIBUTE_UV_1, MESH_ATTRIBUTE_UV_2, MESH_ATTRIBUTE_UV_3};
 
-#[derive(Debug, TypeUuid, TypePath, Clone)]
+#[derive(Debug, TypeUuid, TypePath, Clone, Asset)]
 #[uuid = "8688d5ed-b98b-4641-bab3-5fe83dfd4ecd"]
 pub struct ZmsMaterialNumFaces {
     pub material_num_faces: Vec<u16>,
@@ -29,12 +30,19 @@ pub struct ZmsAssetLoader;
 pub struct ZmsNoSkinAssetLoader;
 
 impl AssetLoader for ZmsAssetLoader {
+    type Asset = ZmsMaterialNumFaces;
+    type Settings = ();
+    type Error = anyhow::Error;
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
         load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
             match <ZmsFile as RoseFile>::read(bytes.into(), &Default::default()) {
                 Ok(mut zms) => {
                     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
@@ -104,16 +112,17 @@ impl AssetLoader for ZmsAssetLoader {
                     }
 
                     if !zms.material_num_faces.is_empty() {
-                        load_context.set_labeled_asset(
-                            "material_num_faces",
-                            LoadedAsset::new(ZmsMaterialNumFaces {
+                        load_context.add_labeled_asset(
+                            "material_num_faces".to_string(),
+                            ZmsMaterialNumFaces {
                                 material_num_faces: zms.material_num_faces,
-                            }),
+                            },
                         );
                     }
 
-                    load_context.set_default_asset(LoadedAsset::new(mesh));
-                    Ok(())
+                    Ok(ZmsMaterialNumFaces {
+                        material_num_faces: vec![mesh.count_vertices() as u16],
+                    })
                 }
                 Err(error) => Err(error),
             }
@@ -134,12 +143,19 @@ impl ZmsNoSkinAssetLoader {
 }
 
 impl AssetLoader for ZmsNoSkinAssetLoader {
+    type Asset = ZmsMaterialNumFaces;
+    type Settings = ();
+    type Error = anyhow::Error;
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
         load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
             match <ZmsFile as RoseFile>::read(bytes.into(), &Default::default()) {
                 Ok(mut zms) => {
                     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
@@ -198,16 +214,15 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
                     }
 
                     if !zms.material_num_faces.is_empty() {
-                        load_context.set_labeled_asset(
-                            "material_num_faces",
-                            LoadedAsset::new(ZmsMaterialNumFaces {
+                        load_context.add_labeled_asset(
+                            "material_num_faces".to_string(),
+                            ZmsMaterialNumFaces {
                                 material_num_faces: zms.material_num_faces,
-                            }),
+                            },
                         );
                     }
 
-                    load_context.set_default_asset(LoadedAsset::new(mesh));
-                    Ok(())
+                    Ok(mesh)
                 }
                 Err(error) => Err(error),
             }

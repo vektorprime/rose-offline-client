@@ -1,5 +1,5 @@
 use bevy::prelude::{
-    AssetServer, Assets, Camera3d, Commands, ComputedVisibility, DespawnRecursiveExt, Entity,
+    AssetServer, Assets, Camera3d, Commands, DespawnRecursiveExt, Entity,
     EventWriter, GlobalTransform, Local, Quat, Query, Res, ResMut, Transform, Vec3, Visibility,
     With,
 };
@@ -362,7 +362,6 @@ pub fn ui_character_create_system(
                     .with_scale(Vec3::new(1.5, 1.5, 1.5)),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
             ))
             .id();
         ui_state.entity = Some(create_character_entity);

@@ -1,6 +1,7 @@
 use bevy::{
     app::prelude::*,
-    asset::{load_internal_asset, Assets, Handle, HandleUntyped},
+    asset::{load_internal_asset, Assets, Handle},
+    render::render_resource::Shader,
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         prelude::*,
@@ -8,7 +9,7 @@ use bevy::{
         system::{lifetimeless::*, SystemParamItem},
     },
     math::prelude::*,
-    prelude::{Msaa, Shader},
+    prelude::{Msaa, Visibility},
     reflect::TypeUuid,
     render::{
         render_asset::RenderAssets,
@@ -20,7 +21,7 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         texture::{BevyDefault, Image},
         view::{
-            ComputedVisibility, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
+            ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
             ViewUniforms,
         },
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
@@ -31,8 +32,8 @@ use std::{collections::HashMap, num::NonZeroU64, ops::Range};
 
 use crate::render::{DamageDigitMaterial, DamageDigitRenderData};
 
-pub const DAMAGE_DIGIT_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 39699708885);
+pub const DAMAGE_DIGIT_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u64(Shader::TYPE_UUID, 39699708885);
 
 pub struct DamageDigitRenderPlugin;
 
@@ -278,7 +279,7 @@ fn extract_damage_digits(
     images: Extract<Res<Assets<Image>>>,
     query: Extract<
         Query<(
-            &ComputedVisibility,
+            &Visibility,
             &DamageDigitRenderData,
             &Handle<DamageDigitMaterial>,
         )>,

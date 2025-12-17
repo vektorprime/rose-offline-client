@@ -2,7 +2,7 @@ use bevy::{
     hierarchy::BuildChildren,
     math::{Quat, Vec3},
     prelude::{
-        AssetServer, Assets, Commands, ComputedVisibility, Entity, GlobalTransform, Mesh,
+        AssetServer, Assets, Commands, Entity, GlobalTransform, Mesh,
         Transform, Visibility,
     },
     render::{
@@ -75,7 +75,6 @@ pub fn spawn_effect(
                 Transform::default(),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
             ))
             .push_children(&child_entities)
             .id();
@@ -135,12 +134,11 @@ fn spawn_mesh(
                 ),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
             ))
             .with_children(|child_builder| {
                 let mut entity_comands = child_builder.spawn((
                     EffectMesh {},
-                    asset_server.load::<Mesh, _>(ZmsNoSkinAssetLoader::convert_path(
+                    asset_server.load::<Mesh>(ZmsNoSkinAssetLoader::convert_path(
                         eft_mesh.mesh_file.path(),
                     )),
                     effect_mesh_materials.add(EffectMeshMaterial {
@@ -160,7 +158,6 @@ fn spawn_mesh(
                         }),
                     }),
                     Visibility::default(),
-                    ComputedVisibility::default(),
                     Transform::default(),
                     GlobalTransform::default(),
                 ));
@@ -232,7 +229,6 @@ fn spawn_particle(
                 ),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
             ))
             .with_children(|child_builder| {
                 for sequence in ptl_file.sequences {
@@ -259,7 +255,6 @@ fn spawn_particle(
                         GlobalTransform::default(),
                         Aabb::default(),
                         Visibility::default(),
-                        ComputedVisibility::default(),
                         NoFrustumCulling, // AABB culling is broken for particles
                     ));
 

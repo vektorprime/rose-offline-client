@@ -4,7 +4,7 @@ use arrayvec::ArrayVec;
 use bevy::{
     math::{Mat4, Quat, Vec3},
     prelude::{
-        AssetServer, Assets, BuildChildren, Color, Commands, ComputedVisibility,
+        AssetServer, Assets, BuildChildren, Color, Commands,
         DespawnRecursiveExt, Entity, GlobalTransform, Handle, Image, Mesh, Resource, Transform,
         Visibility,
     },
@@ -347,7 +347,6 @@ impl ModelLoader {
         let root_bone = commands
             .spawn((
                 Visibility::default(),
-                ComputedVisibility::default(),
                 Transform::default(),
                 GlobalTransform::default(),
             ))
@@ -396,7 +395,6 @@ impl ModelLoader {
         let root_bone = commands
             .spawn((
                 Visibility::default(),
-                ComputedVisibility::default(),
                 Transform::default(),
                 GlobalTransform::default(),
             ))
@@ -512,7 +510,6 @@ impl ModelLoader {
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::default(),
-                    ComputedVisibility::default(),
                 ))
                 .id(),
         )
@@ -1135,7 +1132,6 @@ fn spawn_skeleton(
             commands
                 .spawn((
                     Visibility::default(),
-                    ComputedVisibility::default(),
                     transform,
                     GlobalTransform::default(),
                 ))
@@ -1200,7 +1196,7 @@ fn spawn_model(
 
     for object_part in object.parts.iter() {
         let mesh_id = object_part.mesh_id as usize;
-        let mesh = asset_server.load::<Mesh, _>(model_list.meshes[mesh_id].path());
+        let mesh = asset_server.load::<Mesh>(model_list.meshes[mesh_id].path());
         let material_id = object_part.material_id as usize;
         let zsc_material = &model_list.materials[material_id];
         let material = object_materials.add(ObjectMaterial {
@@ -1231,11 +1227,10 @@ fn spawn_model(
             Transform::default(),
             GlobalTransform::default(),
             Visibility::default(),
-            ComputedVisibility::default(),
         ));
 
         if load_clip_faces {
-            let zms_material_num_faces = asset_server.load::<ZmsMaterialNumFaces, _>(format!(
+            let zms_material_num_faces = asset_server.load::<ZmsMaterialNumFaces>(format!(
                 "{}#material_num_faces",
                 model_list.meshes[mesh_id].path().to_string_lossy()
             ));

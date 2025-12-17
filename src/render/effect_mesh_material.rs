@@ -1,5 +1,6 @@
 use bevy::{
-    asset::{load_internal_asset, Handle},
+    asset::{Asset, load_internal_asset, Handle},
+    render::render_resource::Shader,
     ecs::{
         query::{QueryItem, ROQueryItem},
         system::{
@@ -11,12 +12,11 @@ use bevy::{
         AlphaMode, DrawPrepass, Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin,
         MeshPipelineKey, SetMaterialBindGroup, SetMeshBindGroup, SetMeshViewBindGroup,
     },
-    prelude::{App, Component, FromWorld, HandleUntyped, Mesh, Plugin, With, World},
+    prelude::{App, Component, FromWorld, Mesh, Plugin, With, World},
     reflect::{Reflect, TypePath, TypeUuid},
     render::{
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         mesh::{GpuBufferInfo, MeshVertexBufferLayout},
-        prelude::Shader,
         render_asset::RenderAssets,
         render_phase::{
             PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
@@ -34,8 +34,8 @@ use bevy::{
 
 use crate::render::zone_lighting::{SetZoneLightingBindGroup, ZoneLightingUniformMeta};
 
-pub const EFFECT_MESH_MATERIAL_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 0x90d5233c3001d33e);
+pub const EFFECT_MESH_MATERIAL_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u64(Shader::TYPE_UUID, 0x90d5233c3001d33e);
 
 #[derive(Default)]
 pub struct EffectMeshMaterialPlugin {
@@ -114,7 +114,7 @@ pub struct EffectMeshMaterialUniformData {
     pub alpha_cutoff: f32,
 }
 
-#[derive(AsBindGroup, Debug, Clone, TypeUuid, TypePath)]
+#[derive(AsBindGroup, Debug, Clone, TypeUuid, TypePath, Asset)]
 #[uuid = "9ac3266d-1aa6-4f67-ade4-e3765fd0b1a1"]
 #[bind_group_data(EffectMeshMaterialKey)]
 #[uniform(0, EffectMeshMaterialUniformData)]
@@ -202,8 +202,6 @@ impl FromWorld for EffectMeshMaterialPipelineData {
 }
 
 impl Material for EffectMeshMaterial {
-    type PipelineData = EffectMeshMaterialPipelineData;
-
     fn specialize(
         pipeline: &MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,

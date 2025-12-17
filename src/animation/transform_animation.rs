@@ -37,7 +37,7 @@ pub fn transform_animation_system(
         let Some(zmo_asset) = motion_assets.get(zmo_handle) else {
             if matches!(
                 asset_server.get_load_state(zmo_handle),
-                LoadState::Failed | LoadState::Unloaded
+                Some(LoadState::Failed)
             ) {
                 // If the asset has failed to load, mark the animation as completed
                 transform_animation.set_completed();

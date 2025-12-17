@@ -118,13 +118,13 @@ pub fn global_sound_system(
 
             global_sound.control_handle = Some(if channels == 2 {
                 let stream_signal = oddio::Stream::new(sample_rate, sample_rate as usize / 2);
-                let gain_signal = match sound_gain {
-                    Some(&SoundGain::Decibel(db)) => oddio::Gain::with_gain(stream_signal, db),
-                    Some(&SoundGain::Ratio(factor)) => {
-                        oddio::Gain::with_amplitude_ratio(stream_signal, factor)
+                let mut gain_signal = oddio::Gain::new(stream_signal);
+                if let Some(sound_gain) = sound_gain {
+                    match sound_gain {
+                        SoundGain::Decibel(db) => gain_signal.set_gain(*db),
+                        SoundGain::Ratio(factor) => gain_signal.set_amplitude_ratio(*factor),
                     }
-                    None => oddio::Gain::new(stream_signal),
-                };
+                }
                 let mut handle = player.control().play(gain_signal);
 
                 streaming_sound
@@ -134,13 +134,13 @@ pub fn global_sound_system(
                 ControlHandle::Stereo(handle)
             } else {
                 let stream_signal = oddio::Stream::new(sample_rate, sample_rate as usize / 2);
-                let gain_signal = match sound_gain {
-                    Some(&SoundGain::Decibel(db)) => oddio::Gain::with_gain(stream_signal, db),
-                    Some(&SoundGain::Ratio(factor)) => {
-                        oddio::Gain::with_amplitude_ratio(stream_signal, factor)
+                let mut gain_signal = oddio::Gain::new(stream_signal);
+                if let Some(sound_gain) = sound_gain {
+                    match sound_gain {
+                        SoundGain::Decibel(db) => gain_signal.set_gain(*db),
+                        SoundGain::Ratio(factor) => gain_signal.set_amplitude_ratio(*factor),
                     }
-                    None => oddio::Gain::new(stream_signal),
-                };
+                }
                 let mut handle = player.control().play(oddio::MonoToStereo::new(gain_signal));
 
                 streaming_sound.fill_mono(&mut handle.control::<oddio::Stream<_>, _>(), repeating);
@@ -151,7 +151,7 @@ pub fn global_sound_system(
             global_sound.streaming_sound = Some(streaming_sound);
         } else if matches!(
             asset_server.get_load_state(&global_sound.asset_handle),
-            LoadState::Failed | LoadState::Unloaded
+            Some(LoadState::Failed)
         ) {
             global_sound.asset_handle = Handle::default();
 

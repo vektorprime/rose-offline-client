@@ -1,6 +1,6 @@
 use bevy::{
     prelude::{
-        AddAsset, App, IntoSystemConfigs, IntoSystemSetConfig, Plugin, PostUpdate, SystemSet,
+        App, IntoSystemConfigs, IntoSystemSetConfigs, Plugin, PostUpdate, SystemSet, AssetApp,
     },
     transform::TransformSystem,
 };
@@ -35,7 +35,7 @@ pub struct RoseAnimationSystem;
 
 impl Plugin for RoseAnimationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_asset::<ZmoAsset>()
+        app.init_asset::<ZmoAsset>()
             .register_asset_reflect::<ZmoAsset>()
             .register_type::<ZmoAssetAnimationTexture>()
             .register_type::<ZmoAssetBone>()
