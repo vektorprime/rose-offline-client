@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use bevy::reflect::{TypePath, TypeUuid};
+use bevy::asset::{Asset, UntypedAssetId, VisitAssetDependencies};
+use bevy::reflect::TypePath;
 
 pub trait StreamingAudioSource {
     fn channel_count(&self) -> u32;
@@ -15,8 +16,7 @@ pub struct AudioSourceDecoded {
     pub sample_rate: u32,
 }
 
-#[derive(Clone, TypeUuid, TypePath)]
-#[uuid = "f40c2d6a-d2ad-42cc-8f86-0147d3ddd68c"]
+#[derive(Clone, TypePath)]
 pub struct AudioSource {
     pub bytes: Arc<[u8]>,
     pub create_streaming_source_fn:
@@ -35,5 +35,14 @@ impl AudioSource {
 impl AsRef<[u8]> for AudioSource {
     fn as_ref(&self) -> &[u8] {
         &self.bytes
+    }
+}
+
+
+impl Asset for AudioSource {}
+
+impl VisitAssetDependencies for AudioSource {
+    fn visit_dependencies(&self, _visit: &mut impl FnMut(UntypedAssetId)) {
+        // AudioSource doesn't have any asset dependencies
     }
 }

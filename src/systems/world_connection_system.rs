@@ -1,4 +1,5 @@
-use bevy::prelude::{Commands, EventWriter, NextState, Res, ResMut, State};
+use bevy::ecs::event::EventWriter;
+use bevy::prelude::{Commands, NextState, Res, ResMut, State};
 
 use rose_game_common::messages::{client::ClientMessage, server::ServerMessage};
 use rose_network_common::ConnectionError;

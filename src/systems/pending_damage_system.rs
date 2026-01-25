@@ -1,7 +1,4 @@
-use bevy::{
-    ecs::query::WorldQuery,
-    prelude::{Commands, Entity, Query, Res, ResMut, Time, With},
-};
+use bevy::prelude::{Commands, Entity, Query, Res, ResMut, Time, With};
 
 use rose_game_common::{components::HealthPoints, data::Damage};
 
@@ -13,51 +10,50 @@ use crate::{
 // After 5 seconds, expire pending damage and apply immediately
 const MAX_DAMAGE_AGE: f32 = 5.0;
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
-pub struct DamageTarget<'w> {
-    entity: Entity,
-    client_entity: &'w ClientEntity,
-    health_points: &'w mut HealthPoints,
-    pending_damage_list: &'w mut PendingDamageList,
-}
-
 fn apply_damage(
     commands: &mut Commands,
-    target: &mut DamageTargetItem,
+    entity: Entity,
+    client_entity: &ClientEntity,
+    health_points: &mut HealthPoints,
+    pending_damage_list: &mut PendingDamageList,
     damage: Damage,
     is_killed: bool,
     client_entity_list: &mut ClientEntityList,
 ) {
-    if target.health_points.hp < damage.amount as i32 {
-        target.health_points.hp = 0;
+    if health_points.hp < damage.amount as i32 {
+        health_points.hp = 0;
     } else {
-        target.health_points.hp -= damage.amount as i32;
+        health_points.hp -= damage.amount as i32;
     }
 
     if is_killed {
         commands
-            .entity(target.entity)
+            .entity(entity)
             .insert(Dead)
             .insert(NextCommand::with_die())
             .remove::<ClientEntity>();
-        client_entity_list.remove(target.client_entity.id);
+        client_entity_list.remove(client_entity.id);
     }
 }
 
 pub fn pending_damage_system(
     mut commands: Commands,
-    mut query_target: Query<DamageTarget>,
+    mut query_target: Query<(
+        Entity,
+        &ClientEntity,
+        &mut HealthPoints,
+        &mut PendingDamageList,
+    )>,
     dead_entities: Query<(), With<Dead>>,
     time: Res<Time>,
     mut client_entity_list: ResMut<ClientEntityList>,
 ) {
     let delta_time = time.delta_seconds();
 
-    for mut target in query_target.iter_mut() {
+    for (entity, client_entity, mut health_points, mut pending_damage_list) in query_target.iter_mut() {
         let mut i = 0;
-        while i < target.pending_damage_list.len() {
-            let pending_damage = &mut target.pending_damage_list[i];
+        while i < pending_damage_list.len() {
+            let pending_damage = &mut pending_damage_list[i];
             pending_damage.age += delta_time;
 
             if pending_damage.is_immediate
@@ -66,10 +62,13 @@ pub fn pending_damage_system(
                     .attacker
                     .map_or(true, |attacker| dead_entities.contains(attacker))
             {
-                let pending_damage = target.pending_damage_list.remove(i);
+                let pending_damage = pending_damage_list.remove(i);
                 apply_damage(
                     &mut commands,
-                    &mut target,
+                    entity,
+                    client_entity,
+                    &mut health_points,
+                    &mut pending_damage_list,
                     pending_damage.damage,
                     pending_damage.is_kill,
                     &mut client_entity_list,

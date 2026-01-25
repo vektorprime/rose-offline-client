@@ -1,15 +1,16 @@
 use bevy::{
-    asset::{load_internal_asset, Handle},
+    asset::{load_internal_asset, Handle, UntypedAssetId, UntypedHandle},
     ecs::{
-        query::ROQueryItem,
         system::{lifetimeless::SRes, SystemParamItem},
     },
+    pbr::MaterialPipeline,
     pbr::{
-        DrawMesh, DrawPrepass, MeshPipelineKey, SetMaterialBindGroup, SetMeshBindGroup,
+        DrawMesh, MeshPipelineKey, SetMaterialBindGroup, SetMeshBindGroup,
         SetMeshViewBindGroup,
     },
-    prelude::{App, HandleUntyped, Image, Material, MaterialPlugin, Mesh, Plugin},
-    reflect::{TypePath, TypeUuid},
+    prelude::{App, Image, Material, MaterialPlugin, Mesh, Plugin},
+    asset::Asset,
+    reflect::TypePath,
     render::{
         extract_resource::ExtractResourcePlugin,
         mesh::MeshVertexBufferLayout,
@@ -22,12 +23,13 @@ use bevy::{
             ShaderStages, SpecializedMeshPipelineError,
         },
     },
+    utils::Uuid,
 };
 
 use crate::resources::{ZoneTime, ZoneTimeState};
 
-pub const SKY_MATERIAL_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 0xadc5cbbc7a53fe);
+pub const SKY_MATERIAL_SHADER_HANDLE_TYPED: Handle<Shader> =
+    Handle::weak_from_u128(0xadc5cbbc7a53fe);
 
 #[derive(Default)]
 pub struct SkyMaterialPlugin {
@@ -38,14 +40,14 @@ impl Plugin for SkyMaterialPlugin {
     fn build(&self, app: &mut App) {
         load_internal_asset!(
             app,
-            SKY_MATERIAL_SHADER_HANDLE,
+            SKY_MATERIAL_SHADER_HANDLE_TYPED,
             "shaders/sky_material.wgsl",
             Shader::from_wgsl
         );
 
         app.add_plugins((
             ExtractResourcePlugin::<ZoneTime>::default(),
-            MaterialPlugin::<SkyMaterial, DrawSkyMaterial, DrawPrepass<SkyMaterial>> {
+            MaterialPlugin::<SkyMaterial> {
                 prepass_enabled: self.prepass_enabled,
                 ..Default::default()
             },
@@ -53,8 +55,7 @@ impl Plugin for SkyMaterialPlugin {
     }
 }
 
-#[derive(Debug, Clone, TypeUuid, TypePath, AsBindGroup)]
-#[uuid = "971a6c96-4516-4ea0-aeb6-349633e7934e"]
+#[derive(Asset, Debug, Clone, TypePath, AsBindGroup)]
 pub struct SkyMaterial {
     #[texture(0)]
     #[sampler(1)]
@@ -66,14 +67,12 @@ pub struct SkyMaterial {
 }
 
 impl Material for SkyMaterial {
-    type PipelineData = ();
-
     fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
-        SKY_MATERIAL_SHADER_HANDLE.typed().into()
+        SKY_MATERIAL_SHADER_HANDLE_TYPED.into()
     }
 
     fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
-        SKY_MATERIAL_SHADER_HANDLE.typed().into()
+        SKY_MATERIAL_SHADER_HANDLE_TYPED.into()
     }
 
     fn alpha_mode(&self) -> bevy::prelude::AlphaMode {
@@ -85,7 +84,7 @@ impl Material for SkyMaterial {
     }
 
     fn specialize(
-        _: &bevy::pbr::MaterialPipeline<Self>,
+        pipeline: &MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
         layout: &MeshVertexBufferLayout,
         key: bevy::pbr::MaterialPipelineKey<Self>,
@@ -122,13 +121,13 @@ impl Material for SkyMaterial {
 struct SetZoneTimePushConstant<const OFFSET: u32>;
 impl<P: PhaseItem, const OFFSET: u32> RenderCommand<P> for SetZoneTimePushConstant<OFFSET> {
     type Param = SRes<ZoneTime>;
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = ();
+    type ViewQuery = ();
+    type ItemQuery = ();
 
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        _: ROQueryItem<'w, Self::ItemWorldQuery>,
+        _: bevy::ecs::query::ROQueryItem<'w, Self::ViewQuery>,
+        _: Option<bevy::ecs::query::ROQueryItem<'w, Self::ItemQuery>>,
         zone_time: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {

@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use bevy::{
-    ecs::query::WorldQuery,
     math::Vec3Swizzles,
     prelude::{Entity, EventReader, EventWriter, Query, Res, With},
 };
@@ -24,42 +23,31 @@ use crate::{
     resources::{GameConnection, GameData, SelectedTarget},
 };
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
-pub struct PlayerQuery<'w> {
-    _player_character: With<PlayerCharacter>,
-
-    entity: Entity,
-
-    bank: Option<&'w Bank>,
-    cooldowns: &'w mut Cooldowns,
-    hotbar: &'w mut Hotbar,
-    inventory: &'w Inventory,
-    position: &'w Position,
-    skill_list: &'w SkillList,
-    team: &'w Team,
-    clan: Option<&'w Clan>,
-    party_info: Option<&'w PartyInfo>,
-}
-
-#[derive(WorldQuery)]
-pub struct SkillTargetQuery<'w> {
-    entity: Entity,
-
-    character_info: Option<&'w CharacterInfo>,
-    client_entity: &'w ClientEntity,
-    command: &'w Command,
-    team: &'w Team,
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn player_command_system(
     mut player_command_events: EventReader<PlayerCommandEvent>,
-    mut query_player: Query<PlayerQuery>,
+    mut query_player: Query<(
+        Entity,
+        Option<&Bank>,
+        &mut Cooldowns,
+        &mut Hotbar,
+        &Inventory,
+        &Position,
+        &SkillList,
+        &Team,
+        Option<&Clan>,
+        Option<&PartyInfo>,
+    ), With<PlayerCharacter>>,
     query_client_entity: Query<&ClientEntity>,
     query_dropped_items: Query<(&ClientEntity, &Position), With<ItemDrop>>,
     query_team: Query<(&ClientEntity, &Team)>,
-    query_skill_target: Query<SkillTargetQuery>,
+    query_skill_target: Query<(
+        Entity,
+        Option<&CharacterInfo>,
+        &ClientEntity,
+        &Command,
+        &Team,
+    )>,
     mut chatbox_events: EventWriter<ChatboxEvent>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
@@ -69,14 +57,13 @@ pub fn player_command_system(
     if query_player_result.is_err() {
         return;
     }
-    let mut player = query_player_result.unwrap();
+    let (player_entity, player_bank, mut player_cooldowns, mut player_hotbar, player_inventory, player_position, player_skill_list, player_team, player_clan, player_party_info) = query_player_result.unwrap();
 
-    for event in player_command_events.iter() {
+    for event in player_command_events.read() {
         let mut event = event.clone();
 
         if let PlayerCommandEvent::UseHotbar(page, index) = event {
-            if let Some(hotbar_slot) = player
-                .hotbar
+            if let Some(hotbar_slot) = player_hotbar
                 .pages
                 .get(page)
                 .and_then(|page| page.get(index))
@@ -98,27 +85,25 @@ pub fn player_command_system(
 
         match event {
             PlayerCommandEvent::UseSkill(skill_slot) => {
-                if let Some(skill_data) = player
-                    .skill_list
+                if let Some(skill_data) = player_skill_list
                     .get_skill(skill_slot)
                     .and_then(|skill_id| game_data.skills.get_skill(skill_id))
                 {
                     let has_skill_cooldown = match &skill_data.cooldown {
                         SkillCooldown::Skill { .. } => {
-                            player.cooldowns.has_skill_cooldown(skill_data.id)
+                            player_cooldowns.has_skill_cooldown(skill_data.id)
                         }
                         SkillCooldown::Group { group, .. } => {
-                            player.cooldowns.has_skill_group_cooldown(group.get())
+                            player_cooldowns.has_skill_group_cooldown(group.get())
                         }
                     };
 
-                    if has_skill_cooldown || player.cooldowns.has_global_cooldown() {
+                    if has_skill_cooldown || player_cooldowns.has_global_cooldown() {
                         chatbox_events.send(ChatboxEvent::System("Waiting...".to_string()));
                         continue;
                     }
 
-                    player
-                        .cooldowns
+                    player_cooldowns
                         .set_global_cooldown(Duration::from_millis(250));
 
                     match skill_data.skill_type {
@@ -140,7 +125,7 @@ pub fn player_command_system(
                                     let distance = item_position
                                         .position
                                         .xy()
-                                        .distance_squared(player.position.xy());
+                                        .distance_squared(player_position.xy());
 
                                     if nearest_item_drop
                                         .as_ref()
@@ -175,7 +160,7 @@ pub fn player_command_system(
                                         query_team.get(selected_target_entity)
                                     {
                                         if target_team.id != Team::DEFAULT_NPC_TEAM_ID
-                                            && target_team.id != player.team.id
+                                            && target_team.id != player_team.id
                                         {
                                             if let Some(game_connection) = game_connection.as_ref()
                                             {
@@ -208,10 +193,10 @@ pub fn player_command_system(
                                     if let Ok((target_client_entity, target_team)) =
                                         query_team.get(selected_target_entity)
                                     {
-                                        if target_team.id == player.team.id {
+                                        if target_team.id == player_team.id {
                                             if let Some(game_connection) = game_connection.as_ref()
                                             {
-                                                let message = if player.party_info.is_none() {
+                                                let message = if player_party_info.is_none() {
                                                     ClientMessage::PartyCreate {
                                                         invited_entity_id: target_client_entity.id,
                                                     }
@@ -297,11 +282,11 @@ pub fn player_command_system(
                         | SkillType::FireBullet
                         | SkillType::AreaTarget => {
                             let target_entity_id = {
-                                if let Ok(target) = query_skill_target
-                                    .get(selected_target.selected.unwrap_or(player.entity))
+                                if let Ok((target_entity, target_character_info, target_client_entity, target_command, target_team)) = query_skill_target
+                                    .get(selected_target.selected.unwrap_or(player_entity))
                                 {
-                                    let target_is_alive = !target.command.is_die();
-                                    let target_is_caster = target.entity == player.entity;
+                                    let target_is_alive = !target_command.is_die();
+                                    let target_is_caster = target_entity == player_entity;
                                     let target_is_valid = match skill_data.target_filter {
                                         SkillTargetFilter::OnlySelf => {
                                             target_is_alive && target_is_caster
@@ -309,11 +294,11 @@ pub fn player_command_system(
                                         SkillTargetFilter::Group => {
                                             target_is_alive
                                                 && (target_is_caster
-                                                    || player.party_info.map_or(
+                                                    || player_party_info.map_or(
                                                         false,
                                                         |party_info| {
                                                             party_info.contains_member(
-                                                                target.client_entity.id,
+                                                                target_client_entity.id,
                                                             )
                                                         },
                                                     ))
@@ -321,10 +306,10 @@ pub fn player_command_system(
                                         SkillTargetFilter::Guild => {
                                             target_is_alive
                                                 && (target_is_caster
-                                                    || target.character_info.map_or(
+                                                    || target_character_info.map_or(
                                                         false,
                                                         |character_info| {
-                                                            player.clan.map_or(false, |clan| {
+                                                            player_clan.map_or(false, |clan| {
                                                                 clan.find_member(
                                                                     &character_info.name,
                                                                 )
@@ -334,63 +319,63 @@ pub fn player_command_system(
                                                     ))
                                         }
                                         SkillTargetFilter::Allied => {
-                                            target_is_alive && target.team.id == player.team.id
+                                            target_is_alive && target_team.id == player_team.id
                                         }
                                         SkillTargetFilter::Monster => {
                                             target_is_alive
                                                 && matches!(
-                                                    target.client_entity.entity_type,
+                                                    target_client_entity.entity_type,
                                                     ClientEntityType::Monster
                                                 )
                                         }
                                         SkillTargetFilter::Enemy => {
                                             target_is_alive
-                                                && target.team.id != Team::DEFAULT_NPC_TEAM_ID
-                                                && target.team.id != player.team.id
+                                                && target_team.id != Team::DEFAULT_NPC_TEAM_ID
+                                                && target_team.id != player_team.id
                                         }
                                         SkillTargetFilter::EnemyCharacter => {
                                             target_is_alive
-                                                && target.team.id != player.team.id
+                                                && target_team.id != player_team.id
                                                 && matches!(
-                                                    target.client_entity.entity_type,
+                                                    target_client_entity.entity_type,
                                                     ClientEntityType::Character
                                                 )
                                         }
                                         SkillTargetFilter::Character => {
                                             target_is_alive
                                                 && matches!(
-                                                    target.client_entity.entity_type,
+                                                    target_client_entity.entity_type,
                                                     ClientEntityType::Character
                                                 )
                                         }
                                         SkillTargetFilter::CharacterOrMonster => {
                                             target_is_alive
                                                 && matches!(
-                                                    target.client_entity.entity_type,
+                                                    target_client_entity.entity_type,
                                                     ClientEntityType::Character
                                                         | ClientEntityType::Monster
                                                 )
                                         }
                                         SkillTargetFilter::DeadAlliedCharacter => {
                                             !target_is_alive
-                                                && target.team.id == player.team.id
+                                                && target_team.id == player_team.id
                                                 && matches!(
-                                                    target.client_entity.entity_type,
+                                                    target_client_entity.entity_type,
                                                     ClientEntityType::Character
                                                 )
                                         }
                                         SkillTargetFilter::EnemyMonster => {
                                             target_is_alive
-                                                && target.team.id != player.team.id
+                                                && target_team.id != player_team.id
                                                 && matches!(
-                                                    target.client_entity.entity_type,
+                                                    target_client_entity.entity_type,
                                                     ClientEntityType::Monster
                                                 )
                                         }
                                     };
-
+    
                                     if target_is_valid {
-                                        Some(target.client_entity.id)
+                                        Some(target_client_entity.id)
                                     } else {
                                         None
                                     }
@@ -422,7 +407,7 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::UseItem(item_slot) => {
-                if let Some(item) = player.inventory.get_item(item_slot) {
+                if let Some(item) = player_inventory.get_item(item_slot) {
                     if item.get_item_type() == ItemType::Consumable {
                         let consumable_item_data =
                             game_data.items.get_consumable_item(item.get_item_number());
@@ -460,8 +445,7 @@ pub fn player_command_system(
                             // Check if item is on cooldown
                             if cooldown_group
                                 .and_then(|cooldown_group| {
-                                    player
-                                        .cooldowns
+                                    player_cooldowns
                                         .get_consumable_cooldown_percent(cooldown_group)
                                 })
                                 .is_some()
@@ -504,8 +488,7 @@ pub fn player_command_system(
                             if let (Some(cooldown_group), Some(cooldown_duration)) =
                                 (cooldown_group, cooldown_duration)
                             {
-                                player
-                                    .cooldowns
+                                player_cooldowns
                                     .set_consumable_cooldown(cooldown_group, cooldown_duration);
                             }
 
@@ -525,7 +508,7 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::EquipAmmo(item_slot) => {
-                if let Some(item) = player.inventory.get_item(item_slot) {
+                if let Some(item) = player_inventory.get_item(item_slot) {
                     let ammo_index = if let Some(item_data) =
                         game_data.items.get_base_item(item.get_item_reference())
                     {
@@ -553,7 +536,7 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::EquipEquipment(item_slot) => {
-                if let Some(item) = player.inventory.get_item(item_slot) {
+                if let Some(item) = player_inventory.get_item(item_slot) {
                     let equipment_index = match item.get_item_type() {
                         ItemType::Face => Some(EquipmentIndex::Face),
                         ItemType::Head => Some(EquipmentIndex::Head),
@@ -594,7 +577,7 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::EquipVehicle(item_slot) => {
-                if let Some(item) = player.inventory.get_item(item_slot) {
+                if let Some(item) = player_inventory.get_item(item_slot) {
                     let vehicle_part_index = if let Some(item_data) =
                         game_data.items.get_base_item(item.get_item_reference())
                     {
@@ -664,7 +647,7 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::DropItem(item_slot) => {
-                if let Some(item) = player.inventory.get_item(item_slot) {
+                if let Some(item) = player_inventory.get_item(item_slot) {
                     // TODO: if item.get_quantity() > 1, show number input dialog for quantity
                     if let Some(game_connection) = game_connection.as_ref() {
                         game_connection
@@ -688,7 +671,7 @@ pub fn player_command_system(
             PlayerCommandEvent::Attack(entity) => {
                 if let Ok((target_client_entity, target_team)) = query_team.get(entity) {
                     if target_team.id != Team::DEFAULT_NPC_TEAM_ID
-                        && target_team.id != player.team.id
+                        && target_team.id != player_team.id
                     {
                         if let Some(game_connection) = game_connection.as_ref() {
                             game_connection
@@ -719,7 +702,7 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::SetHotbar(page, page_index, hotbar_slot) => {
-                if let Some(hotbar_page) = player.hotbar.pages.get_mut(page) {
+                if let Some(hotbar_page) = player_hotbar.pages.get_mut(page) {
                     if let Some(hotbar_page_slot) = hotbar_page.get_mut(page_index) {
                         *hotbar_page_slot = hotbar_slot.clone();
                     }
@@ -729,14 +712,14 @@ pub fn player_command_system(
                     game_connection
                         .client_message_tx
                         .send(ClientMessage::SetHotbarSlot {
-                            slot_index: page * player.hotbar.pages[0].len() + page_index,
+                            slot_index: page * player_hotbar.pages[0].len() + page_index,
                             slot: hotbar_slot,
                         })
                         .ok();
                 }
             }
             PlayerCommandEvent::BankDepositItem(item_slot) => {
-                if let Some(item) = player.inventory.get_item(item_slot) {
+                if let Some(item) = player_inventory.get_item(item_slot) {
                     // TODO: if item.get_quantity() > 1, show number input dialog for quantity
                     if let Some(game_connection) = game_connection.as_ref() {
                         game_connection
@@ -751,8 +734,7 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::BankWithdrawItem(bank_slot) => {
-                if let Some(item) = player
-                    .bank
+                if let Some(item) = player_bank
                     .and_then(|bank| bank.slots.get(bank_slot))
                     .and_then(|x| x.as_ref())
                 {

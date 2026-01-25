@@ -1,6 +1,10 @@
-use bevy::prelude::{
-    Commands, ComputedVisibility, DespawnRecursiveExt, Entity, EventWriter, GlobalTransform, Local,
-    Query, Res, ResMut, Transform, Visibility, With,
+use bevy::{
+    ecs::event::EventWriter,
+    prelude::{
+        Commands, DespawnRecursiveExt, Entity, GlobalTransform, Local,
+        Query, Res, ResMut, Transform, Visibility, With,
+    },
+    render::view::{ViewVisibility, InheritedVisibility},
 };
 use bevy_egui::{egui, EguiContexts};
 use regex::Regex;
@@ -118,15 +122,13 @@ pub fn ui_debug_effect_list_system(
                     });
                 })
                 .body(|body| {
-                    body.rows(
-                        20.0,
-                        ui_state.filtered_effects.len(),
-                        |row_index, mut row| {
-                            let effect_file_id = ui_state.filtered_effects[row_index];
-                            let effect_file_path = game_data
-                                .effect_database
-                                .get_effect_file(effect_file_id)
-                                .unwrap();
+                    let mut row_index = 0;
+                    body.rows(20.0, ui_state.filtered_effects.len(), |mut row| {
+                        let effect_file_id = ui_state.filtered_effects[row_index];
+                        let effect_file_path = game_data
+                            .effect_database
+                            .get_effect_file(effect_file_id)
+                            .unwrap();
 
                             row.col(|ui| {
                                 ui.label(format!("{}", effect_file_id.get()));
@@ -135,6 +137,7 @@ pub fn ui_debug_effect_list_system(
                             row.col(|ui| {
                                 ui.label(effect_file_path.path().to_string_lossy().as_ref());
                             });
+                            row_index += 1;
 
                             row.col(|ui| {
                                 if ui.button("View").clicked() {
@@ -162,7 +165,7 @@ pub fn ui_debug_effect_list_system(
                                             transform,
                                             GlobalTransform::default(),
                                             Visibility::default(),
-                                            ComputedVisibility::default(),
+                                            ViewVisibility::default(), InheritedVisibility::default(),
                                         ))
                                         .id();
 

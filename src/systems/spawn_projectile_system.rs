@@ -1,9 +1,9 @@
 use bevy::{
     prelude::{
-        Commands, ComputedVisibility, EventReader, EventWriter, GlobalTransform, Query, Res,
+        Commands, EventReader, EventWriter, GlobalTransform, Query, Res,
         Transform, Visibility,
     },
-    render::mesh::skinning::SkinnedMesh,
+    render::{mesh::skinning::SkinnedMesh, view::InheritedVisibility, view::ViewVisibility},
 };
 
 use crate::{
@@ -21,7 +21,7 @@ pub fn spawn_projectile_system(
     mut spawn_effect_events: EventWriter<SpawnEffectEvent>,
     game_data: Res<GameData>,
 ) {
-    for event in events.iter() {
+    for event in events.read() {
         let mut source_global_transform = None;
 
         if let Some(dummy_bone_id) = event.source_dummy_bone_id {
@@ -68,7 +68,7 @@ pub fn spawn_projectile_system(
                 Transform::from_translation(source_global_transform.translation()),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
+                ViewVisibility::default(), InheritedVisibility::default(),
             ))
             .id();
 

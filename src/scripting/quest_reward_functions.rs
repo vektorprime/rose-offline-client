@@ -3,7 +3,6 @@ use rose_file_readers::{QsdItem, QsdReward, QsdRewardOperator, QsdVariableType};
 use rose_game_common::components::ActiveQuest;
 
 use crate::{
-    events::{ChatboxEvent, SystemFuncEvent},
     scripting::{
         quest::{get_quest_variable, set_quest_variable},
         QuestFunctionContext, ScriptFunctionContext, ScriptFunctionResources,
@@ -61,19 +60,8 @@ fn quest_reward_add_item(
                 })
                 .is_some()
             {
-                if let Some(item_data) = script_resources
-                    .game_data
-                    .items
-                    .get_base_item(item_reference)
-                {
-                    script_context
-                        .chatbox_events
-                        .send(ChatboxEvent::Quest(format!(
-                            "You have earned {}.",
-                            item_data.name
-                        )));
-                }
-
+                // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
+                // Need to find alternative approach for sending chatbox events from script functions
                 return true;
             }
         }
@@ -146,19 +134,8 @@ fn quest_reward_remove_selected_quest(
 
     if let Some(quest_index) = quest_context.selected_quest_index {
         if let Some(quest_slot) = quest_state.get_quest_slot_mut(quest_index) {
-            if let Some(quest_data) = quest_slot.as_ref().and_then(|active_quest| {
-                script_resources
-                    .game_data
-                    .quests
-                    .get_quest_data(active_quest.quest_id)
-            }) {
-                script_context
-                    .chatbox_events
-                    .send(ChatboxEvent::Quest(format!(
-                        "Completed quest \"{}\".",
-                        quest_data.name
-                    )));
-            }
+            // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
+            // Need to find alternative approach for sending chatbox events from script functions
 
             *quest_slot = None;
             return true;
@@ -184,17 +161,8 @@ fn quest_reward_add_quest(
             quest_context.selected_quest_index = Some(quest_index);
         }
 
-        if let Some(quest_data) = script_resources.game_data.quests.get_quest_data(quest_id) {
-            script_context
-                .chatbox_events
-                .send(ChatboxEvent::Quest(format!(
-                    "Started quest \"{}\".",
-                    quest_data.name
-                )));
-            script_context
-                .chatbox_events
-                .send(ChatboxEvent::Quest(quest_data.description.to_string()));
-        }
+        // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
+        // Need to find alternative approach for sending chatbox events from script functions
 
         return true;
     }
@@ -220,18 +188,8 @@ fn quest_reward_change_selected_quest_id(
                     ActiveQuest::new(quest_id, quest_get_expire_time(script_resources, quest_id));
             }
 
-            if let Some(quest_data) = script_resources.game_data.quests.get_quest_data(quest_id) {
-                script_context
-                    .chatbox_events
-                    .send(ChatboxEvent::Quest(format!(
-                        "Started quest \"{}\"",
-                        quest_data.name
-                    )));
-
-                script_context
-                    .chatbox_events
-                    .send(ChatboxEvent::Quest(quest_data.description.to_string()));
-            }
+            // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
+            // Need to find alternative approach for sending chatbox events from script functions
 
             return true;
         }
@@ -247,9 +205,13 @@ fn quest_reward_set_health_mana_percent(
     health_percent: i32,
     mana_percent: i32,
 ) -> bool {
-    let mut character = script_context.query_player.single_mut();
-    character.health_points.hp = (character.ability_values.get_max_health() * health_percent) / 100;
-    character.mana_points.mp = (character.ability_values.get_max_mana() * mana_percent) / 100;
+    let player_stats = script_context.query_player_stats.single();
+    let mut player_mutable = script_context.query_player_mutable.single_mut();
+
+    // Tuple structure for query_player_stats: (AbilityValues, CharacterInfo, BasicStats, ExperiencePoints, Level, UnionMembership)
+    // Tuple structure for query_player_mutable: (HealthPoints, ManaPoints, Equipment, Inventory, MoveSpeed, SkillPoints, Stamina, StatPoints, Team)
+    player_mutable.0.hp = (player_stats.0.get_max_health() * health_percent) / 100;
+    player_mutable.1.mp = (player_stats.0.get_max_mana() * mana_percent) / 100;
     true
 }
 
@@ -317,18 +279,8 @@ fn quest_reward_call_lua_function(
     _quest_context: &mut QuestFunctionContext,
     name: String,
 ) -> bool {
-    script_context
-        .script_system_events
-        .send(SystemFuncEvent::CallFunction(
-            name,
-            vec![script_context
-                .query_player
-                .get_single()
-                .ok()
-                .and_then(|player| player.client_entity.cloned())
-                .map_or(0, |client_entity| client_entity.id.0)
-                .into()],
-        ));
+    // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
+    // Need to find alternative approach for sending system func events from script functions
     true
 }
 

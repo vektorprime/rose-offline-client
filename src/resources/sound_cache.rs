@@ -30,7 +30,7 @@ impl SoundCache {
             return cached;
         }
 
-        let handle = asset_server.load(sound_data.path.path());
+        let handle = asset_server.load(sound_data.path.path().to_string_lossy().into_owned());
         self.set(sound_data.id, handle.clone());
         handle
     }

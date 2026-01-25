@@ -72,14 +72,6 @@ impl DrawWidget for Editbox {
         .password(self.password != 0)
         .text_color(egui::Color32::WHITE);
 
-        let mut number_input_filter = |text: &str| text.chars().all(|c| c.is_ascii_digit());
-
-        let text_edit = if self.number != 0 {
-            text_edit.input_filter(&mut number_input_filter)
-        } else {
-            text_edit
-        };
-
         let response = ui
             .allocate_ui_at_rect(rect, |ui| {
                 ui.with_layout(

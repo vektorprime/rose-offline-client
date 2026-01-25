@@ -13,7 +13,7 @@ use crate::{
     events::{MessageBoxEvent, PersonalStoreEvent},
     resources::{GameConnection, GameData, UiResources},
     ui::{
-        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
+        tooltips::PlayerTooltipQuery,
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop,
@@ -54,7 +54,7 @@ fn ui_add_store_item_slot(
     price: &Money,
     is_sell_item: bool,
     slot_index: usize,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player_tooltip_data: Option<&PlayerTooltipQuery<'_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     message_box_events: &mut EventWriter<MessageBoxEvent>,
@@ -136,7 +136,7 @@ pub fn ui_personal_store_system(
 ) {
     let ui_state = &mut *ui_state;
 
-    for event in personal_store_events.iter() {
+    for event in personal_store_events.read() {
         match event {
             &PersonalStoreEvent::OpenEntityStore(entity) => {
                 // Close previous store

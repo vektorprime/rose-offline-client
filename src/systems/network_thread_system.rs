@@ -18,7 +18,7 @@ pub fn network_thread_system(
     network_thread: Res<NetworkThread>,
     mut network_events: EventReader<NetworkEvent>,
 ) {
-    for event in network_events.iter() {
+    for event in network_events.read() {
         match *event {
             NetworkEvent::ConnectLogin { ref ip, port } => {
                 let (server_message_tx, server_message_rx) =

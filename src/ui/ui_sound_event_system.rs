@@ -27,7 +27,7 @@ pub fn ui_sound_event_system(
     game_data: Res<GameData>,
     sound_cache: ResMut<SoundCache>,
 ) {
-    for event in ui_sound_events.iter() {
+    for event in ui_sound_events.read() {
         if let Some(sound_data) = game_data.sounds.get_sound(event.sound_id) {
             commands.spawn((
                 SoundCategory::Ui,

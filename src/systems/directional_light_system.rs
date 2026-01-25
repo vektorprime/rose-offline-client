@@ -1,5 +1,5 @@
 use bevy::{
-    pbr::{Cascade, Cascades, DirectionalLightShadowMap},
+    pbr::DirectionalLightShadowMap,
     prelude::{Camera, DirectionalLight, Entity, GlobalTransform, Mat4, Query, Res, Vec3, With},
 };
 
@@ -10,7 +10,7 @@ const PROJECTION_HALF_DEPTH: f32 = 100.0;
 
 pub fn directional_light_system(
     query_player: Query<&GlobalTransform, With<PlayerCharacter>>,
-    mut query_light: Query<(&GlobalTransform, &mut Cascades), With<DirectionalLight>>,
+    mut query_light: Query<&GlobalTransform, With<DirectionalLight>>,
     views: Query<(Entity, &GlobalTransform), With<Camera>>,
     shadow_map: Res<DirectionalLightShadowMap>,
 ) {
@@ -22,7 +22,7 @@ pub fn directional_light_system(
         return;
     };
 
-    if let Ok((light_transform, mut cascades)) = query_light.get_single_mut() {
+    if let Ok(light_transform) = query_light.get_single() {
         let light_direction = light_transform.forward();
         let view = Mat4::look_at_rh(Vec3::ZERO, light_direction, Vec3::Y);
         let projected = view.mul_vec4(lookat_position.extend(1.0));
@@ -39,17 +39,8 @@ pub fn directional_light_system(
         let view_transform = light_transform.compute_matrix();
         let view_projection = projection * view_transform.inverse();
 
-        cascades.cascades.clear();
-        for (view_entity, _) in views.iter() {
-            cascades.cascades.insert(
-                view_entity,
-                vec![Cascade {
-                    view_transform,
-                    projection,
-                    view_projection,
-                    texel_size: (PROJECTION_HALF_SIZE * 2.0) / (shadow_map.size as f32),
-                }],
-            );
-        }
+        // In Bevy 0.13, cascades are built automatically by the built-in systems
+        // Manual cascade management is no longer supported
+        let _ = (shadow_map, view_transform, view_projection, views);
     }
 }

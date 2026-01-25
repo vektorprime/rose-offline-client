@@ -1,8 +1,8 @@
 use bevy::{
-    ecs::{query::WorldQuery, system::EntityCommands},
+    ecs::{event::EventWriter, system::EntityCommands},
     hierarchy::DespawnRecursiveExt,
     math::{Vec3, Vec3Swizzles},
-    prelude::{AssetServer, Commands, Entity, EventWriter, Handle, Mut, Or, Query, Res, With},
+    prelude::{AssetServer, Commands, Entity, Handle, Mut, Or, Query, Res, With},
 };
 use rand::prelude::SliceRandom;
 
@@ -307,11 +307,10 @@ fn get_vehicle_move_animation_speed(move_speed: &MoveSpeed) -> f32 {
     (move_speed.speed + 500.0) / 1000.0
 }
 
-#[derive(WorldQuery)]
-pub struct QueryAttackTarget<'w> {
+pub struct QueryAttackTarget {
     entity: Entity,
-    position: &'w Position,
-    dead: Option<&'w Dead>,
+    position: Position,
+    dead: Option<Dead>,
 }
 
 pub fn command_system(
@@ -338,7 +337,7 @@ pub fn command_system(
     mut query_animation: Query<Option<&mut SkeletalAnimation>>,
     query_vehicle_model: Query<&VehicleModel>,
     query_move_target: Query<(&Position, &ClientEntity)>,
-    query_attack_target: Query<QueryAttackTarget>,
+    query_attack_target: Query<(Entity, &Position, Option<&Dead>)>,
     query_npc: Query<&Npc>,
     query_personal_store: Query<&PersonalStore>,
     asset_server: Res<AssetServer>,
@@ -498,7 +497,7 @@ pub fn command_system(
                             update_active_motion(
                                 &mut commands.entity(active_motion_entity),
                                 &mut active_motion,
-                                asset_server.load(motion_data.path.path()),
+                                asset_server.load(motion_data.path.path().to_string_lossy().into_owned()),
                                 1.0,
                                 false,
                             );
@@ -529,7 +528,7 @@ pub fn command_system(
                             update_active_motion(
                                 &mut commands.entity(active_motion_entity),
                                 &mut active_motion,
-                                asset_server.load(motion_data.path.path()),
+                                asset_server.load(motion_data.path.path().to_string_lossy().into_owned()),
                                 1.0,
                                 true,
                             );
@@ -799,21 +798,21 @@ pub fn command_system(
             &mut Command::Attack(CommandAttack {
                 target: target_entity,
             }) => {
-                let target = if let Ok(target) = query_attack_target.get(target_entity) {
-                    target
+                let target = if let Ok((target_entity, target_position, target_dead)) = query_attack_target.get(target_entity) {
+                    (target_entity, target_position, target_dead)
                 } else {
                     // Invalid target, stop attacking
                     *next_command = NextCommand::with_stop();
                     continue;
                 };
 
-                if target.dead.is_some() {
+                if target.2.is_some() {
                     // Target is dead, stop attacking
                     *next_command = NextCommand::with_stop();
                     continue;
                 }
 
-                let distance = position.position.xy().distance(target.position.xy());
+                let distance = position.position.xy().distance(target.1.xy());
 
                 let attack_range = ability_values.get_attack_range() as f32;
                 if distance < attack_range {
@@ -829,7 +828,7 @@ pub fn command_system(
                     {
                         // Update rotation to ensure facing enemy
                         facing_direction
-                            .set_desired_vector(target.position.position - position.position);
+                            .set_desired_vector(target.1.position - position.position);
 
                         // Update command state
                         *command = Command::with_attack(target_entity);
@@ -863,7 +862,7 @@ pub fn command_system(
                     let motion = get_move_animation(move_mode, character_model, npc_model, vehicle);
                     if let Some(motion) = motion {
                         *command = Command::with_move(
-                            target.position.position,
+                            target.1.position,
                             Some(target_entity),
                             Some(MoveMode::Run),
                         );
@@ -952,7 +951,7 @@ pub fn command_system(
                     update_active_motion(
                         &mut commands.entity(active_motion_entity),
                         &mut active_motion,
-                        asset_server.load(motion_data.path.path()),
+                        asset_server.load(motion_data.path.path().to_string_lossy().into_owned()),
                         1.0,
                         false,
                     );
@@ -998,15 +997,15 @@ pub fn command_system(
                 if let Some(skill_data) = game_data.skills.get_skill(skill_id) {
                     let (target_position, target_entity) = match skill_target {
                         Some(CommandCastSkillTarget::Entity(target_entity)) => {
-                            let target = if let Ok(target) = query_attack_target.get(target_entity)
+                            let target = if let Ok((target_entity, target_position, target_dead)) = query_attack_target.get(target_entity)
                             {
-                                target
+                                (target_entity, target_position, target_dead)
                             } else {
                                 // Invalid target, stop casting skill
                                 *next_command = NextCommand::with_stop();
                                 continue;
                             };
-                            (Some(target.position.position), Some(target.entity))
+                            (Some(target.1.position), Some(target.0))
                         }
                         Some(CommandCastSkillTarget::Position(target_position)) => (
                             Some(Vec3::new(target_position.x, target_position.y, 0.0)),
@@ -1054,7 +1053,7 @@ pub fn command_system(
                             update_active_motion(
                                 &mut commands.entity(active_motion_entity),
                                 &mut active_motion,
-                                asset_server.load(motion_data.path.path()),
+                                asset_server.load(motion_data.path.path().to_string_lossy().into_owned()),
                                 skill_data.casting_motion_speed,
                                 false,
                             );

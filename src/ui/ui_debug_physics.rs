@@ -1,12 +1,13 @@
 use bevy::{
     hierarchy::BuildChildren,
-    input::Input,
     math::Vec3,
     pbr::{AlphaMode, StandardMaterial},
     prelude::{
-        shape, Assets, Camera, Camera3d, Color, Commands, ComputedVisibility, GlobalTransform,
+        Assets, ButtonInput, Camera, Camera3d, Color, Commands, GlobalTransform,
         Handle, KeyCode, Local, Mesh, Query, Res, ResMut, Time, Transform, Visibility, With,
     },
+    math::primitives::Sphere,
+    render::view::{ViewVisibility, InheritedVisibility},
     window::{PrimaryWindow, Window},
 };
 use bevy_egui::{egui, EguiContexts};
@@ -98,7 +99,7 @@ pub fn ui_debug_physics_system(
     mut rapier_configuration: ResMut<RapierConfiguration>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    key_code_input: Res<Input<KeyCode>>,
+    key_code_input: Res<ButtonInput<KeyCode>>,
     rapier_context: Res<RapierContext>,
     time: Res<Time>,
     query_primary_window: Query<&Window, With<PrimaryWindow>>,
@@ -160,7 +161,7 @@ pub fn ui_debug_physics_system(
         });
 
     if ui_state_debug_physics.spawn_balls
-        && key_code_input.pressed(KeyCode::B)
+        && key_code_input.pressed(KeyCode::Digit1)
         && !egui_context.ctx_mut().wants_keyboard_input()
         && !egui_context.ctx_mut().wants_pointer_input()
     {
@@ -186,7 +187,7 @@ pub fn ui_debug_physics_system(
             if let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
                 if let Some((_, distance)) = rapier_context.cast_ray(
                     ray.origin,
-                    ray.direction,
+                    *ray.direction,
                     10000000.0,
                     false,
                     QueryFilter::new().groups(CollisionGroups::new(
@@ -208,14 +209,7 @@ pub fn ui_debug_physics_system(
                             let ball_radius = ui_state_debug_physics.ball_radius;
                             ui_state_debug_physics.ball_meshes.push((
                                 ball_radius,
-                                meshes.add(
-                                    shape::Icosphere {
-                                        radius: ball_radius,
-                                        ..Default::default()
-                                    }
-                                    .try_into()
-                                    .unwrap(),
-                                ),
+                                meshes.add(Sphere::new(ball_radius)),
                             ));
                             ui_state_debug_physics.ball_meshes.last().unwrap().1.clone()
                         };
@@ -242,7 +236,7 @@ pub fn ui_debug_physics_system(
                                 )),
                                 GlobalTransform::default(),
                                 Visibility::default(),
-                                ComputedVisibility::default(),
+                                ViewVisibility::default(), InheritedVisibility::default(),
                                 CollisionGroups::new(
                                     COLLISION_GROUP_PHYSICS_TOY,
                                     bevy_rapier3d::geometry::Group::all(),
@@ -261,7 +255,7 @@ pub fn ui_debug_physics_system(
                                 )),
                                 GlobalTransform::default(),
                                 Visibility::default(),
-                                ComputedVisibility::default(),
+                                ViewVisibility::default(), InheritedVisibility::default(),
                             ))
                             .id();
 
@@ -274,7 +268,7 @@ pub fn ui_debug_physics_system(
         }
     }
 
-    if !key_code_input.pressed(KeyCode::B) {
+    if !key_code_input.pressed(KeyCode::KeyB) {
         ui_state_debug_physics.spawn_timer = ui_state_debug_physics.spawn_interval;
     }
 }

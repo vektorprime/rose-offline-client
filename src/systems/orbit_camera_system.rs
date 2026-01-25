@@ -1,7 +1,7 @@
 use bevy::{
     input::{
         mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
-        Input,
+        ButtonInput,
     },
     math::{Quat, Vec2, Vec3},
     prelude::{
@@ -12,6 +12,7 @@ use bevy::{
 };
 use bevy_egui::EguiContexts;
 use bevy_rapier3d::{
+    geometry::ShapeCastOptions,
     plugin::RapierContext,
     prelude::{Collider, CollisionGroups, QueryFilter},
 };
@@ -67,7 +68,7 @@ pub fn orbit_camera_system(
     mut mouse_wheel_reader: EventReader<MouseWheel>,
     mut query_window: Query<&mut Window, With<PrimaryWindow>>,
     mut egui_ctx: EguiContexts,
-    mouse_buttons: Res<Input<MouseButton>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
     rapier_context: Res<RapierContext>,
 ) {
@@ -114,7 +115,7 @@ pub fn orbit_camera_system(
 
     if right_pressed {
         if allow_mouse_input {
-            for event in mouse_motion_events.iter() {
+            for event in mouse_motion_events.read() {
                 drag_delta += event.delta;
             }
 
@@ -140,7 +141,7 @@ pub fn orbit_camera_system(
     }
 
     if allow_mouse_input {
-        for event in mouse_wheel_reader.iter() {
+        for event in mouse_wheel_reader.read() {
             match event.unit {
                 MouseScrollUnit::Line => zoom_multiplier *= 1.0 - event.y * 0.10,
                 MouseScrollUnit::Pixel => zoom_multiplier *= 1.0 - event.y * 0.0005,
@@ -163,13 +164,18 @@ pub fn orbit_camera_system(
             Quat::default(),
             ray_direction,
             &Collider::ball(ball_radius),
-            orbit_camera.max_distance,
+            ShapeCastOptions {
+                max_time_of_impact: orbit_camera.max_distance,
+                target_distance: 0.0,
+                compute_impact_geometry_on_penetration: false,
+                stop_at_penetration: false,
+            },
             QueryFilter::new().groups(CollisionGroups::new(
                 COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_COLLIDABLE,
                 !COLLISION_GROUP_PHYSICS_TOY,
             )),
         ) {
-            camera_collide_distance = distance.toi;
+            camera_collide_distance = distance.time_of_impact;
         }
     }
 

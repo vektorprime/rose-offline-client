@@ -1,7 +1,4 @@
-use bevy::{
-    ecs::query::WorldQuery,
-    prelude::{Assets, EventWriter, Local, Query, Res, ResMut, With},
-};
+use bevy::prelude::{Assets, Entity, EventWriter, Local, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_data::AbilityType;
@@ -63,14 +60,14 @@ fn ui_add_skill_list_slot(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
     skill_slot: SkillSlot,
-    player: &PlayerQueryItem,
+    player: &(&CharacterInfo, &SkillList, &SkillPoints, &Cooldowns),
     player_tooltip_data: Option<&PlayerTooltipQueryItem>,
     game_data: &GameData,
     ui_resources: &UiResources,
     ui_state_dnd: &mut UiStateDragAndDrop,
     player_command_events: &mut EventWriter<PlayerCommandEvent>,
 ) {
-    let skill = player.skill_list.get_skill(skill_slot);
+    let skill = player.1.get_skill(skill_slot);
     let mut dropped_item = None;
     let response = ui
         .allocate_ui_at_rect(
@@ -80,7 +77,7 @@ fn ui_add_skill_list_slot(
                     DragAndDropSlot::with_skill(
                         DragAndDropId::Skill(skill_slot),
                         skill.as_ref(),
-                        Some(player.cooldowns),
+                        Some(player.3),
                         game_data,
                         ui_resources,
                         |_| false,
@@ -116,14 +113,6 @@ fn ui_add_skill_list_slot(
     }
 }
 
-#[derive(WorldQuery)]
-pub struct PlayerQuery<'w> {
-    character_info: &'w CharacterInfo,
-    skill_list: &'w SkillList,
-    skill_points: &'w SkillPoints,
-    cooldowns: &'w Cooldowns,
-}
-
 pub fn ui_skill_list_system(
     mut egui_context: EguiContexts,
     mut ui_state_skill_list: Local<UiStateSkillList>,
@@ -131,7 +120,7 @@ pub fn ui_skill_list_system(
     mut ui_state_windows: ResMut<UiStateWindows>,
     mut ui_sound_events: EventWriter<UiSoundEvent>,
     mut player_command_events: EventWriter<PlayerCommandEvent>,
-    query_player: Query<PlayerQuery, With<PlayerCharacter>>,
+    mut query_player: Query<(Entity, &CharacterInfo, &SkillList, &SkillPoints, &Cooldowns), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
@@ -150,6 +139,8 @@ pub fn ui_skill_list_system(
         return;
     };
     let player_tooltip_data = query_player_tooltip.get_single().ok();
+
+    let (_, character_info, skill_list, skill_points, cooldowns) = player;
 
     let listbox_extent =
         if let Some(Widget::ZListbox(listbox)) = dialog.get_widget(IID_ZLISTBOX_BASIC) {
@@ -201,7 +192,7 @@ pub fn ui_skill_list_system(
                             ),
                         ),
                     ],
-                    visible: &mut [(IID_BTN_OPEN_SKILLTREE, player.character_info.job != 0)],
+                    visible: &mut [(IID_BTN_OPEN_SKILLTREE, character_info.job != 0)],
                     label: &mut [(IID_BTN_OPEN_SKILLTREE, "Skill Tree")],
                     response: &mut [
                         (IID_BTN_CLOSE, &mut response_close_button),
@@ -234,7 +225,7 @@ pub fn ui_skill_list_system(
                         let start_x = listbox_pos.x + 16.0;
                         let start_y = listbox_pos.y + 44.0 * i as f32;
 
-                        let skill = player.skill_list.get_skill(skill_slot);
+                        let skill = skill_list.get_skill(skill_slot);
                         let skill_data = skill
                             .as_ref()
                             .and_then(|skill| game_data.skills.get_skill(*skill));
@@ -273,7 +264,7 @@ pub fn ui_skill_list_system(
                                                     if matches!(ability_type, AbilityType::Mana) {
                                                         let use_mana_rate = (100
                                                             - player_tooltip_data
-                                                                .ability_values
+                                                                .0
                                                                 .get_save_mana())
                                                             as f32
                                                             / 100.0;
@@ -284,26 +275,25 @@ pub fn ui_skill_list_system(
                                                     if let Some(current_value) =
                                                         ability_values_get_value(
                                                             ability_type,
-                                                            player_tooltip_data.ability_values,
+                                                            player_tooltip_data.0,
                                                             Some(
-                                                                player_tooltip_data.character_info,
+                                                                player_tooltip_data.1,
                                                             ),
                                                             Some(
-                                                                player_tooltip_data
-                                                                    .experience_points,
+                                                                player_tooltip_data.2,
                                                             ),
-                                                            Some(player_tooltip_data.health_points),
-                                                            Some(player_tooltip_data.inventory),
-                                                            Some(player_tooltip_data.level),
-                                                            Some(player_tooltip_data.mana_points),
-                                                            Some(player_tooltip_data.move_speed),
-                                                            Some(player_tooltip_data.skill_points),
-                                                            Some(player_tooltip_data.stamina),
-                                                            Some(player_tooltip_data.stat_points),
-                                                            Some(player_tooltip_data.team),
+                                                            Some(player_tooltip_data.3),
+                                                            Some(player_tooltip_data.5),
+                                                            Some(player_tooltip_data.6),
+                                                            Some(player_tooltip_data.7),
+                                                            Some(player_tooltip_data.8),
+                                                            Some(player_tooltip_data.10),
+                                                            Some(player_tooltip_data.11),
+                                                            Some(player_tooltip_data.12),
+                                                            Some(player_tooltip_data.13),
                                                             Some(
                                                                 player_tooltip_data
-                                                                    .union_membership,
+                                                                    .14,
                                                             ),
                                                         )
                                                     {
@@ -336,7 +326,7 @@ pub fn ui_skill_list_system(
                             ui,
                             ui.min_rect().min + egui::vec2(start_x, start_y + 3.0),
                             skill_slot,
-                            &player,
+                            &(character_info, skill_list, skill_points, cooldowns),
                             player_tooltip_data.as_ref(),
                             &game_data,
                             &ui_resources,
@@ -347,7 +337,7 @@ pub fn ui_skill_list_system(
 
                     ui.add_label_at(
                         egui::pos2(40.0, dialog.height - 25.0),
-                        &format!("{}", player.skill_points.points),
+                        &format!("{}", skill_points.points),
                     );
                 },
             );

@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use bevy::{
+    asset::Assets,
     math::{Vec2, Vec3Swizzles},
     prelude::{
-        AssetServer, Assets, Camera3d, EventWriter, Handle, Image, Local, Query, Res, Transform,
+        AssetServer, Camera3d, EventWriter, Handle, Image, Local, Query, Res, Transform,
         Vec3, With, Without,
     },
 };
@@ -72,6 +73,8 @@ fn generate_text_galley(
         underline: egui::Stroke::NONE,
         strikethrough: egui::Stroke::NONE,
         valign: egui::Align::Center,
+        extra_letter_spacing: 0.0,
+        line_height: None,
     };
 
     let mut text_job = egui::text::LayoutJob::single_section(text, text_format);
@@ -128,7 +131,7 @@ pub fn ui_minimap_system(
             if let Some(minimap_path) =
                 zone_data.and_then(|zone_data| zone_data.minimap_path.as_ref())
             {
-                ui_state.minimap_image = asset_server.load(minimap_path.path());
+                ui_state.minimap_image = asset_server.load(minimap_path.path().to_string_lossy().into_owned());
                 ui_state.minimap_texture =
                     egui_context.add_image(ui_state.minimap_image.clone_weak());
             }
@@ -156,7 +159,7 @@ pub fn ui_minimap_system(
 
     if ui_state.minimap_image_size.is_none() {
         if let Some(minimap_image) = images.get(&ui_state.minimap_image) {
-            let minimap_image_size = minimap_image.size();
+            let minimap_image_size = Vec2::new(minimap_image.size()[0] as f32, minimap_image.size()[1] as f32);
             ui_state.minimap_image_size = Some(minimap_image_size);
 
             if let Some(zone_data) = game_data.zone_list.get_zone(current_zone.id) {

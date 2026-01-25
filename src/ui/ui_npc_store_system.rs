@@ -1,5 +1,4 @@
 use bevy::{
-    ecs::query::WorldQuery,
     math::Vec3Swizzles,
     prelude::{
         Assets, Entity, EventReader, EventWriter, Events, Local, Query, Res, ResMut, With, World,
@@ -86,7 +85,7 @@ fn ui_add_store_item_slot(
     store_tab_index: usize,
     store_tab_slot: usize,
     buy_list: &mut [Option<PendingBuyItem>; NUM_BUY_ITEMS],
-    player: Option<&NpcStorePlayerWorldQueryItem>,
+    player: Option<&(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
     player_tooltip_data: Option<&PlayerTooltipQueryItem>,
     game_data: &GameData,
     ui_resources: &UiResources,
@@ -115,7 +114,7 @@ fn ui_add_store_item_slot(
             .calculate_npc_store_item_buy_price(
                 &game_data.items,
                 *item_reference,
-                player.map_or(0, |x| x.ability_values.get_npc_store_buy_rate()),
+                player.map_or(0, |x| x.0.get_npc_store_buy_rate()),
                 world_rates.map_or(100, |x| x.item_price_rate),
                 world_rates.map_or(100, |x| x.town_price_rate),
             )
@@ -158,11 +157,11 @@ fn ui_add_store_item_slot(
                         commands.add(move |world: &mut World| {
                             let mut npc_store_events =
                                 world.resource_mut::<Events<NpcStoreEvent>>();
-                            npc_store_events.send(NpcStoreEvent::AddToBuyList {
+                            let _ = npc_store_events.send(NpcStoreEvent::AddToBuyList {
                                 store_tab_index,
                                 store_tab_slot,
                                 quantity,
-                            })
+                            });
                         });
                     })),
                     cancel: None,
@@ -207,7 +206,7 @@ fn ui_add_buy_item_slot(
     npc_data: &NpcData,
     buy_list: &mut [Option<PendingBuyItem>; NUM_BUY_ITEMS],
     buy_slot_index: usize,
-    player: Option<&NpcStorePlayerWorldQueryItem>,
+    player: Option<&(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
     player_tooltip_data: Option<&PlayerTooltipQueryItem>,
     game_data: &GameData,
     ui_resources: &UiResources,
@@ -246,7 +245,7 @@ fn ui_add_buy_item_slot(
             .calculate_npc_store_item_buy_price(
                 &game_data.items,
                 *item_reference,
-                player.map_or(0, |player| player.ability_values.get_npc_store_buy_rate()),
+                player.map_or(0, |player| player.0.get_npc_store_buy_rate()),
                 world_rates.map_or(100, |x| x.item_price_rate),
                 world_rates.map_or(100, |x| x.town_price_rate),
             )
@@ -309,7 +308,7 @@ fn ui_add_sell_item_slot(
     pos: egui::Pos2,
     sell_list: &mut [Option<PendingSellItem>; NUM_SELL_ITEMS],
     sell_slot_index: usize,
-    player: Option<&NpcStorePlayerWorldQueryItem>,
+    player: Option<&(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
     player_tooltip_data: Option<&PlayerTooltipQueryItem>,
     game_data: &GameData,
     ui_resources: &UiResources,
@@ -319,7 +318,7 @@ fn ui_add_sell_item_slot(
     let item = player.and_then(|player| {
         pending_sell_item
             .as_ref()
-            .and_then(|pending_sell_item| player.inventory.get_item(pending_sell_item.item_slot))
+            .and_then(|pending_sell_item| player.1.get_item(pending_sell_item.item_slot))
     });
 
     let item_price = if let Some(item) = item {
@@ -328,7 +327,7 @@ fn ui_add_sell_item_slot(
             .calculate_npc_store_item_sell_price(
                 &game_data.items,
                 item,
-                player.map_or(0, |player| player.ability_values.get_npc_store_sell_rate()),
+                player.map_or(0, |player| player.0.get_npc_store_sell_rate()),
                 world_rates.map_or(0, |x| x.world_price_rate),
                 world_rates.map_or(0, |x| x.item_price_rate),
                 world_rates.map_or(0, |x| x.town_price_rate),
@@ -384,29 +383,15 @@ fn ui_add_sell_item_slot(
     item_price
 }
 
-#[derive(WorldQuery)]
-pub struct NpcStorePlayerWorldQuery<'w> {
-    ability_values: &'w AbilityValues,
-    inventory: &'w Inventory,
-    position: &'w Position,
-    player_character: &'w PlayerCharacter,
-}
-
-#[derive(WorldQuery)]
-pub struct NpcStoreNpcWorldQuery<'w> {
-    npc: &'w Npc,
-    position: &'w Position,
-}
-
 pub fn ui_npc_store_system(
     mut egui_context: EguiContexts,
     mut ui_state: Local<UiNpcStoreState>,
     mut ui_state_dnd: ResMut<UiStateDragAndDrop>,
     mut ui_sound_events: EventWriter<UiSoundEvent>,
     mut npc_store_events: EventReader<NpcStoreEvent>,
-    query_player: Query<NpcStorePlayerWorldQuery>,
+    query_player: Query<(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
-    query_npc: Query<NpcStoreNpcWorldQuery>,
+    query_npc: Query<(&Npc, &Position)>,
     client_entity_list: Res<ClientEntityList>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
@@ -429,14 +414,14 @@ pub fn ui_npc_store_system(
             return;
         };
 
-    for event in npc_store_events.iter() {
+    for event in npc_store_events.read() {
         match *event {
             NpcStoreEvent::OpenClientEntityStore(client_entity_id) => {
                 *ui_state = UiNpcStoreState::default();
 
                 if let Some(owner_entity) = client_entity_list.get(client_entity_id) {
                     if let Ok(npc) = query_npc.get(owner_entity) {
-                        if let Some(npc_data) = game_data.npcs.get_npc(npc.npc.id) {
+                        if let Some(npc_data) = game_data.npcs.get_npc(npc.0.id) {
                             for (index, id) in npc_data.store_tabs.iter().enumerate() {
                                 if let Some(id) = id {
                                     if let Some(store_tab) = game_data.npcs.get_store_tab(*id) {
@@ -486,15 +471,15 @@ pub fn ui_npc_store_system(
         .owner_entity
         .and_then(|(owner_entity, _)| query_npc.get(owner_entity).ok());
 
-    // If player has moved away from NPC, close the dialog
+    // If player has moved away from NPC, close's dialog
     if let (Some(player), Some(npc)) = (player.as_ref(), npc.as_ref()) {
-        if player.position.position.xy().distance(npc.position.xy()) > 600.0 {
+        if player.2.xy().distance(npc.1.xy()) > 600.0 {
             ui_state.owner_entity = None;
             return;
         }
     }
 
-    let npc_data = npc.and_then(|npc| game_data.npcs.get_npc(npc.npc.id));
+    let npc_data = npc.and_then(|npc| game_data.npcs.get_npc(npc.0.id));
     if npc_data.is_none() {
         return;
     }
@@ -660,7 +645,7 @@ pub fn ui_npc_store_system(
 
     if response_ok.map_or(false, |x| x.clicked()) {
         let can_afford_transaction =
-            player.map_or(true, |player| transaction_cost <= player.inventory.money.0);
+            player.map_or(true, |player| transaction_cost <= player.1.money.0);
         // TODO: Check inventory space
 
         if can_afford_transaction {

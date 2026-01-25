@@ -1,7 +1,4 @@
-use bevy::{
-    ecs::query::WorldQuery,
-    prelude::{Assets, Entity, EventWriter, Query, Res, ResMut, With},
-};
+use bevy::prelude::{Assets, Entity, EventWriter, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 use rose_data::{AmmoIndex, EquipmentIndex, Item, ItemClass};
 use rose_game_common::components::{
@@ -12,7 +9,7 @@ use crate::{
     components::PlayerCharacter,
     resources::{GameData, SelectedTarget, UiResources},
     ui::{
-        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
+        tooltips::PlayerTooltipQuery,
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog, DrawText},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateWindows,
@@ -28,29 +25,17 @@ const IID_BTN_MENU: i32 = 11;
 // const IID_BTN_DIALOG2ICON: i32 = 12;
 // const IID_BTN_SCREENSHOT: i32 = 13;
 
-#[derive(WorldQuery)]
-pub struct PlayerQuery<'w> {
-    entity: Entity,
-    ability_values: &'w AbilityValues,
-    character_info: &'w CharacterInfo,
-    level: &'w Level,
-    health_points: &'w HealthPoints,
-    mana_points: &'w ManaPoints,
-    experience_points: &'w ExperiencePoints,
-    equipment: &'w Equipment,
-}
-
 fn add_equipped_weapon_slot(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
-    player: &PlayerQueryItem,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player: &(Entity, &AbilityValues, &CharacterInfo, &Level, &HealthPoints, &ManaPoints, &ExperiencePoints, &Equipment),
+    player_tooltip_data: Option<&PlayerTooltipQuery<'_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
 ) {
     let mut item = None;
 
-    if let Some(weapon_item) = player.equipment.get_equipment_item(EquipmentIndex::Weapon) {
+    if let Some(weapon_item) = player.7.get_equipment_item(EquipmentIndex::Weapon) {
         item = Some(Item::Equipment(weapon_item.clone()));
 
         if let Some(weapon_item_data) = game_data
@@ -65,7 +50,7 @@ fn add_equipped_weapon_slot(
             };
 
             if let Some(ammo_index) = ammo_index {
-                if let Some(ammo) = player.equipment.get_ammo_item(ammo_index) {
+                if let Some(ammo) = player.7.get_ammo_item(ammo_index) {
                     item = Some(Item::Stackable(ammo.clone()));
                 }
             }
@@ -107,7 +92,7 @@ pub fn ui_player_info_system(
     mut egui_context: EguiContexts,
     mut ui_state_windows: ResMut<UiStateWindows>,
     mut ui_sound_events: EventWriter<UiSoundEvent>,
-    query_player: Query<PlayerQuery, With<PlayerCharacter>>,
+    query_player: Query<(Entity, &AbilityValues, &CharacterInfo, &Level, &HealthPoints, &ManaPoints, &ExperiencePoints, &Equipment), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
@@ -137,12 +122,12 @@ pub fn ui_player_info_system(
         .default_width(dialog.width)
         .default_height(dialog.height)
         .show(egui_context.ctx_mut(), |ui| {
-            let hp = player.health_points.hp as f32 / player.ability_values.get_max_health() as f32;
-            let mp = player.mana_points.mp as f32 / player.ability_values.get_max_mana() as f32;
+            let hp = player.4.hp as f32 / player.1.get_max_health() as f32;
+            let mp = player.5.mp as f32 / player.1.get_max_mana() as f32;
             let need_xp = game_data
                 .ability_value_calculator
-                .calculate_levelup_require_xp(player.level.level);
-            let xp = player.experience_points.xp as f32 / need_xp as f32;
+                .calculate_levelup_require_xp(player.3.level);
+            let xp = player.6.xp as f32 / need_xp as f32;
 
             dialog.draw(
                 ui,
@@ -155,8 +140,8 @@ pub fn ui_player_info_system(
                             &hp,
                             &format!(
                                 "{}/{}",
-                                player.health_points.hp,
-                                player.ability_values.get_max_health()
+                                player.4.hp,
+                                player.1.get_max_health()
                             ),
                         ),
                         (
@@ -164,8 +149,8 @@ pub fn ui_player_info_system(
                             &mp,
                             &format!(
                                 "{}/{}",
-                                player.mana_points.mp,
-                                player.ability_values.get_max_mana()
+                                player.5.mp,
+                                player.1.get_max_mana()
                             ),
                         ),
                         (IID_GAUGE_EXP, &xp, &format!("{:.2}%", xp * 100.0)),
@@ -175,7 +160,7 @@ pub fn ui_player_info_system(
                 |ui, _| {
                     ui.add_label_in(
                         egui::Rect::from_min_max(egui::pos2(15.0, 8.0), egui::pos2(150.0, 25.0)),
-                        egui::RichText::new(&player.character_info.name)
+                        egui::RichText::new(&player.2.name)
                             .color(egui::Color32::from_rgb(0, 255, 42))
                             .font(egui::FontId::new(
                                 14.0,
@@ -185,7 +170,7 @@ pub fn ui_player_info_system(
 
                     ui.add_label_in(
                         egui::Rect::from_min_max(egui::pos2(180.0, 8.0), egui::pos2(230.0, 25.0)),
-                        egui::RichText::new(format!("{}", player.level.level))
+                        egui::RichText::new(format!("{}", player.3.level))
                             .color(egui::Color32::YELLOW)
                             .font(egui::FontId::new(
                                 14.0,
@@ -207,7 +192,7 @@ pub fn ui_player_info_system(
 
     if let Some(response) = response {
         if response.response.clicked() {
-            selected_target.selected = Some(player.entity);
+            selected_target.selected = Some(player.0);
         }
     }
 

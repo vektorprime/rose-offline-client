@@ -1,17 +1,15 @@
 use bevy::{
     app::{App, Plugin},
-    asset::{AddAsset, Handle},
-    ecs::system::{lifetimeless::SRes, SystemParamItem},
-    reflect::{TypePath, TypeUuid},
+    asset::{Asset, AssetApp, Handle},
+    ecs::system::SystemParamItem,
+    reflect::TypePath,
     render::{
-        render_asset::{PrepareAssetError, RenderAsset, RenderAssetPlugin},
-        renderer::RenderDevice,
+        render_asset::{PrepareAssetError, RenderAsset, RenderAssetPlugin, RenderAssetUsages},
         texture::Image,
     },
 };
 
-#[derive(Debug, Clone, TypeUuid, TypePath)]
-#[uuid = "83077909-bf71-4f14-9a86-16f65d611ce9"]
+#[derive(Debug, Clone, TypePath, Asset)]
 pub struct DamageDigitMaterial {
     pub texture: Handle<Image>,
 }
@@ -20,8 +18,8 @@ pub struct DamageDigitMaterialPlugin;
 
 impl Plugin for DamageDigitMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(RenderAssetPlugin::<DamageDigitMaterial>::default())
-            .add_asset::<DamageDigitMaterial>();
+        app.init_asset::<DamageDigitMaterial>()
+            .add_plugins(RenderAssetPlugin::<DamageDigitMaterial>::default());
     }
 }
 
@@ -30,21 +28,30 @@ pub struct GpuDamageDigitMaterial {
     pub texture: Handle<Image>,
 }
 
-impl RenderAsset for DamageDigitMaterial {
-    type ExtractedAsset = DamageDigitMaterial;
-    type PreparedAsset = GpuDamageDigitMaterial;
-    type Param = SRes<RenderDevice>;
+impl TypePath for GpuDamageDigitMaterial {
+    fn type_path() -> &'static str {
+        "rose_offline_client::damage_digit_material::GpuDamageDigitMaterial"
+    }
 
-    fn extract_asset(&self) -> Self::ExtractedAsset {
-        self.clone()
+    fn short_type_path() -> &'static str {
+        "GpuDamageDigitMaterial"
+    }
+}
+
+impl RenderAsset for DamageDigitMaterial {
+    type PreparedAsset = GpuDamageDigitMaterial;
+    type Param = ();
+
+    fn asset_usage(&self) -> RenderAssetUsages {
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD
     }
 
     fn prepare_asset(
-        material: Self::ExtractedAsset,
-        _render_device: &mut SystemParamItem<Self::Param>,
-    ) -> Result<Self::PreparedAsset, PrepareAssetError<Self::ExtractedAsset>> {
+        self,
+        _param: &mut SystemParamItem<Self::Param>,
+    ) -> Result<Self::PreparedAsset, PrepareAssetError<Self>> {
         Ok(GpuDamageDigitMaterial {
-            texture: material.texture,
+            texture: self.texture.clone(),
         })
     }
 }

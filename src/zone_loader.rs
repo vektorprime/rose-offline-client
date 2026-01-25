@@ -1,27 +1,28 @@
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use anyhow::Result;
 use arrayvec::ArrayVec;
 use bevy::{
-    asset::{AssetLoader, BoxedFuture, LoadContext, LoadState, LoadedAsset},
+    asset::{Asset, AssetLoader, Assets, BoxedFuture, io::Reader, LoadContext, LoadState},
     ecs::system::SystemParam,
     hierarchy::{BuildChildren, DespawnRecursiveExt},
     math::{Quat, Vec2, Vec3},
     pbr::{NotShadowCaster, NotShadowReceiver},
     prelude::{
-        AssetServer, Assets, Commands, ComputedVisibility, Entity, EventReader, EventWriter,
-        GlobalTransform, Handle, HandleUntyped, Image, Local, Mesh, Res, ResMut, Transform,
-        Visibility,
+        AssetServer, Commands, Entity, EventReader, EventWriter, GlobalTransform, Handle,
+        Local, Res, ResMut, Transform, UntypedHandle, Visibility,
     },
-    reflect::{TypePath, TypeUuid},
+    reflect::TypePath,
     render::{
-        mesh::{Indices, PrimitiveTopology},
+        mesh::{Indices, Mesh, PrimitiveTopology},
+        render_asset::RenderAssetUsages,
+        texture::Image,
         view::NoFrustumCulling,
     },
-    tasks::IoTaskPool,
+    tasks::{futures_lite::AsyncReadExt, IoTaskPool},
 };
 use bevy_rapier3d::prelude::{
     AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, RigidBody,
@@ -79,8 +80,7 @@ pub struct ZoneNpc {
     pub npc_id: NpcId,
 }
 
-#[derive(TypeUuid, TypePath)]
-#[uuid = "596e2c17-f2dd-4276-8df4-1e94dc0d056b"]
+#[derive(Asset, TypePath)]
 pub struct ZoneLoaderAsset {
     pub zone_id: ZoneId,
     pub zone_path: PathBuf,
@@ -154,18 +154,36 @@ impl ZoneLoaderAsset {
     }
 }
 
-pub struct ZoneLoader {
-    pub zone_list: Arc<ZoneList>,
+pub struct ZoneLoader;
+
+static ZONE_LIST: OnceLock<Arc<ZoneList>> = OnceLock::new();
+
+impl ZoneLoader {
+    pub fn init_zone_list(zone_list: Arc<ZoneList>) {
+        let _ = ZONE_LIST.set(zone_list);
+    }
+
+    fn get_zone_list() -> Arc<ZoneList> {
+        ZONE_LIST.get().expect("ZoneList not initialized").clone()
+    }
 }
 
 impl AssetLoader for ZoneLoader {
+    type Asset = ZoneLoaderAsset;
+    type Settings = ();
+    type Error = anyhow::Error;
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
-        load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<()>> {
+        reader: &'a mut Reader<'_>,
+        _settings: &'a Self::Settings,
+        load_context: &'a mut LoadContext<'_>,
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            load_zone(self, ZoneId::new(bytes[0] as u16).unwrap(), load_context).await
+            let mut bytes = Vec::new();
+            reader.read_to_end(&mut bytes).await?;
+            let zone_id = ZoneId::new(bytes[0] as u16).unwrap();
+            load_zone(zone_id, load_context).await
         })
     }
 
@@ -175,64 +193,60 @@ impl AssetLoader for ZoneLoader {
 }
 
 async fn load_zone<'a, 'b>(
-    zone_loader: &'a ZoneLoader,
     zone_id: ZoneId,
     load_context: &'a mut LoadContext<'b>,
-) -> Result<(), anyhow::Error> {
-    let zone_list_entry = zone_loader
-        .zone_list
+) -> Result<ZoneLoaderAsset, anyhow::Error> {
+    let zone_list = ZoneLoader::get_zone_list();
+    let zone_list_entry = zone_list
         .get_zone(zone_id)
-        .ok_or(ZoneLoadError::InvalidZoneId)?;
+        .ok_or(ZoneLoadError::InvalidZoneId)?
+        .clone();
+
+    let zon_file_path = zone_list_entry.zon_file_path.path().to_path_buf();
+    let zsc_cnst_path = zone_list_entry.zsc_cnst_path.path().to_path_buf();
+    let zsc_deco_path = zone_list_entry.zsc_deco_path.path().to_path_buf();
 
     let zon: ZonFile = RoseFile::read(
         RoseFileReader::from(
-            &load_context
-                .read_asset_bytes(zone_list_entry.zon_file_path.path())
-                .await?,
+            &(*load_context)
+                .read_asset_bytes(zon_file_path.clone())
+                .await?
         ),
         &Default::default(),
     )?;
     let zsc_cnst: ZscFile = RoseFile::read(
         RoseFileReader::from(
-            &load_context
-                .read_asset_bytes(zone_list_entry.zsc_cnst_path.path())
+            &(*load_context)
+                .read_asset_bytes(zsc_cnst_path.clone())
                 .await?,
         ),
         &Default::default(),
     )?;
     let zsc_deco: ZscFile = RoseFile::read(
         RoseFileReader::from(
-            &load_context
-                .read_asset_bytes(zone_list_entry.zsc_deco_path.path())
+            &(*load_context)
+                .read_asset_bytes(zsc_deco_path.clone())
                 .await?,
         ),
         &Default::default(),
     )?;
-    let zone_path = zone_list_entry
-        .zon_file_path
-        .path()
+    let zone_path = zon_file_path
         .parent()
         .unwrap_or_else(|| Path::new(""));
 
-    let zone_blocks_iterator = IoTaskPool::get()
-        .scope(|scope| {
-            for block_y in 0..64 {
-                for block_x in 0..64 {
-                    let load_context: &LoadContext = load_context;
-
-                    scope.spawn(async move {
-                        load_block_files(load_context, zone_path, block_x, block_y).await
-                    });
-                }
+    let mut zone_blocks = Vec::new();
+    for block_y in 0..64 {
+        for block_x in 0..64 {
+            if let Ok(block) = load_block_files(load_context, zone_path, block_x, block_y).await {
+                zone_blocks.push(block);
             }
-        })
-        .into_iter()
-        .filter_map(|result| result.ok());
+        }
+    }
 
     let mut npcs = Vec::new();
     let mut blocks = Vec::new();
     blocks.resize_with(64 * 64, || None);
-    for block in zone_blocks_iterator {
+    for block in zone_blocks {
         let index = block.block_x + block.block_y * 64;
 
         if let Some(ifo) = &block.ifo {
@@ -263,7 +277,7 @@ async fn load_zone<'a, 'b>(
         blocks[index] = Some(block);
     }
 
-    load_context.set_default_asset(LoadedAsset::new(ZoneLoaderAsset {
+    Ok(ZoneLoaderAsset {
         zone_path: zone_path.into(),
         zone_id,
         zon,
@@ -271,12 +285,11 @@ async fn load_zone<'a, 'b>(
         zsc_deco,
         blocks,
         npcs,
-    }));
-    Ok(())
+    })
 }
 
 async fn load_block_files<'a>(
-    load_context: &LoadContext<'a>,
+    load_context: &mut LoadContext<'a>,
     zone_path: &Path,
     block_x: usize,
     block_y: usize,
@@ -373,7 +386,7 @@ pub struct LoadingZone {
     pub state: LoadingZoneState,
     pub handle: Handle<ZoneLoaderAsset>,
     pub despawn_other_zones: bool,
-    pub zone_assets: Vec<HandleUntyped>,
+    pub zone_assets: Vec<UntypedHandle>,
     pub ready_frames: usize,
 }
 
@@ -397,7 +410,7 @@ pub fn zone_loader_system(
             .resize_with(spawn_zone_params.game_data.zone_list.len(), || None);
     }
 
-    for event in load_zone_events.iter() {
+    for event in load_zone_events.read() {
         let zone_index = event.id.get() as usize;
 
         if zone_loader_cache.cache[zone_index].is_none() {
@@ -437,10 +450,10 @@ pub fn zone_loader_system(
                     .asset_server
                     .get_load_state(&loading_zone.handle)
                 {
-                    LoadState::NotLoaded | LoadState::Loading => {
+                    Some(LoadState::NotLoaded) | Some(LoadState::Loading) => {
                         index += 1;
                     }
-                    LoadState::Loaded => {
+                    Some(LoadState::Loaded) => {
                         if let Some(zone_data) = zone_loader_assets.get(&loading_zone.handle) {
                             // Despawn other zones
                             if loading_zone.despawn_other_zones {
@@ -490,7 +503,7 @@ pub fn zone_loader_system(
                             index += 1;
                         }
                     }
-                    LoadState::Unloaded | LoadState::Failed => {
+                    None | Some(LoadState::Failed) => {
                         loading_zones.remove(index);
                     }
                 }
@@ -499,7 +512,7 @@ pub fn zone_loader_system(
                 let is_loading = loading_zone.zone_assets.iter().any(|handle| {
                     matches!(
                         spawn_zone_params.asset_server.get_load_state(handle),
-                        LoadState::NotLoaded | LoadState::Loading
+                        Some(LoadState::NotLoaded) | Some(LoadState::Loading)
                     )
                 });
 
@@ -526,7 +539,7 @@ pub fn zone_loader_system(
 pub fn spawn_zone(
     params: &mut SpawnZoneParams,
     zone_data: &ZoneLoaderAsset,
-) -> Result<(Entity, Vec<HandleUntyped>), anyhow::Error> {
+) -> Result<(Entity, Vec<UntypedHandle>), anyhow::Error> {
     let SpawnZoneParams {
         commands,
         asset_server,
@@ -569,14 +582,13 @@ pub fn spawn_zone(
         })
     };
 
-    let mut zone_loading_assets: Vec<HandleUntyped> = Vec::default();
+    let mut zone_loading_assets: Vec<UntypedHandle> = Vec::default();
     let zone_entity = commands
         .spawn((
             Zone {
                 id: zone_data.zone_id,
             },
             Visibility::default(),
-            ComputedVisibility::default(),
             Transform::default(),
             GlobalTransform::default(),
         ))
@@ -779,17 +791,20 @@ fn spawn_skybox(
     sky_materials: &mut Assets<SkyMaterial>,
     skybox_data: &SkyboxData,
 ) -> Entity {
+    let mesh_path = skybox_data.mesh.path().to_string_lossy().into_owned();
+    let texture_day_path = skybox_data.texture_day.path().to_string_lossy().into_owned();
+    let texture_night_path = skybox_data.texture_night.path().to_string_lossy().into_owned();
+
     commands
         .spawn((
-            asset_server.load::<Mesh, _>(skybox_data.mesh.path()),
+            asset_server.load::<Mesh>(mesh_path),
             sky_materials.add(SkyMaterial {
-                texture_day: Some(asset_server.load(skybox_data.texture_day.path())),
-                texture_night: Some(asset_server.load(skybox_data.texture_night.path())),
+                texture_day: Some(asset_server.load::<Image>(texture_day_path)),
+                texture_night: Some(asset_server.load::<Image>(texture_night_path)),
             }),
             Transform::from_scale(Vec3::splat(SKYBOX_MODEL_SCALE)),
             GlobalTransform::default(),
             Visibility::default(),
-            ComputedVisibility::default(),
             NoFrustumCulling,
         ))
         .id()
@@ -953,8 +968,8 @@ fn spawn_terrain(
         }
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-    mesh.set_indices(Some(Indices::U16(indices)));
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_indices(Indices::U16(indices));
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs_lightmap);
@@ -1000,7 +1015,6 @@ fn spawn_terrain(
             Transform::from_xyz(offset_x, 0.0, -offset_y),
             GlobalTransform::default(),
             Visibility::default(),
-            ComputedVisibility::default(),
             NotShadowCaster,
             RigidBody::Fixed,
             Collider::trimesh(collider_verts, collider_indices),
@@ -1057,8 +1071,8 @@ fn spawn_water(
         uvs.push(*uv);
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-    mesh.set_indices(Some(indices));
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    mesh.insert_indices(indices);
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
@@ -1071,7 +1085,6 @@ fn spawn_water(
             Transform::default(),
             GlobalTransform::default(),
             Visibility::default(),
-            ComputedVisibility::default(),
             NotShadowCaster,
             NotShadowReceiver,
             RigidBody::Fixed,
@@ -1084,7 +1097,7 @@ fn spawn_water(
 fn spawn_object(
     commands: &mut Commands,
     asset_server: &AssetServer,
-    zone_loading_assets: &mut Vec<HandleUntyped>,
+    zone_loading_assets: &mut Vec<UntypedHandle>,
     vfs_resource: &VfsResource,
     effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
     particle_materials: &mut Assets<ParticleMaterial>,
@@ -1134,7 +1147,6 @@ fn spawn_object(
         object_transform,
         GlobalTransform::default(),
         Visibility::default(),
-        ComputedVisibility::default(),
         RigidBody::Fixed,
     ));
 
@@ -1164,11 +1176,11 @@ fn spawn_object(
 
             let mesh_id = object_part.mesh_id as usize;
             let mesh = mesh_cache[mesh_id].clone().unwrap_or_else(|| {
-                let handle = asset_server.load(zsc.meshes[mesh_id].path());
+                let handle = asset_server.load(zsc.meshes[mesh_id].path().to_string_lossy().into_owned());
                 mesh_cache.insert(mesh_id, Some(handle.clone()));
                 handle
             });
-            zone_loading_assets.push(mesh.clone_untyped());
+            zone_loading_assets.push(UntypedHandle::from(mesh.clone()));
             let lit_part = lit_object.and_then(|lit_object| {
                 for part in lit_object.parts.iter() {
                     if part_index == part.object_part_index as usize {
@@ -1195,9 +1207,9 @@ fn spawn_object(
 
             let material_id = object_part.material_id as usize;
             let material = material_cache[material_id].clone().unwrap_or_else(|| {
-                let zsc_material = &zsc.materials[material_id];
+                let zsc_material = zsc.materials[material_id].clone();
                 let handle = object_materials.add(ObjectMaterial {
-                    base_texture: Some(asset_server.load(zsc_material.path.path())),
+                    base_texture: Some(asset_server.load(zsc_material.path.path().to_string_lossy().into_owned())),
                     lightmap_texture,
                     alpha_value: if zsc_material.alpha != 1.0 {
                         Some(zsc_material.alpha)
@@ -1285,7 +1297,6 @@ fn spawn_object(
                 part_transform,
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
                 NotShadowCaster,
                 ColliderParent::new(object_entity),
                 AsyncCollider(ComputedColliderShape::TriMesh),
@@ -1293,7 +1304,7 @@ fn spawn_object(
             ));
 
             let active_motion = object_part.animation_path.as_ref().map(|animation_path| {
-                TransformAnimation::repeat(asset_server.load(animation_path.path()), None)
+                TransformAnimation::repeat(asset_server.load(animation_path.path().to_string_lossy().into_owned()), None)
             });
             if let Some(active_motion) = active_motion {
                 part_commands.insert(active_motion);
@@ -1366,9 +1377,9 @@ fn spawn_animated_object(
     object_instance: &IfoObject,
 ) -> Entity {
     let object_id = object_instance.object_id as usize;
-    let mesh_path = stb_morph_object.get(object_id, 1);
-    let motion_path = stb_morph_object.get(object_id, 2);
-    let texture_path = stb_morph_object.get(object_id, 3);
+    let mesh_path = stb_morph_object.get(object_id, 1).to_string();
+    let motion_path = stb_morph_object.get(object_id, 2).to_string();
+    let texture_path = stb_morph_object.get(object_id, 3).to_string();
 
     let alpha_enabled = stb_morph_object.get_int(object_id, 4) != 0;
     let two_sided = stb_morph_object.get_int(object_id, 5) != 0;
@@ -1401,9 +1412,9 @@ fn spawn_animated_object(
             object_instance.scale.y,
         ));
 
-    let mesh = asset_server.load::<Mesh, _>(mesh_path);
+    let mesh: Handle<Mesh> = asset_server.load(&mesh_path);
     let material = effect_mesh_materials.add(EffectMeshMaterial {
-        base_texture: Some(asset_server.load(texture_path)),
+        base_texture: Some(asset_server.load(&texture_path)),
         alpha_enabled,
         alpha_test: alpha_test_enabled,
         two_sided,
@@ -1413,7 +1424,7 @@ fn spawn_animated_object(
         dst_blend_factor: decode_blend_factor(dst_blend_factor),
         blend_op: decode_blend_op(blend_op),
         animation_texture: Some(
-            asset_server.load(ZmoTextureAssetLoader::convert_path_texture(motion_path)),
+            asset_server.load(ZmoTextureAssetLoader::convert_path_texture(&motion_path)),
         ),
     });
 
@@ -1436,7 +1447,6 @@ fn spawn_animated_object(
             NotShadowCaster,
             GlobalTransform::default(),
             Visibility::default(),
-            ComputedVisibility::default(),
             AsyncCollider(ComputedColliderShape::TriMesh),
             CollisionGroups::new(COLLISION_GROUP_ZONE_OBJECT, COLLISION_FILTER_INSPECTABLE),
         ))
@@ -1479,7 +1489,6 @@ fn spawn_effect_object(
             object_transform,
             GlobalTransform::from(object_transform),
             Visibility::default(),
-            ComputedVisibility::default(),
         ))
         .id();
 
@@ -1523,12 +1532,11 @@ fn spawn_sound_object(
                 ifo_object_id,
                 sound_path: sound_object.sound_path.path().to_string_lossy().to_string(),
             },
-            SpatialSound::new_repeating(asset_server.load(sound_object.sound_path.path())),
+            SpatialSound::new_repeating(asset_server.load(sound_object.sound_path.path().to_string_lossy().to_string())),
             SoundRadius::new(sound_object.range as f32 / 10.0),
             object_transform,
             GlobalTransform::from(object_transform),
             Visibility::default(),
-            ComputedVisibility::default(),
         ))
         .id();
 

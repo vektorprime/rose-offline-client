@@ -7,7 +7,7 @@ use bevy::{
     },
     window::{CursorGrabMode, CursorIcon, PrimaryWindow, Window},
 };
-use bevy_egui::{egui, EguiContexts, EguiRequestedCursor};
+use bevy_egui::{egui, EguiContexts};
 use enum_map::{enum_map, Enum, EnumMap};
 
 use rose_file_readers::{IdFile, TsiFile, TsiSprite, VirtualFilesystem};
@@ -323,10 +323,10 @@ pub fn update_ui_resources(
             }
 
             if let Some(image) = images.get(&texture.handle) {
-                texture.size = Some(image.size());
+                texture.size = Some(image.size().as_vec2());
             } else if matches!(
                 asset_server.get_load_state(&texture.handle),
-                LoadState::Failed
+                Some(LoadState::Failed)
             ) {
                 texture.size = Some(Vec2::ZERO);
             } else {
@@ -344,7 +344,7 @@ pub fn update_ui_resources(
             ui_cursor.cursor = Some(resource_cursor.cursor.clone());
         } else if matches!(
             asset_server.get_load_state(&ui_cursor.handle),
-            LoadState::Failed
+            Some(LoadState::Failed)
         ) {
             ui_cursor.cursor = Some(CursorIcon::Default);
         } else {
@@ -358,10 +358,10 @@ pub fn update_ui_resources(
                 if let Widget::Skill(skill_widget) = widget {
                     if let Some(texture) = skill_widget.ui_texture.as_mut() {
                         if let Some(image) = images.get(&texture.handle) {
-                            texture.size = Some(image.size());
+                            texture.size = Some(image.size().as_vec2());
                         } else if matches!(
                             asset_server.get_load_state(&texture.handle),
-                            LoadState::Failed
+                            Some(LoadState::Failed)
                         ) {
                             texture.size = Some(Vec2::ZERO);
                         } else {
@@ -380,7 +380,7 @@ pub fn update_ui_resources(
                     }
                 }
             }
-        } else if !matches!(asset_server.get_load_state(skill_tree), LoadState::Failed) {
+        } else if !matches!(asset_server.get_load_state(skill_tree), Some(LoadState::Failed)) {
             loaded_all = false;
         }
     };
@@ -568,7 +568,7 @@ pub fn load_ui_resources(
 pub fn ui_requested_cursor_apply_system(
     mut query_window: Query<&mut Window, With<PrimaryWindow>>,
     ui_requested_cursor: Res<UiRequestedCursor>,
-    egui_requested_cursor: Res<EguiRequestedCursor>,
+    egui_requested_cursor: Res<UiRequestedCursor>,
     ui_resources: Res<UiResources>,
     mut egui_ctx: EguiContexts,
 ) {
@@ -577,14 +577,11 @@ pub fn ui_requested_cursor_apply_system(
     };
 
     if egui_ctx.ctx_mut().wants_pointer_input() {
-        // Allow text selection cursor, otherwise use the default in game cursor icon
-        let requested_icon = match egui_requested_cursor.cursor {
-            CursorIcon::Text => &CursorIcon::Text,
-            _ => ui_resources.cursors[UiCursorType::Default]
-                .cursor
-                .as_ref()
-                .unwrap_or(&CursorIcon::Default),
-        };
+        // Use default cursor when egui wants pointer input
+        let requested_icon = ui_resources.cursors[UiCursorType::Default]
+            .cursor
+            .as_ref()
+            .unwrap_or(&CursorIcon::Default);
 
         if window.cursor.icon != *requested_icon {
             window.cursor.icon = requested_icon.clone();

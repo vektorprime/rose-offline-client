@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, ops::Range};
 
 use bevy::{
-    asset::{load_internal_asset, Handle, HandleId},
+    asset::{load_internal_asset, Handle, UntypedHandle, UntypedAssetId, AssetId},
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         query::ROQueryItem,
@@ -12,11 +12,10 @@ use bevy::{
     },
     pbr::MeshPipelineKey,
     prelude::{
-        App, Assets, Color, Commands, Component, ComputedVisibility, FromWorld, GlobalTransform,
-        HandleUntyped, IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3,
+        App, Assets, Color, Commands, Component, ViewVisibility, InheritedVisibility, FromWorld, GlobalTransform,
+        IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3,
         World,
     },
-    reflect::TypeUuid,
     render::{
         prelude::Shader,
         render_asset::RenderAssets,
@@ -25,8 +24,8 @@ use bevy::{
             RenderPhase, SetItemPipeline, TrackedRenderPass,
         },
         render_resource::{
-            BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-            BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType,
+            BindGroup, BindGroupEntry, BindGroupLayout,
+            BindGroupLayoutEntry, BindingResource, BindingType,
             BlendComponent, BlendFactor, BlendOperation, BlendState, BufferBindingType,
             BufferUsages, BufferVec, ColorTargetState, ColorWrites, CompareFunction,
             DepthBiasState, DepthStencilState, FragmentState, FrontFace, MultisampleState,
@@ -41,14 +40,18 @@ use bevy::{
         view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
     },
-    utils::HashMap,
+    utils::{HashMap, Uuid},
 };
+use std::any::TypeId;
 use bytemuck::{Pod, Zeroable};
 
 use crate::render::zone_lighting::{SetZoneLightingBindGroup, ZoneLightingUniformMeta};
 
-pub const WORLD_UI_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 0xd5cdda11c713e3a7);
+pub const WORLD_UI_SHADER_HANDLE: UntypedHandle =
+    UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0xd5cdda11c713e3a7) });
+
+pub const WORLD_UI_SHADER_HANDLE_TYPED: Handle<Shader> =
+    Handle::weak_from_u128(0xd5cdda11c713e3a7);
 
 #[derive(Default)]
 pub struct WorldUiRenderPlugin;
@@ -57,7 +60,7 @@ impl Plugin for WorldUiRenderPlugin {
     fn build(&self, app: &mut App) {
         load_internal_asset!(
             app,
-            WORLD_UI_SHADER_HANDLE,
+            WORLD_UI_SHADER_HANDLE_TYPED,
             "shaders/world_ui.wgsl",
             Shader::from_wgsl
         );
@@ -70,7 +73,7 @@ impl Plugin for WorldUiRenderPlugin {
                 .add_render_command::<Transparent3d, DrawWorldUi>()
                 .init_resource::<SpecializedRenderPipelines<WorldUiPipeline>>()
                 .add_systems(ExtractSchedule, extract_world_ui_rects)
-                .add_systems(Render, (queue_world_ui_meshes,).in_set(RenderSet::Queue));
+                .add_systems(Render, (queue_world_ui_meshes).in_set(RenderSet::Queue));
         }
     }
 
@@ -99,7 +102,7 @@ pub struct ExtractedRect {
     pub world_position: Vec3,
     pub screen_offset: Vec2,
     pub screen_size: Vec2,
-    pub image_handle_id: HandleId,
+    pub image_handle_id: AssetId<Image>,
     pub uv_min: Vec2,
     pub uv_max: Vec2,
     pub color: Color,
@@ -122,11 +125,11 @@ impl Default for ExtractedWorldUi {
 fn extract_world_ui_rects(
     mut extracted_world_ui: ResMut<ExtractedWorldUi>,
     images: Extract<Res<Assets<Image>>>,
-    query: Extract<Query<(&ComputedVisibility, &GlobalTransform, &WorldUiRect)>>,
+    query: Extract<Query<(&ViewVisibility, &InheritedVisibility, &GlobalTransform, &WorldUiRect)>>,
 ) {
     extracted_world_ui.rects.clear();
-    for (visible, global_transform, rect) in query.iter() {
-        if !visible.is_visible_in_hierarchy() {
+    for (visible, _inherited_visibility, global_transform, rect) in query.iter() {
+        if !visible.get() {
             continue;
         }
 
@@ -289,8 +292,9 @@ impl FromWorld for WorldUiPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
 
-        let view_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            entries: &[BindGroupLayoutEntry {
+        let view_layout = render_device.create_bind_group_layout(
+            None,
+            &[BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
                 ty: BindingType::Buffer {
@@ -300,10 +304,10 @@ impl FromWorld for WorldUiPipeline {
                 },
                 count: None,
             }],
-            label: None,
-        });
-        let material_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            entries: &[
+        );
+        let material_layout = render_device.create_bind_group_layout(
+            Some("world_ui_material_layout"),
+            &[
                 // Base Texture
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -323,13 +327,12 @@ impl FromWorld for WorldUiPipeline {
                     count: None,
                 },
             ],
-            label: Some("world_ui_material_layout"),
-        });
+        );
 
         WorldUiPipeline {
             view_layout,
-            vertex_shader: WORLD_UI_SHADER_HANDLE.typed(),
-            fragment_shader: WORLD_UI_SHADER_HANDLE.typed(),
+            vertex_shader: WORLD_UI_SHADER_HANDLE_TYPED,
+            fragment_shader: WORLD_UI_SHADER_HANDLE_TYPED,
             material_layout,
             zone_lighting_layout: world
                 .resource::<ZoneLightingUniformMeta>()
@@ -342,26 +345,29 @@ impl FromWorld for WorldUiPipeline {
 pub struct SetWorldUiMaterialBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWorldUiMaterialBindGroup<I> {
     type Param = SRes<ImageBindGroups>;
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = Read<WorldUiBatch>;
+    type ViewQuery = ();
+    type ItemQuery = Read<WorldUiBatch>;
 
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        sprite_batch: ROQueryItem<'w, Self::ItemWorldQuery>,
-        image_bind_groups: SystemParamItem<'w, '_, Self::Param>,
+        _: ROQueryItem<'w, Self::ViewQuery>,
+        sprite_batch: Option<ROQueryItem<'w, Self::ItemQuery>>,
+        image_bind_groups: SystemParamItem<'w, 'w, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        let sprite_batch = match sprite_batch {
+            Some(sprite_batch) => sprite_batch,
+            None => return RenderCommandResult::Success,
+        };
         let image_bind_groups = image_bind_groups.into_inner();
-
         pass.set_bind_group(
-            I,
-            image_bind_groups
-                .values
-                .get(&Handle::weak(sprite_batch.image_handle_id))
-                .unwrap(),
-            &[],
-        );
+                I,
+                image_bind_groups
+                    .values
+                    .get(&sprite_batch.image_handle_id)
+                    .unwrap(),
+                &[],
+            );
         RenderCommandResult::Success
     }
 }
@@ -377,17 +383,21 @@ type DrawWorldUi = (
 struct DrawWorldUiBatch;
 impl<P: PhaseItem> RenderCommand<P> for DrawWorldUiBatch {
     type Param = SRes<WorldUiMeta>;
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = Read<WorldUiBatch>;
+    type ViewQuery = ();
+    type ItemQuery = Read<WorldUiBatch>;
 
     #[inline]
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        batch: ROQueryItem<'w, Self::ItemWorldQuery>,
-        sprite_meta: SystemParamItem<'w, '_, Self::Param>,
+        _: ROQueryItem<'w, Self::ViewQuery>,
+        batch: Option<ROQueryItem<'w, Self::ItemQuery>>,
+        sprite_meta: SystemParamItem<'w, 'w, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        let batch = match batch {
+            Some(batch) => batch,
+            None => return RenderCommandResult::Success,
+        };
         let sprite_meta = sprite_meta.into_inner();
         pass.set_vertex_buffer(0, sprite_meta.vertices.buffer().unwrap().slice(..));
         pass.draw(batch.vertex_range.clone(), 0..1);
@@ -398,16 +408,19 @@ impl<P: PhaseItem> RenderCommand<P> for DrawWorldUiBatch {
 struct SetWorldUiViewBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWorldUiViewBindGroup<I> {
     type Param = SRes<WorldUiMeta>;
-    type ViewWorldQuery = Read<ViewUniformOffset>;
-    type ItemWorldQuery = ();
+    type ViewQuery = Option<Read<ViewUniformOffset>>;
+    type ItemQuery = Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<()>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;
 
     fn render<'w>(
         _: &P,
-        view_uniform: ROQueryItem<'w, Self::ViewWorldQuery>,
-        _: ROQueryItem<'w, Self::ItemWorldQuery>,
-        world_ui_meta: SystemParamItem<'w, '_, Self::Param>,
+        view_uniform: ROQueryItem<'w, Self::ViewQuery>,
+        _item_query: Option<ROQueryItem<'w, Self::ItemQuery>>,
+        world_ui_meta: SystemParamItem<'w, 'w, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        let Some(view_uniform) = view_uniform else {
+            return RenderCommandResult::Success;
+        };
         pass.set_bind_group(
             I,
             world_ui_meta.into_inner().view_bind_group.as_ref().unwrap(),
@@ -419,13 +432,13 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWorldUiViewBindGroup<
 
 #[derive(Component, Eq, PartialEq, Clone)]
 pub struct WorldUiBatch {
-    image_handle_id: HandleId,
-    vertex_range: Range<u32>,
+    pub image_handle_id: AssetId<Image>,
+    pub vertex_range: Range<u32>,
 }
 
 #[derive(Default, Resource)]
 pub struct ImageBindGroups {
-    values: HashMap<Handle<Image>, BindGroup>,
+    pub values: HashMap<AssetId<Image>, BindGroup>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -456,14 +469,14 @@ pub fn queue_world_ui_meshes(
 
     if let Some(view_bindings) = view_uniforms.uniforms.binding() {
         world_ui_meta.view_bind_group.get_or_insert_with(|| {
-            render_device.create_bind_group(&BindGroupDescriptor {
-                entries: &[BindGroupEntry {
+            render_device.create_bind_group(
+                "world_ui_view_bind_group",
+                &world_ui_pipeline.view_layout,
+                &[BindGroupEntry {
                     binding: 0,
                     resource: view_bindings,
                 }],
-                label: Some("world_ui_view_bind_group"),
-                layout: &world_ui_pipeline.view_layout,
-            })
+            )
         });
     }
 
@@ -495,7 +508,7 @@ pub fn queue_world_ui_meshes(
 
         for rect in extracted_world_ui.rects.iter() {
             let gpu_image =
-                if let Some(gpu_image) = gpu_images.get(&Handle::weak(rect.image_handle_id)) {
+                if let Some(gpu_image) = gpu_images.get(rect.image_handle_id) {
                     gpu_image
                 } else {
                     // Image not ready yet, ignore
@@ -566,10 +579,12 @@ pub fn queue_world_ui_meshes(
 
             image_bind_groups
                 .values
-                .entry(Handle::weak(rect.image_handle_id))
+                .entry(rect.image_handle_id)
                 .or_insert_with(|| {
-                    render_device.create_bind_group(&BindGroupDescriptor {
-                        entries: &[
+                    render_device.create_bind_group(
+                        "world_ui_bind_group",
+                        &world_ui_pipeline.material_layout,
+                        &[
                             BindGroupEntry {
                                 binding: 0,
                                 resource: BindingResource::TextureView(&gpu_image.texture_view),
@@ -579,9 +594,7 @@ pub fn queue_world_ui_meshes(
                                 resource: BindingResource::Sampler(&gpu_image.sampler),
                             },
                         ],
-                        label: Some("world_ui_bind_group"),
-                        layout: &world_ui_pipeline.material_layout,
-                    })
+                    )
                 });
 
             transparent_phase.add(Transparent3d {
@@ -589,11 +602,9 @@ pub fn queue_world_ui_meshes(
                 draw_function: draw_alpha_mask,
                 pipeline,
                 distance: inverse_view_row_2.dot(rect.world_position.extend(1.0)) + 999999.0,
+                batch_range: 0..1,
+                dynamic_offset: None,
             });
         }
     }
-
-    world_ui_meta
-        .vertices
-        .write_buffer(&render_device, &render_queue);
 }

@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 
-use bevy::{ecs::world::EntityMut, prelude::Mut};
+use bevy::{ecs::world, prelude::Mut};
+use world::EntityWorldMut;
 use num_traits::{AsPrimitive, Saturating, Signed};
 use rose_data::AbilityType;
 
@@ -222,7 +223,7 @@ pub fn ability_values_add_value(
 pub fn ability_values_add_value_exclusive(
     ability_type: AbilityType,
     value: i32,
-    entity: &mut EntityMut,
+    entity: &mut EntityWorldMut,
 ) -> bool {
     match ability_type {
         AbilityType::Strength => {
@@ -489,7 +490,7 @@ pub fn ability_values_set_value(
 pub fn ability_values_set_value_exclusive(
     ability_type: AbilityType,
     value: i32,
-    entity: &mut EntityMut,
+    entity: &mut EntityWorldMut,
 ) -> bool {
     match ability_type {
         AbilityType::Gender => {

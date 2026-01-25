@@ -2,13 +2,12 @@ use bevy::{
     hierarchy::BuildChildren,
     math::{Quat, Vec3},
     prelude::{
-        AssetServer, Assets, Commands, ComputedVisibility, Entity, GlobalTransform, Mesh,
-        Transform, Visibility,
+        AssetServer, Assets, Commands, Entity, GlobalTransform, Mesh, Transform, Visibility,
     },
     render::{
         primitives::Aabb,
         render_resource::{BlendFactor, BlendOperation},
-        view::NoFrustumCulling,
+        view::{ViewVisibility, InheritedVisibility, NoFrustumCulling},
     },
 };
 use rose_file_readers::{EftFile, EftMesh, EftParticle, PtlFile, VfsPath, VirtualFilesystem};
@@ -75,7 +74,7 @@ pub fn spawn_effect(
                 Transform::default(),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
+                ViewVisibility::default(), InheritedVisibility::default(),
             ))
             .push_children(&child_entities)
             .id();
@@ -135,16 +134,18 @@ fn spawn_mesh(
                 ),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
+                ViewVisibility::default(), InheritedVisibility::default(),
             ))
             .with_children(|child_builder| {
+                let mesh_path = ZmsNoSkinAssetLoader::convert_path(
+                    eft_mesh.mesh_file.path(),
+                );
+                let mesh: bevy::prelude::Handle<bevy::prelude::Mesh> = asset_server.load(mesh_path);
                 let mut entity_comands = child_builder.spawn((
                     EffectMesh {},
-                    asset_server.load::<Mesh, _>(ZmsNoSkinAssetLoader::convert_path(
-                        eft_mesh.mesh_file.path(),
-                    )),
+                    mesh,
                     effect_mesh_materials.add(EffectMeshMaterial {
-                        base_texture: Some(asset_server.load(eft_mesh.mesh_texture_file.path())),
+                        base_texture: Some(asset_server.load(eft_mesh.mesh_texture_file.path().to_string_lossy().into_owned())),
                         alpha_enabled: eft_mesh.alpha_enabled,
                         alpha_test: eft_mesh.alpha_test_enabled,
                         two_sided: eft_mesh.two_sided,
@@ -160,7 +161,7 @@ fn spawn_mesh(
                         }),
                     }),
                     Visibility::default(),
-                    ComputedVisibility::default(),
+                    ViewVisibility::default(), InheritedVisibility::default(),
                     Transform::default(),
                     GlobalTransform::default(),
                 ));
@@ -187,7 +188,7 @@ fn spawn_mesh(
                 }
 
                 if let Some(transform_animation_path) = &eft_mesh.animation_file {
-                    let motion = asset_server.load(transform_animation_path.path());
+                    let motion = asset_server.load(transform_animation_path.path().to_string_lossy().into_owned());
                     entity_comands.insert((TransformAnimation::repeat(
                         motion,
                         if eft_mesh.animation_repeat_count == 0 {
@@ -232,7 +233,7 @@ fn spawn_particle(
                 ),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
+                ViewVisibility::default(), InheritedVisibility::default(),
             ))
             .with_children(|child_builder| {
                 for sequence in ptl_file.sequences {
@@ -251,7 +252,7 @@ fn spawn_particle(
                             },
                         ),
                         particle_materials.add(ParticleMaterial {
-                            texture: asset_server.load(sequence.texture_path.path()),
+                            texture: asset_server.load(sequence.texture_path.path().to_string_lossy().into_owned()),
                         }),
                         ParticleSequence::from(sequence)
                             .with_start_delay(eft_particle.start_delay as f32 / 1000.0),
@@ -259,12 +260,12 @@ fn spawn_particle(
                         GlobalTransform::default(),
                         Aabb::default(),
                         Visibility::default(),
-                        ComputedVisibility::default(),
+                        ViewVisibility::default(), InheritedVisibility::default(),
                         NoFrustumCulling, // AABB culling is broken for particles
                     ));
 
                     if let Some(transform_animation_path) = &eft_particle.animation_file {
-                        let motion = asset_server.load(transform_animation_path.path());
+                        let motion = asset_server.load(transform_animation_path.path().to_string_lossy().into_owned());
                         entity_comands.insert((TransformAnimation::repeat(
                             motion,
                             if eft_particle.animation_repeat_count == 0 {

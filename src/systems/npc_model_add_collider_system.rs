@@ -65,8 +65,8 @@ pub fn npc_model_add_collider_system(
                 .max(0.0)
         } else {
             match asset_server.get_load_state(&npc_model.action_motions[NpcMotionAction::Stop]) {
-                LoadState::NotLoaded | LoadState::Loading => all_parts_loaded = false,
-                LoadState::Loaded | LoadState::Failed | LoadState::Unloaded => {}
+                Some(LoadState::NotLoaded) | Some(LoadState::Loading) => all_parts_loaded = false,
+                Some(LoadState::Loaded) | Some(LoadState::Failed) | None => {}
             }
             0.0
         };

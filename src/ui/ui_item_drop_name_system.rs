@@ -29,7 +29,10 @@ pub fn ui_item_drop_name_system(
         egui::Order::Background,
         egui::Id::new("item_drop_tooltips"),
     ));
-    let (camera, camera_transform) = query_camera.single();
+
+    let Ok((camera, camera_transform)) = query_camera.get_single() else {
+        return;
+    };
 
     visible_names.clear();
     visible_names.reserve(32);
@@ -98,9 +101,11 @@ pub fn ui_item_drop_name_system(
                 .rect
                 .translate(egui::vec2(visible_name.pos.x, visible_name.pos.y))
                 .expand(2.0),
-            rounding: egui::Rounding::none(),
+            rounding: egui::Rounding::ZERO,
             fill: style.visuals.window_fill,
             stroke: style.visuals.window_stroke,
+            fill_texture_id: egui::TextureId::default(),
+            uv: egui::Rect::ZERO,
         });
         tooltip_painter.add(egui::epaint::TextShape {
             pos: visible_name.pos,
@@ -108,6 +113,8 @@ pub fn ui_item_drop_name_system(
             underline: egui::Stroke::NONE,
             override_text_color: Some(visible_name.colour),
             angle: 0.0,
+            fallback_color: egui::Color32::TRANSPARENT,
+            opacity_factor: 1.0,
         });
     }
 }

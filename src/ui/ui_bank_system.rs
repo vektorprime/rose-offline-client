@@ -1,5 +1,4 @@
 use bevy::{
-    ecs::query::WorldQuery,
     math::Vec3Swizzles,
     prelude::{Assets, Entity, EventReader, EventWriter, Local, Query, Res, ResMut, With},
 };
@@ -15,7 +14,7 @@ use crate::{
     events::{BankEvent, PlayerCommandEvent},
     resources::{ClientEntityList, GameConnection, GameData, UiResources},
     ui::{
-        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
+        tooltips::PlayerTooltipQuery,
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop, UiStateWindows,
@@ -46,26 +45,19 @@ impl Default for UiStateBank {
     }
 }
 
-#[derive(WorldQuery)]
-pub struct PlayerQuery<'w> {
-    bank: &'w Bank,
-    character_info: &'w CharacterInfo,
-    position: &'w Position,
-}
-
 fn ui_add_bank_slot(
     ui: &mut egui::Ui,
     bank_slot_index: usize,
     pos: egui::Pos2,
-    player: &PlayerQueryItem,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player: &(&Bank, &CharacterInfo, &Position),
+    player_tooltip_data: Option<&PlayerTooltipQuery>,
     game_data: &GameData,
     ui_resources: &UiResources,
     ui_state_dnd: &mut UiStateDragAndDrop,
     player_command_events: &mut EventWriter<PlayerCommandEvent>,
 ) {
     let item = player
-        .bank
+        .0
         .slots
         .get(bank_slot_index)
         .and_then(|x| x.as_ref());
@@ -121,7 +113,7 @@ pub fn ui_bank_system(
     client_entity_list: Res<ClientEntityList>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
-    query_player: Query<PlayerQuery, With<PlayerCharacter>>,
+    query_player: Query<(&Bank, &CharacterInfo, &Position), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     query_position: Query<&Position>,
     mut player_command_events: EventWriter<PlayerCommandEvent>,
@@ -132,7 +124,7 @@ pub fn ui_bank_system(
         return;
     };
 
-    for event in bank_events.iter() {
+    for event in bank_events.read() {
         match *event {
             BankEvent::OpenBankFromClientEntity { client_entity_id } => {
                 if let Some(entity) = client_entity_list.get(client_entity_id) {
@@ -170,9 +162,9 @@ pub fn ui_bank_system(
         .bank_entity
         .and_then(|bank_entity| query_position.get(bank_entity).ok())
     {
-        // If player has moved away from bank entity, close the dialog
+        // If player has moved away from bank entity, close's dialog
         if player
-            .position
+            .2
             .position
             .xy()
             .distance(bank_position.position.xy())
@@ -222,7 +214,7 @@ pub fn ui_bank_system(
                         egui::Label::new(
                             egui::RichText::new(format!(
                                 "{}'s {}",
-                                player.character_info.name, game_data.client_strings.bank_tab
+                                player.1.name, game_data.client_strings.bank_tab
                             ))
                             .color(egui::Color32::WHITE)
                             .font(egui::FontId::new(

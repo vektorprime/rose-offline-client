@@ -1,8 +1,7 @@
 use bevy::{
-    input::Input,
     math::{EulerRot, Vec3},
     prelude::{
-        Camera3d, Commands, Entity, KeyCode, Local, NextState, Query, Res, ResMut, Resource,
+        ButtonInput, Camera3d, Commands, Entity, KeyCode, Local, NextState, Query, Res, ResMut, Resource,
         Transform, With,
     },
 };
@@ -62,11 +61,11 @@ pub fn ui_debug_menu_system(
     query_player: Query<Entity, With<PlayerCharacter>>,
     game_connection: Option<Res<GameConnection>>,
     world_connection: Option<Res<WorldConnection>>,
-    keyboard: Res<Input<KeyCode>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
     mut debug_inspector: ResMut<DebugInspector>,
     mut app_state_next: ResMut<NextState<AppState>>,
 ) {
-    if keyboard.pressed(KeyCode::ControlLeft) && keyboard.just_pressed(KeyCode::D) {
+    if keyboard.pressed(KeyCode::ControlLeft) && keyboard.just_pressed(KeyCode::KeyD) {
         ui_state_debug_windows.debug_ui_open = !ui_state_debug_windows.debug_ui_open;
     }
 

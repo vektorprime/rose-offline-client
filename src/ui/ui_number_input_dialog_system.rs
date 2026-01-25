@@ -3,7 +3,7 @@ use bevy_egui::{
     egui,
     egui::{
         epaint::text::cursor::{CCursor, Cursor, PCursor, RCursor},
-        text_edit::CursorRange,
+        text::CursorRange,
     },
     EguiContexts,
 };
@@ -87,7 +87,7 @@ pub fn ui_number_input_dialog_system(
     }
 
     if ui_state.active.as_ref().map_or(false, |x| x.modal) {
-        egui::Area::new("modal_ninput")
+        egui::Area::new(egui::Id::new("modal_ninput"))
             .interactable(true)
             .fixed_pos(egui::Pos2::ZERO)
             .show(egui_context.ctx_mut(), |ui| {
@@ -132,7 +132,7 @@ pub fn ui_number_input_dialog_system(
     let mut response_button_9 = None;
     let mut response_editbox = None;
 
-    let mut area = egui::Area::new("num_input_dlg")
+    let mut area = egui::Area::new(egui::Id::new("num_input_dlg"))
         .movable(true)
         .interactable(true)
         .default_pos([default_x, default_y])
@@ -195,7 +195,7 @@ pub fn ui_number_input_dialog_system(
             if let Some(mut state) =
                 egui::text_edit::TextEditState::load(&response_editbox.ctx, response_editbox.id)
             {
-                state.set_cursor_range(Some(CursorRange::one(Cursor {
+                state.cursor.set_range(Some(CursorRange::one(Cursor {
                     ccursor: CCursor {
                         index: text_length,
                         prefer_next_row: false,

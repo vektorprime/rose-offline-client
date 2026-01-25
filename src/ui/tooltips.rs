@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt::Write;
 
-use bevy::ecs::query::WorldQuery;
 use bevy_egui::egui;
 
 use rose_data::{
@@ -17,24 +16,25 @@ use crate::{bundles::ability_values_get_value, resources::GameData};
 
 const TOOLTIP_MAX_WIDTH: f32 = 300.0;
 
-#[derive(WorldQuery)]
-pub struct PlayerTooltipQuery<'w> {
-    pub ability_values: &'w AbilityValues,
-    pub character_info: &'w CharacterInfo,
-    pub experience_points: &'w ExperiencePoints,
-    pub health_points: &'w HealthPoints,
-    pub equipment: &'w Equipment,
-    pub inventory: &'w Inventory,
-    pub level: &'w Level,
-    pub mana_points: &'w ManaPoints,
-    pub move_speed: &'w MoveSpeed,
-    pub skill_list: &'w SkillList,
-    pub skill_points: &'w SkillPoints,
-    pub stamina: &'w Stamina,
-    pub stat_points: &'w StatPoints,
-    pub team: &'w Team,
-    pub union_membership: &'w UnionMembership,
-}
+pub type PlayerTooltipQuery<'w> = (
+    &'w AbilityValues,
+    &'w CharacterInfo,
+    &'w ExperiencePoints,
+    &'w HealthPoints,
+    &'w Equipment,
+    &'w Inventory,
+    &'w Level,
+    &'w ManaPoints,
+    &'w MoveSpeed,
+    &'w SkillList,
+    &'w SkillPoints,
+    &'w Stamina,
+    &'w StatPoints,
+    &'w Team,
+    &'w UnionMembership,
+);
+
+pub type PlayerTooltipQueryItem<'w> = PlayerTooltipQuery<'w>;
 
 pub fn get_item_name_color(item_type: ItemType, item_data: &BaseItemData) -> egui::Color32 {
     match item_type {
@@ -196,7 +196,7 @@ fn add_equipment_item_add_appraisal(
 fn add_item_equip_requirement(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     item_data: &BaseItemData,
 ) {
     if let Some(job_class_id) = item_data.equip_job_class_requirement {
@@ -204,7 +204,7 @@ fn add_item_equip_requirement(
             let color = if player.map_or(true, |player| {
                 job_class
                     .jobs
-                    .contains(&JobId::new(player.character_info.job))
+                    .contains(&JobId::new(player.1.job))
             }) {
                 egui::Color32::GREEN
             } else {
@@ -231,7 +231,7 @@ fn add_item_equip_requirement(
         let mut union_color = egui::Color32::RED;
         for union_id in item_data.equip_union_requirement.iter() {
             if let Some(player) = player {
-                if let Some(current_union) = player.union_membership.current_union {
+                if let Some(current_union) = player.14.current_union {
                     if current_union == *union_id {
                         union_color = egui::Color32::GREEN;
                     }
@@ -247,23 +247,23 @@ fn add_item_equip_requirement(
     for &(ability_type, value) in item_data.equip_ability_requirement.iter() {
         let mut color = egui::Color32::RED;
 
-        if let Some(player) = player {
-            if let Some(current_value) = ability_values_get_value(
-                ability_type,
-                player.ability_values,
-                Some(player.character_info),
-                Some(player.experience_points),
-                Some(player.health_points),
-                Some(player.inventory),
-                Some(player.level),
-                Some(player.mana_points),
-                Some(player.move_speed),
-                Some(player.skill_points),
-                Some(player.stamina),
-                Some(player.stat_points),
-                Some(player.team),
-                Some(player.union_membership),
-            ) {
+    if let Some(player) = player {
+        if let Some(current_value) = ability_values_get_value(
+            ability_type,
+            player.0,
+            Some(player.1),
+            Some(player.2),
+            Some(player.3),
+            Some(player.5),
+            Some(player.6),
+            Some(player.7),
+            Some(player.8),
+            Some(player.10),
+            Some(player.11),
+            Some(player.12),
+            Some(player.13),
+            Some(player.14),
+        ) {
                 if current_value >= value as i32 {
                     color = egui::Color32::GREEN;
                 }
@@ -292,7 +292,7 @@ fn add_item_description(ui: &mut egui::Ui, game_data: &GameData, item_data: &Bas
 pub fn ui_add_item_tooltip(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     item: &Item,
 ) {
     ui.set_max_width(TOOLTIP_MAX_WIDTH);
@@ -734,7 +734,7 @@ fn add_skill_recover_xp(ui: &mut egui::Ui, game_data: &GameData, skill_data: &Sk
 fn add_skill_require_ability(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     skill_data: &SkillData,
 ) {
     if skill_data.required_ability.is_empty() {
@@ -747,19 +747,19 @@ fn add_skill_require_ability(
         if let Some(player) = player {
             if let Some(current_value) = ability_values_get_value(
                 ability_type,
-                player.ability_values,
-                Some(player.character_info),
-                Some(player.experience_points),
-                Some(player.health_points),
-                Some(player.inventory),
-                Some(player.level),
-                Some(player.mana_points),
-                Some(player.move_speed),
-                Some(player.skill_points),
-                Some(player.stamina),
-                Some(player.stat_points),
-                Some(player.team),
-                Some(player.union_membership),
+                player.0,
+                Some(player.1),
+                Some(player.2),
+                Some(player.3),
+                Some(player.5),
+                Some(player.6),
+                Some(player.7),
+                Some(player.8),
+                Some(player.10),
+                Some(player.11),
+                Some(player.12),
+                Some(player.13),
+                Some(player.14),
             ) {
                 if current_value >= value {
                     color = egui::Color32::GREEN;
@@ -781,7 +781,7 @@ fn add_skill_require_ability(
 fn add_skill_require_job(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     skill_data: &SkillData,
 ) {
     if let Some(job_class_id) = skill_data.required_job_class {
@@ -789,7 +789,7 @@ fn add_skill_require_job(
             let color = if player.map_or(true, |player| {
                 job_class
                     .jobs
-                    .contains(&JobId::new(player.character_info.job))
+                    .contains(&JobId::new(player.1.job))
             }) {
                 egui::Color32::GREEN
             } else {
@@ -810,7 +810,7 @@ fn add_skill_require_job(
 fn add_skill_require_skill(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     skill_data: &SkillData,
 ) {
     if skill_data.required_skills.is_empty() {
@@ -824,7 +824,7 @@ fn add_skill_require_skill(
             let mut color = egui::Color32::RED;
 
             if let Some(player) = player {
-                if let Some((_, _, skill_level)) = player.skill_list.find_skill_level(
+                if let Some((_, _, skill_level)) = player.9.find_skill_level(
                     &game_data.skills,
                     required_skill_data
                         .base_skill_id
@@ -855,7 +855,7 @@ fn add_skill_require_skill(
 fn add_skill_require_skill_point(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     skill_data: &SkillData,
 ) {
     if skill_data.learn_point_cost == 0 {
@@ -864,7 +864,7 @@ fn add_skill_require_skill_point(
     }
 
     let color = if player.map_or(true, |player| {
-        player.skill_points.points >= skill_data.learn_point_cost
+        player.10.points >= skill_data.learn_point_cost
     }) {
         egui::Color32::GREEN
     } else {
@@ -883,7 +883,7 @@ fn add_skill_require_skill_point(
 fn add_skill_require_equipment(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     skill_data: &SkillData,
 ) {
     if skill_data.required_ability.is_empty() {
@@ -903,7 +903,7 @@ fn add_skill_require_equipment(
 
         if let Some(player) = player {
             for equipment in player
-                .equipment
+                .4
                 .equipped_items
                 .iter()
                 .filter_map(|(_, x)| x.as_ref())
@@ -924,7 +924,7 @@ fn add_skill_require_equipment(
 fn add_skill_requirements(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     skill_data: &SkillData,
 ) {
     add_skill_require_job(ui, game_data, player, skill_data);
@@ -937,7 +937,7 @@ fn add_skill_requirements(
 fn add_skill_status_effects(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     skill_data: &SkillData,
 ) {
     let prefix = if matches!(skill_data.skill_type, SkillType::Passive) {
@@ -957,7 +957,7 @@ fn add_skill_status_effects(
             ) {
                 (skill_add_ability.value as f32
                     * (player.map_or(15.0, |player| {
-                        player.ability_values.get_intelligence() as f32
+                        player.0.get_intelligence() as f32
                     }) + 300.0)
                     / 315.0) as i32
             } else {
@@ -1097,7 +1097,7 @@ fn add_skill_type_and_target(ui: &mut egui::Ui, game_data: &GameData, skill_data
 fn add_skill_use_ability_value(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     skill_data: &SkillData,
 ) {
     for &(ability_type, mut value) in skill_data.use_ability.iter() {
@@ -1105,25 +1105,25 @@ fn add_skill_use_ability_value(
 
         if let Some(player) = player {
             if matches!(ability_type, AbilityType::Mana) {
-                let use_mana_rate = (100 - player.ability_values.get_save_mana()) as f32 / 100.0;
+                let use_mana_rate = (100 - player.0.get_save_mana()) as f32 / 100.0;
                 value = (value as f32 * use_mana_rate) as i32;
             }
 
             if let Some(current_value) = ability_values_get_value(
                 ability_type,
-                player.ability_values,
-                Some(player.character_info),
-                Some(player.experience_points),
-                Some(player.health_points),
-                Some(player.inventory),
-                Some(player.level),
-                Some(player.mana_points),
-                Some(player.move_speed),
-                Some(player.skill_points),
-                Some(player.stamina),
-                Some(player.stat_points),
-                Some(player.team),
-                Some(player.union_membership),
+                player.0,
+                Some(player.1),
+                Some(player.2),
+                Some(player.3),
+                Some(player.5),
+                Some(player.6),
+                Some(player.7),
+                Some(player.8),
+                Some(player.10),
+                Some(player.11),
+                Some(player.12),
+                Some(player.13),
+                Some(player.14),
             ) {
                 if current_value >= value {
                     color = egui::Color32::GREEN;
@@ -1154,7 +1154,7 @@ pub fn ui_add_skill_tooltip(
     ui: &mut egui::Ui,
     tooltip_type: SkillTooltipType,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem>,
+    player: Option<&PlayerTooltipQuery<'_>>,
     skill_id: SkillId,
 ) {
     ui.set_max_width(TOOLTIP_MAX_WIDTH);

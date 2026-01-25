@@ -1,7 +1,6 @@
 use bevy::{
-    ecs::query::WorldQuery,
-    input::Input,
-    prelude::{Assets, EventWriter, KeyCode, Local, Query, Res, ResMut, With},
+    ecs::{event::EventWriter, query::QueryData},
+    prelude::{Assets, ButtonInput, KeyCode, Local, Query, Res, ResMut, With},
 };
 use bevy_egui::{egui, EguiContexts};
 
@@ -14,7 +13,7 @@ use crate::{
     events::PlayerCommandEvent,
     resources::{GameData, UiResources},
     ui::{
-        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem, SkillTooltipType},
+        tooltips::{PlayerTooltipQuery, SkillTooltipType},
         ui_add_item_tooltip, ui_add_skill_tooltip,
         ui_inventory_system::GetItem,
         widgets::{DataBindings, Dialog, Widget},
@@ -47,8 +46,8 @@ impl Default for UiStateHotBar {
     }
 }
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
+#[derive(QueryData)]
+#[query_data(mutable)]
 pub struct PlayerQuery<'w> {
     hotbar: &'w mut Hotbar,
     cooldowns: &'w Cooldowns,
@@ -69,7 +68,7 @@ fn ui_add_hotbar_slot(
     pos: egui::Pos2,
     hotbar_index: (usize, usize),
     player: &mut PlayerQueryItem,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player_tooltip_data: Option<&PlayerTooltipQuery>,
     game_data: &GameData,
     ui_resources: &UiResources,
     ui_state_dnd: &mut UiStateDragAndDrop,
@@ -204,7 +203,7 @@ pub fn ui_hotbar_system(
     mut query_player: Query<PlayerQuery, With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     mut player_command_events: EventWriter<PlayerCommandEvent>,
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
     dialog_assets: Res<Assets<Dialog>>,

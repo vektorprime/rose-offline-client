@@ -94,7 +94,7 @@ pub fn ui_chatbox_system(
     let local_time = chrono::Local::now();
     let timestamp = local_time.format("%H:%M:%S");
 
-    for event in chatbox_events.iter() {
+    for event in chatbox_events.read() {
         if ui_state_chatbox.textbox_layout_job.sections.len() == MAX_CHATBOX_ENTRIES {
             ui_state_chatbox.textbox_layout_job.sections.remove(0);
             ui_state_chatbox.cleanup_layout_text_counter += 1;

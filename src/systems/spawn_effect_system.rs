@@ -40,7 +40,7 @@ pub fn spawn_effect_system(
     mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
 ) {
-    for event in events.iter() {
+    for event in events.read() {
         match event {
             SpawnEffectEvent::InEntity(effect_entity, spawn_effect_data) => {
                 if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data)

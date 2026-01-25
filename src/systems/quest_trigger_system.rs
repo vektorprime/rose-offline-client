@@ -13,7 +13,7 @@ pub fn quest_trigger_system(
     mut script_context: ScriptFunctionContext,
     script_resources: ScriptFunctionResources,
 ) {
-    for event in quest_trigger_events.iter() {
+    for event in quest_trigger_events.read() {
         match *event {
             QuestTriggerEvent::ApplyRewards(trigger_hash) => {
                 quest_apply_rewards(&script_resources, &mut script_context, trigger_hash).ok();

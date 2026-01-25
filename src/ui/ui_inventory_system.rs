@@ -1,6 +1,6 @@
 use bevy::{
-    ecs::query::WorldQuery,
-    prelude::{Assets, EventWriter, Events, Local, Query, Res, ResMut, With, World},
+    ecs::event::EventWriter,
+    prelude::{Assets, Events, Local, Query, Res, ResMut, With, World},
 };
 use bevy_egui::{egui, EguiContexts};
 use enum_map::{enum_map, EnumMap};
@@ -15,7 +15,7 @@ use crate::{
     events::{NumberInputDialogEvent, PlayerCommandEvent},
     resources::{GameData, UiResources},
     ui::{
-        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
+        tooltips::PlayerTooltipQuery,
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog, Widget},
         DialogInstance, DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop,
@@ -218,8 +218,8 @@ fn ui_add_inventory_slot(
     ui: &mut egui::Ui,
     inventory_slot: ItemSlot,
     pos: egui::Pos2,
-    player: &PlayerQueryItem,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player: &(&Equipment, &Inventory, &Cooldowns),
+    player_tooltip_data: Option<&PlayerTooltipQuery>,
     game_data: &GameData,
     ui_resources: &UiResources,
     item_slot_map: &mut EnumMap<InventoryPageType, Vec<ItemSlot>>,
@@ -237,10 +237,10 @@ fn ui_add_inventory_slot(
         ItemSlot::Ammo(_) => drag_accepts_materials,
         ItemSlot::Vehicle(_) => drag_accepts_vehicles,
     };
-    let item = (player.equipment, player.inventory).get_item(inventory_slot);
+    let item = (player.0, player.1).get_item(inventory_slot);
 
     let mut dropped_item = None;
-    let response = ui
+    let mut response = ui
         .allocate_ui_at_rect(
             egui::Rect::from_min_size(ui.min_rect().min + pos.to_vec2(), egui::vec2(40.0, 40.0)),
             |ui| {
@@ -248,7 +248,7 @@ fn ui_add_inventory_slot(
                     DragAndDropSlot::with_item(
                         DragAndDropId::Inventory(inventory_slot),
                         item.as_ref(),
-                        Some(player.cooldowns),
+                        Some(player.2),
                         game_data,
                         ui_resources,
                         drag_accepts,
@@ -271,6 +271,12 @@ fn ui_add_inventory_slot(
     let mut use_inventory_slot = None;
     let mut drop_inventory_slot = None;
     let mut swap_inventory_slots = None;
+
+    if item.is_some() {
+        response = response.on_hover_ui(|ui| {
+            ui_add_item_tooltip(ui, game_data, player_tooltip_data, item.as_ref().unwrap());
+        });
+    }
 
     if response.double_clicked() {
         match inventory_slot {
@@ -341,10 +347,6 @@ fn ui_add_inventory_slot(
             if matches!(inventory_slot, ItemSlot::Inventory(_, _)) && ui.button("Drop").clicked() {
                 drop_inventory_slot = Some(inventory_slot);
             }
-        });
-
-        response.on_hover_ui(|ui| {
-            ui_add_item_tooltip(ui, game_data, player_tooltip_data, &item);
         });
     }
 
@@ -448,20 +450,13 @@ fn ui_add_inventory_slot(
     }
 }
 
-#[derive(WorldQuery)]
-pub struct PlayerQuery<'w> {
-    equipment: &'w Equipment,
-    inventory: &'w Inventory,
-    cooldowns: &'w Cooldowns,
-}
-
 pub fn ui_inventory_system(
     mut egui_context: EguiContexts,
     mut ui_state_inventory: Local<UiStateInventory>,
     mut ui_state_dnd: ResMut<UiStateDragAndDrop>,
     mut ui_state_windows: ResMut<UiStateWindows>,
     mut ui_sound_events: EventWriter<UiSoundEvent>,
-    query_player: Query<PlayerQuery, With<PlayerCharacter>>,
+    query_player: Query<(&Equipment, &Inventory, &Cooldowns), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     dialog_assets: Res<Assets<Dialog>>,
     game_data: Res<GameData>,
@@ -628,7 +623,7 @@ pub fn ui_inventory_system(
                         )),
                         |ui| {
                             ui.horizontal_top(|ui| {
-                                ui.add(egui::Label::new(format!("{}", player.inventory.money.0)))
+                                ui.add(egui::Label::new(format!("{}", player.1.money.0)))
                             })
                             .inner
                         },
@@ -657,9 +652,9 @@ pub fn ui_inventory_system(
         }
     }
 
-    if response_drop_money_button.map_or(false, |r| r.clicked()) && player.inventory.money.0 > 0 {
+    if response_drop_money_button.map_or(false, |r| r.clicked()) && player.1.money.0 > 0 {
         number_input_dialog_events.send(NumberInputDialogEvent::Show {
-            max_value: Some(player.inventory.money.0 as usize),
+            max_value: Some(player.1.money.0 as usize),
             modal: false,
             ok: Some(Box::new(move |commands, amount| {
                 commands.add(move |world: &mut World| {

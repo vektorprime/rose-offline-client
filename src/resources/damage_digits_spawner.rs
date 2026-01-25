@@ -1,6 +1,6 @@
 use bevy::{
     prelude::{
-        AssetServer, Assets, BuildChildren, Commands, ComputedVisibility, GlobalTransform, Handle,
+        AssetServer, Assets, BuildChildren, Commands, ViewVisibility, InheritedVisibility, GlobalTransform, Handle,
         Resource, Transform, Vec3, Visibility,
     },
     render::primitives::Aabb,
@@ -57,7 +57,7 @@ impl DamageDigitsSpawner {
                 ),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
+                ViewVisibility::default(), InheritedVisibility::default(),
             ))
             .with_children(|child_builder| {
                 child_builder.spawn((
@@ -75,7 +75,7 @@ impl DamageDigitsSpawner {
                     GlobalTransform::default(),
                     Aabb::default(),
                     Visibility::default(),
-                    ComputedVisibility::default(),
+                    ViewVisibility::default(), InheritedVisibility::default(),
                 ));
             });
     }

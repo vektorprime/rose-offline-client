@@ -4,6 +4,7 @@ use bevy::{
         AssetServer, Assets, Changed, Commands, Component, Entity, Handle, Query, Res, ResMut,
     },
 };
+use std::sync::Arc;
 
 use super::{audio_source::AudioSource, streaming_sound::StreamingSound, OddioContext, SoundGain};
 
@@ -118,14 +119,17 @@ pub fn global_sound_system(
 
             global_sound.control_handle = Some(if channels == 2 {
                 let stream_signal = oddio::Stream::new(sample_rate, sample_rate as usize / 2);
-                let gain_signal = match sound_gain {
-                    Some(&SoundGain::Decibel(db)) => oddio::Gain::with_gain(stream_signal, db),
-                    Some(&SoundGain::Ratio(factor)) => {
-                        oddio::Gain::with_amplitude_ratio(stream_signal, factor)
-                    }
-                    None => oddio::Gain::new(stream_signal),
-                };
+                let gain_signal = oddio::Gain::new(stream_signal);
                 let mut handle = player.control().play(gain_signal);
+
+                // Set initial gain based on sound_gain
+                if let Some(gain) = sound_gain {
+                    let mut gain_control = handle.control::<oddio::Gain<_>, _>();
+                    match *gain {
+                        SoundGain::Decibel(db) => gain_control.set_gain(db),
+                        SoundGain::Ratio(factor) => gain_control.set_amplitude_ratio(factor),
+                    }
+                }
 
                 streaming_sound
                     .fill_stereo(&mut handle.control::<oddio::Stream<_>, _>(), repeating);
@@ -134,14 +138,17 @@ pub fn global_sound_system(
                 ControlHandle::Stereo(handle)
             } else {
                 let stream_signal = oddio::Stream::new(sample_rate, sample_rate as usize / 2);
-                let gain_signal = match sound_gain {
-                    Some(&SoundGain::Decibel(db)) => oddio::Gain::with_gain(stream_signal, db),
-                    Some(&SoundGain::Ratio(factor)) => {
-                        oddio::Gain::with_amplitude_ratio(stream_signal, factor)
-                    }
-                    None => oddio::Gain::new(stream_signal),
-                };
+                let gain_signal = oddio::Gain::new(stream_signal);
                 let mut handle = player.control().play(oddio::MonoToStereo::new(gain_signal));
+
+                // Set initial gain based on sound_gain
+                if let Some(gain) = sound_gain {
+                    let mut gain_control = handle.control::<oddio::Gain<_>, _>();
+                    match *gain {
+                        SoundGain::Decibel(db) => gain_control.set_gain(db),
+                        SoundGain::Ratio(factor) => gain_control.set_amplitude_ratio(factor),
+                    }
+                }
 
                 streaming_sound.fill_mono(&mut handle.control::<oddio::Stream<_>, _>(), repeating);
 
@@ -149,15 +156,15 @@ pub fn global_sound_system(
                 ControlHandle::Mono(handle)
             });
             global_sound.streaming_sound = Some(streaming_sound);
-        } else if matches!(
-            asset_server.get_load_state(&global_sound.asset_handle),
-            LoadState::Failed | LoadState::Unloaded
-        ) {
-            global_sound.asset_handle = Handle::default();
+        } else {
+            let load_state = asset_server.get_load_state(&global_sound.asset_handle);
+            if matches!(load_state, Some(LoadState::Failed) | Some(LoadState::NotLoaded)) {
+                global_sound.asset_handle = Handle::default();
 
-            if !global_sound.repeating {
-                // Despawn non-repeating sounds which fail to load
-                commands.entity(entity).despawn();
+                if !global_sound.repeating {
+                    // Despawn non-repeating sounds which fail to load
+                    commands.entity(entity).despawn();
+                }
             }
         }
     }

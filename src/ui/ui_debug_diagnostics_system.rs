@@ -31,12 +31,12 @@ pub fn ui_debug_diagnostics_system(
                     for diagnostic in diagnostics.iter() {
                         if let Some(value) = diagnostic.value() {
                             if let Some(average) = diagnostic.average() {
-                                ui.label(diagnostic.name.as_ref());
+                                ui.label("Diagnostic");
                                 ui.label(format!("{:>11.6}{:1}", value, diagnostic.suffix));
                                 ui.label(format!("{:>.6}{}", average, diagnostic.suffix));
                                 ui.end_row();
                             } else {
-                                ui.label(diagnostic.name.as_ref());
+                                ui.label("Diagnostic");
                                 ui.label(format!("{:>11.6}{:1}", value, diagnostic.suffix));
                                 ui.end_row();
                             }

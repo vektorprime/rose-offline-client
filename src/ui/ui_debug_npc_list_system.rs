@@ -169,10 +169,10 @@ pub fn ui_debug_npc_list_system(
                     body.rows(
                         20.0,
                         ui_state_debug_npc_list.filtered_npcs.len(),
-                        |row_index, mut row| {
+                        |mut row| {
                             if let Some(npc_data) = ui_state_debug_npc_list
                                 .filtered_npcs
-                                .get(row_index)
+                                .get(row.index())
                                 .and_then(|id| game_data.npcs.get_npc(*id))
                             {
                                 row.col(|ui| {

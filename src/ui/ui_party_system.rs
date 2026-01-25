@@ -1,7 +1,4 @@
-use bevy::{
-    ecs::query::WorldQuery,
-    prelude::{Assets, Entity, EventReader, EventWriter, Local, Query, Res, ResMut, With},
-};
+use bevy::prelude::{Assets, Entity, EventReader, EventWriter, Local, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::{
@@ -32,25 +29,6 @@ const IID_BTN_LEAVE: i32 = 13;
 const IID_BTN_OPTION: i32 = 14;
 const IID_PARTY_XP_GAUGE: i32 = 1001;
 const IID_PARTY_MEMBER_HP_GAUGE: i32 = 1002;
-
-#[derive(WorldQuery)]
-pub struct PlayerQuery<'w> {
-    _player_character: With<PlayerCharacter>,
-    entity: Entity,
-    ability_values: &'w AbilityValues,
-    character_info: &'w CharacterInfo,
-    health_points: &'w HealthPoints,
-    level: &'w Level,
-    party_info: Option<&'w PartyInfo>,
-}
-
-#[derive(WorldQuery)]
-pub struct PartyMemberQuery<'w> {
-    character_info: &'w CharacterInfo,
-    ability_values: &'w AbilityValues,
-    health_points: &'w HealthPoints,
-    level: &'w Level,
-}
 
 pub struct PendingPartyInvite {
     is_create: bool,
@@ -99,8 +77,8 @@ pub fn ui_party_system(
     mut ui_state_windows: ResMut<UiStateWindows>,
     mut ui_sound_events: EventWriter<UiSoundEvent>,
     mut egui_context: EguiContexts,
-    query_player: Query<PlayerQuery>,
-    query_party_member: Query<PartyMemberQuery>,
+    mut query_player: Query<(Entity, &AbilityValues, &CharacterInfo, &HealthPoints, &Level, Option<&PartyInfo>), With<PlayerCharacter>>,
+    query_party_member: Query<(&CharacterInfo, &AbilityValues, &HealthPoints, &Level)>,
     query_invite: Query<(&ClientEntity, &ClientEntityName)>,
     mut party_events: EventReader<PartyEvent>,
     game_connection: Option<Res<GameConnection>>,
@@ -116,7 +94,7 @@ pub fn ui_party_system(
     };
 
     // Add any new incoming invites
-    for event in party_events.iter() {
+    for event in party_events.read() {
         match *event {
             PartyEvent::InvitedCreate(entity) => {
                 if let Ok((client_entity, client_entity_name)) = query_invite.get(entity) {
@@ -146,7 +124,7 @@ pub fn ui_party_system(
         let mut rejected = false;
         let pending_invite = &ui_state.pending_invites[i];
 
-        if player.party_info.is_none() {
+        if player.5.is_none() {
             egui::Window::new("Party Invite")
                 .id(egui::Id::new(format!(
                     "party_invite_{}",
@@ -245,9 +223,9 @@ pub fn ui_party_system(
     let mut response_leave_button = None;
     let mut response_option_button = None;
 
-    ui_state_windows.party_open = player.party_info.is_some();
+    ui_state_windows.party_open = player.5.is_some();
 
-    if let Some(party_info) = player.party_info {
+    if let Some(party_info) = player.5 {
         let player_is_owner = matches!(party_info.owner, PartyOwner::Player);
 
         egui::Window::new("Party2")
@@ -303,9 +281,9 @@ pub fn ui_party_system(
                                                     query_party_member.get(entity).ok()
                                                 })
                                             {
-                                                let hp_percent = party_member.health_points.hp
+                                                let hp_percent = party_member.2.hp
                                                     as f32
-                                                    / party_member.ability_values.get_max_health()
+                                                    / party_member.1.get_max_health()
                                                         as f32;
 
                                                 ui_state.party_member_health_gauge.x = 220.0
@@ -368,7 +346,7 @@ pub fn ui_party_system(
                 .selected_party_member_index
                 .and_then(|index| party_info.members.get(index))
             {
-                if player.character_info.unique_id != selected_party_member.get_character_id() {
+                if player.2.unique_id != selected_party_member.get_character_id() {
                     if response_kick_button.as_ref().map_or(false, |x| x.clicked()) {
                         if let Some(game_connection) = &game_connection {
                             game_connection

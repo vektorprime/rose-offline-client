@@ -1,17 +1,15 @@
 use bevy::{
     app::{App, Plugin},
-    asset::{AddAsset, Handle},
-    ecs::system::{lifetimeless::SRes, SystemParamItem},
-    reflect::{TypePath, TypeUuid},
+    asset::{Asset, AssetApp, Handle},
+    ecs::system::SystemParamItem,
+    reflect::TypePath,
     render::{
-        render_asset::{PrepareAssetError, RenderAsset, RenderAssetPlugin},
-        renderer::RenderDevice,
+        render_asset::{PrepareAssetError, RenderAsset, RenderAssetPlugin, RenderAssetUsages},
         texture::Image,
     },
 };
 
-#[derive(Debug, Clone, TypeUuid, TypePath)]
-#[uuid = "0078f73d-8715-427e-aa65-dc8e1f485d3d"]
+#[derive(Debug, Clone, TypePath, Asset)]
 pub struct ParticleMaterial {
     pub texture: Handle<Image>,
 }
@@ -20,31 +18,30 @@ pub struct ParticleMaterialPlugin;
 
 impl Plugin for ParticleMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(RenderAssetPlugin::<ParticleMaterial>::default())
-            .add_asset::<ParticleMaterial>();
+        app.init_asset::<ParticleMaterial>()
+            .add_plugins(RenderAssetPlugin::<ParticleMaterial>::default());
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, TypePath)]
 pub struct GpuParticleMaterial {
     pub texture: Handle<Image>,
 }
 
 impl RenderAsset for ParticleMaterial {
-    type ExtractedAsset = ParticleMaterial;
     type PreparedAsset = GpuParticleMaterial;
-    type Param = SRes<RenderDevice>;
+    type Param = ();
 
-    fn extract_asset(&self) -> Self::ExtractedAsset {
-        self.clone()
+    fn asset_usage(&self) -> RenderAssetUsages {
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD
     }
 
     fn prepare_asset(
-        material: Self::ExtractedAsset,
-        _render_device: &mut SystemParamItem<Self::Param>,
-    ) -> Result<Self::PreparedAsset, PrepareAssetError<Self::ExtractedAsset>> {
+        self,
+        _param: &mut SystemParamItem<Self::Param>,
+    ) -> Result<Self::PreparedAsset, PrepareAssetError<Self>> {
         Ok(GpuParticleMaterial {
-            texture: material.texture,
+            texture: self.texture,
         })
     }
 }

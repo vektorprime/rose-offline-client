@@ -1,12 +1,8 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use bevy::{
-    ecs::query::WorldQuery,
-    prelude::{
-        AssetServer, Commands, Entity, EventReader, EventWriter, GlobalTransform, Query, Res,
-        Transform,
-    },
-    time::Time,
+use bevy::prelude::{
+    AssetServer, Commands, Entity, EventReader, EventWriter, GlobalTransform, Query, Res,
+    Transform,
 };
 
 use rose_data::ItemType;
@@ -19,33 +15,29 @@ use crate::{
     resources::{GameData, SoundCache, SoundSettings},
 };
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
-pub struct EntityQuery<'w> {
-    entity: Entity,
-    global_transform: &'w GlobalTransform,
-    status_effects: &'w mut StatusEffects,
-    status_effects_regen: &'w mut StatusEffectsRegen,
-    is_player: Option<&'w PlayerCharacter>,
-}
-
 pub fn use_item_event_system(
     mut commands: Commands,
     mut events: EventReader<UseItemEvent>,
     mut spawn_effect_events: EventWriter<SpawnEffectEvent>,
-    mut query: Query<EntityQuery>,
+    mut query: Query<(
+        Entity,
+        &GlobalTransform,
+        &mut StatusEffects,
+        &mut StatusEffectsRegen,
+        Option<&PlayerCharacter>,
+    )>,
     asset_server: Res<AssetServer>,
     game_data: Res<GameData>,
     sound_settings: Res<SoundSettings>,
     sound_cache: Res<SoundCache>,
-    time: Res<Time>,
 ) {
-    for UseItemEvent { entity, item } in events.iter() {
-        let mut user = if let Ok(user) = query.get_mut(*entity) {
-            user
-        } else {
-            continue;
-        };
+    for UseItemEvent { entity, item } in events.read() {
+        let (user_entity, user_global_transform, mut user_status_effects, mut user_status_effects_regen, user_is_player) =
+            if let Ok(user) = query.get_mut(*entity) {
+                user
+            } else {
+                continue;
+            };
 
         if item.item_type != ItemType::Consumable {
             continue;
@@ -60,7 +52,7 @@ pub fn use_item_event_system(
 
         if let Some(effect_file_id) = item_data.effect_file_id {
             spawn_effect_events.send(SpawnEffectEvent::OnEntity(
-                user.entity,
+                user_entity,
                 None,
                 SpawnEffectData::with_file_id(effect_file_id),
             ));
@@ -70,7 +62,7 @@ pub fn use_item_event_system(
             .effect_sound_id
             .and_then(|id| game_data.sounds.get_sound(id))
         {
-            let category = if user.is_player.is_some() {
+            let category = if user_is_player.is_some() {
                 SoundCategory::PlayerCombat
             } else {
                 SoundCategory::OtherCombat
@@ -80,8 +72,8 @@ pub fn use_item_event_system(
                 category,
                 sound_settings.gain(category),
                 SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                Transform::from_translation(user.global_transform.translation()),
-                GlobalTransform::from_translation(user.global_transform.translation()),
+                Transform::from_translation(user_global_transform.translation()),
+                GlobalTransform::from_translation(user_global_transform.translation()),
             ));
         }
 
@@ -100,14 +92,14 @@ pub fn use_item_event_system(
                             .map(|data| (data, value))
                     })
                 {
-                    if user
-                        .status_effects
-                        .can_apply(status_effect_data, status_effect_data.id.get() as i32)
-                    {
-                        user.status_effects.apply_potion(
-                            &mut user.status_effects_regen,
+                    if user_status_effects.can_apply(
+                        status_effect_data,
+                        status_effect_data.id.get() as i32,
+                    ) {
+                        user_status_effects.apply_potion(
+                            &mut user_status_effects_regen,
                             status_effect_data,
-                            time.last_update().unwrap()
+                            Instant::now()
                                 + Duration::from_micros(
                                     total_potion_value as u64 * 1000000
                                         / potion_value_per_second as u64,

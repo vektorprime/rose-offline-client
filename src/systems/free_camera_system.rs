@@ -1,7 +1,7 @@
 use bevy::{
     input::{
         mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
-        Input,
+        ButtonInput,
     },
     math::{Quat, Vec2, Vec3},
     prelude::{
@@ -47,8 +47,8 @@ pub fn free_camera_system(
     time: Res<Time>,
     mut mouse_motion_events: EventReader<MouseMotion>,
     mut mouse_wheel_reader: EventReader<MouseWheel>,
-    keyboard: Res<Input<KeyCode>>,
-    mouse_buttons: Res<Input<MouseButton>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut query_window: Query<&mut Window, With<PrimaryWindow>>,
     mut egui_ctx: EguiContexts,
 ) {
@@ -83,11 +83,11 @@ pub fn free_camera_system(
     let mut cursor_delta = Vec2::ZERO;
     let mut move_speed_multiplier = 1.0;
     if allow_mouse_input {
-        for event in mouse_motion_events.iter() {
+        for event in mouse_motion_events.read() {
             cursor_delta += event.delta;
         }
 
-        for event in mouse_wheel_reader.iter() {
+        for event in mouse_wheel_reader.read() {
             match event.unit {
                 MouseScrollUnit::Line => move_speed_multiplier *= 1.0 + event.y * 0.10,
                 MouseScrollUnit::Pixel => move_speed_multiplier *= 1.0 + event.y * 0.0005,
@@ -103,12 +103,12 @@ pub fn free_camera_system(
     if allow_keyboard_input {
         for key in keyboard.get_pressed() {
             match key {
-                KeyCode::W => move_vec.z -= 1.0,      // Forward
-                KeyCode::S => move_vec.z += 1.0,      // Backward
-                KeyCode::A => move_vec.x -= 1.0,      // Left
-                KeyCode::D => move_vec.x += 1.0,      // Right
-                KeyCode::Q => translate_vec.y -= 1.0, // Down
-                KeyCode::E => translate_vec.y += 1.0, // Up
+                KeyCode::KeyW => move_vec.z -= 1.0,      // Forward
+                KeyCode::KeyS => move_vec.z += 1.0,      // Backward
+                KeyCode::KeyA => move_vec.x -= 1.0,      // Left
+                KeyCode::KeyD => move_vec.x += 1.0,      // Right
+                KeyCode::KeyQ => translate_vec.y -= 1.0, // Down
+                KeyCode::KeyE => translate_vec.y += 1.0, // Up
                 KeyCode::ShiftLeft => speed_boost_multiplier = 4.0,
                 _ => {}
             }

@@ -1,6 +1,6 @@
 use bevy::{
     app::prelude::*,
-    asset::{load_internal_asset, Assets, Handle, HandleUntyped},
+    asset::{load_internal_asset, Assets, Handle, UntypedAssetId, UntypedHandle},
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         prelude::*,
@@ -9,7 +9,7 @@ use bevy::{
     },
     math::prelude::*,
     prelude::{Msaa, Shader},
-    reflect::TypeUuid,
+    reflect::TypePath,
     render::{
         render_asset::RenderAssets,
         render_phase::{
@@ -20,19 +20,20 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         texture::{BevyDefault, Image},
         view::{
-            ComputedVisibility, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
+            ViewVisibility, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
             ViewUniforms,
         },
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
     },
+    utils::Uuid,
 };
 use bytemuck::Pod;
-use std::{collections::HashMap, num::NonZeroU64, ops::Range};
+use std::{any::TypeId, collections::HashMap, num::NonZeroU64, ops::Range};
 
 use crate::render::{DamageDigitMaterial, DamageDigitRenderData};
 
-pub const DAMAGE_DIGIT_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 39699708885);
+pub const DAMAGE_DIGIT_SHADER_HANDLE: UntypedHandle =
+    UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0x0000000000000001) });
 
 pub struct DamageDigitRenderPlugin;
 
@@ -40,7 +41,7 @@ impl Plugin for DamageDigitRenderPlugin {
     fn build(&self, app: &mut App) {
         load_internal_asset!(
             app,
-            DAMAGE_DIGIT_SHADER_HANDLE,
+            DAMAGE_DIGIT_SHADER_HANDLE.typed::<Shader>(),
             "shaders/damage_digit.wgsl",
             Shader::from_wgsl
         );
@@ -78,23 +79,25 @@ impl FromWorld for DamageDigitPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
 
-        let view_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: true,
-                    min_binding_size: Some(ViewUniform::min_size()),
+        let view_layout = render_device.create_bind_group_layout(
+            "damage_digit_view_layout",
+            &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: Some(ViewUniform::min_size()),
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
-            label: None,
-        });
+            ],
+        );
 
-        let particle_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
+        let particle_layout = render_device.create_bind_group_layout(
+            "damage_digit_particle_layout",
+            &[
                 // Positions
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -129,11 +132,11 @@ impl FromWorld for DamageDigitPipeline {
                     count: None,
                 },
             ],
-        });
+        );
 
-        let material_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
+        let material_layout = render_device.create_bind_group_layout(
+            "damage_digit_material_layout",
+            &[
                 // Base Color Texture
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -153,7 +156,7 @@ impl FromWorld for DamageDigitPipeline {
                     count: None,
                 },
             ],
-        });
+        );
 
         Self {
             view_layout,
@@ -278,14 +281,14 @@ fn extract_damage_digits(
     images: Extract<Res<Assets<Image>>>,
     query: Extract<
         Query<(
-            &ComputedVisibility,
+            &ViewVisibility,
             &DamageDigitRenderData,
             &Handle<DamageDigitMaterial>,
         )>,
     >,
 ) {
     extracted_damage_digits.particles.clear();
-    for (_visible, particles, material_handle) in query.iter() {
+    for (visible, particles, material_handle) in query.iter() {
         /*
         // TODO: Fix aabb calculation so culling works correctly.
         if !visible.is_visible {
@@ -459,20 +462,22 @@ fn queue_damage_digits(
 
     if let Some(view_bindings) = view_uniforms.uniforms.binding() {
         damage_digit_meta.view_bind_group.get_or_insert_with(|| {
-            render_device.create_bind_group(&BindGroupDescriptor {
-                entries: &[BindGroupEntry {
+            render_device.create_bind_group(
+                "damage_digit_view_bind_group",
+                &damage_digit_pipeline.view_layout,
+                &[BindGroupEntry {
                     binding: 0,
                     resource: view_bindings,
                 }],
-                label: Some("damage_digit_view_bind_group"),
-                layout: &damage_digit_pipeline.view_layout,
-            })
+            )
         });
     }
 
     damage_digit_meta.particle_bind_group =
-        Some(render_device.create_bind_group(&BindGroupDescriptor {
-            entries: &[
+        Some(render_device.create_bind_group(
+            "damage_digit_bind_group",
+            &damage_digit_pipeline.particle_layout,
+            &[
                 BindGroupEntry {
                     binding: 0,
                     resource: bind_buffer(
@@ -489,9 +494,7 @@ fn queue_damage_digits(
                     resource: bind_buffer(&damage_digit_meta.uvs, damage_digit_meta.total_count),
                 },
             ],
-            label: Some("damage_digit_bind_group"),
-            layout: &damage_digit_pipeline.particle_layout,
-        }));
+        ));
 
     let draw_particle_function = transparent_draw_functions
         .read()
@@ -508,9 +511,11 @@ fn queue_damage_digits(
 
             if let Some(gpu_image) = gpu_images.get(&gpu_material.texture) {
                 material_bind_groups.values.insert(
-                    batch.handle.clone_weak(),
-                    render_device.create_bind_group(&BindGroupDescriptor {
-                        entries: &[
+                    batch.handle.clone(),
+                    render_device.create_bind_group(
+                        "damage_digit_material_bind_group",
+                        &damage_digit_pipeline.material_layout,
+                        &[
                             BindGroupEntry {
                                 binding: 0,
                                 resource: BindingResource::TextureView(&gpu_image.texture_view),
@@ -520,9 +525,7 @@ fn queue_damage_digits(
                                 resource: BindingResource::Sampler(&gpu_image.sampler),
                             },
                         ],
-                        label: Some("damage_digit_material_bind_group"),
-                        layout: &damage_digit_pipeline.material_layout,
-                    }),
+                    ),
                 );
             }
 
@@ -531,6 +534,8 @@ fn queue_damage_digits(
                 pipeline: pipelines.specialize(&pipeline_cache, &damage_digit_pipeline, view_key),
                 entity,
                 draw_function: draw_particle_function,
+                batch_range: 0..0,
+                dynamic_offset: None,
             });
         }
     }
@@ -547,13 +552,13 @@ type DrawDamageDigit = (
 struct SetDamageDigitViewBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetDamageDigitViewBindGroup<I> {
     type Param = SRes<DamageDigitMeta>;
-    type ViewWorldQuery = Read<ViewUniformOffset>;
-    type ItemWorldQuery = ();
+    type ViewQuery = Read<ViewUniformOffset>;
+    type ItemQuery = ();
 
     fn render<'w>(
         _: &P,
-        view_uniform: ROQueryItem<'w, Self::ViewWorldQuery>,
-        _: ROQueryItem<'w, Self::ItemWorldQuery>,
+        view_uniform: ROQueryItem<'w, Self::ViewQuery>,
+        _: Option<ROQueryItem<'w, Self::ItemQuery>>,
         damage_digit_meta: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
@@ -573,13 +578,13 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetDamageDigitViewBindGr
 struct SetDamageDigitBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetDamageDigitBindGroup<I> {
     type Param = SRes<DamageDigitMeta>;
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = ();
+    type ViewQuery = ();
+    type ItemQuery = ();
 
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        _: ROQueryItem<'w, Self::ItemWorldQuery>,
+        _: ROQueryItem<'w, Self::ViewQuery>,
+        _: Option<ROQueryItem<'w, Self::ItemQuery>>,
         damage_digit_meta: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
@@ -599,16 +604,17 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetDamageDigitBindGroup<
 struct SetDamageDigitMaterialBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetDamageDigitMaterialBindGroup<I> {
     type Param = SRes<MaterialBindGroups>;
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = Read<DamageDigitBatch>;
+    type ViewQuery = ();
+    type ItemQuery = Read<DamageDigitBatch>;
 
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        batch: ROQueryItem<'w, Self::ItemWorldQuery>,
+        _: ROQueryItem<'w, Self::ViewQuery>,
+        batch: Option<ROQueryItem<'w, Self::ItemQuery>>,
         material_bind_groups: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        let batch = batch.unwrap();
         pass.set_bind_group(
             I,
             material_bind_groups
@@ -625,17 +631,18 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetDamageDigitMaterialBi
 struct DrawDamageDigitBatch;
 impl<P: PhaseItem> RenderCommand<P> for DrawDamageDigitBatch {
     type Param = ();
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = Read<DamageDigitBatch>;
+    type ViewQuery = ();
+    type ItemQuery = Read<DamageDigitBatch>;
 
     #[inline]
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        batch: ROQueryItem<'w, Self::ItemWorldQuery>,
+        _: ROQueryItem<'w, Self::ViewQuery>,
+        batch: Option<ROQueryItem<'w, Self::ItemQuery>>,
         _: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        let batch = batch.unwrap();
         let vertex_range = (batch.range.start * 6)..(batch.range.end * 6);
         pass.draw(vertex_range, 0..1);
         RenderCommandResult::Success

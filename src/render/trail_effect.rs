@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use bevy::{
     app::prelude::*,
-    asset::{load_internal_asset, Assets, Handle, HandleUntyped},
+    asset::{load_internal_asset, Assets, Handle, UntypedHandle, UntypedAssetId},
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         prelude::*,
@@ -12,7 +12,6 @@ use bevy::{
     math::prelude::*,
     pbr::MeshPipelineKey,
     prelude::{Color, GlobalTransform, Msaa, Shader},
-    reflect::TypeUuid,
     render::{
         render_asset::RenderAssets,
         render_phase::{
@@ -23,7 +22,7 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         texture::{BevyDefault, Image},
         view::{
-            ComputedVisibility, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
+            ViewVisibility, InheritedVisibility, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
             ViewUniforms,
         },
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
@@ -35,8 +34,10 @@ use std::{collections::HashMap, ops::Range};
 
 use crate::resources::RenderConfiguration;
 
-pub const TRAIL_EFFECT_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 3042057527543835453);
+pub const TRAIL_EFFECT_SHADER_HANDLE_TYPED: Handle<Shader> = Handle::weak_from_u128(0x2a6a6d3b0000000);
+
+pub const TRAIL_EFFECT_SHADER_HANDLE: UntypedHandle =
+    UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: std::any::TypeId::of::<Shader>(), uuid: bevy::utils::Uuid::from_u128(0x2a6a6d3b0000000) });
 
 pub struct TrailEffectRenderPlugin;
 
@@ -44,7 +45,7 @@ impl Plugin for TrailEffectRenderPlugin {
     fn build(&self, app: &mut App) {
         load_internal_asset!(
             app,
-            TRAIL_EFFECT_SHADER_HANDLE,
+            TRAIL_EFFECT_SHADER_HANDLE_TYPED,
             "shaders/trail_effect.wgsl",
             Shader::from_wgsl
         );
@@ -307,8 +308,9 @@ impl FromWorld for TrailEffectPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
 
-        let view_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            entries: &[BindGroupLayoutEntry {
+        let view_layout = render_device.create_bind_group_layout(
+            "trail_effect_view_layout",
+            &[BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
                 ty: BindingType::Buffer {
@@ -318,12 +320,11 @@ impl FromWorld for TrailEffectPipeline {
                 },
                 count: None,
             }],
-            label: None,
-        });
+        );
 
-        let material_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
+        let material_layout = render_device.create_bind_group_layout(
+            "trail_effect_material_layout",
+            &[
                 // Base Color Texture
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -343,7 +344,7 @@ impl FromWorld for TrailEffectPipeline {
                     count: None,
                 },
             ],
-        });
+        );
 
         Self {
             view_layout,
@@ -470,7 +471,7 @@ fn extract_trail_effects(
     images: Extract<Res<Assets<Image>>>,
     query: Extract<
         Query<(
-            &ComputedVisibility,
+            &ViewVisibility, &InheritedVisibility,
             &TrailEffect,
             &TrailEffectPositionHistory,
         )>,
@@ -478,8 +479,8 @@ fn extract_trail_effects(
 ) {
     let mut trail_index = 0;
 
-    for (visible, trail_effect, position_history) in query.iter() {
-        if !visible.is_visible() {
+    for (visible, _inherited_visibility, trail_effect, position_history) in query.iter() {
+        if !visible.get() {
             continue;
         }
 
@@ -685,14 +686,14 @@ fn queue_trail_effects(
 
     if let Some(view_bindings) = view_uniforms.uniforms.binding() {
         trail_effect_meta.view_bind_group.get_or_insert_with(|| {
-            render_device.create_bind_group(&BindGroupDescriptor {
-                entries: &[BindGroupEntry {
+            render_device.create_bind_group(
+                "trail_effect_view_bind_group",
+                &trail_effect_pipeline.view_layout,
+                &[BindGroupEntry {
                     binding: 0,
                     resource: view_bindings,
                 }],
-                label: Some("trail_effect_view_bind_group"),
-                layout: &trail_effect_pipeline.view_layout,
-            })
+            )
         });
     }
 
@@ -708,9 +709,11 @@ fn queue_trail_effects(
         for (entity, batch) in trail_effect_batches.iter() {
             if let Some(gpu_image) = gpu_images.get(&batch.handle) {
                 material_bind_groups.values.insert(
-                    batch.handle.clone_weak(),
-                    render_device.create_bind_group(&BindGroupDescriptor {
-                        entries: &[
+                    batch.handle.clone(),
+                    render_device.create_bind_group(
+                        "trail_effect_material_bind_group",
+                        &trail_effect_pipeline.material_layout,
+                        &[
                             BindGroupEntry {
                                 binding: 0,
                                 resource: BindingResource::TextureView(&gpu_image.texture_view),
@@ -720,9 +723,7 @@ fn queue_trail_effects(
                                 resource: BindingResource::Sampler(&gpu_image.sampler),
                             },
                         ],
-                        label: Some("trail_effect_material_bind_group"),
-                        layout: &trail_effect_pipeline.material_layout,
-                    }),
+                    ),
                 );
             }
 
@@ -731,6 +732,8 @@ fn queue_trail_effects(
                 pipeline: pipelines.specialize(&pipeline_cache, &trail_effect_pipeline, view_key),
                 entity,
                 draw_function: draw_trail_effect_function,
+                batch_range: 0..0,
+                dynamic_offset: None,
             });
         }
     }
@@ -746,13 +749,13 @@ type DrawTrailEffect = (
 struct SetTrailEffectViewBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTrailEffectViewBindGroup<I> {
     type Param = SRes<TrailEffectMeta>;
-    type ViewWorldQuery = Read<ViewUniformOffset>;
-    type ItemWorldQuery = ();
+    type ViewQuery = Read<ViewUniformOffset>;
+    type ItemQuery = Option<()>;
 
     fn render<'w>(
         _: &P,
-        view_uniform: ROQueryItem<'w, Self::ViewWorldQuery>,
-        _: ROQueryItem<'w, Self::ItemWorldQuery>,
+        view_uniform: ROQueryItem<'w, Self::ViewQuery>,
+        _: Option<ROQueryItem<'w, Self::ItemQuery>>,
         trail_effect_meta: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
@@ -772,25 +775,27 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTrailEffectViewBindGr
 struct SetTrailEffectMaterialBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTrailEffectMaterialBindGroup<I> {
     type Param = SRes<MaterialBindGroups>;
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = Read<TrailEffectBatch>;
+    type ViewQuery = ();
+    type ItemQuery = Read<TrailEffectBatch>;
 
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        batch: ROQueryItem<'w, Self::ItemWorldQuery>,
-        material_bind_groups: SystemParamItem<'w, '_, Self::Param>,
+        _: ROQueryItem<'w, Self::ViewQuery>,
+        batch: Option<ROQueryItem<'w, Self::ItemQuery>>,
+        material_bind_groups: SystemParamItem<'w, 'w, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        pass.set_bind_group(
-            I,
-            material_bind_groups
-                .into_inner()
-                .values
-                .get(&batch.handle)
-                .unwrap(),
-            &[],
-        );
+        if let Some(batch) = batch {
+            pass.set_bind_group(
+                I,
+                material_bind_groups
+                    .into_inner()
+                    .values
+                    .get(&batch.handle)
+                    .unwrap(),
+                &[],
+            );
+        }
         RenderCommandResult::Success
     }
 }
@@ -798,27 +803,29 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTrailEffectMaterialBi
 struct DrawTrailEffectBatch;
 impl<P: PhaseItem> RenderCommand<P> for DrawTrailEffectBatch {
     type Param = SRes<TrailEffectMeta>;
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = Read<TrailEffectBatch>;
+    type ViewQuery = ();
+    type ItemQuery = Read<TrailEffectBatch>;
 
     #[inline]
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        batch: ROQueryItem<'w, Self::ItemWorldQuery>,
-        trail_effect_meta: SystemParamItem<'w, '_, Self::Param>,
+        _: ROQueryItem<'w, Self::ViewQuery>,
+        batch: Option<ROQueryItem<'w, Self::ItemQuery>>,
+        trail_effect_meta: SystemParamItem<'w, 'w, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        pass.set_vertex_buffer(
-            0,
-            trail_effect_meta
-                .into_inner()
-                .vertex_buffer
-                .buffer()
-                .unwrap()
-                .slice(..),
-        );
-        pass.draw(batch.vertex_range.clone(), 0..1);
+        if let Some(batch) = batch {
+            pass.set_vertex_buffer(
+                0,
+                trail_effect_meta
+                    .into_inner()
+                    .vertex_buffer
+                    .buffer()
+                    .unwrap()
+                    .slice(..),
+            );
+            pass.draw(batch.vertex_range.clone(), 0..1);
+        }
         RenderCommandResult::Success
     }
 }

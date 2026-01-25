@@ -28,7 +28,7 @@ pub fn client_entity_event_system(
 ) {
     let is_player = |entity| query_player.contains(entity);
 
-    for event in client_entity_events.iter() {
+    for event in client_entity_events.read() {
         match *event {
             ClientEntityEvent::Die(entity) => {
                 if let Ok((npc, global_transform)) = query_npc.get(entity) {

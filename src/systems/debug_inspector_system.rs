@@ -1,5 +1,5 @@
 use bevy::{
-    input::Input,
+    input::ButtonInput,
     prelude::{
         App, Camera, Camera3d, GlobalTransform, KeyCode, Plugin, Query, Res, ResMut, Update, With,
     },
@@ -88,8 +88,6 @@ impl Plugin for DebugInspectorPlugin {
             .register_type::<ZoneObjectPart>()
             .register_type::<ZoneObjectPartCollisionShape>()
             .register_type::<ZoneObjectTerrain>();
-
-        app.add_plugins(bevy_inspector_egui::DefaultInspectorConfigPlugin);
     }
 }
 
@@ -97,7 +95,7 @@ impl Plugin for DebugInspectorPlugin {
 fn debug_inspector_picking_system(
     mut debug_inspector_state: ResMut<DebugInspector>,
     mut egui_ctx: EguiContexts,
-    key_code_input: Res<Input<KeyCode>>,
+    key_code_input: Res<ButtonInput<KeyCode>>,
     rapier_context: Res<RapierContext>,
     query_window: Query<&Window, With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
@@ -118,12 +116,12 @@ fn debug_inspector_picking_system(
     }
     let cursor_position = cursor_position.unwrap();
 
-    if key_code_input.just_pressed(KeyCode::P) {
+    if key_code_input.just_pressed(KeyCode::KeyP) {
         for (camera, camera_transform) in query_camera.iter() {
             if let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
                 if let Some((collider_entity, _distance)) = rapier_context.cast_ray(
                     ray.origin,
-                    ray.direction,
+                    *ray.direction,
                     10000000.0,
                     false,
                     QueryFilter::new().groups(CollisionGroups::new(

@@ -1,0 +1,68 @@
+
+/target/
+
+**/*.rs.bk
+
+.vscode
+
+*.so
+*.dylib
+
+# WebAssembly builds
+*.wasm
+*.wasm.gz
+pkg/
+
+# Build output files
+build_output*.txt
+cargo_output*.txt
+cargo/
+
+# IDE/Editor directories
+.vscode
+.continue/
+.github/
+.idea/
+.fleet/
+
+# Backup files
+**/*.rs.bk
+*.swp
+*.swo
+*~
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Log files
+*.log
+logs/
+
+# Test/coverage artifacts
+*.profraw
+*.profdata
+*.d
+coverage/
+
+# Documentation
+doc/
+
+# Bevy cache
+bevy_cache/
+assets/.cache/
+
+# Self
+.kilocodeignore
+
+# Extra
+*.timestamp 
+*.exe 
+*.pdb
+*.json
+*.rmeta
+*.o

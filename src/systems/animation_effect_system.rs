@@ -1,6 +1,6 @@
 use bevy::{
-    ecs::query::WorldQuery,
-    prelude::{Entity, EventReader, EventWriter, Query, Res},
+    ecs::{event::EventWriter, query::QueryData},
+    prelude::{Entity, EventReader, Query, Res},
 };
 
 use rose_data::{
@@ -16,7 +16,7 @@ use crate::{
     resources::GameData,
 };
 
-#[derive(WorldQuery)]
+#[derive(QueryData)]
 pub struct EventEntity<'w> {
     entity: Entity,
     command: &'w Command,
@@ -34,7 +34,7 @@ pub fn animation_effect_system(
     query_event_entity: Query<EventEntity>,
     game_data: Res<GameData>,
 ) {
-    for event in animation_frame_events.iter() {
+    for event in animation_frame_events.read() {
         let event_entity = if let Ok(event_entity) = query_event_entity.get(event.entity) {
             event_entity
         } else {

@@ -3,10 +3,12 @@ use bevy::{
     ecs::event::Events,
     math::{Quat, Vec3},
     prelude::{
-        Commands, ComputedVisibility, DespawnRecursiveExt, Entity, EventWriter, GlobalTransform,
+        Commands, DespawnRecursiveExt, Entity, EventWriter, GlobalTransform,
         Mut, NextState, Res, ResMut, State, Transform, Visibility, World,
     },
+    render::view::ViewVisibility,
 };
+use bevy::render::view::InheritedVisibility;
 
 use rose_data::{
     AbilityType, EquipmentItem, Item, ItemReference, ItemSlotBehaviour, ItemType, SkillCooldown,
@@ -208,14 +210,14 @@ pub fn game_connection_system(
                             ),
                             GlobalTransform::default(),
                             Visibility::default(),
-                            ComputedVisibility::default(),
+                            ViewVisibility::default(), InheritedVisibility::default(),
                         )))
                         .id()
                 );
 
                 // Emit connected event, character select system will be responsible for
                 // starting the load of the next zone once its animations have completed
-                game_connection_events.send(GameConnectionEvent::Connected(character_data.zone_id));
+                let _ = game_connection_events.send(GameConnectionEvent::Connected(character_data.zone_id));
                 client_entity_list.zone_id = Some(character_data.zone_id);
             }
             Ok(ServerMessage::CharacterDataItems { data }) => {
@@ -318,7 +320,7 @@ pub fn game_connection_system(
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ComputedVisibility::default(),
+                        ViewVisibility::default(), InheritedVisibility::default(),
                         VisibleStatusEffects::default(),
                     ),))
                     .id();
@@ -400,7 +402,7 @@ pub fn game_connection_system(
                         )),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ComputedVisibility::default(),
+                        ViewVisibility::default(), InheritedVisibility::default(),
                     ),
                     ))
                     .id();
@@ -483,7 +485,7 @@ pub fn game_connection_system(
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ComputedVisibility::default(),
+                        ViewVisibility::default(), InheritedVisibility::default(),
                     ),))
                     .id();
 
@@ -518,7 +520,7 @@ pub fn game_connection_system(
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ComputedVisibility::default(),
+                        ViewVisibility::default(), InheritedVisibility::default(),
                     ))
                     .id();
 
@@ -598,7 +600,7 @@ pub fn game_connection_system(
                             if let Some(name) = defender.get::<ClientEntityName>() {
                                 let chat_message =
                                     format!("You have succeeded in hunting {}", name.as_str());
-                                world
+                                let _ = world
                                     .resource_mut::<Events<ChatboxEvent>>()
                                     .send(ChatboxEvent::System(chat_message));
                             }
@@ -634,7 +636,7 @@ pub fn game_connection_system(
                     client_entity_list.clear();
 
                     // Load next zone
-                    load_zone_events.send(LoadZoneEvent::new(zone_id));
+                    let _ = load_zone_events.send(LoadZoneEvent::new(zone_id));
                     client_entity_list.zone_id = Some(zone_id);
                 }
             }
@@ -646,7 +648,7 @@ pub fn game_connection_system(
                     commands.add(move |world: &mut World| {
                         if let Some(name) = world.entity(chat_entity).get::<ClientEntityName>() {
                             let name = name.to_string();
-                            world
+                            let _ = world
                                 .resource_mut::<Events<ChatboxEvent>>()
                                 .send(ChatboxEvent::Say(name, text));
                         }
@@ -654,17 +656,17 @@ pub fn game_connection_system(
                 }
             }
             Ok(ServerMessage::ShoutChat { name, text }) => {
-                chatbox_events.send(ChatboxEvent::Shout(name, text));
+                let _ = chatbox_events.send(ChatboxEvent::Shout(name, text));
             }
             Ok(ServerMessage::Whisper { from, text }) => {
-                chatbox_events.send(ChatboxEvent::Whisper(from, text));
+                let _ = chatbox_events.send(ChatboxEvent::Whisper(from, text));
             }
             Ok(ServerMessage::AnnounceChat { name, text }) => {
-                chatbox_events.send(ChatboxEvent::Announce(name, text));
+                let _ = chatbox_events.send(ChatboxEvent::Announce(name, text));
             }
             Ok(ServerMessage::UpdateAbilityValueAdd { ability_type, value }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
-                    chatbox_events.send(ChatboxEvent::System(format!(
+                    let _ = chatbox_events.send(ChatboxEvent::System(format!(
                         "Ability {:?} has {} by {}.",
                         ability_type,
                         if value < 0 {
@@ -687,7 +689,7 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::UpdateAbilityValueSet { ability_type, value }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
-                    chatbox_events.send(ChatboxEvent::System(format!(
+                    let _ = chatbox_events.send(ChatboxEvent::System(format!(
                         "Ability {:?} has been changed to {}.",
                         ability_type, value,
                     )));
@@ -892,7 +894,7 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::UpdateLevel { entity_id, level, experience_points, stat_points, skill_points }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
-                    client_entity_events.send(ClientEntityEvent::LevelUp(
+                    let _ = client_entity_events.send(ClientEntityEvent::LevelUp(
                         entity,
                         Some(level.level),
                     ));
@@ -948,7 +950,7 @@ pub fn game_connection_system(
                 if client_entity_list.player_entity_id == Some(entity_id) {
                     // Ignore, the server erroneously sends this message in addition to ServerMessage::UpdateLevel
                 } else if let Some(entity) = client_entity_list.get(entity_id) {
-                    client_entity_events.send(ClientEntityEvent::LevelUp(entity, None));
+                    let _ = client_entity_events.send(ClientEntityEvent::LevelUp(entity, None));
 
                     commands.add(move |world: &mut World| {
                         world.resource_scope(|world, game_data: Mut<GameData>| {
@@ -1076,7 +1078,7 @@ pub fn game_connection_system(
                             experience_points.xp = xp;
 
                             if xp > previous_xp {
-                                world.resource_mut::<Events<ChatboxEvent>>().send(
+                                let _ = world.resource_mut::<Events<ChatboxEvent>>().send(
                                     ChatboxEvent::System(format!(
                                         "You have earned {} experience points.",
                                         xp - previous_xp
@@ -1092,7 +1094,7 @@ pub fn game_connection_system(
                     if let Some(item_data) =
                         game_data.items.get_base_item(item.get_item_reference())
                     {
-                        chatbox_events.send(ChatboxEvent::System(format!(
+                        let _ = chatbox_events.send(ChatboxEvent::System(format!(
                             "You have earned {}.",
                             item_data.name
                         )));
@@ -1111,7 +1113,7 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::PickupDropMoney { drop_entity_id: _, money }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
-                    chatbox_events.send(ChatboxEvent::System(format!(
+                    let _ = chatbox_events.send(ChatboxEvent::System(format!(
                         "You have earned {} Zuly.",
                         money.0
                     )));
@@ -1126,12 +1128,12 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::PickupDropError { drop_entity_id: _, error }) => match error{
                 PickupItemDropError::InventoryFull => {
-                    chatbox_events.send(ChatboxEvent::System(
+                    let _ = chatbox_events.send(ChatboxEvent::System(
                         "Cannot pickup item, inventory full.".to_string(),
                     ));
                 }
                 PickupItemDropError::NoPermission => {
-                    chatbox_events.send(ChatboxEvent::System(
+                    let _ = chatbox_events.send(ChatboxEvent::System(
                         "Cannot pickup item, it does not belong to you.".to_string(),
                     ));
                 }
@@ -1143,7 +1145,7 @@ pub fn game_connection_system(
                         if let Some(item_data) = item.as_ref().and_then(|item| {
                             game_data.items.get_base_item(item.get_item_reference())
                         }) {
-                            chatbox_events.send(ChatboxEvent::System(format!(
+                            let _ = chatbox_events.send(ChatboxEvent::System(format!(
                                 "You have earned {}.",
                                 item_data.name
                             )));
@@ -1165,7 +1167,7 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::RewardMoney { money }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
-                    chatbox_events.send(ChatboxEvent::System(format!(
+                    let _ = chatbox_events.send(ChatboxEvent::System(format!(
                         "You have earned {} Zuly.",
                         money.0
                     )));
@@ -1204,12 +1206,12 @@ pub fn game_connection_system(
                 trigger_hash,
             }) => {
                 if success {
-                    quest_trigger_events.send(QuestTriggerEvent::ApplyRewards(trigger_hash));
+                    let _ = quest_trigger_events.send(QuestTriggerEvent::ApplyRewards(trigger_hash));
                 }
             }
             Ok(ServerMessage::RunNpcDeathTrigger { npc_id }) => {
                 if let Some(npc_data) = game_data.npcs.get_npc(npc_id) {
-                    quest_trigger_events.send(QuestTriggerEvent::DoTrigger(
+                    let _ = quest_trigger_events.send(QuestTriggerEvent::DoTrigger(
                         npc_data.death_quest_trigger_name.as_str().into(),
                     ));
                 }
@@ -1243,34 +1245,42 @@ pub fn game_connection_system(
                 }
             }
             Ok(ServerMessage::LearnSkillError { error }) => match error {
-                LearnSkillError::AlreadyLearnt => chatbox_events.send(ChatboxEvent::System(
-                    "Failed to learn skill, you already know it.".to_string(),
-                )),
-                LearnSkillError::JobRequirement => chatbox_events.send(ChatboxEvent::System(
-                    "Failed to learn skill, you do not satisfy the job requirement.".to_string(),
-                )),
+                LearnSkillError::AlreadyLearnt => {
+                    let _ = chatbox_events.send(ChatboxEvent::System(
+                        "Failed to learn skill, you already know it.".to_string(),
+                    ));
+                }
+                LearnSkillError::JobRequirement => {
+                    let _ = chatbox_events.send(ChatboxEvent::System(
+                        "Failed to learn skill, you do not satisfy the job requirement.".to_string(),
+                    ));
+                }
                 LearnSkillError::SkillRequirement => {
-                    chatbox_events.send(ChatboxEvent::System(
+                    let _ = chatbox_events.send(ChatboxEvent::System(
                         "Failed to learn skill, you do not satisfy the skill requirement."
                             .to_string(),
-                    ))
+                    ));
                 }
                 LearnSkillError::AbilityRequirement => {
-                    chatbox_events.send(ChatboxEvent::System(
+                    let _ = chatbox_events.send(ChatboxEvent::System(
                         "Failed to learn skill, you do not satisfy the ability requirement."
                             .to_string(),
-                    ))
+                    ));
                 }
-                LearnSkillError::Full => chatbox_events.send(ChatboxEvent::System(
-                    "Failed to learn skill, you have too many skills.".to_string(),
-                )),
-                LearnSkillError::InvalidSkillId => chatbox_events.send(ChatboxEvent::System(
-                    "Failed to learn skill, invalid skill.".to_string(),
-                )),
+                LearnSkillError::Full => {
+                    let _ = chatbox_events.send(ChatboxEvent::System(
+                        "Failed to learn skill, you have too many skills.".to_string(),
+                    ));
+                }
+                LearnSkillError::InvalidSkillId => {
+                    let _ = chatbox_events.send(ChatboxEvent::System(
+                        "Failed to learn skill, invalid skill.".to_string(),
+                    ));
+                }
                 LearnSkillError::SkillPointRequirement => {
-                    chatbox_events.send(ChatboxEvent::System(
+                    let _ = chatbox_events.send(ChatboxEvent::System(
                         "Failed to learn skill, not enough skill points.".to_string(),
-                    ))
+                    ));
                 }
             },
             Ok(ServerMessage::LevelUpSkillSuccess { skill_slot, skill_id, skill_points }) => {
@@ -1289,36 +1299,38 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::LevelUpSkillError { error, skill_points }) => {
                 match error {
-                    LevelUpSkillError::Failed => chatbox_events.send(ChatboxEvent::System(
-                        "Failed to level up skill.".to_string(),
-                    )),
+                    LevelUpSkillError::Failed => {
+                        let _ = chatbox_events.send(ChatboxEvent::System(
+                            "Failed to level up skill.".to_string(),
+                        ));
+                    }
                     LevelUpSkillError::JobRequirement => {
-                        chatbox_events.send(ChatboxEvent::System(
+                        let _ = chatbox_events.send(ChatboxEvent::System(
                             "Failed to level up skill, you do not satisfy the job requirement."
                                 .to_string(),
-                        ))
+                        ));
                     }
                     LevelUpSkillError::SkillRequirement => {
-                        chatbox_events.send(ChatboxEvent::System(
+                        let _ = chatbox_events.send(ChatboxEvent::System(
                             "Failed to level up skill, you do not satisfy the skill requirement."
                                 .to_string(),
-                        ))
+                        ));
                     }
                     LevelUpSkillError::AbilityRequirement => {
-                        chatbox_events.send(ChatboxEvent::System(
+                        let _ = chatbox_events.send(ChatboxEvent::System(
                             "Failed to level up skill, you do not satisfy the ability requirement."
                                 .to_string(),
-                        ))
+                        ));
                     }
                     LevelUpSkillError::MoneyRequirement => {
-                        chatbox_events.send(ChatboxEvent::System(
+                        let _ = chatbox_events.send(ChatboxEvent::System(
                             "Failed to level up skill, not enough money.".to_string(),
-                        ))
+                        ));
                     }
                     LevelUpSkillError::SkillPointRequirement => {
-                        chatbox_events.send(ChatboxEvent::System(
+                        let _ = chatbox_events.send(ChatboxEvent::System(
                             "Failed to level up skill, not enough skill points.".to_string(),
-                        ))
+                        ));
                     }
                 }
 
@@ -1358,7 +1370,7 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::UseItem { entity_id, item }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
-                    use_item_events.send(UseItemEvent { entity, item });
+                    let _ = use_item_events.send(UseItemEvent { entity, item });
                 }
             }
             Ok(ServerMessage::CastSkillSelf { entity_id, skill_id, cast_motion_id }) => {
@@ -1585,19 +1597,19 @@ pub fn game_connection_system(
                 }
             }
             Ok(ServerMessage::NpcStoreTransactionError { error }) => {
-                chatbox_events.send(ChatboxEvent::System(format!(
+                let _ = chatbox_events.send(ChatboxEvent::System(format!(
                     "Store transation failed with error {:?}",
                     error
                 )));
             }
             Ok(ServerMessage::PartyCreate { entity_id }) => {
                 if let Some(inviter_entity) = client_entity_list.get(entity_id) {
-                    party_events.send(PartyEvent::InvitedCreate(inviter_entity));
+                    let _ = party_events.send(PartyEvent::InvitedCreate(inviter_entity));
                 }
             }
             Ok(ServerMessage::PartyInvite { entity_id }) => {
                 if let Some(inviter_entity) = client_entity_list.get(entity_id) {
-                    party_events.send(PartyEvent::InvitedJoin(inviter_entity));
+                    let _ = party_events.send(PartyEvent::InvitedJoin(inviter_entity));
                 }
             }
             Ok(ServerMessage::PartyAcceptCreate { entity_id }) => {
@@ -1610,7 +1622,7 @@ pub fn game_connection_system(
                                 "{} accepted your party invite.",
                                 invited_entity_name.as_str()
                             );
-                            world
+                            let _ = world
                                 .resource_mut::<Events<ChatboxEvent>>()
                                 .send(ChatboxEvent::System(message));
                         }
@@ -1637,7 +1649,7 @@ pub fn game_connection_system(
                         {
                             let message =
                                 format!("{} has joined the party.", player_entity_name.as_str());
-                            world
+                            let _ = world
                                 .resource_mut::<Events<ChatboxEvent>>()
                                 .send(ChatboxEvent::System(message));
                         }
@@ -1654,7 +1666,7 @@ pub fn game_connection_system(
                                 "{} rejected your party invite.",
                                 invited_entity_name.as_str()
                             );
-                            world
+                            let _ = world
                                 .resource_mut::<Events<ChatboxEvent>>()
                                 .send(ChatboxEvent::System(message));
                         }
@@ -1680,7 +1692,7 @@ pub fn game_connection_system(
                                         "{} is now leader of the party.",
                                         &character_info.name
                                     );
-                                    world
+                                    let _ = world
                                         .resource_mut::<Events<ChatboxEvent>>()
                                         .send(ChatboxEvent::System(message));
                                 }
@@ -1699,7 +1711,7 @@ pub fn game_connection_system(
                                                 member_info_online.character_id,
                                             );
 
-                                            world
+                                            let _ = world
                                                 .resource_mut::<Events<ChatboxEvent>>()
                                                 .send(ChatboxEvent::System(message));
                                             break;
@@ -1714,7 +1726,7 @@ pub fn game_connection_system(
             Ok(ServerMessage::PartyDelete) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.entity(player_entity).remove::<PartyInfo>();
-                    chatbox_events.send(ChatboxEvent::System("You have left the party.".into()));
+                    let _ = chatbox_events.send(ChatboxEvent::System("You have left the party.".into()));
                 }
             }
             Ok(ServerMessage::PartyMemberList {
@@ -1749,7 +1761,7 @@ pub fn game_connection_system(
 
                         let mut chatbox_events = world.resource_mut::<Events<ChatboxEvent>>();
                         for message in messages {
-                            chatbox_events.send(ChatboxEvent::System(message));
+                            let _ = chatbox_events.send(ChatboxEvent::System(message));
                         }
                     });
                 }
@@ -1783,7 +1795,7 @@ pub fn game_connection_system(
 
                                 party_info.members.remove(index);
 
-                                world
+                                let _ = world
                                     .resource_mut::<Events<ChatboxEvent>>()
                                     .send(ChatboxEvent::System(message));
                             }
@@ -1812,7 +1824,7 @@ pub fn game_connection_system(
                                             name: party_member_online.name.clone(),
                                         });
 
-                                    world
+                                    let _ = world
                                         .resource_mut::<Events<ChatboxEvent>>()
                                         .send(ChatboxEvent::System(message));
                                 }
@@ -1838,7 +1850,7 @@ pub fn game_connection_system(
                                 );
                                 party_info.members.remove(index);
 
-                                world
+                                let _ = world
                                     .resource_mut::<Events<ChatboxEvent>>()
                                     .send(ChatboxEvent::System(message));
                             }
@@ -1899,7 +1911,7 @@ pub fn game_connection_system(
                                     member_entity_name.as_str(),
                                     item_name
                                 );
-                                world
+                                let _ = world
                                     .resource_mut::<Events<ChatboxEvent>>()
                                     .send(ChatboxEvent::System(chat_message));
                             }
@@ -1917,16 +1929,16 @@ pub fn game_connection_system(
                             party_info.xp_sharing = xp_sharing;
 
                             let mut chatbox_events = world.resource_mut::<Events<ChatboxEvent>>();
-                            chatbox_events
+                            let _ = chatbox_events
                                 .send(ChatboxEvent::System("Party rules have changed.".into()));
-                            chatbox_events.send(ChatboxEvent::System(format!(
+                            let _ = chatbox_events.send(ChatboxEvent::System(format!(
                                 "Experience points sharing: {}.",
                                 match xp_sharing {
                                     PartyXpSharing::EqualShare => "Equal Share",
                                     PartyXpSharing::DistributedByLevel => "Distributed by Level",
                                 }
                             )));
-                            chatbox_events.send(ChatboxEvent::System(format!(
+                            let _ = chatbox_events.send(ChatboxEvent::System(format!(
                                 "Item sharing: {}.",
                                 match item_sharing {
                                     PartyItemSharing::EqualLootDistribution =>
@@ -1972,7 +1984,7 @@ pub fn game_connection_system(
                 }
             }
             Ok(ServerMessage::PersonalStoreItemList { sell_items, buy_items  }) => {
-                personal_store_events.send(PersonalStoreEvent::SetItemList {
+                let _ = personal_store_events.send(PersonalStoreEvent::SetItemList {
                     sell_items,
                     buy_items,
                 });
@@ -1988,14 +2000,14 @@ pub fn game_connection_system(
                             PersonalStoreTransactionStatus::Cancelled => {}
                             PersonalStoreTransactionStatus::SoldOut
                             | PersonalStoreTransactionStatus::BoughtFromStore => {
-                                personal_store_events.send(PersonalStoreEvent::UpdateSellList {
+                                let _ = personal_store_events.send(PersonalStoreEvent::UpdateSellList {
                                     entity,
                                     item_list: update_store,
                                 });
                             }
                             PersonalStoreTransactionStatus::NoMoreNeed
                             | PersonalStoreTransactionStatus::SoldToStore => {
-                                personal_store_events.send(PersonalStoreEvent::UpdateBuyList {
+                                let _ = personal_store_events.send(PersonalStoreEvent::UpdateBuyList {
                                     entity,
                                     item_list: update_store,
                                 });
@@ -2006,16 +2018,16 @@ pub fn game_connection_system(
 
                 match status {
                     PersonalStoreTransactionStatus::Cancelled => {
-                        chatbox_events
+                        let _ = chatbox_events
                             .send(ChatboxEvent::System("Transaction failed.".to_string()));
                     }
                     PersonalStoreTransactionStatus::SoldOut => {
-                        chatbox_events.send(ChatboxEvent::System(
+                        let _ = chatbox_events.send(ChatboxEvent::System(
                             "Transaction failed. Item has sold out.".to_string(),
                         ));
                     }
                     PersonalStoreTransactionStatus::NoMoreNeed => {
-                        chatbox_events.send(ChatboxEvent::System(
+                        let _ = chatbox_events.send(ChatboxEvent::System(
                             "Transaction failed. Item is no longer wanted.".to_string(),
                         ));
                     }
@@ -2081,7 +2093,7 @@ pub fn game_connection_system(
                                     };
                                     let mut chatbox_events =
                                         world.resource_mut::<Events<ChatboxEvent>>();
-                                    chatbox_events.send(ChatboxEvent::System(message));
+                                    let _ = chatbox_events.send(ChatboxEvent::System(message));
                                 }
                             }
                         }
@@ -2093,7 +2105,7 @@ pub fn game_connection_system(
             Ok(ServerMessage::BankOpen) => {
                 commands.add(move |world: &mut World| {
                     let mut chatbox_events = world.resource_mut::<Events<BankEvent>>();
-                    chatbox_events.send(BankEvent::Show);
+                    let _ = chatbox_events.send(BankEvent::Show);
                 });
             }
             Ok(ServerMessage::BankSetItems { items }) => {
@@ -2112,7 +2124,7 @@ pub fn game_connection_system(
                         world.entity_mut(player_entity).insert(Bank { slots });
 
                         let mut chatbox_events = world.resource_mut::<Events<BankEvent>>();
-                        chatbox_events.send(BankEvent::Show);
+                        let _ = chatbox_events.send(BankEvent::Show);
                     });
                 }
             }
@@ -2262,16 +2274,16 @@ pub fn game_connection_system(
             Ok(ServerMessage::ClanCreateError { error }) =>  {
                 match error {
                     ClanCreateError::Failed => {
-                        message_box_events.send(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error.into(), modal: false, ok: None, cancel: None });
+                        let _ = message_box_events.send(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error.into(), modal: false, ok: None, cancel: None });
                     },
                     ClanCreateError::NameExists => {
-                        message_box_events.send(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_name.into(), modal: false, ok: None, cancel: None });
+                        let _ = message_box_events.send(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_name.into(), modal: false, ok: None, cancel: None });
                     },
                     ClanCreateError::NoPermission => {
-                        message_box_events.send(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_permission.into(), modal: false, ok: None, cancel: None });
+                        let _ = message_box_events.send(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_permission.into(), modal: false, ok: None, cancel: None });
                     },
                     ClanCreateError::UnmetCondition => {
-                        message_box_events.send(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_condition.into(), modal: false, ok: None, cancel: None });
+                        let _ = message_box_events.send(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_condition.into(), modal: false, ok: None, cancel: None });
                     },
                 }
             }

@@ -1,5 +1,5 @@
 use bevy::{
-    ecs::query::WorldQuery,
+    ecs::query::QueryData,
     prelude::{Assets, EventWriter, Local, Query, Res, ResMut, With},
 };
 use bevy_egui::{egui, EguiContexts};
@@ -53,7 +53,7 @@ impl Default for UiStateCharacterInfo {
     }
 }
 
-#[derive(WorldQuery)]
+#[derive(QueryData)]
 pub struct PlayerQuery<'w> {
     ability_values: &'w AbilityValues,
     basic_stats: &'w BasicStats,

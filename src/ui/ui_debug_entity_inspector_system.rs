@@ -60,7 +60,8 @@ pub fn ui_debug_entity_inspector_system(world: &mut World) {
                         ui.separator();
 
                         if let Some(entity) = debug_inspector_state.entity {
-                            bevy_inspector_egui::bevy_inspector::ui_for_entity(world, entity, ui);
+                            // bevy_inspector_egui::bevy_inspector::ui_for_entity(world, entity, ui);
+                            ui.label(format!("Entity inspector disabled due to bevy_inspector_egui version conflict"));
                         }
                     });
             });

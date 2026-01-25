@@ -1,6 +1,6 @@
 use bevy::{
-    asset::{AssetLoader, BoxedFuture, LoadContext, LoadedAsset},
-    prelude::{AssetEvent, Assets, EventReader, Handle, Local, Res, ResMut},
+    asset::{AssetId, AssetLoader, io::Reader, BoxedFuture, LoadContext},
+    prelude::{AssetEvent, Assets, EventReader, Local, Res, ResMut},
 };
 
 use crate::{
@@ -12,16 +12,24 @@ use crate::{
 pub struct DialogLoader;
 
 impl AssetLoader for DialogLoader {
-    fn load<'a>(
+    type Asset = Dialog;
+    type Settings = ();
+    type Error = anyhow::Error;
+
+    fn load<'a, 'b>(
         &'a self,
-        bytes: &'a [u8],
-        load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
+        load_context: &'a mut LoadContext<'b>,
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            let bytes_str = std::str::from_utf8(bytes)?;
+            let mut bytes = Vec::new();
+            use bevy::tasks::futures_lite::AsyncReadExt;
+            reader.read_to_end(&mut bytes).await?;
+            
+            let bytes_str = std::str::from_utf8(&bytes)?;
             let dialog: Dialog = quick_xml::de::from_str(bytes_str)?;
-            load_context.set_default_asset(LoadedAsset::new(dialog));
-            Ok(())
+            Ok(dialog)
         })
     }
 
@@ -62,7 +70,7 @@ impl DialogInstance {
 
 #[derive(Default)]
 pub struct DialogsLoadState {
-    pending_dialogs: Vec<Handle<Dialog>>,
+    pending_dialogs: Vec<AssetId<Dialog>>,
 }
 
 pub fn load_dialog_sprites_system(
@@ -71,10 +79,10 @@ pub fn load_dialog_sprites_system(
     mut load_state: Local<DialogsLoadState>,
     ui_resources: Res<UiResources>,
 ) {
-    for ev in ev_asset.iter() {
+    for ev in ev_asset.read() {
         match ev {
-            AssetEvent::Created { handle } | AssetEvent::Modified { handle } => {
-                load_state.pending_dialogs.push(handle.clone_weak());
+            AssetEvent::LoadedWithDependencies { id } | AssetEvent::Modified { id } => {
+                load_state.pending_dialogs.push(*id);
             }
             _ => {}
         }
@@ -82,7 +90,7 @@ pub fn load_dialog_sprites_system(
 
     if ui_resources.loaded_all_textures {
         for handle in load_state.pending_dialogs.drain(..) {
-            if let Some(dialog) = assets.get_mut(&handle) {
+            if let Some(dialog) = assets.get_mut(handle) {
                 dialog.widgets.load_widget(&ui_resources);
                 dialog.loaded = true;
             }

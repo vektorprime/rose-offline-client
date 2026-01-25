@@ -1,7 +1,7 @@
 use bevy::{
-    asset::{load_internal_asset, Handle},
+    asset::{load_internal_asset, Asset, Handle, UntypedHandle, UntypedAssetId},
     ecs::{
-        query::{QueryItem, ROQueryItem},
+        query::QueryItem,
         system::{
             lifetimeless::{Read, SRes},
             SystemParamItem,
@@ -9,14 +9,14 @@ use bevy::{
     },
     math::Vec2,
     pbr::{
-        AlphaMode, DrawPrepass, MeshPipelineKey, SetMaterialBindGroup, SetMeshBindGroup,
+        AlphaMode, MeshPipelineKey, SetMaterialBindGroup, SetMeshBindGroup,
         SetMeshViewBindGroup,
     },
     prelude::{
-        AddAsset, App, Component, FromWorld, HandleUntyped, Material, MaterialPlugin, Mesh, Plugin,
+        App, Component, FromWorld, Material, MaterialPlugin, Mesh, Plugin,
         Vec3, With, World,
     },
-    reflect::{Reflect, TypeUuid},
+    reflect::Reflect,
     render::{
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         mesh::{GpuBufferInfo, MeshVertexBufferLayout},
@@ -32,6 +32,7 @@ use bevy::{
         },
         texture::Image,
     },
+    utils::Uuid,
 };
 
 use rose_file_readers::{ZscMaterialBlend, ZscMaterialGlow};
@@ -41,8 +42,13 @@ use crate::render::{
     MESH_ATTRIBUTE_UV_1,
 };
 
-pub const OBJECT_MATERIAL_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 0xb7ebbc00ea16d3c7);
+use std::any::TypeId;
+
+pub const OBJECT_MATERIAL_SHADER_HANDLE: UntypedHandle =
+    UntypedHandle::Weak(UntypedAssetId::Uuid {
+        type_id: TypeId::of::<Shader>(),
+        uuid: Uuid::from_u128(0xb7ebbc00ea16d3c7),
+    });
 
 #[derive(Default)]
 pub struct ObjectMaterialPlugin {
@@ -51,9 +57,10 @@ pub struct ObjectMaterialPlugin {
 
 impl Plugin for ObjectMaterialPlugin {
     fn build(&self, app: &mut App) {
+        // Load the internal asset using the Bevy 0.13 API
         load_internal_asset!(
             app,
-            OBJECT_MATERIAL_SHADER_HANDLE,
+            OBJECT_MATERIAL_SHADER_HANDLE.typed::<Shader>(),
             "shaders/object_material.wgsl",
             Shader::from_wgsl
         );
@@ -62,16 +69,11 @@ impl Plugin for ObjectMaterialPlugin {
 
         app.register_type::<ObjectMaterial>();
 
-        app.add_plugins(MaterialPlugin::<
-            ObjectMaterial,
-            DrawObjectMaterial,
-            DrawPrepass<ObjectMaterial>,
-        > {
+        app.add_plugins(MaterialPlugin::<ObjectMaterial> {
             prepass_enabled: self.prepass_enabled,
             ..Default::default()
         });
 
-        app.register_asset_reflect::<ObjectMaterial>();
         app.register_type::<ObjectMaterialClipFace>();
     }
 }
@@ -83,11 +85,11 @@ pub enum ObjectMaterialClipFace {
 }
 
 impl ExtractComponent for ObjectMaterialClipFace {
-    type Query = &'static Self;
-    type Filter = With<Handle<ObjectMaterial>>;
-    type Out = ObjectMaterialClipFace;
+    type QueryData = &'static Self;
+    type QueryFilter = With<Handle<ObjectMaterial>>;
+    type Out = Self;
 
-    fn extract_component(item: QueryItem<Self::Query>) -> Option<Self> {
+    fn extract_component(item: QueryItem<Self::QueryData>) -> Option<Self::Out> {
         Some(*item)
     }
 }
@@ -95,17 +97,21 @@ impl ExtractComponent for ObjectMaterialClipFace {
 pub struct DrawObjectMesh;
 impl<P: PhaseItem> RenderCommand<P> for DrawObjectMesh {
     type Param = SRes<RenderAssets<Mesh>>;
-    type ItemWorldQuery = (Read<Handle<Mesh>>, Option<Read<ObjectMaterialClipFace>>);
-    type ViewWorldQuery = ();
+    type ViewQuery = ();
+    type ItemQuery = (Read<Handle<Mesh>>, Option<Read<ObjectMaterialClipFace>>);
 
     #[inline]
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'_, Self::ViewWorldQuery>,
-        (mesh_handle, clip_face): ROQueryItem<'_, Self::ItemWorldQuery>,
+        _: bevy::ecs::query::ROQueryItem<'_, Self::ViewQuery>,
+        item: Option<bevy::ecs::query::ROQueryItem<'_, Self::ItemQuery>>,
         meshes: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        let (mesh_handle, clip_face) = match item {
+            Some((mesh_handle, clip_face)) => (mesh_handle, clip_face),
+            None => return RenderCommandResult::Failure,
+        };
         let (start_index_offset, end_index_offset) = if let Some(clip_face) = clip_face {
             match clip_face {
                 ObjectMaterialClipFace::First(num_faces) => (num_faces * 3, 0),
@@ -261,10 +267,9 @@ impl From<ZscMaterialGlow> for ObjectMaterialGlow {
     }
 }
 
-#[derive(Debug, Clone, TypeUuid, Reflect, AsBindGroup)]
+#[derive(Asset, Debug, Clone, Reflect, AsBindGroup)]
 #[uniform(0, ObjectMaterialUniformData)]
 #[bind_group_data(ObjectMaterialKey)]
-#[uuid = "62a496fa-33e8-41a8-9a44-237d70214227"]
 pub struct ObjectMaterial {
     #[texture(1)]
     #[sampler(2)]
@@ -308,8 +313,6 @@ impl FromWorld for ObjectMaterialPipelineData {
 }
 
 impl Material for ObjectMaterial {
-    type PipelineData = ObjectMaterialPipelineData;
-
     fn vertex_shader() -> ShaderRef {
         OBJECT_MATERIAL_SHADER_HANDLE.typed().into()
     }
@@ -355,7 +358,7 @@ impl Material for ObjectMaterial {
     }
 
     fn specialize(
-        object_material_pipeline_data: &bevy::pbr::MaterialPipeline<Self>,
+        _pipeline: &bevy::pbr::MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
         layout: &MeshVertexBufferLayout,
         key: bevy::pbr::MaterialPipelineKey<Self>,
@@ -413,14 +416,6 @@ impl Material for ObjectMaterial {
         {
             return Ok(());
         }
-
-        descriptor.layout.insert(
-            3,
-            object_material_pipeline_data
-                .data
-                .zone_lighting_layout
-                .clone(),
-        );
 
         if let Some(fragment) = descriptor.fragment.as_mut() {
             for color_target_state in fragment.targets.iter_mut().filter_map(|x| x.as_mut()) {

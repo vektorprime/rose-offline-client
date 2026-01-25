@@ -20,7 +20,7 @@ pub trait RemoveColliderCommand {
     fn remove_and_despawn_collider(&mut self) -> &mut Self;
 }
 
-impl<'w, 's, 'a> RemoveColliderCommand for EntityCommands<'w, 's, 'a> {
+impl<'a> RemoveColliderCommand for EntityCommands<'a> {
     fn remove_and_despawn_collider(&mut self) -> &mut Self {
         let entity = self.id();
 

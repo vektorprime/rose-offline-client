@@ -8,7 +8,7 @@ use crate::{
     components::PlayerCharacter,
     resources::{GameData, UiResources},
     ui::{
-        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
+        tooltips::PlayerTooltipQuery,
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog, DrawText, Widget},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateWindows,
@@ -32,7 +32,7 @@ const IID_PANE_QUESTINFO: i32 = 200;
 fn ui_add_quest_item_slot(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player_tooltip_data: Option<&PlayerTooltipQuery<'_>>,
     item: Option<&Item>,
     game_data: &GameData,
     ui_resources: &UiResources,

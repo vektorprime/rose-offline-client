@@ -63,7 +63,7 @@ impl DrawWidget for ZListbox {
         });
 
         if ui.rect_contains_pointer(rect) {
-            let scroll_delta = ui.input(|input| input.scroll_delta);
+            let scroll_delta = ui.input(|input| input.raw_scroll_delta);
             if let Some((scroll_index, scroll_range, extent)) = bindings
                 .get_scroll(self.id)
                 .as_mut()

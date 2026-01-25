@@ -1,6 +1,5 @@
 use bevy::{
-    ecs::query::WorldQuery,
-    input::Input,
+    input::ButtonInput,
     math::Vec3,
     prelude::{
         Camera, Camera3d, Entity, EventWriter, GlobalTransform, MouseButton, Query, Res, ResMut,
@@ -22,15 +21,11 @@ use crate::{
     resources::{SelectedTarget, UiCursorType, UiRequestedCursor},
 };
 
-#[derive(WorldQuery)]
-pub struct PlayerQuery<'w> {
-    entity: Entity,
-    team: &'w Team,
-}
+pub type PlayerQuery<'w> = (Entity, &'w Team);
 
 #[allow(clippy::too_many_arguments)]
 pub fn game_mouse_input_system(
-    mouse_button_input: Res<Input<MouseButton>>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
     query_window: Query<&Window, With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     rapier_context: Res<RapierContext>,
@@ -70,8 +65,8 @@ pub fn game_mouse_input_system(
         return;
     }
 
-    let player = if let Ok(player) = query_player.get_single() {
-        player
+    let (player_entity, player_team) = if let Ok(result) = query_player.get_single() {
+        result
     } else {
         return;
     };
@@ -82,7 +77,7 @@ pub fn game_mouse_input_system(
     if let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
         if let Some((collider_entity, distance)) = rapier_context.cast_ray(
             ray.origin,
-            ray.direction,
+            *ray.direction,
             10000000.0,
             false,
             QueryFilter::new().groups(CollisionGroups::new(
@@ -121,7 +116,7 @@ pub fn game_mouse_input_system(
                 }
 
                 if let Some(hit_team) = hit_team.as_ref() {
-                    if hit_team.id != Team::DEFAULT_NPC_TEAM_ID && hit_team.id != player.team.id {
+                    if hit_team.id != Team::DEFAULT_NPC_TEAM_ID && hit_team.id != player_team.id {
                         ui_requested_cursor.world_cursor = UiCursorType::Attack;
                     }
                 }
@@ -163,7 +158,7 @@ pub fn game_mouse_input_system(
                             .map_or(false, |selected_entity| selected_entity == hit_entity)
                         {
                             if hit_team.id == Team::DEFAULT_NPC_TEAM_ID
-                                || hit_team.id == player.team.id
+                                || hit_team.id == player_team.id
                             {
                                 // Move towards friendly
                                 if let Some(hit_entity_position) = hit_entity_position {

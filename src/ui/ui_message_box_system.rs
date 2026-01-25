@@ -1,6 +1,7 @@
 use bevy::prelude::{Assets, Commands, EventWriter, Events, Local, Res, ResMut};
 use bevy_egui::{egui, EguiContexts};
-use bevy_inspector_egui::egui::text::LayoutJob;
+// use bevy_inspector_egui::egui::text::LayoutJob;  // Disabled due to version conflict
+use egui::text::LayoutJob;
 
 use crate::{
     events::MessageBoxEvent,

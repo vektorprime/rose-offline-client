@@ -5,9 +5,10 @@ use bevy::{
     math::Vec3,
     pbr::AmbientLight,
     prelude::{
-        Camera3d, Color, Commands, ComputedVisibility, Entity, GlobalTransform, Query, Res, ResMut,
+        Camera3d, Color, Commands, Entity, GlobalTransform, Query, Res, ResMut,
         Resource, Transform, Visibility, With,
     },
+    render::view::{ViewVisibility, InheritedVisibility},
 };
 use bevy_egui::{egui, EguiContexts};
 use enum_map::{enum_map, EnumMap};
@@ -195,7 +196,7 @@ pub fn model_viewer_system(
                             },
                             Npc::new(npc.id, 0),
                             Visibility::default(),
-                            ComputedVisibility::default(),
+                            ViewVisibility::default(), InheritedVisibility::default(),
                             GlobalTransform::default(),
                             Transform::default().with_translation(Vec3::new(
                                 2.5 + (count / 30) as f32 * NPC_SPACING,
@@ -288,7 +289,7 @@ pub fn model_viewer_system(
                             character_info,
                             equipment,
                             Visibility::default(),
-                            ComputedVisibility::default(),
+                            ViewVisibility::default(), InheritedVisibility::default(),
                             GlobalTransform::default(),
                             Transform::default().with_translation(Vec3::new(
                                 -2.5 + (count / 25) as f32 * -CHARACTER_SPACING,

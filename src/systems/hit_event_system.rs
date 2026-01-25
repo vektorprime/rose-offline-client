@@ -1,5 +1,5 @@
 use bevy::{
-    ecs::query::WorldQuery,
+    ecs::query::QueryData,
     prelude::{Commands, Entity, EventReader, EventWriter, GlobalTransform, Query, Res, ResMut},
 };
 
@@ -17,15 +17,15 @@ use crate::{
     resources::{ClientEntityList, DamageDigitsSpawner, GameData},
 };
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
+#[derive(QueryData)]
+#[query_data(mutable)]
 pub struct HitAttackerQuery<'w> {
     entity: Entity,
     pending_skill_target_list: &'w mut PendingSkillTargetList,
 }
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
+#[derive(QueryData)]
+#[query_data(mutable)]
 pub struct HitDefenderQuery<'w> {
     entity: Entity,
     client_entity: &'w ClientEntity,
@@ -88,7 +88,7 @@ pub fn hit_event_system(
     damage_digits_spawner: Res<DamageDigitsSpawner>,
     game_data: Res<GameData>,
 ) {
-    for event in hit_events.iter() {
+    for event in hit_events.read() {
         let defender = query_defender.get_mut(event.defender).ok();
         if defender.is_none() {
             continue;

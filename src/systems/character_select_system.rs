@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 use bevy::{
-    input::Input,
+    input::ButtonInput,
     prelude::{
-        AssetServer, Camera, Camera3d, Commands, Component, ComputedVisibility,
+        AssetServer, Camera, Camera3d, Commands, Component, ViewVisibility, InheritedVisibility,
         DespawnRecursiveExt, Entity, EventReader, EventWriter, GlobalTransform, Handle, Local,
         MouseButton, NextState, Query, Res, ResMut, Resource, Visibility, With,
     },
@@ -76,7 +76,7 @@ pub fn character_select_enter_system(
                 *transform,
                 GlobalTransform::default(),
                 Visibility::default(),
-                ComputedVisibility::default(),
+                ViewVisibility::default(), InheritedVisibility::default(),
             ))
             .id();
         models.push((None, entity));
@@ -177,7 +177,7 @@ pub fn character_select_system(
         return;
     };
 
-    for event in world_connection_events.iter() {
+    for event in world_connection_events.read() {
         match event {
             WorldConnectionEvent::CreateCharacterSuccess { character_slot: _ } => {
                 let (camera_entity, _, _, _) = query_camera.single();
@@ -279,7 +279,7 @@ pub fn character_select_system(
                     ui.label("Connecting to game");
                 });
 
-            for event in game_connection_events.iter() {
+            for event in game_connection_events.read() {
                 let &GameConnectionEvent::Connected(zone_id) = event;
 
                 // Start camera animation
@@ -313,7 +313,7 @@ pub fn character_select_event_system(
     character_list: Option<Res<CharacterList>>,
     world_connection: Option<Res<WorldConnection>>,
 ) {
-    for event in character_select_events.iter() {
+    for event in character_select_events.read() {
         match event {
             CharacterSelectEvent::SelectCharacter(index) => {
                 if matches!(
@@ -382,7 +382,7 @@ pub fn character_select_event_system(
 pub fn character_select_input_system(
     mut character_select_state: ResMut<CharacterSelectState>,
     mut egui_ctx: EguiContexts,
-    mouse_button_input: Res<Input<MouseButton>>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
     rapier_context: Res<RapierContext>,
     mut last_selected_time: Local<Option<Instant>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
@@ -418,7 +418,7 @@ pub fn character_select_input_system(
             if let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
                 if let Some((collider_entity, _)) = rapier_context.cast_ray(
                     ray.origin,
-                    ray.direction,
+                    *ray.direction,
                     10000000.0,
                     false,
                     QueryFilter::new().groups(CollisionGroups::new(

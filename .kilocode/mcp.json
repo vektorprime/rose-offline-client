@@ -1,0 +1,1 @@
+{"mcpServers":{"git-mcp":{"type":"streamable-http","url":"https://gitmcp.io/bevyengine/bevy","alwaysAllow":["fetch_bevy_documentation","search_bevy_documentation","fetch_generic_url_content","search_bevy_code"],"disabled":true}}}

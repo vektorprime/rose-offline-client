@@ -1,5 +1,5 @@
 use bevy::{
-    asset::load_internal_asset,
+    asset::{load_internal_asset, UntypedHandle, UntypedAssetId, Handle},
     ecs::{
         query::ROQueryItem,
         system::{lifetimeless::SRes, SystemParamItem},
@@ -8,10 +8,10 @@ use bevy::{
     pbr::CascadeShadowConfig,
     prelude::{
         AmbientLight, App, Color, Commands, DirectionalLight, DirectionalLightBundle, EulerRot,
-        FromWorld, HandleUntyped, IntoSystemConfigs, Plugin, Quat, ReflectResource, Res, ResMut,
+        FromWorld, IntoSystemConfigs, Plugin, Quat, ReflectResource, Res, ResMut,
         Resource, Shader, Startup, Transform, World,
     },
-    reflect::{Reflect, TypeUuid},
+    reflect::{Reflect, TypePath},
     render::{
         render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
         render_resource::{
@@ -23,10 +23,15 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
     },
+    utils::Uuid,
 };
+use std::any::TypeId;
 
-pub const ZONE_LIGHTING_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 0x444949d32b35d5d9);
+pub const ZONE_LIGHTING_SHADER_HANDLE: UntypedHandle =
+    UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0x444949d32b35d5d9) });
+
+pub const ZONE_LIGHTING_SHADER_HANDLE_TYPED: Handle<Shader> =
+    Handle::weak_from_u128(0x444949d32b35d5d9);
 
 fn default_light_transform() -> Transform {
     Transform::from_rotation(Quat::from_euler(
@@ -44,7 +49,7 @@ impl Plugin for ZoneLightingPlugin {
     fn build(&self, app: &mut App) {
         load_internal_asset!(
             app,
-            ZONE_LIGHTING_SHADER_HANDLE,
+            ZONE_LIGHTING_SHADER_HANDLE_TYPED,
             "shaders/zone_lighting.wgsl",
             Shader::from_wgsl
         );
@@ -81,7 +86,6 @@ fn spawn_lights(mut commands: Commands) {
             bounds: vec![10000.0],
             overlap_proportion: 2.0,
             minimum_distance: 0.1,
-            manual_cascades: true,
         },
         ..Default::default()
     });
@@ -167,8 +171,9 @@ impl FromWorld for ZoneLightingUniformMeta {
         });
 
         let bind_group_layout =
-            render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                entries: &[BindGroupLayoutEntry {
+            render_device.create_bind_group_layout(
+                Some("zone_lighting_uniform_layout"),
+                &[BindGroupLayoutEntry {
                     binding: 0,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Buffer {
@@ -178,17 +183,16 @@ impl FromWorld for ZoneLightingUniformMeta {
                     },
                     count: None,
                 }],
-                label: Some("zone_lighting_uniform_layout"),
-            });
+            );
 
-        let bind_group = render_device.create_bind_group(&BindGroupDescriptor {
-            label: None,
-            layout: &bind_group_layout,
-            entries: &[BindGroupEntry {
+        let bind_group = render_device.create_bind_group(
+            "zone_lighting_uniform_bind_group",
+            &bind_group_layout,
+            &[BindGroupEntry {
                 binding: 0,
                 resource: buffer.as_entire_binding(),
             }],
-        });
+        );
 
         ZoneLightingUniformMeta {
             buffer,
@@ -248,13 +252,13 @@ fn prepare_uniform_data(
 pub struct SetZoneLightingBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetZoneLightingBindGroup<I> {
     type Param = SRes<ZoneLightingUniformMeta>;
-    type ItemWorldQuery = ();
-    type ViewWorldQuery = ();
+    type ItemQuery = ();
+    type ViewQuery = ();
 
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        _: ROQueryItem<'w, Self::ItemWorldQuery>,
+        _: ROQueryItem<'w, Self::ViewQuery>,
+        _: Option<ROQueryItem<'w, Self::ItemQuery>>,
         meta: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {

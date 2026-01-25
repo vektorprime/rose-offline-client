@@ -44,11 +44,11 @@ pub fn background_music_system(
                 background_music.day_audio_source = zone_data
                     .background_music_day
                     .as_ref()
-                    .map(|path| asset_server.load(path.path()));
+                    .map(|path| asset_server.load(path.path().to_string_lossy().into_owned()));
                 background_music.night_audio_source = zone_data
                     .background_music_night
                     .as_ref()
-                    .map(|path| asset_server.load(path.path()));
+                    .map(|path| asset_server.load(path.path().to_string_lossy().into_owned()));
             } else {
                 background_music.day_audio_source = None;
                 background_music.night_audio_source = None;

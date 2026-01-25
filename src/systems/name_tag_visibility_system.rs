@@ -1,6 +1,7 @@
 use bevy::{
-    ecs::query::WorldQuery,
+    
     prelude::{Children, Entity, Local, Or, Query, Res, ResMut, Visibility, With},
+    ecs::query::QueryData,
 };
 use rose_game_common::components::Npc;
 
@@ -18,8 +19,7 @@ pub struct NameTagVisibility {
     pub selected: Option<Entity>,
 }
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
+#[derive(QueryData)]
 pub struct NameTagQuery<'w> {
     name_tag: &'w NameTag,
     children: &'w Children,

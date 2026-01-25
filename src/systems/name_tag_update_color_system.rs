@@ -1,5 +1,5 @@
 use bevy::{
-    ecs::query::WorldQuery,
+    ecs::query::QueryData,
     prelude::{Changed, Children, Color, Or, Parent, Query, With},
 };
 
@@ -11,7 +11,7 @@ use crate::{
     systems::name_tag_system::get_monster_name_tag_color,
 };
 
-#[derive(WorldQuery)]
+#[derive(QueryData)]
 pub struct PlayerQuery<'w> {
     level: &'w Level,
     team: &'w Team,

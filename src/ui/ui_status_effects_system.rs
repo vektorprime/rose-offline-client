@@ -1,10 +1,7 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use bevy::{
-    ecs::query::WorldQuery,
-    prelude::{Entity, Query, Res, With},
-    time::Time,
-};
+use bevy::prelude::{Entity, Query, Res, With};
+use bevy::time::Time;
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::components::StatusEffects;
@@ -14,15 +11,9 @@ use crate::{
     resources::{GameData, UiResources, UiSpriteSheetType},
 };
 
-#[derive(WorldQuery)]
-pub struct PlayerQuery<'w> {
-    entity: Entity,
-    status_effects: &'w StatusEffects,
-}
-
 pub fn ui_status_effects_system(
     mut egui_context: EguiContexts,
-    query_player: Query<PlayerQuery, With<PlayerCharacter>>,
+    mut query_player: Query<(Entity, &StatusEffects), With<PlayerCharacter>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
     time: Res<Time>,
@@ -33,6 +24,8 @@ pub fn ui_status_effects_system(
         return;
     };
 
+    let (entity, status_effects) = player;
+
     egui::Window::new("Player Status Effects}")
         .anchor(egui::Align2::LEFT_TOP, [250.0, 40.0])
         .frame(egui::Frame::none())
@@ -41,7 +34,7 @@ pub fn ui_status_effects_system(
         .show(egui_context.ctx_mut(), |ui| {
             ui.horizontal_top(|ui| {
                 for (status_effect_type, active_status_effect) in
-                    player.status_effects.active.iter()
+                    status_effects.active.iter()
                 {
                     if let Some(active_status_effect) = active_status_effect {
                         if let Some(status_effect_data) = game_data
@@ -49,13 +42,13 @@ pub fn ui_status_effects_system(
                             .get_status_effect(active_status_effect.id)
                         {
                             let remaining_time = if let Some(expire_time) =
-                                player.status_effects.expire_times[status_effect_type]
+                                status_effects.expire_times[status_effect_type]
                             {
-                                let now = time.last_update().unwrap();
+                                let now = Instant::now();
                                 if now >= expire_time {
                                     Some(Duration::ZERO)
                                 } else {
-                                    Some(expire_time - now)
+                                    Some(expire_time.duration_since(now))
                                 }
                             } else {
                                 None

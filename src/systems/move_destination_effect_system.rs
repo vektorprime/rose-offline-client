@@ -1,5 +1,5 @@
 use bevy::prelude::{
-    AssetServer, Assets, Commands, ComputedVisibility, DespawnRecursiveExt, Entity, EventReader,
+    AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, DespawnRecursiveExt, Entity, EventReader,
     GlobalTransform, Local, Res, ResMut, Transform, Visibility,
 };
 use rose_data::EffectFileId;
@@ -26,7 +26,7 @@ pub fn move_destination_effect_system(
     mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
 ) {
-    for event in events.iter() {
+    for event in events.read() {
         match event {
             MoveDestinationEffectEvent::Show { position } => {
                 if let Some(last_effect_entity) = state.last_effect_entity.take() {
@@ -43,7 +43,7 @@ pub fn move_destination_effect_system(
                             Transform::from_translation(*position),
                             GlobalTransform::default(),
                             Visibility::default(),
-                            ComputedVisibility::default(),
+                            ViewVisibility::default(), InheritedVisibility::default(),
                         ))
                         .id();
                     state.last_effect_entity = Some(effect_entity);

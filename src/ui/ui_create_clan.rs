@@ -64,7 +64,7 @@ pub fn ui_create_clan_system(
         return;
     };
 
-    for event in clan_dialog_events.iter() {
+    for event in clan_dialog_events.read() {
         let ClanDialogEvent::Open = event;
         ui_state_windows.create_clan_open = true;
     }

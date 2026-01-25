@@ -39,7 +39,7 @@ pub trait RemoveNameTagCommand {
     fn remove_and_despawn_name_tag(&mut self) -> &mut Self;
 }
 
-impl<'w, 's, 'a> RemoveNameTagCommand for EntityCommands<'w, 's, 'a> {
+impl<'w> RemoveNameTagCommand for EntityCommands<'w> {
     fn remove_and_despawn_name_tag(&mut self) -> &mut Self {
         let entity = self.id();
 

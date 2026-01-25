@@ -296,12 +296,9 @@ pub fn ui_debug_item_list_system(
                         .filter_item_type
                         .is_equipment_item();
 
-                    body.rows(
-                        45.0,
-                        ui_state_debug_item_list.filtered_items.len()
-                            + usize::from(is_equipment_item),
-                        |row_index, mut row| {
-                            if is_equipment_item && row_index == 0 {
+                    let mut row_index = 0;
+                    body.rows(45.0, ui_state_debug_item_list.filtered_items.len() + usize::from(is_equipment_item), |mut row| {
+                        if is_equipment_item && row_index == 0 {
                                 row.col(|_| {});
 
                                 row.col(|ui| {
@@ -369,7 +366,7 @@ pub fn ui_debug_item_list_system(
                                         item_data.icon_index as usize,
                                     ) {
                                         ui.add(
-                                            egui::Image::new(sprite.texture_id, [40.0, 40.0])
+                                            egui::Image::new((sprite.texture_id, egui::Vec2::new(40.0, 40.0)))
                                                 .uv(sprite.uv),
                                         )
                                         .on_hover_ui(
@@ -489,6 +486,7 @@ pub fn ui_debug_item_list_system(
                                     _ => {}
                                 });
                             }
+                            row_index += 1;
                         },
                     );
                 });

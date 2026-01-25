@@ -1,6 +1,7 @@
 use bevy::{
+    gizmos::config::GizmoConfigStore,
     hierarchy::Children,
-    prelude::{Assets, GizmoConfig, Handle, Local, Query, ResMut, With},
+    prelude::{Assets, Handle, Local, Query, ResMut, With},
 };
 use bevy_egui::{egui, EguiContexts};
 
@@ -27,7 +28,7 @@ pub fn ui_debug_render_system(
     query_object_material: Query<&Handle<ObjectMaterial>>,
     mut object_materials: ResMut<Assets<ObjectMaterial>>,
     rapier_debug: Option<ResMut<bevy_rapier3d::prelude::DebugRenderContext>>,
-    mut gizmo_config: ResMut<GizmoConfig>,
+    mut gizmo_config_store: ResMut<GizmoConfigStore>,
 ) {
     if !ui_state_debug_windows.debug_ui_open {
         return;
@@ -112,9 +113,10 @@ pub fn ui_debug_render_system(
             }
 
             ui.separator();
-            ui.label("Gizmo line width:");
-            ui.add(egui::Slider::new(&mut gizmo_config.line_width, 1.0..=10.0).show_value(true));
-            ui.label("Gizmo depth bias:");
-            ui.add(egui::Slider::new(&mut gizmo_config.depth_bias, -1.0..=1.0).show_value(true));
+            // TODO: GizmoConfig fields changed in Bevy 0.13 - line_width and depth_bias no longer exist
+            // ui.label("Gizmo line width:");
+            // ui.add(egui::Slider::new(&mut gizmo_config_store.config_mut::<DefaultGizmoConfigGroup>().0.line_width, 1.0..=10.0).show_value(true));
+            // ui.label("Gizmo depth bias:");
+            // ui.add(egui::Slider::new(&mut gizmo_config_store.config_mut::<DefaultGizmoConfigGroup>().0.depth_bias, -1.0..=1.0).show_value(true));
         });
 }

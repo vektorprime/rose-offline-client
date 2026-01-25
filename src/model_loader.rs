@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use arrayvec::ArrayVec;
 use bevy::{
+    asset::Asset,
     math::{Mat4, Quat, Vec3},
     prelude::{
-        AssetServer, Assets, BuildChildren, Color, Commands, ComputedVisibility,
-        DespawnRecursiveExt, Entity, GlobalTransform, Handle, Image, Mesh, Resource, Transform,
-        Visibility,
+        AssetServer, Assets, BuildChildren, Color, Commands, DespawnRecursiveExt, Entity,
+        GlobalTransform, Handle, Image, Mesh, Resource, Transform, Visibility,
     },
-    render::mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
+    render::{mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes}, view::InheritedVisibility, view::ViewVisibility},
 };
 use enum_map::{enum_map, EnumMap};
 
@@ -317,7 +317,7 @@ impl ModelLoader {
         let action_motions = enum_map! {
             action => {
                 if let Some(motion_data) = self.npc_database.get_npc_action_motion(npc_id, action) {
-                    asset_server.load(motion_data.path.path())
+                    asset_server.load(motion_data.path.path().to_string_lossy().into_owned())
                 } else {
                     Handle::default()
                 }
@@ -347,7 +347,7 @@ impl ModelLoader {
         let root_bone = commands
             .spawn((
                 Visibility::default(),
-                ComputedVisibility::default(),
+                ViewVisibility::default(), InheritedVisibility::default(),
                 Transform::default(),
                 GlobalTransform::default(),
             ))
@@ -396,7 +396,7 @@ impl ModelLoader {
         let root_bone = commands
             .spawn((
                 Visibility::default(),
-                ComputedVisibility::default(),
+                ViewVisibility::default(), InheritedVisibility::default(),
                 Transform::default(),
                 GlobalTransform::default(),
             ))
@@ -446,7 +446,7 @@ impl ModelLoader {
                 weapon_motion_type,
                 gender_index,
             ) {
-                return asset_server.load(motion_data.path.path());
+                return asset_server.load(motion_data.path.path().to_string_lossy().into_owned());
             }
 
             if gender_index == 1 {
@@ -454,7 +454,7 @@ impl ModelLoader {
                     .character_motion_database
                     .get_character_action_motion(action, weapon_motion_type, 0)
                 {
-                    return asset_server.load(motion_data.path.path());
+                    return asset_server.load(motion_data.path.path().to_string_lossy().into_owned());
                 }
             }
 
@@ -462,7 +462,7 @@ impl ModelLoader {
                 self.character_motion_database
                     .get_character_action_motion(action, 0, gender_index)
             {
-                return asset_server.load(motion_data.path.path());
+                return asset_server.load(motion_data.path.path().to_string_lossy().into_owned());
             }
 
             if gender_index == 1 {
@@ -470,7 +470,7 @@ impl ModelLoader {
                     .character_motion_database
                     .get_character_action_motion(action, 0, 0)
                 {
-                    return asset_server.load(motion_data.path.path());
+                    return asset_server.load(motion_data.path.path().to_string_lossy().into_owned());
                 }
             }
 
@@ -512,7 +512,7 @@ impl ModelLoader {
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::default(),
-                    ComputedVisibility::default(),
+                    ViewVisibility::default(), InheritedVisibility::default(),
                 ))
                 .id(),
         )
@@ -1030,7 +1030,7 @@ impl ModelLoader {
                             body_item_data.base_motion_index as usize,
                             weapon_motion_type,
                         ) {
-                            asset_server.load(motion_data.path.path())
+                            asset_server.load(motion_data.path.path().to_string_lossy().into_owned())
                         } else {
                             Handle::default()
                         }
@@ -1048,7 +1048,7 @@ impl ModelLoader {
                             body_item_data.base_avatar_motion_index as usize,
                             0,
                         ) {
-                            asset_server.load(motion_data.path.path())
+                            asset_server.load(motion_data.path.path().to_string_lossy().into_owned())
                         } else {
                             Handle::default()
                         }
@@ -1135,7 +1135,7 @@ fn spawn_skeleton(
             commands
                 .spawn((
                     Visibility::default(),
-                    ComputedVisibility::default(),
+                    ViewVisibility::default(), InheritedVisibility::default(),
                     transform,
                     GlobalTransform::default(),
                 ))
@@ -1200,11 +1200,11 @@ fn spawn_model(
 
     for object_part in object.parts.iter() {
         let mesh_id = object_part.mesh_id as usize;
-        let mesh = asset_server.load::<Mesh, _>(model_list.meshes[mesh_id].path());
+        let mesh: Handle<Mesh> = asset_server.load(model_list.meshes[mesh_id].path().to_string_lossy().into_owned());
         let material_id = object_part.material_id as usize;
         let zsc_material = &model_list.materials[material_id];
         let material = object_materials.add(ObjectMaterial {
-            base_texture: Some(asset_server.load(zsc_material.path.path())),
+            base_texture: Some(asset_server.load(zsc_material.path.path().to_string_lossy().into_owned())),
             lightmap_texture: None,
             alpha_value: if zsc_material.alpha != 1.0 {
                 Some(zsc_material.alpha)
@@ -1231,11 +1231,11 @@ fn spawn_model(
             Transform::default(),
             GlobalTransform::default(),
             Visibility::default(),
-            ComputedVisibility::default(),
+            ViewVisibility::default(), InheritedVisibility::default(),
         ));
 
         if load_clip_faces {
-            let zms_material_num_faces = asset_server.load::<ZmsMaterialNumFaces, _>(format!(
+            let zms_material_num_faces: bevy::prelude::Handle<crate::zms_asset_loader::ZmsMaterialNumFaces> = asset_server.load(format!(
                 "{}#material_num_faces",
                 model_list.meshes[mesh_id].path().to_string_lossy()
             ));

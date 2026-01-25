@@ -37,7 +37,7 @@ pub fn game_zone_change_system(
     mut zone_events: EventReader<ZoneEvent>,
     game_connection: Option<Res<GameConnection>>,
 ) {
-    for zone_event in zone_events.iter() {
+    for zone_event in zone_events.read() {
         match zone_event {
             &ZoneEvent::Loaded(_) => {
                 // Tell server we are ready to join the zone

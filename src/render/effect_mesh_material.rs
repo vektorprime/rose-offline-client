@@ -1,22 +1,21 @@
 use bevy::{
-    asset::{load_internal_asset, Handle},
+    asset::{load_internal_asset, Asset, Handle, UntypedHandle, UntypedAssetId},
     ecs::{
-        query::{QueryItem, ROQueryItem},
+        query::QueryItem,
         system::{
             lifetimeless::{Read, SRes},
             SystemParamItem,
         },
     },
     pbr::{
-        AlphaMode, DrawPrepass, Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin,
-        MeshPipelineKey, SetMaterialBindGroup, SetMeshBindGroup, SetMeshViewBindGroup,
+        AlphaMode, Material, MaterialPipelineKey, MaterialPlugin, MeshPipelineKey, SetMaterialBindGroup,
+        SetMeshBindGroup, SetMeshViewBindGroup,
     },
-    prelude::{App, Component, FromWorld, HandleUntyped, Mesh, Plugin, With, World},
-    reflect::{Reflect, TypePath, TypeUuid},
+    prelude::{App, Component, FromWorld, Mesh, Plugin, Shader, With, World},
+    reflect::{Reflect, TypePath},
     render::{
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         mesh::{GpuBufferInfo, MeshVertexBufferLayout},
-        prelude::Shader,
         render_asset::RenderAssets,
         render_phase::{
             PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
@@ -30,12 +29,17 @@ use bevy::{
         },
         texture::Image,
     },
+    utils::Uuid,
 };
+use std::any::TypeId;
 
 use crate::render::zone_lighting::{SetZoneLightingBindGroup, ZoneLightingUniformMeta};
 
-pub const EFFECT_MESH_MATERIAL_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 0x90d5233c3001d33e);
+pub const EFFECT_MESH_MATERIAL_SHADER_HANDLE: UntypedHandle =
+    UntypedHandle::Weak(UntypedAssetId::Uuid {
+        type_id: TypeId::of::<Shader>(),
+        uuid: Uuid::from_u128(0x90d5233c3001d33e),
+    });
 
 #[derive(Default)]
 pub struct EffectMeshMaterialPlugin {
@@ -44,9 +48,10 @@ pub struct EffectMeshMaterialPlugin {
 
 impl Plugin for EffectMeshMaterialPlugin {
     fn build(&self, app: &mut App) {
+        // Load the internal asset using the Bevy 0.13 API
         load_internal_asset!(
             app,
-            EFFECT_MESH_MATERIAL_SHADER_HANDLE,
+            EFFECT_MESH_MATERIAL_SHADER_HANDLE.typed::<Shader>(),
             "shaders/effect_mesh_material.wgsl",
             Shader::from_wgsl
         );
@@ -56,11 +61,7 @@ impl Plugin for EffectMeshMaterialPlugin {
         );
         app.register_type::<EffectMeshAnimationRenderState>();
 
-        app.add_plugins(MaterialPlugin::<
-            EffectMeshMaterial,
-            DrawEffectMeshMaterial,
-            DrawPrepass<EffectMeshMaterial>,
-        > {
+        app.add_plugins(MaterialPlugin::<EffectMeshMaterial> {
             prepass_enabled: self.prepass_enabled,
             ..Default::default()
         });
@@ -99,11 +100,11 @@ pub struct EffectMeshAnimationRenderState {
 }
 
 impl ExtractComponent for EffectMeshAnimationRenderState {
-    type Query = &'static Self;
-    type Filter = With<Handle<EffectMeshMaterial>>;
+    type QueryData = &'static Self;
+    type QueryFilter = With<Handle<EffectMeshMaterial>>;
     type Out = Self;
 
-    fn extract_component(item: QueryItem<Self::Query>) -> Option<Self> {
+    fn extract_component(item: QueryItem<Self::QueryData>) -> Option<Self> {
         Some(*item)
     }
 }
@@ -114,8 +115,7 @@ pub struct EffectMeshMaterialUniformData {
     pub alpha_cutoff: f32,
 }
 
-#[derive(AsBindGroup, Debug, Clone, TypeUuid, TypePath)]
-#[uuid = "9ac3266d-1aa6-4f67-ade4-e3765fd0b1a1"]
+#[derive(Asset, AsBindGroup, Debug, Clone, TypePath)]
 #[bind_group_data(EffectMeshMaterialKey)]
 #[uniform(0, EffectMeshMaterialUniformData)]
 pub struct EffectMeshMaterial {
@@ -202,10 +202,8 @@ impl FromWorld for EffectMeshMaterialPipelineData {
 }
 
 impl Material for EffectMeshMaterial {
-    type PipelineData = EffectMeshMaterialPipelineData;
-
     fn specialize(
-        pipeline: &MaterialPipeline<Self>,
+        _pipeline: &bevy::pbr::MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
         layout: &MeshVertexBufferLayout,
         key: MaterialPipelineKey<Self>,
@@ -258,10 +256,6 @@ impl Material for EffectMeshMaterial {
             }
         }
 
-        descriptor
-            .layout
-            .insert(3, pipeline.data.zone_lighting_layout.clone());
-
         if layout.contains(Mesh::ATTRIBUTE_NORMAL) {
             let vertex_attributes = [
                 Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
@@ -298,11 +292,11 @@ impl Material for EffectMeshMaterial {
     }
 
     fn vertex_shader() -> ShaderRef {
-        ShaderRef::Handle(EFFECT_MESH_MATERIAL_SHADER_HANDLE.typed())
+        ShaderRef::Handle(EFFECT_MESH_MATERIAL_SHADER_HANDLE.clone().typed())
     }
 
     fn fragment_shader() -> ShaderRef {
-        ShaderRef::Handle(EFFECT_MESH_MATERIAL_SHADER_HANDLE.typed())
+        ShaderRef::Handle(EFFECT_MESH_MATERIAL_SHADER_HANDLE.clone().typed())
     }
 
     #[inline]
@@ -323,20 +317,24 @@ impl Material for EffectMeshMaterial {
 pub struct DrawEffectMesh;
 impl<P: PhaseItem> RenderCommand<P> for DrawEffectMesh {
     type Param = SRes<RenderAssets<Mesh>>;
-    type ItemWorldQuery = (
+    type ViewQuery = ();
+    type ItemQuery = (
         Read<Handle<Mesh>>,
         Option<Read<EffectMeshAnimationRenderState>>,
     );
-    type ViewWorldQuery = ();
 
     #[inline]
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'_, Self::ViewWorldQuery>,
-        (mesh_handle, animation_state): ROQueryItem<'_, Self::ItemWorldQuery>,
+        _: bevy::ecs::query::ROQueryItem<'_, Self::ViewQuery>,
+        item: Option<bevy::ecs::query::ROQueryItem<'_, Self::ItemQuery>>,
         meshes: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        let (mesh_handle, animation_state) = match item {
+            Some((mesh_handle, animation_state)) => (mesh_handle, animation_state),
+            None => return RenderCommandResult::Failure,
+        };
         if let Some(animation_state) = animation_state {
             let byte_buffer = [0u8; EffectMeshAnimationRenderState::SHADER_SIZE.get() as usize];
             let mut buffer = encase::StorageBuffer::new(byte_buffer);

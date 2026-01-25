@@ -113,10 +113,10 @@ pub fn ui_debug_zone_list_system(
                     });
                 })
                 .body(|body| {
-                    body.rows(20.0, ui_state.filtered_zones.len(), |row_index, mut row| {
+                    body.rows(20.0, ui_state.filtered_zones.len(), |mut row| {
                         if let Some(zone_data) = ui_state
                             .filtered_zones
-                            .get(row_index)
+                            .get(row.index())
                             .and_then(|id| game_data.zone_list.get_zone(*id))
                         {
                             row.col(|ui| {

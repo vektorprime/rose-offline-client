@@ -97,7 +97,7 @@ pub fn login_event_system(
     server_configuration: Res<ServerConfiguration>,
     mut network_events: EventWriter<NetworkEvent>,
 ) {
-    for event in login_events.iter() {
+    for event in login_events.read() {
         match event {
             LoginEvent::Login { username, password } => {
                 if matches!(*login_state, LoginState::Input) {

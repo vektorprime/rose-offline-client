@@ -2,16 +2,17 @@ use std::{num::NonZeroU16, sync::Arc};
 
 use arrayvec::ArrayVec;
 use bevy::{
-    ecs::query::WorldQuery,
+    ecs::query::QueryData,
     prelude::{
-        Assets, BuildChildren, Changed, Color, Commands, ComputedVisibility, DespawnRecursiveExt,
-        Entity, EventReader, GlobalTransform, Handle, Image, Local, Query, Res, ResMut, Transform,
-        Vec2, Vec3, Visibility, With, Without,
+        Assets, BuildChildren, Changed, Color, Commands, DespawnRecursiveExt, Entity, EventReader,
+        GlobalTransform, Handle, Image, Local, Query, Res, ResMut, Transform, Vec2, Vec3,
+        Visibility, With, Without,
     },
     render::{
+        render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
         texture::ImageSampler,
-        view::NoFrustumCulling,
+        view::{ViewVisibility, InheritedVisibility, NoFrustumCulling},
     },
     utils::HashMap,
     window::PrimaryWindow,
@@ -55,13 +56,13 @@ pub struct NameTagCache {
     pub pixels_per_point: f32,
 }
 
-#[derive(WorldQuery)]
+#[derive(QueryData)]
 pub struct PlayerQuery<'w> {
     level: &'w Level,
     team: &'w Team,
 }
 
-#[derive(WorldQuery)]
+#[derive(QueryData)]
 pub struct NameTagObjectQuery<'w> {
     entity: Entity,
     name: &'w ClientEntityName,
@@ -342,8 +343,8 @@ fn create_nametag_data(
         TextureDimension::D2,
         outlined_data,
         TextureFormat::Rgba8Unorm,
+        RenderAssetUsages::default(),
     );
-    image.sampler_descriptor = ImageSampler::Descriptor(ImageSampler::nearest_descriptor());
     let image = images.add(image);
 
     let mut rects: ArrayVec<WorldUiRect, 2> = ArrayVec::new();
@@ -404,7 +405,7 @@ pub fn name_tag_system(
         return;
     };
 
-    if load_zone_events.iter().last().is_some()
+    if load_zone_events.read().last().is_some()
         || pixels_per_point != name_tag_cache.pixels_per_point
     {
         // When the zone changes, we flush all cached name tag textures to avoid leaking
@@ -493,7 +494,7 @@ pub fn name_tag_system(
                 } else {
                     Visibility::Hidden
                 },
-                ComputedVisibility::default(),
+                ViewVisibility::default(), InheritedVisibility::default(),
                 Transform::from_translation(Vec3::new(0.0, object.model_height.height, 0.0)),
                 GlobalTransform::default(),
                 NoFrustumCulling,
@@ -645,7 +646,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::default(),
-                    ComputedVisibility::default(),
+                    ViewVisibility::default(), InheritedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -659,7 +660,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    ComputedVisibility::default(),
+                    ViewVisibility::default(), InheritedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -673,7 +674,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    ComputedVisibility::default(),
+                    ViewVisibility::default(), InheritedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -691,7 +692,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    ComputedVisibility::default(),
+                    ViewVisibility::default(), InheritedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);

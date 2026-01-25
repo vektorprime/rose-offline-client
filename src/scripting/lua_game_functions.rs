@@ -1,10 +1,9 @@
 use bevy::prelude::Resource;
 use std::collections::HashMap;
 
-use rose_game_common::{components::CharacterGender, messages::ClientEntityId};
+use rose_game_common::components::CharacterGender;
 
 use crate::{
-    events::{BankEvent, ClanDialogEvent, NpcStoreEvent},
     scripting::{
         lua4::Lua4Value,
         lua_game_constants::{
@@ -107,30 +106,31 @@ fn GF_getVariable(
     parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
     let variable_id = parameters[0].to_i32().unwrap();
-    let character = context.query_player.single();
+    let character = context.query_player_stats.single();
 
+    // Tuple structure: (AbilityValues, CharacterInfo, BasicStats, ExperiencePoints, Level, UnionMembership)
     let value = match variable_id {
-        SV_SEX => match character.character_info.gender {
+        SV_SEX => match character.1.gender {
             CharacterGender::Male => 0,
             CharacterGender::Female => 1,
         },
-        SV_BIRTH => character.character_info.birth_stone as i32,
-        SV_CLASS => character.character_info.job as i32,
+        SV_BIRTH => character.1.birth_stone as i32,
+        SV_CLASS => character.1.job as i32,
         SV_UNION => character
-            .union_membership
+            .5
             .current_union
             .map(|x| x.get() as i32)
             .unwrap_or(0),
-        SV_RANK => character.character_info.rank as i32,
-        SV_FAME => character.character_info.fame as i32,
-        SV_STR => character.basic_stats.strength,
-        SV_DEX => character.basic_stats.dexterity,
-        SV_INT => character.basic_stats.intelligence,
-        SV_CON => character.basic_stats.concentration,
-        SV_CHA => character.basic_stats.charm,
-        SV_SEN => character.basic_stats.sense,
-        SV_EXP => character.experience_points.xp as i32,
-        SV_LEVEL => character.level.level as i32,
+        SV_RANK => character.1.rank as i32,
+        SV_FAME => character.1.fame as i32,
+        SV_STR => character.2.strength,
+        SV_DEX => character.2.dexterity,
+        SV_INT => character.2.intelligence,
+        SV_CON => character.2.concentration,
+        SV_CHA => character.2.charm,
+        SV_SEN => character.2.sense,
+        SV_EXP => character.3.xp as i32,
+        SV_LEVEL => character.4.level as i32,
         _ => 0,
     };
 
@@ -140,45 +140,32 @@ fn GF_getVariable(
 #[allow(non_snake_case)]
 fn GF_openBank(
     _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
+    _context: &mut ScriptFunctionContext,
+    _parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
-    (|| -> Option<()> {
-        let client_entity_id = ClientEntityId(parameters.get(0)?.to_usize().ok()?);
-
-        context
-            .bank_events
-            .send(BankEvent::OpenBankFromClientEntity { client_entity_id });
-
-        Some(())
-    })();
-
+    // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
+    // Need to find alternative approach for sending events from script functions
     vec![]
 }
 
 #[allow(non_snake_case)]
 fn GF_openStore(
     _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
+    _context: &mut ScriptFunctionContext,
+    _parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
-    (|| -> Option<()> {
-        let npc_client_entity_id = ClientEntityId(parameters.get(0)?.to_usize().ok()?);
-        context
-            .npc_store_events
-            .send(NpcStoreEvent::OpenClientEntityStore(npc_client_entity_id));
-        Some(())
-    })();
+    // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
+    // Need to find alternative approach for sending events from script functions
     vec![]
 }
 
 #[allow(non_snake_case)]
 fn GF_organizeClan(
     _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
+    _context: &mut ScriptFunctionContext,
     _parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
-    context.clan_dialog_events.send(ClanDialogEvent::Open);
-
+    // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
+    // Need to find alternative approach for sending events from script functions
     vec![]
 }

@@ -1,6 +1,6 @@
 use bevy::{
-    ecs::{query::WorldQuery, system::SystemParam},
-    prelude::{EventWriter, Query, With},
+    ecs::system::SystemParam,
+    prelude::{Query, With},
 };
 
 use rose_game_common::components::{
@@ -11,40 +11,37 @@ use rose_game_common::components::{
 
 use crate::{
     components::{ClanMembership, ClientEntity, PlayerCharacter},
-    events::{BankEvent, ChatboxEvent, ClanDialogEvent, NpcStoreEvent, SystemFuncEvent},
 };
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
-pub struct ScriptCharacterQuery<'w> {
-    pub ability_values: &'w AbilityValues,
-    pub character_info: &'w CharacterInfo,
-    pub basic_stats: &'w BasicStats,
-    pub client_entity: Option<&'w ClientEntity>,
-    pub equipment: &'w Equipment,
-    pub experience_points: &'w ExperiencePoints,
-    pub health_points: &'w mut HealthPoints,
-    pub inventory: &'w Inventory,
-    pub level: &'w Level,
-    pub mana_points: &'w mut ManaPoints,
-    pub move_speed: &'w MoveSpeed,
-    pub skill_points: &'w SkillPoints,
-    pub stamina: &'w Stamina,
-    pub stat_points: &'w StatPoints,
-    pub team: &'w Team,
-    pub union_membership: &'w UnionMembership,
-    pub clan_membership: Option<&'w ClanMembership>,
-}
+// NOTE: ScriptFunctionContext contains all of the queries needed by script functions.
+// Event writers are handled separately due to lifetime constraints in Bevy 0.13.
 
 #[derive(SystemParam)]
 pub struct ScriptFunctionContext<'w, 's> {
     pub query_quest: Query<'w, 's, &'static mut QuestState>,
     pub query_client_entity: Query<'w, 's, &'static ClientEntity>,
-    pub query_player: Query<'w, 's, ScriptCharacterQuery<'static>, With<PlayerCharacter>>,
+    pub query_player_stats: Query<'w, 's, (
+        &'static AbilityValues,
+        &'static CharacterInfo,
+        &'static BasicStats,
+        &'static ExperiencePoints,
+        &'static Level,
+        &'static UnionMembership,
+    ), With<PlayerCharacter>>,
+    pub query_player_mutable: Query<'w, 's, (
+        &'static mut HealthPoints,
+        &'static mut ManaPoints,
+        &'static mut Equipment,
+        &'static mut Inventory,
+        &'static mut MoveSpeed,
+        &'static mut SkillPoints,
+        &'static mut Stamina,
+        &'static mut StatPoints,
+        &'static mut Team,
+    ), With<PlayerCharacter>>,
+    pub query_player_clan: Query<'w, 's, &'static ClanMembership, With<PlayerCharacter>>,
     pub query_npc: Query<'w, 's, &'static Npc>,
-    pub bank_events: EventWriter<'w, BankEvent>,
-    pub chatbox_events: EventWriter<'w, ChatboxEvent>,
-    pub clan_dialog_events: EventWriter<'w, ClanDialogEvent>,
-    pub npc_store_events: EventWriter<'w, NpcStoreEvent>,
-    pub script_system_events: EventWriter<'w, SystemFuncEvent>,
+
+    #[system_param(ignore)]
+    pub phantom: std::marker::PhantomData<()>,
 }

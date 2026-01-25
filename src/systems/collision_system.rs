@@ -5,6 +5,7 @@ use bevy::{
     },
 };
 use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter, RapierContext};
+use bevy_rapier3d::geometry::ShapeCastOptions;
 
 use rose_game_common::messages::client::ClientMessage;
 
@@ -181,14 +182,19 @@ pub fn collision_player_system(
                 Quat::default(),
                 cast_direction,
                 &Collider::ball(collider_radius),
-                translation_delta.length(),
+                ShapeCastOptions {
+                    max_time_of_impact: translation_delta.length(),
+                    target_distance: 0.0,
+                    compute_impact_geometry_on_penetration: false,
+                    stop_at_penetration: false,
+                },
                 QueryFilter::new().groups(CollisionGroups::new(
                     COLLISION_FILTER_COLLIDABLE,
                     !COLLISION_GROUP_ZONE_TERRAIN & !COLLISION_GROUP_PHYSICS_TOY,
                 )),
             ) {
                 let collision_translation =
-                    cast_origin + translation_delta * (distance.toi - 0.1).max(0.0);
+                    cast_origin + translation_delta * (distance.time_of_impact - 0.1).max(0.0);
                 position.x = collision_translation.x * 100.0;
                 position.y = -(collision_translation.z * 100.0);
                 position.z = collision_translation.y * 100.0;

@@ -1,4 +1,5 @@
-use bevy::prelude::{EventWriter, Local, Res, State};
+use bevy::ecs::event::EventWriter;
+use bevy::prelude::{Local, Res, State};
 
 use crate::{
     events::{CharacterSelectEvent, LoginEvent},

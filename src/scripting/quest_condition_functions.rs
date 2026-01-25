@@ -35,7 +35,8 @@ fn quest_condition_ability_value(
     operator: QsdConditionOperator,
     compare_value: i32,
 ) -> bool {
-    let character = script_context.query_player.single();
+    let player_stats = script_context.query_player_stats.single();
+    let player_mutable = script_context.query_player_mutable.single();
 
     let ability_type = script_resources
         .game_data
@@ -45,21 +46,23 @@ fn quest_condition_ability_value(
         return false;
     }
 
+    // Tuple structure for query_player_stats: (AbilityValues, CharacterInfo, BasicStats, ExperiencePoints, Level, UnionMembership)
+    // Tuple structure for query_player_mutable: (HealthPoints, ManaPoints, Equipment, Inventory, MoveSpeed, SkillPoints, Stamina, StatPoints, Team)
     let current_value = ability_values_get_value(
         ability_type.unwrap(),
-        character.ability_values,
-        Some(character.character_info),
-        Some(character.experience_points),
-        Some(character.health_points),
-        Some(character.inventory),
-        Some(character.level),
-        Some(character.mana_points),
-        Some(character.move_speed),
-        Some(character.skill_points),
-        Some(character.stamina),
-        Some(character.stat_points),
-        Some(character.team),
-        Some(character.union_membership),
+        player_stats.0,
+        Some(player_stats.1),
+        Some(player_stats.3),
+        Some(player_mutable.0),
+        Some(player_mutable.3),
+        Some(player_stats.4),
+        Some(player_mutable.1),
+        Some(player_mutable.4),
+        Some(player_mutable.5),
+        Some(player_mutable.6),
+        Some(player_mutable.7),
+        Some(player_mutable.8),
+        Some(player_stats.5),
     )
     .unwrap_or(0);
 
@@ -106,12 +109,15 @@ fn quest_condition_quest_item(
     });
 
     let quest_state = script_context.query_quest.single();
-    let character = script_context.query_player.single();
+    let player_mutable = script_context.query_player_mutable.single();
+
+    // Tuple structure for query_player_mutable: (HealthPoints, ManaPoints, Equipment, Inventory, MoveSpeed, SkillPoints, Stamina, StatPoints, Team)
+    let equipment = player_mutable.2;
+    let inventory = player_mutable.3;
 
     if let Some(equipment_index) = equipment_index {
         item_reference
-            == character
-                .equipment
+            == equipment
                 .get_equipment_item(equipment_index)
                 .map(|item| item.item)
     } else {
@@ -129,10 +135,9 @@ fn quest_condition_quest_item(
                 }
             } else {
                 // Check inventory
-                character
-                    .inventory
+                inventory
                     .find_item(item_reference)
-                    .and_then(|slot| character.inventory.get_item(slot))
+                    .and_then(|slot| inventory.get_item(slot))
                     .map(|inventory_item| inventory_item.get_quantity())
                     .unwrap_or(0)
             }
@@ -189,17 +194,17 @@ fn quest_condition_clan_position(
     operator: QsdConditionOperator,
     compare_value: QsdClanPosition,
 ) -> bool {
-    let character = script_context.query_player.single();
-    let value = character
-        .clan_membership
-        .and_then(|clan_membership| {
-            script_resources
-                .game_data
-                .data_decoder
-                .encode_clan_member_position(clan_membership.position)
-        })
-        .unwrap_or(0);
-    quest_condition_operator(operator, value, compare_value)
+    let value: u32 = if let Some(clan_membership) = script_context.query_player_clan.iter().next() {
+        script_resources
+            .game_data
+            .data_decoder
+            .encode_clan_member_position(clan_membership.position)
+            .unwrap_or(0) as u32
+    } else {
+        0u32
+    };
+    let compare_value_u32 = compare_value as u32;
+    quest_condition_operator(operator, value, compare_value_u32)
 }
 
 fn quest_condition_in_clan(
@@ -208,8 +213,8 @@ fn quest_condition_in_clan(
     _quest_context: &mut QuestFunctionContext,
     in_clan: bool,
 ) -> bool {
-    let character = script_context.query_player.single();
-    character.clan_membership.is_some() == in_clan
+    let has_clan = script_context.query_player_clan.iter().next().is_some();
+    has_clan == in_clan
 }
 
 pub fn quest_trigger_check_conditions(

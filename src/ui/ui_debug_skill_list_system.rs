@@ -1,5 +1,5 @@
 use bevy::{
-    ecs::query::WorldQuery,
+    ecs::query::QueryData,
     prelude::{AssetServer, Commands, Entity, Local, Query, Res, ResMut, State, With},
 };
 use bevy_egui::{egui, EguiContexts};
@@ -26,14 +26,14 @@ use crate::{
     },
 };
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
+#[derive(QueryData)]
+#[query_data(mutable)]
 pub struct QueryCommand<'w> {
     entity: Entity,
     command: &'w mut Command,
 }
 
-#[derive(WorldQuery)]
+#[derive(QueryData)]
 pub struct QueryCharacter<'w> {
     entity: Entity,
     character_model: &'w CharacterModel,
@@ -115,22 +115,19 @@ pub fn ui_debug_skill_list_system(
                     None
                 };
 
-                ui_state_debug_skill_list.filtered_skills = game_data
-                    .skills
-                    .iter()
-                    .filter_map(|skill_data| {
-                        if (ui_state_debug_skill_list.filter_castable
-                            && skill_data.casting_motion_id.is_none())
-                            || !filter_name_re
-                                .as_ref()
-                                .map_or(true, |re| re.is_match(skill_data.name))
-                        {
-                            None
-                        } else {
-                            Some(skill_data.id)
-                        }
-                    })
-                    .collect();
+                ui_state_debug_skill_list.filtered_skills.clear();
+                for skill_data in game_data.skills.iter() {
+                    if (ui_state_debug_skill_list.filter_castable
+                        && skill_data.casting_motion_id.is_none())
+                        || !filter_name_re
+                            .as_ref()
+                            .map_or(true, |re| re.is_match(skill_data.name))
+                    {
+                        continue;
+                    } else {
+                        ui_state_debug_skill_list.filtered_skills.push(skill_data.id);
+                    }
+                }
             }
 
             egui_extras::TableBuilder::new(ui)
@@ -162,10 +159,10 @@ pub fn ui_debug_skill_list_system(
                     body.rows(
                         45.0,
                         ui_state_debug_skill_list.filtered_skills.len(),
-                        |row_index, mut row| {
+                        |mut row| {
                             if let Some(skill_data) = ui_state_debug_skill_list
                                 .filtered_skills
-                                .get(row_index)
+                                .get(row.index())
                                 .and_then(|id| game_data.skills.get_skill(*id))
                             {
                                 row.col(|ui| {
@@ -174,7 +171,7 @@ pub fn ui_debug_skill_list_system(
                                         skill_data.icon_number as usize,
                                     ) {
                                         ui.add(
-                                            egui::Image::new(sprite.texture_id, [40.0, 40.0])
+                                            egui::Image::new((sprite.texture_id, egui::Vec2::new(32.0, 32.0)))
                                                 .uv(sprite.uv),
                                         )
                                         .on_hover_ui(
@@ -304,7 +301,7 @@ pub fn ui_debug_skill_list_system(
                                                         .insert(
                                                             SkeletalAnimation::once(
                                                                 asset_server
-                                                                    .load(motion_data.path.path()),
+                                                                    .load(motion_data.path.path().to_string_lossy().to_string()),
                                                             )
                                                             .with_animation_speed(
                                                                 skill_data.casting_motion_speed,
@@ -360,7 +357,7 @@ pub fn ui_debug_skill_list_system(
                                                         })).insert(
                                                             SkeletalAnimation::once(
                                                                 asset_server
-                                                                    .load(motion_data.path.path()),
+                                                                    .load(motion_data.path.path().to_string_lossy().to_string()),
                                                             )
                                                             .with_animation_speed(
                                                                 skill_data.action_motion_speed,

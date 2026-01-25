@@ -1,4 +1,4 @@
-use bevy::prelude::{AddAsset, App, Component, IntoSystemConfigs, Last, Plugin, Resource};
+use bevy::prelude::{App, AssetApp, Component, IntoSystemConfigs, Last, Plugin, Resource};
 
 mod audio_source;
 mod global_sound;
@@ -92,9 +92,9 @@ impl Plugin for OddioPlugin {
                 spatial: scene_handle,
                 sample_rate: sample_rate.0,
             })
-            .add_asset::<AudioSource>()
-            .init_asset_loader::<OggLoader>()
-            .init_asset_loader::<WavLoader>()
+            .init_asset::<AudioSource>()
+            .register_asset_loader(OggLoader::default())
+            .register_asset_loader(WavLoader::default())
             .add_systems(
                 Last,
                 (

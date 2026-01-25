@@ -7,7 +7,7 @@ pub fn system_func_event_system(
     mut events: EventReader<SystemFuncEvent>,
     mut conversation_dialog_events: EventWriter<ConversationDialogEvent>,
 ) {
-    for event in events.iter() {
+    for event in events.read() {
         let SystemFuncEvent::CallFunction(function_name, _parameters) = event;
 
         match function_name.as_str() {

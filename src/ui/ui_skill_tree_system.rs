@@ -1,7 +1,4 @@
-use bevy::{
-    ecs::query::WorldQuery,
-    prelude::{Assets, EventWriter, Local, Query, Res, ResMut, With},
-};
+use bevy::prelude::{Assets, Entity, EventWriter, Local, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_data::SkillId;
@@ -35,7 +32,7 @@ fn ui_add_skill_tree_slot(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
     skill: &Skill,
-    player: &PlayerQueryItem,
+    player: &(&CharacterInfo, &SkillList, &SkillPoints),
     player_tooltip_data: Option<&PlayerTooltipQueryItem>,
     game_data: &GameData,
     ui_resources: &UiResources,
@@ -55,7 +52,7 @@ fn ui_add_skill_tree_slot(
     };
 
     let learned_level = if let Some((_, _, level)) = player
-        .skill_list
+        .1
         .find_skill_level(&game_data.skills, base_skill_id)
     {
         if level < skill.level {
@@ -126,7 +123,7 @@ fn ui_add_skill_tree_slot(
 
 fn draw_skill_slots(
     ui: &mut egui::Ui,
-    player: &PlayerQueryItem,
+    player: &(&CharacterInfo, &SkillList, &SkillPoints),
     player_tooltip_data: Option<&PlayerTooltipQueryItem>,
     game_data: &GameData,
     ui_resources: &UiResources,
@@ -157,19 +154,12 @@ fn draw_skill_slots(
     }
 }
 
-#[derive(WorldQuery)]
-pub struct PlayerQuery<'w> {
-    character_info: &'w CharacterInfo,
-    skill_list: &'w SkillList,
-    skill_points: &'w SkillPoints,
-}
-
 pub fn ui_skill_tree_system(
     mut egui_context: EguiContexts,
     mut ui_state: Local<UiStateSkillTree>,
     mut ui_state_windows: ResMut<UiStateWindows>,
     mut ui_sound_events: EventWriter<UiSoundEvent>,
-    query_player: Query<PlayerQuery, With<PlayerCharacter>>,
+    mut query_player: Query<(Entity, &CharacterInfo, &SkillList, &SkillPoints), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
@@ -189,12 +179,14 @@ pub fn ui_skill_tree_system(
     };
     let player_tooltip_data = query_player_tooltip.get_single().ok();
 
+    let (_, character_info, skill_list, skill_points) = player;
+
     if !ui_state
         .skill_tree
         .as_ref()
-        .map_or(false, |(job, _)| *job == player.character_info.job)
+        .map_or(false, |(job, _)| *job == character_info.job)
     {
-        let skill_tree = match player.character_info.job / 100 {
+        let skill_tree = match character_info.job / 100 {
             1 => &ui_resources.skill_tree_soldier,
             2 => &ui_resources.skill_tree_muse,
             3 => &ui_resources.skill_tree_hawker,
@@ -206,7 +198,7 @@ pub fn ui_skill_tree_system(
         } else {
             return;
         };
-        ui_state.skill_tree = Some((player.character_info.job, skill_tree.clone()));
+        ui_state.skill_tree = Some((character_info.job, skill_tree.clone()));
     }
     let skill_tree = if let Some((_, skill_tree)) = ui_state.skill_tree.as_mut() {
         skill_tree
@@ -229,10 +221,10 @@ pub fn ui_skill_tree_system(
                 DataBindings {
                     sound_events: Some(&mut ui_sound_events),
                     visible: &mut [
-                        (IID_TEXT_SOLDIER, (player.character_info.job / 100) == 1),
-                        (IID_TEXT_MUSE, (player.character_info.job / 100) == 2),
-                        (IID_TEXT_HOWKER, (player.character_info.job / 100) == 3),
-                        (IID_TEXT_DEALER, (player.character_info.job / 100) == 4),
+                        (IID_TEXT_SOLDIER, (character_info.job / 100) == 1),
+                        (IID_TEXT_MUSE, (character_info.job / 100) == 2),
+                        (IID_TEXT_HOWKER, (character_info.job / 100) == 3),
+                        (IID_TEXT_DEALER, (character_info.job / 100) == 4),
                     ],
                     response: &mut [(IID_BTN_CLOSE, &mut response_close_button)],
                     ..Default::default()
@@ -245,7 +237,7 @@ pub fn ui_skill_tree_system(
                                 ui,
                                 egui::pos2(base_skill.x + 3.0, base_skill.y + 3.0),
                                 base_skill,
-                                &player,
+                                &(character_info, skill_list, skill_points),
                                 player_tooltip_data.as_ref(),
                                 &game_data,
                                 &ui_resources,
@@ -263,7 +255,7 @@ pub fn ui_skill_tree_system(
                         base_skill.draw_widget(ui, bindings);
                         draw_skill_slots(
                             ui,
-                            &player,
+                            &(character_info, skill_list, skill_points),
                             player_tooltip_data.as_ref(),
                             &game_data,
                             &ui_resources,

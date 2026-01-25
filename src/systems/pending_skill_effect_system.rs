@@ -1,7 +1,5 @@
-use bevy::{
-    ecs::query::WorldQuery,
-    prelude::{Entity, EventReader, EventWriter, Query, Res, Time},
-};
+use bevy::prelude::{Entity, EventReader, EventWriter, Query, Res, Time};
+use std::time::Instant;
 
 use rose_data::{AbilityType, AnimationEventFlags, SkillData, StatusEffectType};
 use rose_game_common::components::{
@@ -20,26 +18,21 @@ use crate::{
 #[allow(dead_code)]
 const MAX_SKILL_EFFECT_AGE: f32 = 10.0;
 
-#[derive(WorldQuery)]
-#[world_query(mutable)]
-pub struct SkillEffectTarget<'w> {
-    entity: Entity,
-    ability_values: &'w AbilityValues,
-    health_points: &'w mut HealthPoints,
-    mana_points: Option<&'w mut ManaPoints>,
-    move_speed: &'w MoveSpeed,
-    pending_skill_effect_list: &'w mut PendingSkillEffectList,
-    status_effects: &'w mut StatusEffects,
-}
-
 fn apply_skill_effect(
     skill_data: &SkillData,
     game_data: &GameData,
-    time: &Time,
-    target: &mut SkillEffectTargetItem,
+    current_instant: Instant,
+    entity: Entity,
+    ability_values: &AbilityValues,
+    health_points: &mut HealthPoints,
+    mana_points: Option<&mut ManaPoints>,
+    move_speed: &MoveSpeed,
+    pending_skill_effect_list: &mut PendingSkillEffectList,
+    status_effects: &mut StatusEffects,
     caster_intelligence: i32,
     effect_success: [bool; 2],
 ) {
+    let mut mana_points = mana_points;
     for (skill_effect_index, success) in effect_success.iter().enumerate() {
         if !success {
             continue;
@@ -66,14 +59,14 @@ fn apply_skill_effect(
                 // We only need components which can potentially be altered by status effects
                 let ability_value = ability_values_get_value(
                     skill_add_ability.ability_type,
-                    target.ability_values,
+                    ability_values,
                     None,
                     None,
-                    Some(&target.health_points),
+                    Some(health_points),
                     None,
                     None,
-                    target.mana_points.as_ref().map(|x| x.as_ref()),
-                    Some(target.move_speed),
+                    mana_points.as_deref(),
+                    Some(move_speed),
                     None,
                     None,
                     None,
@@ -93,9 +86,9 @@ fn apply_skill_effect(
                 0
             };
 
-            target.status_effects.apply_status_effect(
+            status_effects.apply_status_effect(
                 status_effect_data,
-                time.last_update().unwrap() + skill_data.status_effect_duration,
+                current_instant.checked_add(skill_data.status_effect_duration).unwrap_or(current_instant),
                 adjust_value,
             );
         }
@@ -107,22 +100,22 @@ fn apply_skill_effect(
         if let Some(add_ability) = add_ability {
             match add_ability.ability_type {
                 AbilityType::Health => {
-                    target.health_points.hp = i32::min(
-                        target.ability_values.get_max_health(),
-                        target.health_points.hp
+                    health_points.hp = i32::min(
+                        ability_values.get_max_health(),
+                        health_points.hp
                             + game_data
                                 .ability_value_calculator
                                 .calculate_skill_adjust_value(
                                     add_ability,
                                     caster_intelligence,
-                                    target.health_points.hp,
+                                    health_points.hp,
                                 ),
                     );
                 }
                 AbilityType::Mana => {
-                    if let Some(mana_points) = target.mana_points.as_mut() {
+                    if let Some(mana_points) = mana_points.as_mut() {
                         mana_points.mp = i32::min(
-                            target.ability_values.get_max_mana(),
+                            ability_values.get_max_mana(),
                             mana_points.mp + add_ability.value,
                         );
                     }
@@ -142,14 +135,22 @@ fn apply_skill_effect(
 
 pub fn pending_skill_effect_system(
     mut query_caster: Query<(Entity, &mut PendingSkillTargetList)>,
-    mut query_target: Query<SkillEffectTarget>,
+    mut query_target: Query<(
+        Entity,
+        &AbilityValues,
+        &mut HealthPoints,
+        Option<&mut ManaPoints>,
+        &MoveSpeed,
+        &mut PendingSkillEffectList,
+        &mut StatusEffects,
+    )>,
     mut animation_frame_events: EventReader<AnimationFrameEvent>,
     mut hit_events: EventWriter<HitEvent>,
     game_data: Res<GameData>,
     time: Res<Time>,
 ) {
     // Apply skill effects triggered by animation frames
-    for event in animation_frame_events.iter() {
+    for event in animation_frame_events.read() {
         if !event
             .flags
             .contains(AnimationEventFlags::APPLY_PENDING_SKILL_EFFECT)
@@ -162,18 +163,26 @@ pub fn pending_skill_effect_system(
         {
             // Find all our skill targets
             for pending_skill_target in caster_pending_skill_target_list.drain(..) {
-                if let Ok(mut target) = query_target.get_mut(pending_skill_target.defender_entity) {
+                if let Ok((
+                    target_entity,
+                    ability_values,
+                    mut health_points,
+                    mut mana_points,
+                    move_speed,
+                    mut pending_skill_effect_list,
+                    mut status_effects,
+                )) = query_target.get_mut(pending_skill_target.defender_entity)
+                {
                     // Apply any skill affects from caster_entity
                     let mut i = 0;
-                    while i < target.pending_skill_effect_list.len() {
-                        if target.pending_skill_effect_list[i].caster_entity != Some(caster_entity)
+                    while i < pending_skill_effect_list.len() {
+                        if pending_skill_effect_list[i].caster_entity != Some(caster_entity)
                         {
                             i += 1;
                             continue;
                         }
 
-                        let pending_skill_effect = target
-                            .pending_skill_effect_list
+                        let pending_skill_effect = pending_skill_effect_list
                             .pending_skill_effects
                             .remove(i);
 
@@ -182,15 +191,21 @@ pub fn pending_skill_effect_system(
                         {
                             hit_events.send(HitEvent::with_skill_effect(
                                 event.entity,
-                                target.entity,
+                                target_entity,
                                 pending_skill_effect.skill_id,
                             ));
 
                             apply_skill_effect(
                                 skill_data,
                                 &game_data,
-                                &time,
-                                &mut target,
+                                Instant::now(),
+                                target_entity,
+                                ability_values,
+                                health_points.as_mut(),
+                                mana_points.as_deref_mut(),
+                                move_speed,
+                                pending_skill_effect_list.as_mut(),
+                                status_effects.as_mut(),
                                 pending_skill_effect.caster_intelligence,
                                 pending_skill_effect.effect_success,
                             );

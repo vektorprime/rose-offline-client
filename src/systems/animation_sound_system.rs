@@ -1,7 +1,8 @@
 use bevy::{
-    ecs::query::WorldQuery,
+    asset::Assets,
+    ecs::query::QueryData,
     math::Vec3,
-    prelude::{AssetServer, Assets, Commands, EventReader, GlobalTransform, Query, Res, Transform},
+    prelude::{AssetServer, Commands, Entity, EventReader, GlobalTransform, Query, Res, Transform},
     render::mesh::skinning::SkinnedMesh,
 };
 
@@ -10,28 +11,31 @@ use rose_data::{
 };
 use rose_game_common::components::{Equipment, MoveMode, Npc};
 
+use crate::components::{Command, DummyBoneOffset, PlayerCharacter};
+
 use crate::{
     animation::AnimationFrameEvent,
     audio::SpatialSound,
-    components::{Command, DummyBoneOffset, PlayerCharacter, SoundCategory},
+    components::{SoundCategory},
     resources::{CurrentZone, GameData, SoundCache, SoundSettings},
     zone_loader::ZoneLoaderAsset,
 };
 
-#[derive(WorldQuery)]
-pub struct EventEntity<'w> {
-    command: &'w Command,
+#[derive(QueryData)]
+pub struct EventEntityFull<'w> {
+    entity: Entity,
+    command: Option<&'w Command>,
+    player: Option<&'w PlayerCharacter>,
+    equipment: Option<&'w Equipment>,
+    skinned_mesh: Option<&'w SkinnedMesh>,
+    dummy_bone_offset: Option<&'w DummyBoneOffset>,
     global_transform: &'w GlobalTransform,
     move_mode: Option<&'w MoveMode>,
-    skinned_mesh: &'w SkinnedMesh,
-    dummy_bone_offset: &'w DummyBoneOffset,
-    equipment: Option<&'w Equipment>,
-    npc: Option<&'w Npc>,
-    player: Option<&'w PlayerCharacter>,
 }
 
-#[derive(WorldQuery)]
+#[derive(QueryData)]
 pub struct TargetEntity<'w> {
+    entity: Entity,
     global_transform: &'w GlobalTransform,
     npc: Option<&'w Npc>,
     player: Option<&'w PlayerCharacter>,
@@ -45,22 +49,23 @@ pub fn animation_sound_system(
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     sound_settings: Res<SoundSettings>,
-    query_event_entity: Query<EventEntity>,
+    query_event_entity_full: Query<EventEntityFull>,
     query_target_entity: Query<TargetEntity>,
     query_global_transform: Query<&GlobalTransform>,
     sound_cache: Res<SoundCache>,
 ) {
-    for event in animation_frame_events.iter() {
-        let event_entity = if let Ok(event_entity) = query_event_entity.get(event.entity) {
-            event_entity
+    for event in animation_frame_events.read() {
+        let event_entity_full = if let Ok(event_entity_full) = query_event_entity_full.get(event.entity) {
+            event_entity_full
         } else {
             continue;
         };
-        let target_entity = event_entity
+
+        let target_entity = event_entity_full
             .command
-            .get_target()
+            .and_then(|command| command.get_target())
             .and_then(|target_entity| query_target_entity.get(target_entity).ok());
-        let event_entity_is_player = event_entity.player.is_some();
+        let event_entity_is_player = event_entity_full.player.is_some();
         let target_entity_is_player = target_entity
             .as_ref()
             .map_or(false, |target_entity| target_entity.player.is_some());
@@ -70,7 +75,7 @@ pub fn animation_sound_system(
 
             let step_sound_data = if let Some(current_zone) = current_zone.as_ref() {
                 if let Some(current_zone_data) = zone_loader_assets.get(&current_zone.handle) {
-                    let translation = event_entity.global_transform.translation();
+                    let translation = event_entity_full.global_transform.translation();
                     let position =
                         Vec3::new(translation.x * 100.0, -translation.z * 100.0, translation.y);
 
@@ -97,7 +102,7 @@ pub fn animation_sound_system(
             };
 
             if let Some(sound_data) = step_sound_data {
-                let sound_category = if event_entity.player.is_some() {
+                let sound_category = if event_entity_full.player.is_some() {
                     SoundCategory::PlayerFootstep
                 } else {
                     SoundCategory::OtherFootstep
@@ -107,8 +112,8 @@ pub fn animation_sound_system(
                     sound_category,
                     sound_settings.gain(sound_category),
                     SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                    Transform::from_translation(event_entity.global_transform.translation()),
-                    GlobalTransform::from_translation(event_entity.global_transform.translation()),
+                    Transform::from_translation(event_entity_full.global_transform.translation()),
+                    GlobalTransform::from_translation(event_entity_full.global_transform.translation()),
                 ));
             }
         }
@@ -120,14 +125,14 @@ pub fn animation_sound_system(
                 .flags
                 .contains(AnimationEventFlags::SOUND_MOVE_VEHICLE_DUMMY2)
         {
-            if let Some(sound_data) = event_entity
+            if let Some(sound_data) = event_entity_full
                 .equipment
                 .and_then(|equipment| equipment.get_vehicle_item(VehiclePartIndex::Leg))
                 .and_then(|legs| game_data.items.get_vehicle_item(legs.item.item_number))
                 .and_then(|vehicle_item_data| vehicle_item_data.move_sound_id)
                 .and_then(|sound_id| game_data.sounds.get_sound(sound_id))
             {
-                let sound_category = if event_entity.player.is_some() {
+                let sound_category = if event_entity_full.player.is_some() {
                     SoundCategory::PlayerFootstep
                 } else {
                     SoundCategory::OtherFootstep
@@ -137,10 +142,11 @@ pub fn animation_sound_system(
                     .flags
                     .contains(AnimationEventFlags::SOUND_MOVE_VEHICLE_DUMMY1)
                 {
-                    if let Some(dummy_transform) = event_entity
+                    if let Some(dummy_transform) = event_entity_full
                         .skinned_mesh
-                        .joints
-                        .get(event_entity.dummy_bone_offset.index + 1)
+                        .and_then(|skinned_mesh| {
+                            skinned_mesh.joints.get(event_entity_full.dummy_bone_offset.map_or(0, |d| d.index) + 1)
+                        })
                         .and_then(|dummy_entity| query_global_transform.get(*dummy_entity).ok())
                     {
                         commands.spawn((
@@ -157,10 +163,11 @@ pub fn animation_sound_system(
                     .flags
                     .contains(AnimationEventFlags::SOUND_MOVE_VEHICLE_DUMMY2)
                 {
-                    if let Some(dummy_transform) = event_entity
+                    if let Some(dummy_transform) = event_entity_full
                         .skinned_mesh
-                        .joints
-                        .get(event_entity.dummy_bone_offset.index + 2)
+                        .and_then(|skinned_mesh| {
+                            skinned_mesh.joints.get(event_entity_full.dummy_bone_offset.map_or(0, |d| d.index) + 2)
+                        })
                         .and_then(|dummy_entity| query_global_transform.get(*dummy_entity).ok())
                     {
                         commands.spawn((
@@ -179,17 +186,14 @@ pub fn animation_sound_system(
             .flags
             .contains(AnimationEventFlags::SOUND_WEAPON_ATTACK_START)
         {
-            let sound_id = if let Some(weapon_item_data) = event_entity
+            let sound_id = if let Some(weapon_item_data) = event_entity_full
                 .equipment
                 .and_then(|equipment| equipment.get_equipment_item(EquipmentIndex::Weapon))
                 .and_then(|weapon| game_data.items.get_weapon_item(weapon.item.item_number))
             {
                 weapon_item_data.attack_start_sound_id
-            } else if let Some(npc_data) = event_entity
-                .npc
-                .and_then(|npc| game_data.npcs.get_npc(npc.id))
-            {
-                npc_data.attack_sound_id
+            } else if let Some(target_entity) = target_entity.as_ref() {
+                target_entity.npc.and_then(|npc| game_data.npcs.get_npc(npc.id)).and_then(|npc_data| npc_data.attack_sound_id)
             } else {
                 game_data
                     .items
@@ -208,8 +212,8 @@ pub fn animation_sound_system(
                     sound_category,
                     sound_settings.gain(sound_category),
                     SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                    Transform::from_translation(event_entity.global_transform.translation()),
-                    GlobalTransform::from_translation(event_entity.global_transform.translation()),
+                    Transform::from_translation(event_entity_full.global_transform.translation()),
+                    GlobalTransform::from_translation(event_entity_full.global_transform.translation()),
                 ));
             }
         }
@@ -219,11 +223,11 @@ pub fn animation_sound_system(
             .contains(AnimationEventFlags::SOUND_WEAPON_ATTACK_HIT)
         {
             if let Some(target_entity) = target_entity.as_ref() {
-                let sound_data = if event_entity
+                let sound_data = if event_entity_full
                     .move_mode
                     .map_or(false, |move_mode| matches!(move_mode, MoveMode::Drive))
                 {
-                    event_entity
+                    event_entity_full
                         .equipment
                         .and_then(|equipment| equipment.get_vehicle_item(VehiclePartIndex::Arms))
                         .and_then(|legs| game_data.items.get_vehicle_item(legs.item.item_number))
@@ -239,7 +243,7 @@ pub fn animation_sound_system(
                         1
                     };
 
-                    let weapon_item_number = event_entity
+                    let weapon_item_number = event_entity_full
                         .equipment
                         .and_then(|equipment| equipment.get_equipment_item(EquipmentIndex::Weapon))
                         .map_or(0, |weapon| weapon.item.item_number);
@@ -258,7 +262,7 @@ pub fn animation_sound_system(
 
                 if let Some(sound_data) = sound_data {
                     let sound_category =
-                        if event_entity.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
@@ -282,11 +286,11 @@ pub fn animation_sound_system(
             .contains(AnimationEventFlags::SOUND_WEAPON_FIRE_BULLET)
         {
             if let Some(target_entity) = target_entity.as_ref() {
-                let fire_sound_id = if event_entity
+                let fire_sound_id = if event_entity_full
                     .move_mode
                     .map_or(false, |move_mode| matches!(move_mode, MoveMode::Drive))
                 {
-                    event_entity
+                    event_entity_full
                         .equipment
                         .and_then(|equipment| equipment.get_vehicle_item(VehiclePartIndex::Arms))
                         .and_then(|legs| game_data.items.get_vehicle_item(legs.item.item_number))
@@ -294,7 +298,7 @@ pub fn animation_sound_system(
                         .and_then(|id| game_data.effect_database.get_effect(id))
                         .and_then(|projectile_effect_data| projectile_effect_data.fire_sound_id)
                 } else {
-                    event_entity
+                    event_entity_full
                         .equipment
                         .and_then(|equipment| {
                             game_data
@@ -334,7 +338,7 @@ pub fn animation_sound_system(
                     fire_sound_id.and_then(|id| game_data.sounds.get_sound(id))
                 {
                     let sound_category =
-                        if event_entity.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
@@ -344,9 +348,9 @@ pub fn animation_sound_system(
                         sound_category,
                         sound_settings.gain(sound_category),
                         SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                        Transform::from_translation(event_entity.global_transform.translation()),
+                        Transform::from_translation(event_entity_full.global_transform.translation()),
                         GlobalTransform::from_translation(
-                            event_entity.global_transform.translation(),
+                            event_entity_full.global_transform.translation(),
                         ),
                     ));
                 }
@@ -358,15 +362,15 @@ pub fn animation_sound_system(
             .contains(AnimationEventFlags::SOUND_SKILL_FIRE_BULLET)
         {
             if let Some(target_entity) = target_entity.as_ref() {
-                if let Some(sound_data) = event_entity
+                if let Some(sound_data) = event_entity_full
                     .command
-                    .get_skill_id()
+                    .and_then(|command| command.get_skill_id())
                     .and_then(|skill_id| game_data.skills.get_skill(skill_id))
                     .and_then(|skill_data| skill_data.bullet_fire_sound_id)
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
                     let sound_category =
-                        if event_entity.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
@@ -376,9 +380,9 @@ pub fn animation_sound_system(
                         sound_category,
                         sound_settings.gain(sound_category),
                         SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                        Transform::from_translation(event_entity.global_transform.translation()),
+                        Transform::from_translation(event_entity_full.global_transform.translation()),
                         GlobalTransform::from_translation(
-                            event_entity.global_transform.translation(),
+                            event_entity_full.global_transform.translation(),
                         ),
                     ));
                 }
@@ -387,15 +391,15 @@ pub fn animation_sound_system(
 
         if event.flags.contains(AnimationEventFlags::SOUND_SKILL_HIT) {
             if let Some(target_entity) = target_entity.as_ref() {
-                if let Some(sound_data) = event_entity
+                if let Some(sound_data) = event_entity_full
                     .command
-                    .get_skill_id()
+                    .and_then(|command| command.get_skill_id())
                     .and_then(|skill_id| game_data.skills.get_skill(skill_id))
                     .and_then(|skill_data| skill_data.hit_sound_id)
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
                     let sound_category =
-                        if event_entity.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
@@ -419,15 +423,15 @@ pub fn animation_sound_system(
             .contains(AnimationEventFlags::SOUND_SKILL_DUMMY_HIT_0)
         {
             if let Some(target_entity) = target_entity.as_ref() {
-                if let Some(sound_data) = event_entity
+                if let Some(sound_data) = event_entity_full
                     .command
-                    .get_skill_id()
+                    .and_then(|command| command.get_skill_id())
                     .and_then(|skill_id| game_data.skills.get_skill(skill_id))
                     .and_then(|skill_data| skill_data.hit_dummy_sound_id[0])
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
                     let sound_category =
-                        if event_entity.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
@@ -451,15 +455,15 @@ pub fn animation_sound_system(
             .contains(AnimationEventFlags::SOUND_SKILL_DUMMY_HIT_1)
         {
             if let Some(target_entity) = target_entity.as_ref() {
-                if let Some(sound_data) = event_entity
+                if let Some(sound_data) = event_entity_full
                     .command
-                    .get_skill_id()
+                    .and_then(|command| command.get_skill_id())
                     .and_then(|skill_id| game_data.skills.get_skill(skill_id))
                     .and_then(|skill_data| skill_data.hit_dummy_sound_id[1])
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
                     let sound_category =
-                        if event_entity.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat

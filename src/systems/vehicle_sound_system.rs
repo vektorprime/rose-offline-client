@@ -80,7 +80,7 @@ pub fn vehicle_sound_system(
                     commands
                         .entity(*sound_entity)
                         .insert(SpatialSound::new_repeating(
-                            asset_server.load(sound_data.path.path()),
+                            asset_server.load(sound_data.path.path().to_string_lossy().into_owned()),
                         ));
                 }
             }
@@ -105,7 +105,7 @@ pub fn vehicle_sound_system(
 
                     let sound_entity = if let Some(sound_data) = sound_data {
                         commands.spawn((
-                            SpatialSound::new_repeating(asset_server.load(sound_data.path.path())),
+                            SpatialSound::new_repeating(asset_server.load(sound_data.path.path().to_string_lossy().into_owned())),
                             sound_category,
                             Transform::default(),
                             *global_transform,

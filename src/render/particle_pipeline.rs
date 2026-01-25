@@ -1,6 +1,6 @@
 use bevy::{
     app::prelude::*,
-    asset::{load_internal_asset, Assets, Handle, HandleUntyped},
+    asset::{load_internal_asset, Assets, Handle, UntypedAssetId, UntypedHandle},
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         prelude::*,
@@ -9,7 +9,7 @@ use bevy::{
     },
     math::prelude::*,
     prelude::{Msaa, Shader},
-    reflect::TypeUuid,
+    reflect::TypePath,
     render::{
         primitives::Aabb,
         render_asset::RenderAssets,
@@ -21,23 +21,24 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         texture::{BevyDefault, Image},
         view::{
-            ComputedVisibility, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
+            ViewVisibility, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
             ViewUniforms, VisibilitySystems,
         },
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
     },
+    utils::Uuid,
 };
 use bytemuck::Pod;
 use num_traits::FromPrimitive;
-use std::{collections::HashMap, num::NonZeroU64, ops::Range};
+use std::{any::TypeId, collections::HashMap, num::NonZeroU64, ops::Range};
 
 use crate::render::{
     particle_render_data::ParticleRenderBillboardType, particle_render_data::ParticleRenderData,
     ParticleMaterial,
 };
 
-pub const PARTICLE_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 3032357527543835453);
+pub const PARTICLE_SHADER_HANDLE: UntypedHandle =
+    UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: std::any::TypeId::of::<Shader>(), uuid: bevy::utils::Uuid::from_u128(0x9d0d8e5e1b2e4d8f5e9b6c8d7f2a1b30) });
 
 pub struct ParticleRenderPlugin;
 
@@ -45,7 +46,7 @@ impl Plugin for ParticleRenderPlugin {
     fn build(&self, app: &mut App) {
         load_internal_asset!(
             app,
-            PARTICLE_SHADER_HANDLE,
+            PARTICLE_SHADER_HANDLE.typed::<Shader>(),
             "shaders/particle.wgsl",
             Shader::from_wgsl
         );
@@ -89,23 +90,23 @@ impl FromWorld for ParticlePipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
 
-        let view_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: true,
-                    min_binding_size: Some(ViewUniform::min_size()),
-                },
-                count: None,
-            }],
-            label: None,
-        });
+        let view_layout = render_device.create_bind_group_layout(
+            "particle_view_layout",
+            &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: Some(ViewUniform::min_size()),
+                    },
+                    count: None,
+                }],
+        );
 
-        let particle_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
+        let particle_layout = render_device.create_bind_group_layout(
+            "particle_layout",
+            &[
                 // Positions/Rotations
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -151,11 +152,11 @@ impl FromWorld for ParticlePipeline {
                     count: None,
                 },
             ],
-        });
+    );
 
-        let material_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
+        let material_layout = render_device.create_bind_group_layout(
+            "particle_material_layout",
+            &[
                 // Base Color Texture
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -175,7 +176,7 @@ impl FromWorld for ParticlePipeline {
                     count: None,
                 },
             ],
-        });
+    );
 
         Self {
             view_layout,
@@ -394,11 +395,11 @@ impl SpecializedRenderPipeline for ParticlePipeline {
 }
 
 fn compute_particles_aabb(mut query: Query<(&mut Aabb, &ParticleRenderData)>) {
-    query.par_iter_mut().for_each_mut(|(mut aabb, particles)| {
+    for (mut aabb, particles) in query.iter_mut() {
         if let Some(bounding_box) = particles.compute_aabb() {
             *aabb = bounding_box;
         }
-    });
+    }
 }
 
 struct ExtractedParticleRenderData {
@@ -420,17 +421,15 @@ fn extract_particles(
     mut extracted_particles: ResMut<ExtractedParticles>,
     materials: Extract<Res<Assets<ParticleMaterial>>>,
     images: Extract<Res<Assets<Image>>>,
-    query: Extract<
-        Query<(
-            &ComputedVisibility,
-            &ParticleRenderData,
-            &Handle<ParticleMaterial>,
-        )>,
-    >,
+    query: Extract<Query<(
+        &ViewVisibility,
+        &ParticleRenderData,
+        &Handle<ParticleMaterial>,
+    )>>,
 ) {
     extracted_particles.particles.clear();
     for (visible, particles, material_handle) in query.iter() {
-        if !visible.is_visible() {
+        if !visible.get() {
             continue;
         }
 
@@ -622,21 +621,23 @@ fn queue_particles(
 
     if let Some(view_bindings) = view_uniforms.uniforms.binding() {
         particle_meta.view_bind_group.get_or_insert_with(|| {
-            render_device.create_bind_group(&BindGroupDescriptor {
-                entries: &[BindGroupEntry {
+            render_device.create_bind_group(
+                "particle_view_bind_group",
+                &particle_pipeline.view_layout,
+                &[BindGroupEntry {
                     binding: 0,
                     resource: view_bindings,
                 }],
-                label: Some("particle_view_bind_group"),
-                layout: &particle_pipeline.view_layout,
-            })
+            )
         });
     }
 
     // TODO: Can we cache this?
     particle_meta.particle_bind_group =
-        Some(render_device.create_bind_group(&BindGroupDescriptor {
-            entries: &[
+        Some(render_device.create_bind_group(
+            "particle_particle_bind_group",
+            &particle_pipeline.particle_layout,
+            &[
                 BindGroupEntry {
                     binding: 0,
                     resource: bind_buffer(&particle_meta.positions, particle_meta.total_count),
@@ -654,9 +655,7 @@ fn queue_particles(
                     resource: bind_buffer(&particle_meta.textures, particle_meta.total_count),
                 },
             ],
-            label: Some("particle_particle_bind_group"),
-            layout: &particle_pipeline.particle_layout,
-        }));
+        ));
 
     let draw_particle_function = transparent_draw_functions
         .read()
@@ -670,9 +669,11 @@ fn queue_particles(
         for (entity, batch) in particle_batches.iter() {
             if let Some(gpu_image) = gpu_images.get(&batch.handle) {
                 material_bind_groups.values.insert(
-                    batch.handle.clone_weak(),
-                    render_device.create_bind_group(&BindGroupDescriptor {
-                        entries: &[
+                    batch.handle.clone(),
+                    render_device.create_bind_group(
+                        "particle_material_bind_group",
+                        &particle_pipeline.material_layout,
+                        &[
                             BindGroupEntry {
                                 binding: 0,
                                 resource: BindingResource::TextureView(&gpu_image.texture_view),
@@ -682,9 +683,7 @@ fn queue_particles(
                                 resource: BindingResource::Sampler(&particle_pipeline.sampler),
                             },
                         ],
-                        label: Some("particle_material_bind_group"),
-                        layout: &particle_pipeline.material_layout,
-                    }),
+                    ),
                 );
             }
 
@@ -697,6 +696,8 @@ fn queue_particles(
                 ),
                 entity,
                 draw_function: draw_particle_function,
+                batch_range: 0..0,
+                dynamic_offset: None,
             });
         }
     }
@@ -713,20 +714,21 @@ type DrawParticle = (
 struct SetParticleViewBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetParticleViewBindGroup<I> {
     type Param = SRes<ParticleMeta>;
-    type ViewWorldQuery = Read<ViewUniformOffset>;
-    type ItemWorldQuery = ();
+    type ViewQuery = Read<ViewUniformOffset>;
+    type ItemQuery = ();
 
+    #[inline]
     fn render<'w>(
-        _: &P,
-        view_uniform: ROQueryItem<'w, Self::ViewWorldQuery>,
-        _: ROQueryItem<'w, Self::ItemWorldQuery>,
+        _item: &P,
+        _view: ROQueryItem<'w, Self::ViewQuery>,
+        _item_query: Option<ROQueryItem<'w, Self::ItemQuery>>,
         particle_meta: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
         pass.set_bind_group(
             I,
             particle_meta.into_inner().view_bind_group.as_ref().unwrap(),
-            &[view_uniform.offset],
+            &[_view.offset],
         );
         RenderCommandResult::Success
     }
@@ -735,13 +737,14 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetParticleViewBindGroup
 struct SetParticleBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetParticleBindGroup<I> {
     type Param = SRes<ParticleMeta>;
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = ();
+    type ViewQuery = ();
+    type ItemQuery = ();
 
+    #[inline]
     fn render<'w>(
-        _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        _: ROQueryItem<'w, Self::ItemWorldQuery>,
+        _item: &P,
+        _view: ROQueryItem<'w, Self::ViewQuery>,
+        _item_query: Option<ROQueryItem<'w, Self::ItemQuery>>,
         particle_meta: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
@@ -761,16 +764,18 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetParticleBindGroup<I> 
 struct SetParticleMaterialBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetParticleMaterialBindGroup<I> {
     type Param = SRes<MaterialBindGroups>;
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = Read<ParticleBatch>;
+    type ViewQuery = ();
+    type ItemQuery = Read<ParticleBatch>;
 
+    #[inline]
     fn render<'w>(
-        _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        batch: ROQueryItem<'w, Self::ItemWorldQuery>,
+        _item: &P,
+        _view: ROQueryItem<'w, Self::ViewQuery>,
+        batch: Option<ROQueryItem<'w, Self::ItemQuery>>,
         material_bind_groups: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        let batch = batch.unwrap();
         pass.set_bind_group(
             I,
             material_bind_groups
@@ -787,17 +792,18 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetParticleMaterialBindG
 struct DrawParticleBatch;
 impl<P: PhaseItem> RenderCommand<P> for DrawParticleBatch {
     type Param = ();
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = Read<ParticleBatch>;
+    type ViewQuery = ();
+    type ItemQuery = Read<ParticleBatch>;
 
     #[inline]
     fn render<'w>(
-        _: &P,
-        _: ROQueryItem<'w, Self::ViewWorldQuery>,
-        batch: ROQueryItem<'w, Self::ItemWorldQuery>,
-        _: SystemParamItem<'w, '_, Self::Param>,
+        _item: &P,
+        _view: ROQueryItem<'w, Self::ViewQuery>,
+        batch: Option<ROQueryItem<'w, Self::ItemQuery>>,
+        _param: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        let batch = batch.unwrap();
         let vertex_range = (batch.range.start * 6)..(batch.range.end * 6);
         pass.draw(vertex_range, 0..1);
         RenderCommandResult::Success

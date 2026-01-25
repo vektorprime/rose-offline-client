@@ -1,0 +1,21 @@
+name: GLM 4.7 (Z.ai coding plan)
+version: 1.0.0
+schema: v1
+
+models:
+  - name: GLM 4.7
+    provider: openai
+    apiBase: https://api.z.ai/api/coding/paas/v4
+    model: GLM-4.7
+    apiKey: 91d64fbafe6f4aa59290b5611a9c0a7c.NPLumgS82eE27pPV
+    roles:
+      - apply
+      - chat
+      - edit
+      - autocomplete
+    defaultCompletionOptions:
+      contextLength: 200000
+      reasoning: true
+      stream: true
+    capabilities:
+      - tool_use

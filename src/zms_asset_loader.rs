@@ -4,11 +4,12 @@ use std::{
 };
 
 use bevy::{
-    asset::{AssetLoader, BoxedFuture, LoadContext, LoadedAsset},
+    asset::{io::Reader, Asset, AssetLoader, BoxedFuture, LoadContext},
     prelude::Mesh,
-    reflect::{TypePath, TypeUuid},
+    reflect::TypePath,
     render::{
         mesh::{Indices, VertexAttributeValues},
+        render_asset::RenderAssetUsages,
         render_resource::PrimitiveTopology,
     },
 };
@@ -16,8 +17,7 @@ use rose_file_readers::{RoseFile, ZmsFile};
 
 use crate::render::{MESH_ATTRIBUTE_UV_1, MESH_ATTRIBUTE_UV_2, MESH_ATTRIBUTE_UV_3};
 
-#[derive(Debug, TypeUuid, TypePath, Clone)]
-#[uuid = "8688d5ed-b98b-4641-bab3-5fe83dfd4ecd"]
+#[derive(Debug, TypePath, Clone, Asset)]
 pub struct ZmsMaterialNumFaces {
     pub material_num_faces: Vec<u16>,
 }
@@ -29,16 +29,25 @@ pub struct ZmsAssetLoader;
 pub struct ZmsNoSkinAssetLoader;
 
 impl AssetLoader for ZmsAssetLoader {
-    fn load<'a>(
+    type Asset = Mesh;
+    type Settings = ();
+    type Error = anyhow::Error;
+
+    fn load<'a, 'b>(
         &'a self,
-        bytes: &'a [u8],
-        load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
+        load_context: &'a mut LoadContext<'b>,
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            match <ZmsFile as RoseFile>::read(bytes.into(), &Default::default()) {
+            let mut bytes = Vec::new();
+            use bevy::tasks::futures_lite::AsyncReadExt;
+            reader.read_to_end(&mut bytes).await?;
+
+            match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(mut zms) => {
-                    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-                    mesh.set_indices(Some(Indices::U16(zms.indices)));
+                    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+                    mesh.insert_indices(Indices::U16(zms.indices));
 
                     if !zms.normal.is_empty() {
                         for vert in zms.normal.iter_mut() {
@@ -104,16 +113,15 @@ impl AssetLoader for ZmsAssetLoader {
                     }
 
                     if !zms.material_num_faces.is_empty() {
-                        load_context.set_labeled_asset(
-                            "material_num_faces",
-                            LoadedAsset::new(ZmsMaterialNumFaces {
+                        load_context.labeled_asset_scope(
+                            "material_num_faces".to_string(),
+                            |_lc| ZmsMaterialNumFaces {
                                 material_num_faces: zms.material_num_faces,
-                            }),
+                            },
                         );
                     }
 
-                    load_context.set_default_asset(LoadedAsset::new(mesh));
-                    Ok(())
+                    Ok(mesh)
                 }
                 Err(error) => Err(error),
             }
@@ -134,16 +142,25 @@ impl ZmsNoSkinAssetLoader {
 }
 
 impl AssetLoader for ZmsNoSkinAssetLoader {
+    type Asset = Mesh;
+    type Settings = ();
+    type Error = anyhow::Error;
+
     fn load<'a>(
         &'a self,
-        bytes: &'a [u8],
+        reader: &'a mut Reader,
+        _settings: &'a Self::Settings,
         load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
-            match <ZmsFile as RoseFile>::read(bytes.into(), &Default::default()) {
+            let mut bytes = Vec::new();
+            use bevy::tasks::futures_lite::AsyncReadExt;
+            reader.read_to_end(&mut bytes).await?;
+
+            match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(mut zms) => {
-                    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-                    mesh.set_indices(Some(Indices::U16(zms.indices)));
+                    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+                    mesh.insert_indices(Indices::U16(zms.indices));
 
                     if !zms.normal.is_empty() {
                         for vert in zms.normal.iter_mut() {
@@ -198,16 +215,15 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
                     }
 
                     if !zms.material_num_faces.is_empty() {
-                        load_context.set_labeled_asset(
-                            "material_num_faces",
-                            LoadedAsset::new(ZmsMaterialNumFaces {
+                        load_context.labeled_asset_scope(
+                            "material_num_faces".to_string(),
+                            |_lc| ZmsMaterialNumFaces {
                                 material_num_faces: zms.material_num_faces,
-                            }),
+                            },
                         );
                     }
 
-                    load_context.set_default_asset(LoadedAsset::new(mesh));
-                    Ok(())
+                    Ok(mesh)
                 }
                 Err(error) => Err(error),
             }

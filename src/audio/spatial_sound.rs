@@ -99,7 +99,10 @@ pub fn spatial_sound_system(
     time: Res<Time>,
 ) {
     let player = &mut context.spatial;
-    let (_, camera_rotation, camera_position) = camera.single().to_scale_rotation_translation();
+    let Ok(camera_transform) = camera.get_single() else {
+        return;
+    };
+    let (_, camera_rotation, camera_position) = camera_transform.to_scale_rotation_translation();
 
     // Use player position as listener position (fallback to camera if no player exists)
     let listener_position = query_player
@@ -176,12 +179,15 @@ pub fn spatial_sound_system(
             let sample_rate = streaming_sound.sample_rate();
 
             let stream_signal = oddio::Stream::new(sample_rate, sample_rate as usize / 8);
-            let gain_signal = match sound_gain {
-                Some(&SoundGain::Decibel(db)) => oddio::Gain::with_gain(stream_signal, db),
-                Some(&SoundGain::Ratio(factor)) => {
-                    oddio::Gain::with_amplitude_ratio(stream_signal, factor)
+            let mut gain_signal = oddio::Gain::new(stream_signal);
+            match sound_gain {
+                Some(&SoundGain::Decibel(db)) => {
+                    gain_signal.set_gain(db);
                 }
-                None => oddio::Gain::new(stream_signal),
+                Some(&SoundGain::Ratio(factor)) => {
+                    gain_signal.set_amplitude_ratio(factor);
+                }
+                None => {}
             };
 
             let mut handle = SpatialControlHandle(player.control().play_buffered(
@@ -209,7 +215,7 @@ pub fn spatial_sound_system(
             spatial_sound.streaming_sound = Some(streaming_sound);
         } else if matches!(
             asset_server.get_load_state(&spatial_sound.asset_handle),
-            LoadState::Failed | LoadState::Unloaded
+            Some(LoadState::Failed)
         ) {
             spatial_sound.asset_handle = Handle::default();
 
