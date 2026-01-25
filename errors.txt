@@ -1,0 +1,718 @@
+warning: method `read_u64_xor` is never used
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\irosephvfs.rs:111:8
+    |
+109 | trait IrosePhXorRead {
+    |       -------------- method in this trait
+110 |     fn read_u32_xor(&mut self, xor_key_offset: usize) -> Result<u32, ReadError>;
+111 |     fn read_u64_xor(&mut self, xor_key_offset: usize) -> Result<u64, ReadError>;
+    |        ^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\aruavfs.rs:256:18
+    |
+256 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile, anyhow::Error> {
+    |                  ^^^^^ the lifetime is elided here    ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+256 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\virtual_filesystem.rs:126:18
+    |
+126 |     fn open_file(&self, path: &VfsPath) -> Result<VfsFile, anyhow::Error>;
+    |                  ^^^^^                            ^^^^^^^ the same lifetime is hidden here
+    |                  |
+    |                  the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+126 |     fn open_file(&self, path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error>;
+    |                                                          ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\virtual_filesystem.rs:141:18
+    |
+141 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile, anyhow::Error> {
+    |                  ^^^^^ the lifetime is elided here    ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+141 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\virtual_filesystem.rs:173:26
+    |
+173 |     pub fn open_file<'a>(&self, path: impl Into<VfsPath<'a>>) -> Result<VfsFile, anyhow::Error> {
+    |                          ^^^^^ the lifetime is elided here              ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+173 |     pub fn open_file<'a>(&self, path: impl Into<VfsPath<'a>>) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                                                ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\irosephvfs.rs:189:18
+    |
+189 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile, anyhow::Error> {
+    |                  ^^^^^ the lifetime is elided here    ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+189 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\titanvfs.rs:162:18
+    |
+162 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile, anyhow::Error> {
+    |                  ^^^^^ the lifetime is elided here    ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+162 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\vfs.rs:100:18
+    |
+100 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile, anyhow::Error> {
+    |                  ^^^^^ the lifetime is elided here    ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+100 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                              ++++
+
+warning: `rose-file-readers` (lib) generated 8 warnings (run `cargo fix --lib -p rose-file-readers` to apply 7 suggestions)
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\item_database.rs:579:21
+    |
+579 |     pub fn get_item(&self, item: ItemReference) -> Option<ItemData> {
+    |                     ^^^^^ the lifetime is elided here     ^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+579 |     pub fn get_item(&self, item: ItemReference) -> Option<ItemData<'_>> {
+    |                                                                   ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:67:21
+   |
+67 |     pub fn get_item(&self, item_type: ItemType, key: &str) -> Option<StlItemEntry> {
+   |                     ^^^^^ the lifetime is elided here                ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+67 |     pub fn get_item(&self, item_type: ItemType, key: &str) -> Option<StlItemEntry<'_>> {
+   |                                                                                  ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:97:20
+   |
+97 |     pub fn get_npc(&self, key: &str) -> Option<StlNormalEntry> {
+   |                    ^^^^^                       ^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |                    |
+   |                    the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+97 |     pub fn get_npc(&self, key: &str) -> Option<StlNormalEntry<'_>> {
+   |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:102:30
+    |
+102 |     pub fn get_npc_store_tab(&self, key: &str) -> Option<StlNormalEntry> {
+    |                              ^^^^^                       ^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                              |
+    |                              the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+102 |     pub fn get_npc_store_tab(&self, key: &str) -> Option<StlNormalEntry<'_>> {
+    |                                                                        ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:107:22
+    |
+107 |     pub fn get_quest(&self, key: &str) -> Option<StlQuestEntry> {
+    |                      ^^^^^                       ^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                      |
+    |                      the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+107 |     pub fn get_quest(&self, key: &str) -> Option<StlQuestEntry<'_>> {
+    |                                                               ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:112:22
+    |
+112 |     pub fn get_skill(&self, key: &str) -> Option<StlItemEntry> {
+    |                      ^^^^^                       ^^^^^^^^^^^^ the same lifetime is hidden here
+    |                      |
+    |                      the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+112 |     pub fn get_skill(&self, key: &str) -> Option<StlItemEntry<'_>> {
+    |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:143:30
+    |
+143 |     pub fn get_status_effect(&self, key: &str) -> Option<StlQuestEntry> {
+    |                              ^^^^^                       ^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                              |
+    |                              the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+143 |     pub fn get_status_effect(&self, key: &str) -> Option<StlQuestEntry<'_>> {
+    |                                                                       ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:148:21
+    |
+148 |     pub fn get_zone(&self, key: &str) -> Option<StlItemEntry> {
+    |                     ^^^^^                       ^^^^^^^^^^^^ the same lifetime is hidden here
+    |                     |
+    |                     the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+148 |     pub fn get_zone(&self, key: &str) -> Option<StlItemEntry<'_>> {
+    |                                                             ++++
+
+warning: `rose-data` (lib) generated 8 warnings (run `cargo fix --lib -p rose-data` to apply 8 suggestions)
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-network-common\src\packet.rs:176:41
+    |
+176 |     pub fn read_null_terminated_win1252(&mut self) -> Result<Cow<str>, PacketError> {
+    |                                         ^^^^^^^^^            ^^^^^^^^ the same lifetime is hidden here
+    |                                         |
+    |                                         the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+176 |     pub fn read_null_terminated_win1252(&mut self) -> Result<Cow<'_, str>, PacketError> {
+    |                                                                  +++
+
+warning: `rose-network-common` (lib) generated 1 warning (run `cargo fix --lib -p rose-network-common` to apply 1 suggestion)
+    Checking rose-offline-client v0.1.0 (C:\Users\vicha\RustroverProjects\rose-offline-client)
+error[E0432]: unresolved imports `bevy::asset::AssetIo`, `bevy::asset::AssetIoError`, `bevy::asset::ChangeWatcher`, `bevy::asset::Metadata`
+ --> src\vfs_asset_io.rs:1:19
+  |
+1 | use bevy::asset::{AssetIo, AssetIoError, BoxedFuture, ChangeWatcher, Metadata};
+  |                   ^^^^^^^  ^^^^^^^^^^^^               ^^^^^^^^^^^^^  ^^^^^^^^ no `Metadata` in `asset`
+  |                   |        |                          |
+  |                   |        |                          no `ChangeWatcher` in `asset`
+  |                   |        no `AssetIoError` in `asset`
+  |                   no `AssetIo` in `asset`
+  |
+  = help: consider importing one of these structs instead:
+          std::fs::Metadata
+          log::Metadata
+help: a similar name exists in the module
+  |
+1 - use bevy::asset::{AssetIo, AssetIoError, BoxedFuture, ChangeWatcher, Metadata};
+1 + use bevy::asset::{AssetId, AssetIoError, BoxedFuture, ChangeWatcher, Metadata};
+  |
+help: a similar name exists in the module
+  |
+1 - use bevy::asset::{AssetIo, AssetIoError, BoxedFuture, ChangeWatcher, Metadata};
+1 + use bevy::asset::{AssetIo, AssetLoadError, BoxedFuture, ChangeWatcher, Metadata};
+  |
+
+warning: unused imports: `Asset` and `LoadedAsset`
+ --> src\audio\ogg.rs:1:19
+  |
+1 | use bevy::asset::{Asset, AssetLoader, BoxedFuture, LoadContext, LoadedAsset};
+  |                   ^^^^^                                         ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `Asset` and `LoadedAsset`
+ --> src\audio\wav.rs:3:19
+  |
+3 | use bevy::asset::{Asset, AssetLoader, BoxedFuture, LoadContext, LoadedAsset};
+  |                   ^^^^^                                         ^^^^^^^^^^^
+
+warning: unused import: `LoadedAsset`
+ --> src\exe_resource_loader.rs:2:46
+  |
+2 |     asset::{Asset, AssetLoader, LoadContext, LoadedAsset},
+  |                                              ^^^^^^^^^^^
+
+warning: unused imports: `Asset` and `LoadedAsset`
+ --> src\ui\dialog_loader.rs:2:13
+  |
+2 |     asset::{Asset, AssetLoader, BoxedFuture, LoadContext, LoadedAsset},
+  |             ^^^^^                                         ^^^^^^^^^^^
+
+warning: unused import: `DrawText`
+  --> src\ui\ui_quest_list_system.rs:13:41
+   |
+13 |         widgets::{DataBindings, Dialog, DrawText, Widget},
+   |                                         ^^^^^^^^
+
+error[E0491]: in type `&mut LoadContext<'_>`, reference has a longer lifetime than the data it references
+   --> src\animation\zmo_asset_loader.rs:129:5
+    |
+129 | /     fn load<'a>(
+130 | |         &'a self,
+131 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+132 | |         _settings: &'a Self::Settings,
+133 | |         load_context: &'a mut LoadContext,
+134 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    | |__________________________________________________________^
+    |
+note: the pointer is valid for the anonymous lifetime as defined here
+   --> src\animation\zmo_asset_loader.rs:133:31
+    |
+133 |         load_context: &'a mut LoadContext,
+    |                               ^^^^^^^^^^^
+note: but the referenced data is only valid for the anonymous lifetime as defined here
+   --> src\animation\zmo_asset_loader.rs:133:31
+    |
+133 |         load_context: &'a mut LoadContext,
+    |                               ^^^^^^^^^^^
+
+error: `impl` item signature doesn't match `trait` item signature
+   --> src\animation\zmo_asset_loader.rs:129:5
+    |
+129 | /     fn load<'a>(
+130 | |         &'a self,
+131 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+132 | |         _settings: &'a Self::Settings,
+133 | |         load_context: &'a mut LoadContext,
+134 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    | |__________________________________________________________^ found `fn(&'1 ZmoAssetLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmoAsset, anyhow::Error>> + Send + '1)>>`
+    |
+   ::: C:\Users\vicha\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_asset-0.12.1\src\loader.rs:33:5
+    |
+ 33 | /     fn load<'a>(
+ 34 | |         &'a self,
+ 35 | |         reader: &'a mut Reader,
+ 36 | |         settings: &'a Self::Settings,
+ 37 | |         load_context: &'a mut LoadContext,
+ 38 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>>;
+    | |___________________________________________________________- expected `fn(&'a ZmoAssetLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmoAsset, anyhow::Error>> + Send + 'a)>>`
+    |
+    = note: expected signature `fn(&'a ZmoAssetLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmoAsset, anyhow::Error>> + Send + 'a)>>`
+               found signature `fn(&'1 ZmoAssetLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmoAsset, anyhow::Error>> + Send + '1)>>`
+    = help: the lifetime requirements from the `impl` do not correspond to the requirements in the `trait`
+    = help: verify the lifetime relationships in the `trait` and `impl` between the `self` argument, the other inputs and its output
+
+error[E0491]: in type `&mut LoadContext<'_>`, reference has a longer lifetime than the data it references
+   --> src\animation\zmo_asset_loader.rs:232:5
+    |
+232 | /     fn load<'a>(
+233 | |         &'a self,
+234 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+235 | |         _settings: &'a Self::Settings,
+236 | |         load_context: &'a mut LoadContext,
+237 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    | |__________________________________________________________^
+    |
+note: the pointer is valid for the anonymous lifetime as defined here
+   --> src\animation\zmo_asset_loader.rs:236:31
+    |
+236 |         load_context: &'a mut LoadContext,
+    |                               ^^^^^^^^^^^
+note: but the referenced data is only valid for the anonymous lifetime as defined here
+   --> src\animation\zmo_asset_loader.rs:236:31
+    |
+236 |         load_context: &'a mut LoadContext,
+    |                               ^^^^^^^^^^^
+
+error: `impl` item signature doesn't match `trait` item signature
+   --> src\animation\zmo_asset_loader.rs:232:5
+    |
+232 | /     fn load<'a>(
+233 | |         &'a self,
+234 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+235 | |         _settings: &'a Self::Settings,
+236 | |         load_context: &'a mut LoadContext,
+237 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    | |__________________________________________________________^ found `fn(&'1 ZmoTextureAssetLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmoAsset, anyhow::Error>> + Send + '1)>>`
+    |
+   ::: C:\Users\vicha\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_asset-0.12.1\src\loader.rs:33:5
+    |
+ 33 | /     fn load<'a>(
+ 34 | |         &'a self,
+ 35 | |         reader: &'a mut Reader,
+ 36 | |         settings: &'a Self::Settings,
+ 37 | |         load_context: &'a mut LoadContext,
+ 38 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>>;
+    | |___________________________________________________________- expected `fn(&'a ZmoTextureAssetLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmoAsset, anyhow::Error>> + Send + 'a)>>`
+    |
+    = note: expected signature `fn(&'a ZmoTextureAssetLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmoAsset, anyhow::Error>> + Send + 'a)>>`
+               found signature `fn(&'1 ZmoTextureAssetLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmoAsset, anyhow::Error>> + Send + '1)>>`
+    = help: the lifetime requirements from the `impl` do not correspond to the requirements in the `trait`
+    = help: verify the lifetime relationships in the `trait` and `impl` between the `self` argument, the other inputs and its output
+
+error[E0491]: in type `&mut LoadContext<'_>`, reference has a longer lifetime than the data it references
+  --> src\audio\ogg.rs:19:5
+   |
+19 | /     fn load<'a>(
+20 | |         &'a self,
+21 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+22 | |         _settings: &'a Self::Settings,
+23 | |         load_context: &'a mut LoadContext<'_>,
+24 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+   | |__________________________________________________________^
+   |
+note: the pointer is valid for the anonymous lifetime as defined here
+  --> src\audio\ogg.rs:23:43
+   |
+23 |         load_context: &'a mut LoadContext<'_>,
+   |                                           ^^
+note: but the referenced data is only valid for the anonymous lifetime as defined here
+  --> src\audio\ogg.rs:23:43
+   |
+23 |         load_context: &'a mut LoadContext<'_>,
+   |                                           ^^
+
+error: `impl` item signature doesn't match `trait` item signature
+  --> src\audio\ogg.rs:19:5
+   |
+19 | /     fn load<'a>(
+20 | |         &'a self,
+21 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+22 | |         _settings: &'a Self::Settings,
+23 | |         load_context: &'a mut LoadContext<'_>,
+24 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+   | |__________________________________________________________^ found `fn(&'1 OggLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<AudioSource, anyhow::Error>> + Send + '1)>>`
+   |
+  ::: C:\Users\vicha\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_asset-0.12.1\src\loader.rs:33:5
+   |
+33 | /     fn load<'a>(
+34 | |         &'a self,
+35 | |         reader: &'a mut Reader,
+36 | |         settings: &'a Self::Settings,
+37 | |         load_context: &'a mut LoadContext,
+38 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>>;
+   | |___________________________________________________________- expected `fn(&'a OggLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<AudioSource, anyhow::Error>> + Send + 'a)>>`
+   |
+   = note: expected signature `fn(&'a OggLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<AudioSource, anyhow::Error>> + Send + 'a)>>`
+              found signature `fn(&'1 OggLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<AudioSource, anyhow::Error>> + Send + '1)>>`
+   = help: the lifetime requirements from the `impl` do not correspond to the requirements in the `trait`
+   = help: verify the lifetime relationships in the `trait` and `impl` between the `self` argument, the other inputs and its output
+
+error[E0491]: in type `&mut LoadContext<'_>`, reference has a longer lifetime than the data it references
+  --> src\audio\wav.rs:19:5
+   |
+19 | /     fn load<'a>(
+20 | |         &'a self,
+21 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+22 | |         _settings: &'a Self::Settings,
+23 | |         load_context: &'a mut LoadContext<'_>,
+24 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+   | |__________________________________________________________^
+   |
+note: the pointer is valid for the anonymous lifetime as defined here
+  --> src\audio\wav.rs:23:43
+   |
+23 |         load_context: &'a mut LoadContext<'_>,
+   |                                           ^^
+note: but the referenced data is only valid for the anonymous lifetime as defined here
+  --> src\audio\wav.rs:23:43
+   |
+23 |         load_context: &'a mut LoadContext<'_>,
+   |                                           ^^
+
+error: `impl` item signature doesn't match `trait` item signature
+  --> src\audio\wav.rs:19:5
+   |
+19 | /     fn load<'a>(
+20 | |         &'a self,
+21 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+22 | |         _settings: &'a Self::Settings,
+23 | |         load_context: &'a mut LoadContext<'_>,
+24 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+   | |__________________________________________________________^ found `fn(&'1 WavLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<AudioSource, anyhow::Error>> + Send + '1)>>`
+   |
+  ::: C:\Users\vicha\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_asset-0.12.1\src\loader.rs:33:5
+   |
+33 | /     fn load<'a>(
+34 | |         &'a self,
+35 | |         reader: &'a mut Reader,
+36 | |         settings: &'a Self::Settings,
+37 | |         load_context: &'a mut LoadContext,
+38 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>>;
+   | |___________________________________________________________- expected `fn(&'a WavLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<AudioSource, anyhow::Error>> + Send + 'a)>>`
+   |
+   = note: expected signature `fn(&'a WavLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<AudioSource, anyhow::Error>> + Send + 'a)>>`
+              found signature `fn(&'1 WavLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<AudioSource, anyhow::Error>> + Send + '1)>>`
+   = help: the lifetime requirements from the `impl` do not correspond to the requirements in the `trait`
+   = help: verify the lifetime relationships in the `trait` and `impl` between the `self` argument, the other inputs and its output
+
+error[E0491]: in type `&mut LoadContext<'_>`, reference has a longer lifetime than the data it references
+  --> src\exe_resource_loader.rs:23:5
+   |
+23 | /     fn load<'a>(
+24 | |         &'a self,
+25 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+26 | |         _settings: &'a Self::Settings,
+27 | |         load_context: &'a mut LoadContext,
+28 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+   | |__________________________________________________________^
+   |
+note: the pointer is valid for the anonymous lifetime as defined here
+  --> src\exe_resource_loader.rs:27:31
+   |
+27 |         load_context: &'a mut LoadContext,
+   |                               ^^^^^^^^^^^
+note: but the referenced data is only valid for the anonymous lifetime as defined here
+  --> src\exe_resource_loader.rs:27:31
+   |
+27 |         load_context: &'a mut LoadContext,
+   |                               ^^^^^^^^^^^
+
+error: `impl` item signature doesn't match `trait` item signature
+  --> src\exe_resource_loader.rs:23:5
+   |
+23 | /     fn load<'a>(
+24 | |         &'a self,
+25 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+26 | |         _settings: &'a Self::Settings,
+27 | |         load_context: &'a mut LoadContext,
+28 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+   | |__________________________________________________________^ found `fn(&'1 ExeResourceLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ExeResourceCursor, anyhow::Error>> + Send + '1)>>`
+   |
+  ::: C:\Users\vicha\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_asset-0.12.1\src\loader.rs:33:5
+   |
+33 | /     fn load<'a>(
+34 | |         &'a self,
+35 | |         reader: &'a mut Reader,
+36 | |         settings: &'a Self::Settings,
+37 | |         load_context: &'a mut LoadContext,
+38 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>>;
+   | |___________________________________________________________- expected `fn(&'a ExeResourceLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ExeResourceCursor, anyhow::Error>> + Send + 'a)>>`
+   |
+   = note: expected signature `fn(&'a ExeResourceLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ExeResourceCursor, anyhow::Error>> + Send + 'a)>>`
+              found signature `fn(&'1 ExeResourceLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ExeResourceCursor, anyhow::Error>> + Send + '1)>>`
+   = help: the lifetime requirements from the `impl` do not correspond to the requirements in the `trait`
+   = help: verify the lifetime relationships in the `trait` and `impl` between the `self` argument, the other inputs and its output
+
+error[E0491]: in type `&mut LoadContext<'_>`, reference has a longer lifetime than the data it references
+  --> src\ui\dialog_loader.rs:20:5
+   |
+20 | /     fn load<'a>(
+21 | |         &'a self,
+22 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+23 | |         _settings: &'a Self::Settings,
+24 | |         load_context: &'a mut LoadContext,
+25 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+   | |__________________________________________________________^
+   |
+note: the pointer is valid for the anonymous lifetime as defined here
+  --> src\ui\dialog_loader.rs:24:31
+   |
+24 |         load_context: &'a mut LoadContext,
+   |                               ^^^^^^^^^^^
+note: but the referenced data is only valid for the anonymous lifetime as defined here
+  --> src\ui\dialog_loader.rs:24:31
+   |
+24 |         load_context: &'a mut LoadContext,
+   |                               ^^^^^^^^^^^
+
+error: `impl` item signature doesn't match `trait` item signature
+  --> src\ui\dialog_loader.rs:20:5
+   |
+20 | /     fn load<'a>(
+21 | |         &'a self,
+22 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+23 | |         _settings: &'a Self::Settings,
+24 | |         load_context: &'a mut LoadContext,
+25 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+   | |__________________________________________________________^ found `fn(&'1 DialogLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<dialog::Dialog, anyhow::Error>> + Send + '1)>>`
+   |
+  ::: C:\Users\vicha\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_asset-0.12.1\src\loader.rs:33:5
+   |
+33 | /     fn load<'a>(
+34 | |         &'a self,
+35 | |         reader: &'a mut Reader,
+36 | |         settings: &'a Self::Settings,
+37 | |         load_context: &'a mut LoadContext,
+38 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>>;
+   | |___________________________________________________________- expected `fn(&'a DialogLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<dialog::Dialog, anyhow::Error>> + Send + 'a)>>`
+   |
+   = note: expected signature `fn(&'a DialogLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<dialog::Dialog, anyhow::Error>> + Send + 'a)>>`
+              found signature `fn(&'1 DialogLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<dialog::Dialog, anyhow::Error>> + Send + '1)>>`
+   = help: the lifetime requirements from the `impl` do not correspond to the requirements in the `trait`
+   = help: verify the lifetime relationships in the `trait` and `impl` between the `self` argument, the other inputs and its output
+
+error[E0491]: in type `&mut LoadContext<'_>`, reference has a longer lifetime than the data it references
+  --> src\zms_asset_loader.rs:37:5
+   |
+37 | /     fn load<'a>(
+38 | |         &'a self,
+39 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+40 | |         _settings: &'a Self::Settings,
+41 | |         load_context: &'a mut LoadContext,
+42 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+   | |__________________________________________________________^
+   |
+note: the pointer is valid for the anonymous lifetime as defined here
+  --> src\zms_asset_loader.rs:41:31
+   |
+41 |         load_context: &'a mut LoadContext,
+   |                               ^^^^^^^^^^^
+note: but the referenced data is only valid for the anonymous lifetime as defined here
+  --> src\zms_asset_loader.rs:41:31
+   |
+41 |         load_context: &'a mut LoadContext,
+   |                               ^^^^^^^^^^^
+
+error: `impl` item signature doesn't match `trait` item signature
+  --> src\zms_asset_loader.rs:37:5
+   |
+37 |  /     fn load<'a>(
+38 |  |         &'a self,
+39 |  |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+40 |  |         _settings: &'a Self::Settings,
+41 |  |         load_context: &'a mut LoadContext,
+42 |  |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+   |  |__________________________________________________________^ found `fn(&'1 ZmsAssetLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmsMaterialNumFaces, anyhow::Error>> + Send + '1)>>`
+   |
+  ::: C:\Users\vicha\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_asset-0.12.1\src\loader.rs:33:5
+   |
+33 | /      fn load<'a>(
+34 | |          &'a self,
+35 | |          reader: &'a mut Reader,
+36 | |          settings: &'a Self::Settings,
+37 | |          load_context: &'a mut LoadContext,
+38 | |      ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>>;
+   | |____________________________________________________________- expected `fn(&'a ZmsAssetLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmsMaterialNumFaces, anyhow::Error>> + Send + 'a)>>`
+   |
+   = note: expected signature `fn(&'a ZmsAssetLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmsMaterialNumFaces, anyhow::Error>> + Send + 'a)>>`
+              found signature `fn(&'1 ZmsAssetLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmsMaterialNumFaces, anyhow::Error>> + Send + '1)>>`
+   = help: the lifetime requirements from the `impl` do not correspond to the requirements in the `trait`
+   = help: verify the lifetime relationships in the `trait` and `impl` between the `self` argument, the other inputs and its output
+
+error[E0491]: in type `&mut LoadContext<'_>`, reference has a longer lifetime than the data it references
+   --> src\zms_asset_loader.rs:150:5
+    |
+150 | /     fn load<'a>(
+151 | |         &'a self,
+152 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+153 | |         _settings: &'a Self::Settings,
+154 | |         load_context: &'a mut LoadContext,
+155 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    | |__________________________________________________________^
+    |
+note: the pointer is valid for the anonymous lifetime as defined here
+   --> src\zms_asset_loader.rs:154:31
+    |
+154 |         load_context: &'a mut LoadContext,
+    |                               ^^^^^^^^^^^
+note: but the referenced data is only valid for the anonymous lifetime as defined here
+   --> src\zms_asset_loader.rs:154:31
+    |
+154 |         load_context: &'a mut LoadContext,
+    |                               ^^^^^^^^^^^
+
+error: `impl` item signature doesn't match `trait` item signature
+   --> src\zms_asset_loader.rs:150:5
+    |
+150 | /     fn load<'a>(
+151 | |         &'a self,
+152 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+153 | |         _settings: &'a Self::Settings,
+154 | |         load_context: &'a mut LoadContext,
+155 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    | |__________________________________________________________^ found `fn(&'1 ZmsNoSkinAssetLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmsMaterialNumFaces, anyhow::Error>> + Send + '1)>>`
+    |
+   ::: C:\Users\vicha\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_asset-0.12.1\src\loader.rs:33:5
+    |
+ 33 | /     fn load<'a>(
+ 34 | |         &'a self,
+ 35 | |         reader: &'a mut Reader,
+ 36 | |         settings: &'a Self::Settings,
+ 37 | |         load_context: &'a mut LoadContext,
+ 38 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>>;
+    | |___________________________________________________________- expected `fn(&'a ZmsNoSkinAssetLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmsMaterialNumFaces, anyhow::Error>> + Send + 'a)>>`
+    |
+    = note: expected signature `fn(&'a ZmsNoSkinAssetLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmsMaterialNumFaces, anyhow::Error>> + Send + 'a)>>`
+               found signature `fn(&'1 ZmsNoSkinAssetLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZmsMaterialNumFaces, anyhow::Error>> + Send + '1)>>`
+    = help: the lifetime requirements from the `impl` do not correspond to the requirements in the `trait`
+    = help: verify the lifetime relationships in the `trait` and `impl` between the `self` argument, the other inputs and its output
+
+error[E0491]: in type `&mut LoadContext<'_>`, reference has a longer lifetime than the data it references
+   --> src\zone_loader.rs:167:5
+    |
+167 | /     fn load<'a>(
+168 | |         &'a self,
+169 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+170 | |         _settings: &'a Self::Settings,
+171 | |         load_context: &'a mut LoadContext<'_>,
+172 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    | |__________________________________________________________^
+    |
+note: the pointer is valid for the anonymous lifetime as defined here
+   --> src\zone_loader.rs:171:43
+    |
+171 |         load_context: &'a mut LoadContext<'_>,
+    |                                           ^^
+note: but the referenced data is only valid for the anonymous lifetime as defined here
+   --> src\zone_loader.rs:171:43
+    |
+171 |         load_context: &'a mut LoadContext<'_>,
+    |                                           ^^
+
+error: `impl` item signature doesn't match `trait` item signature
+   --> src\zone_loader.rs:167:5
+    |
+167 | /     fn load<'a>(
+168 | |         &'a self,
+169 | |         reader: &'a mut (dyn AsyncRead + Send + Sync + Unpin),
+170 | |         _settings: &'a Self::Settings,
+171 | |         load_context: &'a mut LoadContext<'_>,
+172 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
+    | |__________________________________________________________^ found `fn(&'1 ZoneLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZoneLoaderAsset, anyhow::Error>> + Send + '1)>>`
+    |
+   ::: C:\Users\vicha\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bevy_asset-0.12.1\src\loader.rs:33:5
+    |
+ 33 | /     fn load<'a>(
+ 34 | |         &'a self,
+ 35 | |         reader: &'a mut Reader,
+ 36 | |         settings: &'a Self::Settings,
+ 37 | |         load_context: &'a mut LoadContext,
+ 38 | |     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>>;
+    | |___________________________________________________________- expected `fn(&'a ZoneLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZoneLoaderAsset, anyhow::Error>> + Send + 'a)>>`
+    |
+    = note: expected signature `fn(&'a ZoneLoader, &'a mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'a (), &'a mut LoadContext<'2>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZoneLoaderAsset, anyhow::Error>> + Send + 'a)>>`
+               found signature `fn(&'1 ZoneLoader, &'1 mut (dyn futures_io::AsyncRead + Send + Sync + Unpin + '1), &'1 (), &'1 mut LoadContext<'_>) -> Pin<std::boxed::Box<(dyn Future<Output = Result<ZoneLoaderAsset, anyhow::Error>> + Send + '1)>>`
+    = help: the lifetime requirements from the `impl` do not correspond to the requirements in the `trait`
+    = help: verify the lifetime relationships in the `trait` and `impl` between the `self` argument, the other inputs and its output
+
+Some errors have detailed explanations: E0432, E0491.
+For more information about an error, try `rustc --explain E0432`.
+warning: `rose-offline-client` (lib) generated 5 warnings
+error: could not compile `rose-offline-client` (lib) due to 19 previous errors; 5 warnings emitted

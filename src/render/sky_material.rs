@@ -14,7 +14,6 @@ use bevy::{
     render::{
         extract_resource::ExtractResourcePlugin,
         mesh::MeshVertexBufferLayout,
-        prelude::Shader,
         render_phase::{
             PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
         },

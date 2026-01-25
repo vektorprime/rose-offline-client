@@ -61,7 +61,7 @@ pub struct VfsAssetIo {
     vfs: Arc<VirtualFilesystem>,
 }
 
-impl VfsAssetIo {
+impl VfsAssetReader {
     pub fn new(vfs: Arc<VirtualFilesystem>) -> Self {
         log::info!("[VFS ASSET IO] Creating new VfsAssetIo instance");
         Self { vfs }

@@ -11,7 +11,7 @@ bevy_egui = "=0.26"
 bevy-inspector-egui = "=0.24"
 bevy_rapier3d = "=0.26"
 bitflags = "2.3"
-bytemuck = { version = "1.7.0", features = ["derive"] }
+bytemuck = { version = "1.7.0", features = [ "derive" ] }
 chrono = "0.4"
 clap = "3.2"
 cpal = "0.15"
@@ -23,10 +23,11 @@ egui_extras = "0.26"
 enum-map = { version = "2.0", features = ["serde"] }
 glam = "0.25"
 hound = "3.4"
-image = { version = "0.24", default-features = false, features = ["dds", "ico", "tga"] }
+image = { version = "0.24", default-features = false, features = [ "dds", "ico", "tga" ] }
 lazy_static = "1.4.0"
 lewton = "0.10"
 log = "0.4.14"
+futures-io = "0.3"
 md5 = "0.7.0"
 num-derive = "0.4"
 num-traits = "0.2"
@@ -35,7 +36,7 @@ pelite = "0.10.0"
 rand = "0.8"
 serde = "1.0"
 thiserror = "1.0"
-tokio = { version = "1.17", features = ["rt", "net", "sync", "macros", "io-util"] }
+tokio = { version = "1.17", features = [ "rt", "net", "sync", "macros", "io-util" ] }
 toml = "0.7.2"
 uuid = "1"
 quick-xml = { version = "0.26.0", features = ["serialize"] }
@@ -61,8 +62,9 @@ features = [
   "dds",
   "tga",
   "x11",
-  "bevy_gizmos",
+  "dynamic_linking",
 ]
+
 
 
 [profile.dev.package."*"]

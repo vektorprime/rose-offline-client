@@ -113,6 +113,14 @@ pub struct ZoneLighting {
     pub alpha_fog_enabled: bool,
     pub fog_alpha_weight_start: f32,
     pub fog_alpha_weight_end: f32,
+    // Height-based fog parameters
+    pub fog_min_height: f32,
+    pub fog_max_height: f32,
+    pub fog_height_density: f32,
+    // Time of day parameters
+    pub time_of_day: f32,
+    pub day_color: Vec3,
+    pub night_color: Vec3,
 }
 
 impl Default for ZoneLighting {
@@ -130,6 +138,14 @@ impl Default for ZoneLighting {
             alpha_fog_enabled: true,
             fog_alpha_weight_start: 0.85,
             fog_alpha_weight_end: 0.98,
+            // Height-based fog parameters
+            fog_min_height: -10.0,
+            fog_max_height: 50.0,
+            fog_height_density: 0.5,
+            // Time of day parameters
+            time_of_day: 0.5, // 0.0 = night, 1.0 = day
+            day_color: Vec3::new(0.7, 0.8, 1.0), // Day fog color (blueish)
+            night_color: Vec3::new(0.1, 0.1, 0.3), // Night fog color (dark blue)
         }
     }
 }
@@ -145,6 +161,16 @@ pub struct ZoneLightingUniformData {
     pub fog_density: f32,
     pub fog_min_density: f32,
     pub fog_max_density: f32,
+    
+    // Height-based fog parameters
+    pub fog_min_height: f32,
+    pub fog_max_height: f32,
+    pub fog_height_density: f32,
+    
+    // Time of day parameters
+    pub time_of_day: f32,
+    pub day_color: Vec4,
+    pub night_color: Vec4,
 
     // TODO: Calculate camera far plane based on alpha fog:
     // far = sqrt(log2(1.0 - fog_alpha_weight_end) / (-fog_density * fog_density * 1.442695))
@@ -224,6 +250,14 @@ fn extract_uniform_data(mut commands: Commands, zone_lighting: Extract<Res<ZoneL
         } else {
             0.0
         },
+        // Height-based fog parameters
+        fog_min_height: zone_lighting.fog_min_height,
+        fog_max_height: zone_lighting.fog_max_height,
+        fog_height_density: zone_lighting.fog_height_density,
+        // Time of day parameters
+        time_of_day: zone_lighting.time_of_day,
+        day_color: zone_lighting.day_color.extend(1.0),
+        night_color: zone_lighting.night_color.extend(1.0),
         fog_alpha_weight_start: if zone_lighting.alpha_fog_enabled {
             zone_lighting.fog_alpha_weight_start
         } else {
@@ -232,7 +266,7 @@ fn extract_uniform_data(mut commands: Commands, zone_lighting: Extract<Res<ZoneL
         fog_alpha_weight_end: if zone_lighting.alpha_fog_enabled {
             zone_lighting.fog_alpha_weight_end
         } else {
-            99999999999.0
+            999999999.0
         },
     });
 }

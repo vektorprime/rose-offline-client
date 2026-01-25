@@ -148,6 +148,19 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         view.inverse_view[3].z
     ), in.world_position);
 
+    // Improved lighting model - works alongside zone lighting
+    let N = normalize(in.world_normal);
+    let V = normalize(view.world_position.xyz - in.world_position.xyz);
+    
+    // Enhanced diffuse lighting
+    let diffuse = max(dot(N, vec3<f32>(0.0, 1.0, 0.0)), 0.0) * 0.5 + 0.5; // More contrast
+    let ambient = 0.3; // Base ambient light
+    output_color = vec4<f32>(output_color.rgb * (diffuse + ambient), output_color.a);
+    
+    // Subtle rim lighting for better silhouettes
+    let rim = pow(1.0 - saturate(dot(N, V)), 2.0) * 0.1;
+    output_color = vec4<f32>(output_color.rgb + vec3<f32>(rim * 0.3), output_color.a); // Warm edge glow
+
 #ifdef VERTEX_UVS_LIGHTMAP
     let shadow = fetch_directional_shadow(0u, in.world_position, in.world_normal, view_z);
     output_color = vec4<f32>(output_color.xyz * (shadow * 0.2 + 0.8), output_color.w);
@@ -160,7 +173,10 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         let N = normalize(in.world_normal);
         let V = normalize(view.world_position.xyz - in.world_position.xyz);
         let R = reflect(-V, N);
-        output_color = vec4<f32>(output_color.rgb + output_color.a * textureSample(specular_texture, specular_sampler, R.xy * 0.5 + vec2<f32>(0.5, 0.5)).rgb, output_color.a);
+        let specular = textureSample(specular_texture, specular_sampler, R.xy * 0.5 + vec2<f32>(0.5, 0.5)).rgb;
+        // Enhanced specular with fresnel
+        let fresnel = pow(1.0 - saturate(dot(N, V)), 3.0);
+        output_color = vec4<f32>(output_color.rgb + output_color.a * specular * (0.5 + fresnel * 0.5), output_color.a);
     }
 
     if ((material.flags & OBJECT_MATERIAL_FLAGS_HAS_ALPHA_VALUE) != 0u) {
@@ -179,7 +195,15 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         }
     }
 
-    return apply_zone_lighting(in.world_position, in.world_normal, output_color, view_z);
+    // Apply zone lighting (now with our enhanced base lighting)
+    var final_color = apply_zone_lighting(in.world_position, in.world_normal, output_color, view_z);
+    
+    // Safety check: Ensure opaque objects remain fully opaque
+    if ((material.flags & OBJECT_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE) != 0u) {
+        final_color = vec4<f32>(final_color.rgb, 1.0);
+    }
+    
+    return final_color;
 }
 
 #endif  // else ifdef DEPTH_PREPASS

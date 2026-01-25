@@ -17,7 +17,6 @@ use bevy::{
         World,
     },
     render::{
-        prelude::Shader,
         render_asset::RenderAssets,
         render_phase::{
             AddRenderCommand, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult,
@@ -141,7 +140,7 @@ fn extract_world_ui_rects(
             world_position: global_transform.translation(),
             screen_offset: rect.screen_offset,
             screen_size: rect.screen_size,
-            image_handle_id: rect.image.id(),
+            image_handle: rect.image.clone(),
             uv_min: rect.uv_min,
             uv_max: rect.uv_max,
             color: rect.color,
@@ -572,7 +571,7 @@ pub fn queue_world_ui_meshes(
 
             let visible_entity = commands
                 .spawn(WorldUiBatch {
-                    image_handle_id: rect.image_handle_id,
+                    image_handle: rect.image_handle.clone(),
                     vertex_range: item_start..item_end,
                 })
                 .id();

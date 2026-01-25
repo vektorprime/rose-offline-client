@@ -144,7 +144,6 @@ impl AssetLoader for ZmoAssetLoader {
         Box::pin(async move {
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
-
             match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(zmo) => {
                     // First count how many transform channels there are
@@ -248,7 +247,6 @@ impl AssetLoader for ZmoTextureAssetLoader {
         Box::pin(async move {
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
-
             match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(zmo) => {
                     let mut num_vertices = 0;

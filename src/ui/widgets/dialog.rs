@@ -41,6 +41,7 @@ where
 #[derive(Clone, Default, Deserialize, TypePath)]
 #[serde(rename = "Root_Element")]
 #[serde(default)]
+#[derive(Asset)]
 pub struct Dialog {
     #[serde(deserialize_with = "default_on_error")]
     #[serde(rename = "X")]

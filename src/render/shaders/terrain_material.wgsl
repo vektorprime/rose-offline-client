@@ -38,6 +38,12 @@ var tile_array_texture: binding_array<texture_2d<f32>>;
 @group(1) @binding(1)
 var tile_array_sampler: sampler;
 
+// Detail texture for enhanced surface detail
+@group(1) @binding(2)
+var detail_texture: texture_2d<f32>;
+@group(1) @binding(3)
+var detail_sampler: sampler;
+
 struct FragmentInput {
     @builtin(position) frag_coord: vec4<f32>,
     @location(0) world_position: vec4<f32>,
@@ -81,9 +87,32 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     let layer2 = textureSample(tile_array_texture[tile_layer2_id], tile_array_sampler, layer2_uv);
     var lightmap = textureSample(tile_array_texture[0], tile_array_sampler, in.uv0);
     let shadow = fetch_directional_shadow(0u, in.world_position, in.world_normal, view_z);
-    lightmap = vec4<f32>(lightmap.xyz * (shadow * 0.2 + 0.8), lightmap.w);
+    
+    // Enhanced shadow integration - softer shadows
+    let shadow_factor = shadow * 0.5 + 0.5;
+    lightmap = vec4<f32>(lightmap.xyz * shadow_factor, lightmap.w);
 
-    let terrain_color = mix(layer1, layer2, layer2.a) * lightmap * 2.0;
+    // Enhanced diffuse lighting with normal-based shading (balanced)
+    let N = normalize(in.world_normal);
+    let diffuse = max(dot(N, vec3<f32>(0.0, 1.0, 0.0)), 0.0) * 0.4 + 0.6; // Balanced contrast
+    let ambient = 0.3; // Moderate ambient
+    
+    // Improved layer blending with height-based mixing
+    let height_blend = smoothstep(0.3, 0.7, in.uv0.y); // Use Y coordinate as height
+    let base_color = mix(layer1, layer2, mix(layer2.a, height_blend, 0.5)) * lightmap * 1.7; // Balanced multiplier
+    
+    // Apply enhanced lighting (balanced)
+    var terrain_color = base_color * (diffuse + ambient) * 0.95; // Slight overall reduction
+    
+    // Add detail texture for surface detail (if available)
+    let detail = textureSample(detail_texture, detail_sampler, in.uv0 * 10.0); // 10x tiling
+    terrain_color = vec4<f32>(mix(terrain_color.rgb, terrain_color.rgb * detail.rgb, 0.3), terrain_color.a); // Subtle detail enhancement
+    
+    // Add specular highlights for wet/smooth surfaces
+    let V = normalize(view.world_position.xyz - in.world_position.xyz);
+    let R = reflect(-V, N);
+    let specular = pow(max(dot(R, vec3<f32>(0.0, 1.0, 0.0)), 0.0), 16.0) * 0.05; // Reduced specular intensity
+    terrain_color = vec4<f32>(terrain_color.rgb + specular, terrain_color.a);
 
     return apply_zone_lighting(in.world_position, in.world_normal, vec4<f32>(terrain_color.rgb, 1.0), view_z);
 }

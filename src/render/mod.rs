@@ -11,6 +11,7 @@ mod object_material;
 mod particle_material;
 mod particle_pipeline;
 mod particle_render_data;
+// mod post_processing;
 mod sky_material;
 mod terrain_material;
 mod trail_effect;
@@ -37,6 +38,7 @@ pub use object_material::{
 };
 pub use particle_material::ParticleMaterial;
 pub use particle_render_data::{ParticleRenderBillboardType, ParticleRenderData};
+// pub use post_processing::{PostProcessingPlugin, PostProcessingSettings, setup_post_processing};
 pub use sky_material::SkyMaterial;
 pub use terrain_material::{
     TerrainMaterial, TERRAIN_MATERIAL_MAX_TEXTURES, TERRAIN_MESH_ATTRIBUTE_TILE_INFO,
@@ -58,6 +60,7 @@ use trail_effect::TrailEffectRenderPlugin;
 use water_material::WaterMaterialPlugin;
 use world_ui::WorldUiRenderPlugin;
 use zone_lighting::ZoneLightingPlugin;
+// use post_processing::PostProcessingPlugin;
 
 #[derive(Default)]
 pub struct RoseRenderPlugin;
@@ -79,6 +82,7 @@ impl Plugin for RoseRenderPlugin {
             SkyMaterialPlugin { prepass_enabled },
             TrailEffectRenderPlugin,
             WorldUiRenderPlugin,
+            // PostProcessingPlugin,
         ));
     }
 }
