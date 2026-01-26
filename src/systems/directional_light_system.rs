@@ -10,7 +10,7 @@ const PROJECTION_HALF_DEPTH: f32 = 100.0;
 
 pub fn directional_light_system(
     query_player: Query<&GlobalTransform, With<PlayerCharacter>>,
-    mut query_light: Query<&GlobalTransform, With<DirectionalLight>>,
+    query_light: Query<&GlobalTransform, With<DirectionalLight>>,
     views: Query<(Entity, &GlobalTransform), With<Camera>>,
     shadow_map: Res<DirectionalLightShadowMap>,
 ) {

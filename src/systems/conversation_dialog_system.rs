@@ -5,13 +5,7 @@ use bevy::{
 };
 use bevy_egui::{egui, EguiContexts};
 use rose_file_readers::{ConFile, ConMessageType};
-use rose_game_common::{
-    components::{
-        AbilityValues, BasicStats, CharacterInfo, Equipment, ExperiencePoints, HealthPoints,
-        Inventory, Level, ManaPoints, MoveSpeed, Npc, QuestState, SkillPoints, Stamina,
-        StatPoints, Team, UnionMembership,
-    },
-};
+use rose_game_common::components::QuestState;
 
 use crate::{
     components::{ClanMembership, ClientEntity, ClientEntityName, PlayerCharacter, Position},

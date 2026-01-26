@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 use bevy::{
     ecs::event::EventWriter,
     prelude::{
@@ -6,11 +5,6 @@ use bevy::{
         Query, Res, ResMut, Transform, Visibility, With,
     },
     render::view::{ViewVisibility, InheritedVisibility},
-=======
-use bevy::prelude::{
-    Commands, DespawnRecursiveExt, Entity, EventWriter, GlobalTransform, Local,
-    Query, Res, ResMut, Transform, Visibility, With,
->>>>>>> d2eb7c8579c398f3d953ad4316cad96b90b47d33
 };
 use bevy_egui::{egui, EguiContexts};
 use regex::Regex;
@@ -171,10 +165,7 @@ pub fn ui_debug_effect_list_system(
                                             transform,
                                             GlobalTransform::default(),
                                             Visibility::default(),
-<<<<<<< HEAD
                                             ViewVisibility::default(), InheritedVisibility::default(),
-=======
->>>>>>> d2eb7c8579c398f3d953ad4316cad96b90b47d33
                                         ))
                                         .id();
 

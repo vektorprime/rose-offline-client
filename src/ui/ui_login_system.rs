@@ -1,5 +1,6 @@
 use bevy::{
     app::AppExit,
+    asset::Asset,
     prelude::{Assets, EventWriter, Local, Res},
 };
 use bevy_egui::{egui, EguiContexts};

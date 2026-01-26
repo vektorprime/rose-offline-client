@@ -1,5 +1,6 @@
 use std::num::NonZeroU16;
 
+use bevy::asset::Asset;
 use bevy::prelude::{Assets, EventReader, EventWriter, Local, Res, ResMut};
 use bevy_egui::{egui, EguiContexts};
 use rose_game_common::{components::ClanMark, messages::client::ClientMessage};

@@ -1,4 +1,5 @@
 use bevy::{
+    asset::Asset,
     ecs::query::QueryData,
     prelude::{Assets, EventWriter, Local, Query, Res, ResMut, With},
 };

@@ -9,7 +9,6 @@ use bevy::{
     },
     math::prelude::*,
     prelude::{Msaa, Shader},
-    reflect::TypePath,
     render::{
         primitives::Aabb,
         render_asset::RenderAssets,

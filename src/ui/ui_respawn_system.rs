@@ -1,3 +1,4 @@
+use bevy::asset::Asset;
 use bevy::prelude::{Assets, EventWriter, Query, Res, With};
 use bevy_egui::{egui, EguiContexts};
 use rose_game_common::messages::client::ClientMessage;

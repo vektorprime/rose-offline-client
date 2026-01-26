@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{AssetId, AssetLoader, io::Reader, BoxedFuture, LoadContext},
+    asset::{Asset, AssetId, AssetLoader, io::Reader, BoxedFuture, LoadContext},
     prelude::{AssetEvent, Assets, EventReader, Local, Res, ResMut},
 };
 

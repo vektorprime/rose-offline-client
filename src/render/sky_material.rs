@@ -1,15 +1,8 @@
 use bevy::{
-    asset::{load_internal_asset, Handle, UntypedAssetId, UntypedHandle},
-    ecs::{
-        system::{lifetimeless::SRes, SystemParamItem},
-    },
-    pbr::MaterialPipeline,
-    pbr::{
-        DrawMesh, MeshPipelineKey, SetMaterialBindGroup, SetMeshBindGroup,
-        SetMeshViewBindGroup,
-    },
+    asset::{Asset, Handle, load_internal_asset},
+    ecs::system::{SystemParamItem, lifetimeless::SRes},
+    pbr::{DrawMesh, MaterialPipeline, MeshPipelineKey, SetMaterialBindGroup, SetMeshBindGroup, SetMeshViewBindGroup},
     prelude::{App, Image, Material, MaterialPlugin, Mesh, Plugin},
-    asset::Asset,
     reflect::TypePath,
     render::{
         extract_resource::ExtractResourcePlugin,
@@ -18,11 +11,9 @@ use bevy::{
             PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
         },
         render_resource::{
-            AsBindGroup, CompareFunction, PushConstantRange, RenderPipelineDescriptor,
-            ShaderStages, SpecializedMeshPipelineError,
+            AsBindGroup, CompareFunction, PushConstantRange, RenderPipelineDescriptor, Shader, ShaderStages, SpecializedMeshPipelineError
         },
     },
-    utils::Uuid,
 };
 
 use crate::resources::{ZoneTime, ZoneTimeState};

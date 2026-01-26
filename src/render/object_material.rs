@@ -1,10 +1,9 @@
 use bevy::{
-    asset::{load_internal_asset, Asset, Handle, UntypedHandle, UntypedAssetId},
+    asset::{Asset, Handle, UntypedAssetId, UntypedHandle, load_internal_asset},
     ecs::{
         query::QueryItem,
         system::{
-            lifetimeless::{Read, SRes},
-            SystemParamItem,
+            SystemParamItem, lifetimeless::{Read, SRes}
         },
     },
     math::Vec2,
@@ -25,9 +24,7 @@ use bevy::{
             PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
         },
         render_resource::{
-            encase::ShaderType, AsBindGroup, BindGroupLayout, BlendComponent, BlendFactor,
-            BlendOperation, BlendState, CompareFunction, RenderPipelineDescriptor, ShaderDefVal,
-            ShaderRef, SpecializedMeshPipelineError,
+            AsBindGroup, BindGroupLayout, BlendComponent, BlendFactor, BlendOperation, BlendState, CompareFunction, RenderPipelineDescriptor, Shader, ShaderDefVal, ShaderRef, SpecializedMeshPipelineError, encase::ShaderType
         },
         texture::Image,
     },
@@ -61,7 +58,7 @@ impl Plugin for ObjectMaterialPlugin {
             app,
             OBJECT_MATERIAL_SHADER_HANDLE.typed::<Shader>(),
             "shaders/object_material.wgsl",
-            Shader::from_wgsl
+            bevy::render::render_resource::Shader::from_wgsl
         );
 
         app.add_plugins(ExtractComponentPlugin::<ObjectMaterialClipFace>::extract_visible());

@@ -2,7 +2,7 @@ use bevy::{
     hierarchy::BuildChildren,
     math::{Quat, Vec3},
     prelude::{
-        AssetServer, Assets, Commands, Entity, GlobalTransform, Mesh, Transform, Visibility,
+        AssetServer, Assets, Commands, Entity, GlobalTransform, Transform, Visibility,
     },
     render::{
         primitives::Aabb,

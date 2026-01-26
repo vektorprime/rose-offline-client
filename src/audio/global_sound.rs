@@ -4,7 +4,6 @@ use bevy::{
         AssetServer, Assets, Changed, Commands, Component, Entity, Handle, Query, Res, ResMut,
     },
 };
-use std::sync::Arc;
 
 use super::{audio_source::AudioSource, streaming_sound::StreamingSound, OddioContext, SoundGain};
 

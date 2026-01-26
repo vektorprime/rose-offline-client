@@ -1,3 +1,4 @@
+use bevy::asset::Asset;
 use bevy::prelude::{Assets, Commands, EventWriter, Events, Local, Res, ResMut};
 use bevy_egui::{egui, EguiContexts};
 // use bevy_inspector_egui::egui::text::LayoutJob;  // Disabled due to version conflict

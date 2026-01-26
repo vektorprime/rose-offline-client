@@ -1,3 +1,4 @@
+use bevy::asset::Asset;
 use bevy::prelude::{Assets, Commands, EventWriter, Local, Res};
 use bevy_egui::{egui, EguiContexts};
 

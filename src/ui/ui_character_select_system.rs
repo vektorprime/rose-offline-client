@@ -1,3 +1,4 @@
+use bevy::asset::Asset;
 use bevy::prelude::{
     AssetServer, Assets, Camera3d, Commands, Entity, EventWriter, Local, Query, Res, ResMut, With,
 };

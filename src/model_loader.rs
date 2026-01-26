@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use arrayvec::ArrayVec;
 use bevy::{
-    asset::Asset,
     math::{Mat4, Quat, Vec3},
     prelude::{
         AssetServer, Assets, BuildChildren, Color, Commands, DespawnRecursiveExt, Entity,

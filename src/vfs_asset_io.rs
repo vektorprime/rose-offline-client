@@ -11,8 +11,6 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use bevy::tasks::futures_lite::AsyncReadExt;
-
 use rose_file_readers::{VfsFile, VirtualFilesystem};
 
 struct CursorWrapper(Vec<u8>);
@@ -61,7 +59,7 @@ pub struct VfsAssetIo {
     vfs: Arc<VirtualFilesystem>,
 }
 
-impl VfsAssetReader {
+impl VfsAssetIo {
     pub fn new(vfs: Arc<VirtualFilesystem>) -> Self {
         log::info!("[VFS ASSET IO] Creating new VfsAssetIo instance");
         Self { vfs }

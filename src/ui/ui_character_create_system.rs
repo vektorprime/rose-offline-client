@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 use bevy::{
     ecs::event::EventWriter,
     prelude::{
@@ -7,12 +6,6 @@ use bevy::{
         With,
     },
     render::view::{ViewVisibility, InheritedVisibility},
-=======
-use bevy::prelude::{
-    AssetServer, Assets, Camera3d, Commands, DespawnRecursiveExt, Entity,
-    EventWriter, GlobalTransform, Local, Quat, Query, Res, ResMut, Transform, Vec3, Visibility,
-    With,
->>>>>>> d2eb7c8579c398f3d953ad4316cad96b90b47d33
 };
 use bevy_egui::{egui, EguiContexts};
 use rose_data::ZoneId;
@@ -373,10 +366,7 @@ pub fn ui_character_create_system(
                     .with_scale(Vec3::new(1.5, 1.5, 1.5)),
                 GlobalTransform::default(),
                 Visibility::default(),
-<<<<<<< HEAD
                 ViewVisibility::default(), InheritedVisibility::default(),
-=======
->>>>>>> d2eb7c8579c398f3d953ad4316cad96b90b47d33
             ))
             .id();
         ui_state.entity = Some(create_character_entity);

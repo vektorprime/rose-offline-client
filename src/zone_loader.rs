@@ -199,9 +199,7 @@ async fn load_zone<'a, 'b>(
     let zone_list = ZoneLoader::get_zone_list();
     let zone_list_entry = zone_list
         .get_zone(zone_id)
-        .ok_or(ZoneLoadError::InvalidZoneId)?
-        .clone();
-
+        .ok_or(ZoneLoadError::InvalidZoneId)?;
     let zon_file_path = zone_list_entry.zon_file_path.path().to_path_buf();
     let zsc_cnst_path = zone_list_entry.zsc_cnst_path.path().to_path_buf();
     let zsc_deco_path = zone_list_entry.zsc_deco_path.path().to_path_buf();

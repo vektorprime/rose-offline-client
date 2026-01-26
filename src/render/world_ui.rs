@@ -1,43 +1,25 @@
 use std::{cmp::Ordering, ops::Range};
 
 use bevy::{
-    asset::{load_internal_asset, Handle, UntypedHandle, UntypedAssetId, AssetId},
+    asset::{AssetId, Handle, UntypedAssetId, UntypedHandle, load_internal_asset},
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         query::ROQueryItem,
         system::{
-            lifetimeless::{Read, SRes},
-            SystemParamItem,
+            SystemParamItem, lifetimeless::{Read, SRes}
         },
     },
     pbr::MeshPipelineKey,
     prelude::{
-        App, Assets, Color, Commands, Component, ViewVisibility, InheritedVisibility, FromWorld, GlobalTransform,
-        IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3,
-        World,
+        App, Assets, Color, Commands, Component, FromWorld, GlobalTransform, InheritedVisibility, IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3, ViewVisibility, World
     },
     render::{
-        render_asset::RenderAssets,
-        render_phase::{
+        Extract, ExtractSchedule, Render, RenderApp, RenderSet, render_asset::RenderAssets, render_phase::{
             AddRenderCommand, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult,
             RenderPhase, SetItemPipeline, TrackedRenderPass,
-        },
-        render_resource::{
-            BindGroup, BindGroupEntry, BindGroupLayout,
-            BindGroupLayoutEntry, BindingResource, BindingType,
-            BlendComponent, BlendFactor, BlendOperation, BlendState, BufferBindingType,
-            BufferUsages, BufferVec, ColorTargetState, ColorWrites, CompareFunction,
-            DepthBiasState, DepthStencilState, FragmentState, FrontFace, MultisampleState,
-            PipelineCache, PolygonMode, PrimitiveState, PrimitiveTopology,
-            RenderPipelineDescriptor, SamplerBindingType, ShaderStages, ShaderType,
-            SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState,
-            TextureFormat, TextureSampleType, TextureViewDimension, VertexAttribute,
-            VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
-        },
-        renderer::{RenderDevice, RenderQueue},
-        texture::{BevyDefault, Image},
-        view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms},
-        Extract, ExtractSchedule, Render, RenderApp, RenderSet,
+        }, render_resource::{
+            BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferBindingType, BufferUsages, BufferVec, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, FragmentState, FrontFace, MultisampleState, PipelineCache, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipelineDescriptor, SamplerBindingType, Shader, ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode
+        }, renderer::{RenderDevice, RenderQueue}, texture::{BevyDefault, Image}, view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms}
     },
     utils::{HashMap, Uuid},
 };
@@ -132,7 +114,7 @@ fn extract_world_ui_rects(
             continue;
         }
 
-        if !images.contains(&rect.image) {
+        if !images.contains(rect.image.id()) {
             continue;
         }
 
@@ -140,7 +122,7 @@ fn extract_world_ui_rects(
             world_position: global_transform.translation(),
             screen_offset: rect.screen_offset,
             screen_size: rect.screen_size,
-            image_handle: rect.image.clone(),
+            image_handle_id: rect.image.id(),
             uv_min: rect.uv_min,
             uv_max: rect.uv_max,
             color: rect.color,
@@ -571,7 +553,7 @@ pub fn queue_world_ui_meshes(
 
             let visible_entity = commands
                 .spawn(WorldUiBatch {
-                    image_handle: rect.image_handle.clone(),
+                    image_handle_id: rect.image_handle_id,
                     vertex_range: item_start..item_end,
                 })
                 .id();

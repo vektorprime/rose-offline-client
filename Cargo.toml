@@ -53,17 +53,16 @@ rose-network-irose = { path = "C:/Users/vicha/RustroverProjects/rose-offline/ros
 version = "=0.13.2"
 default-features = false
 features = [
-  "bevy_asset",
-  "bevy_winit",
-  "bevy_core_pipeline",
-  "bevy_pbr",
-  "bevy_render",
-  "multi-threaded",
-  "dds",
-  "tga",
-  "x11",
-  "dynamic_linking",
-]
+    "bevy_asset", 
+    "bevy_winit", 
+    "bevy_core_pipeline", 
+    "bevy_pbr", 
+    "bevy_render", 
+    "multi-threaded", 
+    "dds", 
+    "tga", 
+    "x11", 
+    "bevy_gizmos"]
 
 
 

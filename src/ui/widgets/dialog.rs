@@ -1,7 +1,5 @@
-use bevy::{
-    asset::{Asset, UntypedAssetId, VisitAssetDependencies},
-    reflect::TypePath,
-};
+use bevy::prelude::*;
+use bevy::reflect::TypePath;
 use bevy_egui::egui;
 use serde::{Deserialize, Deserializer};
 
@@ -38,10 +36,9 @@ where
     Ok(SoundId::new(sound_id))
 }
 
-#[derive(Clone, Default, Deserialize, TypePath)]
+#[derive(Asset, Clone, Default, Deserialize, TypePath)]
 #[serde(rename = "Root_Element")]
 #[serde(default)]
-#[derive(Asset)]
 pub struct Dialog {
     #[serde(deserialize_with = "default_on_error")]
     #[serde(rename = "X")]
@@ -104,14 +101,5 @@ impl Dialog {
 
     pub fn get_widget_mut(&mut self, id: i32) -> Option<&mut Widget> {
         self.widgets.get_widget_mut(id)
-    }
-}
-
-
-impl Asset for Dialog {}
-
-impl VisitAssetDependencies for Dialog {
-    fn visit_dependencies(&self, _visit: &mut impl FnMut(UntypedAssetId)) {
-        // Dialog doesn't have any asset dependencies
     }
 }

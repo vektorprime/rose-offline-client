@@ -1,3 +1,4 @@
+use bevy::asset::Asset;
 use bevy::prelude::{Assets, EventWriter, Handle, Local, Res};
 
 use crate::{

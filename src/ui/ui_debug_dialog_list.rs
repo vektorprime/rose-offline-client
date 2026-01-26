@@ -1,5 +1,5 @@
 use bevy::{
-    asset::AssetId,
+    asset::{Asset, AssetId},
     prelude::{AssetServer, Assets, Local, Res, ResMut},
 };
 use bevy_egui::{egui, EguiContexts};

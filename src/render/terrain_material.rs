@@ -20,8 +20,8 @@ use bevy::{
             BindGroupLayout, BindGroupLayoutEntry, BindingResource,
             BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, FilterMode,
             UnpreparedBindGroup, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
-            ShaderStages, SpecializedMeshPipelineError, TextureSampleType, TextureViewDimension,
-            VertexFormat,
+            ShaderRef, ShaderStages, SpecializedMeshPipelineError, TextureSampleType,
+            TextureViewDimension, VertexFormat,
         },
         renderer::RenderDevice,
         texture::{FallbackImage, Image},
@@ -93,11 +93,11 @@ impl Material for TerrainMaterial {
         AlphaMode::Opaque
     }
 
-    fn vertex_shader() -> bevy::render::render_resource::ShaderRef {
+    fn vertex_shader() -> ShaderRef {
         TERRAIN_MATERIAL_SHADER_HANDLE.typed().into()
     }
 
-    fn fragment_shader() -> bevy::render::render_resource::ShaderRef {
+    fn fragment_shader() -> ShaderRef {
         TERRAIN_MATERIAL_SHADER_HANDLE.typed().into()
     }
 
@@ -143,33 +143,40 @@ impl Material for TerrainMaterial {
     }
 }
 
-
 impl AsBindGroup for TerrainMaterial {
     type Data = ();
 
     fn unprepared_bind_group(
         &self,
         layout: &BindGroupLayout,
-        render_device: &RenderDevice,
-        image_assets: &RenderAssets<Image>,
-        fallback_image: &FallbackImage,
+        render_device: &bevy::render::renderer::RenderDevice,
+        images: &bevy::render::render_asset::RenderAssets<bevy::prelude::Image>,
+        fallback_image: &bevy::render::texture::FallbackImage,
     ) -> Result<UnpreparedBindGroup<Self::Data>, AsBindGroupError> {
-        let mut images = vec![];
+        let mut images_vec = vec![];
         for handle in self.textures.iter().take(TERRAIN_MATERIAL_MAX_TEXTURES) {
-            match image_assets.get(handle) {
-                Some(image) => images.push(image),
+            match images.get(handle) {
+                Some(image) => images_vec.push(image),
                 None => return Err(AsBindGroupError::RetryNextUpdate),
             }
         }
 
         let mut textures = vec![&*fallback_image.d2.texture_view; TERRAIN_MATERIAL_MAX_TEXTURES];
-        for (id, image) in images.into_iter().enumerate() {
+        for (id, image) in images_vec.into_iter().enumerate() {
             textures[id] = &*image.texture_view;
         }
 
         let sampler = render_device.create_sampler(&SamplerDescriptor {
             address_mode_u: AddressMode::ClampToEdge,
             address_mode_v: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            ..Default::default()
+        });
+
+        let detail_sampler = render_device.create_sampler(&SamplerDescriptor {
+            address_mode_u: AddressMode::Repeat,
+            address_mode_v: AddressMode::Repeat,
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
             ..Default::default()
@@ -187,7 +194,6 @@ impl AsBindGroup for TerrainMaterial {
                     binding: 1,
                     resource: BindingResource::Sampler(&sampler),
                 },
-                // Detail texture bindings
                 BindGroupEntry {
                     binding: 2,
                     resource: BindingResource::TextureView(&fallback_image.d2.texture_view),
@@ -205,7 +211,7 @@ impl AsBindGroup for TerrainMaterial {
         })
     }
 
-    fn bind_group_layout_entries(render_device: &RenderDevice) -> Vec<BindGroupLayoutEntry> {
+    fn bind_group_layout_entries(_render_device: &bevy::render::renderer::RenderDevice) -> Vec<BindGroupLayoutEntry> {
         vec![
             BindGroupLayoutEntry {
                 binding: 0,
@@ -223,98 +229,20 @@ impl AsBindGroup for TerrainMaterial {
                 ty: BindingType::Sampler(SamplerBindingType::Filtering),
                 count: None,
             },
-        ]
-    }
-
-    fn unprepared_bind_group(
-        &self,
-        layout: &bevy::render::render_resource::BindGroupLayout,
-        render_device: &bevy::render::renderer::RenderDevice,
-        images: &bevy::render::render_asset::RenderAssets<bevy::prelude::Image>,
-        fallback_image: &bevy::render::texture::FallbackImage,
-    ) -> Result<bevy::render::render_resource::UnpreparedBindGroup<Self::Data>, bevy::render::render_resource::AsBindGroupError> {
-        let mut images_vec = vec![];
-        for handle in self.textures.iter().take(TERRAIN_MATERIAL_MAX_TEXTURES) {
-            match images.get(handle) {
-                Some(image) => images_vec.push(image),
-                None => return Err(bevy::render::render_resource::AsBindGroupError::RetryNextUpdate),
-            }
-        }
-
-        let mut textures = vec![&*fallback_image.d2.texture_view; TERRAIN_MATERIAL_MAX_TEXTURES];
-        for (id, image) in images_vec.into_iter().enumerate() {
-            textures[id] = &*image.texture_view;
-        }
-
-        let sampler = render_device.create_sampler(&bevy::render::render_resource::SamplerDescriptor {
-            address_mode_u: bevy::render::render_resource::AddressMode::ClampToEdge,
-            address_mode_v: bevy::render::render_resource::AddressMode::ClampToEdge,
-            mag_filter: bevy::render::render_resource::FilterMode::Linear,
-            min_filter: bevy::render::render_resource::FilterMode::Linear,
-            ..Default::default()
-        });
-
-        // Create detail texture sampler
-        let detail_sampler = render_device.create_sampler(&bevy::render::render_resource::SamplerDescriptor {
-            address_mode_u: bevy::render::render_resource::AddressMode::Repeat,
-            address_mode_v: bevy::render::render_resource::AddressMode::Repeat,
-            mag_filter: bevy::render::render_resource::FilterMode::Linear,
-            min_filter: bevy::render::render_resource::FilterMode::Linear,
-            ..Default::default()
-        });
-
-        let mut bind_group = bevy::render::render_resource::UnpreparedBindGroup::default();
-        bind_group.add(bevy::render::render_resource::BindGroupEntry {
-            binding: 0,
-            resource: bevy::render::render_resource::BindingResource::TextureViewArray(&textures[..]),
-        });
-        bind_group.add(bevy::render::render_resource::BindGroupEntry {
-            binding: 1,
-            resource: bevy::render::render_resource::BindingResource::Sampler(&sampler),
-        });
-        bind_group.add(bevy::render::render_resource::BindGroupEntry {
-            binding: 2,
-            resource: bevy::render::render_resource::BindingResource::TextureView(&fallback_image.d2.texture_view),
-        });
-        bind_group.add(bevy::render::render_resource::BindGroupEntry {
-            binding: 3,
-            resource: bevy::render::render_resource::BindingResource::Sampler(&detail_sampler),
-        });
-        Ok(bind_group)
-    }
-
-    fn bind_group_layout_entries(render_device: &bevy::render::renderer::RenderDevice) -> Vec<bevy::render::render_resource::BindGroupLayoutEntry> {
-        vec![
-            bevy::render::render_resource::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT,
-                ty: bevy::render::render_resource::BindingType::Texture {
-                    sample_type: bevy::render::render_resource::TextureSampleType::Float { filterable: true },
-                    view_dimension: bevy::render::render_resource::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: NonZeroU32::new(TERRAIN_MATERIAL_MAX_TEXTURES as u32),
-            },
-            bevy::render::render_resource::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT,
-                ty: bevy::render::render_resource::BindingType::Sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
-                count: None,
-            },
-            bevy::render::render_resource::BindGroupLayoutEntry {
+            BindGroupLayoutEntry {
                 binding: 2,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT,
-                ty: bevy::render::render_resource::BindingType::Texture {
-                    sample_type: bevy::render::render_resource::TextureSampleType::Float { filterable: true },
-                    view_dimension: bevy::render::render_resource::TextureViewDimension::D2,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
                     multisampled: false,
                 },
                 count: None,
             },
-            bevy::render::render_resource::BindGroupLayoutEntry {
+            BindGroupLayoutEntry {
                 binding: 3,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT,
-                ty: bevy::render::render_resource::BindingType::Sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
                 count: None,
             },
         ]
