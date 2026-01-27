@@ -109,6 +109,8 @@ fn extract_world_ui_rects(
     query: Extract<Query<(&ViewVisibility, &InheritedVisibility, &GlobalTransform, &WorldUiRect)>>,
 ) {
     extracted_world_ui.rects.clear();
+    let mut visible_count = 0;
+    let mut extracted_count = 0;
     for (visible, _inherited_visibility, global_transform, rect) in query.iter() {
         if !visible.get() {
             continue;
@@ -128,6 +130,12 @@ fn extract_world_ui_rects(
             color: rect.color,
             order: rect.order,
         });
+        visible_count += 1;
+        extracted_count += 1;
+    }
+
+    if extracted_count > 0 {
+        log::info!("[RENDER] Extracted {} world UI rects ({} visible)", extracted_count, visible_count);
     }
 }
 

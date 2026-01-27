@@ -14,8 +14,6 @@
 pkg/
 
 # Build output files
-build_output*.txt
-cargo_output*.txt
 cargo/
 
 # IDE/Editor directories
@@ -39,9 +37,6 @@ Thumbs.db
 *.tmp
 *.temp
 
-# Log files
-*.log
-logs/
 
 # Test/coverage artifacts
 *.profraw
@@ -49,8 +44,6 @@ logs/
 *.d
 coverage/
 
-# Documentation
-doc/
 
 # Bevy cache
 bevy_cache/
@@ -63,6 +56,5 @@ assets/.cache/
 *.timestamp 
 *.exe 
 *.pdb
-*.json
 *.rmeta
 *.o

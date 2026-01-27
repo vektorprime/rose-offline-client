@@ -72,6 +72,10 @@ pub fn orbit_camera_system(
     time: Res<Time>,
     rapier_context: Res<RapierContext>,
 ) {
+    // Log camera system execution once per second to avoid spam
+    if time.elapsed_seconds() % 1.0 < time.delta_seconds() {
+        log::info!("[CAMERA] Orbit camera system running");
+    }
     let Ok(mut window) = query_window.get_single_mut() else {
         return;
     };
@@ -155,6 +159,18 @@ pub fn orbit_camera_system(
     if let Ok(follow_transform) = query_global_transform.get(orbit_camera.follow_entity) {
         let follow_position = follow_transform.translation() + orbit_camera.follow_offset;
         orbit_camera.rig.driver_mut::<Position>().position = follow_position;
+
+        // Log camera position and direction periodically
+        if time.elapsed_seconds() % 5.0 < time.delta_seconds() {
+            let yaw_pitch = orbit_camera.rig.driver::<YawPitch>();
+            log::info!("[CAMERA] Orbit Camera - Position: ({:.2}, {:.2}, {:.2}), Yaw: {:.2}°, Pitch: {:.2}°, Distance: {:.2}",
+                camera_transform.translation.x,
+                camera_transform.translation.y,
+                camera_transform.translation.z,
+                yaw_pitch.yaw_degrees,
+                yaw_pitch.pitch_degrees,
+                orbit_camera.follow_distance);
+        }
 
         // Camera collision
         let ray_direction = (camera_transform.translation - follow_position).normalize();

@@ -52,6 +52,10 @@ pub fn free_camera_system(
     mut query_window: Query<&mut Window, With<PrimaryWindow>>,
     mut egui_ctx: EguiContexts,
 ) {
+    // Log camera system execution once per second to avoid spam
+    if time.elapsed_seconds() % 1.0 < time.delta_seconds() {
+        log::info!("[CAMERA] Free camera system running");
+    }
     let Ok(mut window) = query_window.get_single_mut() else {
         return;
     };
@@ -176,4 +180,15 @@ pub fn free_camera_system(
     let calculated_transform = free_camera.rig.update(time.delta_seconds());
     camera_transform.translation = calculated_transform.position;
     camera_transform.rotation = calculated_transform.rotation;
+
+    // Log camera position and direction periodically
+    if time.elapsed_seconds() % 5.0 < time.delta_seconds() {
+        let yaw_pitch = free_camera.rig.driver::<YawPitch>();
+        log::info!("[CAMERA] Free Camera - Position: ({:.2}, {:.2}, {:.2}), Yaw: {:.2}°, Pitch: {:.2}°",
+            camera_transform.translation.x,
+            camera_transform.translation.y,
+            camera_transform.translation.z,
+            yaw_pitch.yaw_degrees,
+            yaw_pitch.pitch_degrees);
+    }
 }

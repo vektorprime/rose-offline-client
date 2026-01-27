@@ -72,6 +72,8 @@ impl AssetReader for VfsAssetIo {
         path: &'a Path,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>, AssetReaderError>> + Send + 'a>> {
         Box::pin(async move {
+            // Log ALL read calls to see what's happening
+            let path_str = path.to_str().unwrap_or("");
             log::info!("[VFS DIAGNOSTIC] ===========================================");
             log::info!("[VFS DIAGNOSTIC] VfsAssetIo::read ENTRY POINT REACHED");
             log::info!("[VFS DIAGNOSTIC] Path: {:?}", path);
@@ -89,8 +91,10 @@ impl AssetReader for VfsAssetIo {
 
             // DIAGNOSTIC: Check if this is a .zone_loader file
             if path_str.ends_with(".zone_loader") {
+                log::info!("[VFS DIAGNOSTIC] ===========================================");
                 log::info!("[VFS DIAGNOSTIC] Processing .zone_loader file: {}", path_str);
                 let zone_id = path_str.trim_end_matches(".zone_loader").parse::<u8>().unwrap();
+                log::info!("[VFS DIAGNOSTIC] Parsed zone_id: {}", zone_id);
                 let data = vec![zone_id];
                 log::info!("[VFS DIAGNOSTIC] Returning zone_loader data for zone_id: {}", zone_id);
                 log::info!("[VFS DIAGNOSTIC] Data length: {} bytes", data.len());
@@ -133,8 +137,19 @@ impl AssetReader for VfsAssetIo {
         Box::pin(async move {
             log::info!("[VFS DIAGNOSTIC] ===========================================");
             log::info!("[VFS DIAGNOSTIC] read_meta called for path: {:?}", _path);
+            
+            // FIX: Return valid metadata for .zone_loader files
+            let path_str = _path.to_str().unwrap_or("");
+            if path_str.ends_with(".zone_loader") {
+                log::info!("[VFS DIAGNOSTIC] Returning metadata for .zone_loader file: {}", path_str);
+                // Return empty metadata as valid bytes
+                let data = vec![];
+                log::info!("[VFS DIAGNOSTIC] ===========================================");
+                return Ok(Box::new(CursorWrapper(data)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>);
+            }
+            
             log::info!("[VFS DIAGNOSTIC] ===========================================");
-            // For simplicity, just return not found for metadata
+            // For simplicity, just return not found for other metadata
             Err(AssetReaderError::NotFound(_path.into()))
         })
     }
@@ -147,25 +162,20 @@ impl AssetReader for VfsAssetIo {
             log::info!("[VFS DIAGNOSTIC] ===========================================");
             log::info!("[VFS DIAGNOSTIC] read_directory called for path: {:?}", _path);
             
-            // FIX: Return .zone_loader files in the root directory listing
+            // FIX: Return .zone_loader files in ALL directory listings
+            // This makes Bevy's asset system think .zone_loader files exist in any directory
             let path_str = _path.to_str().unwrap_or("");
-            if path_str == "" || path_str == "." {
-                log::info!("[VFS DIAGNOSTIC] Returning .zone_loader files in root directory listing");
-                
-                // Create a stream that returns .zone_loader files for zones 0-114
-                let paths: Vec<PathBuf> = (0..115)
-                    .map(|i| PathBuf::from(format!("{}.zone_loader", i)))
-                    .collect();
-                
-                let stream = bevy::tasks::futures_lite::stream::iter(paths);
-                log::info!("[VFS DIAGNOSTIC] Returning {} .zone_loader files", 115);
-                log::info!("[VFS DIAGNOSTIC] ===========================================");
-                Ok(Box::new(stream) as Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>)
-            } else {
-                log::info!("[VFS DIAGNOSTIC] Returning not found for directory listing: {}", path_str);
-                log::info!("[VFS DIAGNOSTIC] ===========================================");
-                Err(AssetReaderError::NotFound(_path.into()))
-            }
+            log::info!("[VFS DIAGNOSTIC] Returning .zone_loader files for directory: {}", path_str);
+            
+            // Create a stream that returns .zone_loader files for zones 0-114
+            let paths: Vec<PathBuf> = (0..115)
+                .map(|i| PathBuf::from(format!("{}.zone_loader", i)))
+                .collect();
+            
+            let stream = bevy::tasks::futures_lite::stream::iter(paths);
+            log::info!("[VFS DIAGNOSTIC] Returning {} .zone_loader files", 115);
+            log::info!("[VFS DIAGNOSTIC] ===========================================");
+            Ok(Box::new(stream) as Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>)
         })
     }
 
@@ -221,6 +231,19 @@ impl Plugin for VfsAssetReaderPlugin {
         log::info!("[VFS ASSET READER PLUGIN] register_asset_source() completed successfully");
         log::info!("[VFS ASSET READER PLUGIN] ===========================================");
 
+        // FIX: Register a custom asset source specifically for .zone_loader files
+        // This bypasses the file existence check that prevents .zone_loader files from being loaded
+        let vfs_for_zone_loader = self.vfs.clone();
+        app.register_asset_source(
+            AssetSourceId::from("zone_loader"),
+            AssetSource::build().with_reader(move || {
+                log::info!("[VFS ASSET READER PLUGIN] Creating VfsAssetIo for zone_loader source");
+                let vfs_clone = vfs_for_zone_loader.clone();
+                Box::new(VfsAssetIo::new(vfs_clone))
+            }),
+        );
+        log::info!("[VFS ASSET READER PLUGIN] zone_loader asset source registered");
+
         // Add a Startup system to verify the asset source was registered
         app.add_systems(bevy::app::Startup, |asset_server: Res<AssetServer>| {
             log::info!("[VFS ASSET READER PLUGIN] Verifying asset source registration...");
@@ -233,6 +256,17 @@ impl Plugin for VfsAssetReaderPlugin {
                 }
                 Err(e) => {
                     log::error!("[VFS ASSET READER PLUGIN] Failed to get default asset source: {:?}", e);
+                }
+            }
+            match asset_server.get_source(AssetSourceId::from("zone_loader")) {
+                Ok(source) => {
+                    log::info!("[VFS ASSET READER PLUGIN] zone_loader asset source found!");
+                    let reader = source.reader();
+                    let reader_type = std::any::type_name_of_val(reader);
+                    log::info!("[VFS ASSET READER PLUGIN] zone_loader Reader type: {}", reader_type);
+                }
+                Err(e) => {
+                    log::error!("[VFS ASSET READER PLUGIN] Failed to get zone_loader asset source: {:?}", e);
                 }
             }
         });

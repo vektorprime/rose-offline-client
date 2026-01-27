@@ -46,4 +46,4 @@ pub use spawn_projectile_event::SpawnProjectileEvent;
 pub use system_func_event::SystemFuncEvent;
 pub use use_item_event::UseItemEvent;
 pub use world_connection_event::WorldConnectionEvent;
-pub use zone_event::{LoadZoneEvent, ZoneEvent};
+pub use zone_event::{LoadZoneEvent, ZoneEvent, ZoneLoadedFromVfsEvent};

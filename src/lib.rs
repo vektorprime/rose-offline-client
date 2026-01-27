@@ -15,7 +15,7 @@ use bevy::{
     render::{
         settings::{Backends, RenderCreation, WgpuSettings},
     },
-    transform::TransformSystem,
+    transform::{TransformSystem, components::GlobalTransform},
     window::{Window, WindowMode},
 };
 use bevy_egui::{egui, EguiContexts, EguiSet};
@@ -25,7 +25,7 @@ use exe_resource_loader::{ExeResourceCursor, ExeResourceLoader};
 use serde::Deserialize;
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, mpsc},
 };
 
 use rose_data::{CharacterMotionDatabaseOptions, NpcDatabaseOptions, ZoneId};
@@ -59,7 +59,7 @@ use events::{
     MessageBoxEvent, MoveDestinationEffectEvent, NetworkEvent, NpcStoreEvent,
     NumberInputDialogEvent, PartyEvent, PersonalStoreEvent, PlayerCommandEvent, QuestTriggerEvent,
     SpawnEffectEvent, SpawnProjectileEvent, SystemFuncEvent, UseItemEvent, WorldConnectionEvent,
-    ZoneEvent,
+    ZoneEvent, ZoneLoadedFromVfsEvent,
 };
 use model_loader::ModelLoader;
 use render::{DamageDigitMaterial, RoseRenderPlugin};
@@ -116,7 +116,7 @@ use ui::{
 };
 use vfs_asset_io::{VfsAssetIo, VfsAssetReaderPlugin};
 use zms_asset_loader::{ZmsAssetLoader, ZmsMaterialNumFaces, ZmsNoSkinAssetLoader};
-use zone_loader::{zone_loader_system, ZoneLoader, ZoneLoaderAsset};
+use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, ZoneLoader, ZoneLoaderAsset, ZoneLoadChannelReceiver, ZoneLoadChannelSender};
 
 use crate::components::SoundCategory;
 
@@ -679,6 +679,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // Initialise rose stuff
     log::info!("[ASSET LOADER DIAGNOSTIC] Registering asset loaders...");
     log::info!("[ASSET LOADER DIAGNOSTIC] Registering ZmsAssetLoader");
+    
+    // Create channel for async zone loading
+    let (tx, rx) = mpsc::channel();
+    app.insert_resource(ZoneLoadChannelSender(tx));
+    app.insert_resource(ZoneLoadChannelReceiver(std::sync::Mutex::new(rx)));
+    log::info!("[ZONE LOADER] Channel for async zone loading created and registered");
+    
     app.register_asset_loader(ZmsAssetLoader)
         .init_asset::<ZmsMaterialNumFaces>()
         .register_asset_loader(ZmsNoSkinAssetLoader)
@@ -751,6 +758,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_event::<UseItemEvent>()
         .add_event::<WorldConnectionEvent>()
         .add_event::<ZoneEvent>()
+        .add_event::<ZoneLoadedFromVfsEvent>()
         .add_event::<UiSoundEvent>();
 
     app.add_systems(
@@ -929,13 +937,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     );
 
     // Run zone change system just before physics sync which is after Update
-    app.add_systems(
-        Update,
-        (
-            zone_loader_system,
-            game_zone_change_system,
-        ),
-    );
+    app.add_systems(Update, (zone_loader_system, zone_loaded_from_vfs_system,));
+    app.add_systems(Update, (game_zone_change_system,));
 
     // Run debug render stage last after physics update so it has accurate data
     app.add_systems(
@@ -1315,6 +1318,8 @@ fn load_common_game_data(
             ..Default::default()
         },
         BloomSettings::NATURAL,
+        Transform::from_xyz(5120.0, 50.0, -5120.0),
+        GlobalTransform::default(),
     )).id();
 
     bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
