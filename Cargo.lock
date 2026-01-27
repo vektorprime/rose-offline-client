@@ -657,7 +657,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "887087a5e522d9f20733a84dd7e6e9ca04cd8fdfac659220ed87d675eebc83a7"
 dependencies = [
  "bevy_macro_utils",
- "encase_derive_impl",
+ "encase_derive_impl 0.7.0",
 ]
 
 [[package]]
@@ -960,7 +960,7 @@ dependencies = [
  "codespan-reporting",
  "ddsfile",
  "downcast-rs",
- "encase",
+ "encase 0.7.0",
  "futures-lite",
  "hexasphere",
  "image 0.24.9",
@@ -1835,6 +1835,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+]
+
+[[package]]
 name = "dasp_sample"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2059,8 +2072,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95ed933078d2e659745df651f4c180511cd582e5b9414ff896e7d50d207e3103"
 dependencies = [
  "const_panic",
- "encase_derive",
+ "encase_derive 0.7.0",
  "glam",
+ "thiserror",
+]
+
+[[package]]
+name = "encase"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a9299a95fa5671ddf29ecc22b00e121843a65cb9ff24911e394b4ae556baf36"
+dependencies = [
+ "const_panic",
+ "encase_derive 0.8.0",
  "thiserror",
 ]
 
@@ -2070,7 +2094,16 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4ce1449c7d19eba6cc0abd231150ad81620a8dce29601d7f8d236e5d431d72a"
 dependencies = [
- "encase_derive_impl",
+ "encase_derive_impl 0.7.0",
+]
+
+[[package]]
+name = "encase_derive"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07e09decb3beb1fe2db6940f598957b2e1f7df6206a804d438ff6cb2a9cddc10"
+dependencies = [
+ "encase_derive_impl 0.8.0",
 ]
 
 [[package]]
@@ -2078,6 +2111,17 @@ name = "encase_derive_impl"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92959a9e8d13eaa13b8ae8c7b583c3bf1669ca7a8e7708a088d12587ba86effc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
+name = "encase_derive_impl"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd31dbbd9743684d339f907a87fe212cb7b51d75b9e8e74181fe363199ee9b47"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4418,10 +4462,12 @@ dependencies = [
  "clap",
  "cpal",
  "crossbeam-channel",
+ "dashmap",
  "directories",
  "dolly",
  "egui 0.26.2",
  "egui_extras",
+ "encase 0.8.0",
  "enum-map",
  "futures-io",
  "glam",

@@ -116,7 +116,7 @@ use ui::{
 };
 use vfs_asset_io::{VfsAssetIo, VfsAssetReaderPlugin};
 use zms_asset_loader::{ZmsAssetLoader, ZmsMaterialNumFaces, ZmsNoSkinAssetLoader};
-use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, ZoneLoader, ZoneLoaderAsset, ZoneLoadChannelReceiver, ZoneLoadChannelSender};
+use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, ZoneLoader, ZoneLoaderAsset, ZoneLoadChannelReceiver, ZoneLoadChannelSender, MemoryTrackingResource, MaterialCache};
 
 use crate::components::SoundCategory;
 
@@ -685,6 +685,14 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.insert_resource(ZoneLoadChannelSender(tx));
     app.insert_resource(ZoneLoadChannelReceiver(std::sync::Mutex::new(rx)));
     log::info!("[ZONE LOADER] Channel for async zone loading created and registered");
+    
+    // Initialize memory tracking resource for zone loading
+    app.init_resource::<MemoryTrackingResource>();
+    log::info!("[ZONE LOADER] MemoryTrackingResource initialized");
+
+    // Initialize material cache for zone loading
+    app.init_resource::<MaterialCache>();
+    log::info!("[ZONE LOADER] MaterialCache initialized");
     
     app.register_asset_loader(ZmsAssetLoader)
         .init_asset::<ZmsMaterialNumFaces>()

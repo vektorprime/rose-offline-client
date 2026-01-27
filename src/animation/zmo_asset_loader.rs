@@ -6,6 +6,7 @@ use bevy::prelude::{Handle, Image, Reflect};
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::tasks::futures_lite::AsyncReadExt;
+use log::info;
 
 use rose_file_readers::{RoseFile, ZmoChannel, ZmoFile};
 
@@ -135,15 +136,18 @@ impl AssetLoader for ZmoAssetLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    fn load<'a>(
+    fn load<'a, 'b>(
         &'a self,
         reader: &'a mut Reader,
         _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext,
+        load_context: &'a mut LoadContext<'b>,
     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
+            let asset_path = load_context.path().to_string_lossy();
+            info!("[ASSET LIFECYCLE] Loading ZMO animation asset: {}", asset_path);
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
+            info!("[ASSET LIFECYCLE] ZMO asset size: {} bytes", bytes.len());
             match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(zmo) => {
                     // First count how many transform channels there are
@@ -238,15 +242,18 @@ impl AssetLoader for ZmoTextureAssetLoader {
         &["zmo_texture"]
     }
 
-    fn load<'a>(
+    fn load<'a, 'b>(
         &'a self,
         reader: &'a mut Reader,
         _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext,
+        load_context: &'a mut LoadContext<'b>,
     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
+            let asset_path = load_context.path().to_string_lossy();
+            info!("[ASSET LIFECYCLE] Loading ZMO texture asset: {}", asset_path);
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
+            info!("[ASSET LIFECYCLE] ZMO texture asset size: {} bytes", bytes.len());
             match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(zmo) => {
                     let mut num_vertices = 0;

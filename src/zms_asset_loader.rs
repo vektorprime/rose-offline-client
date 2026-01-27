@@ -12,9 +12,12 @@ use bevy::{
         render_asset::RenderAssetUsages,
         render_resource::PrimitiveTopology,
     },
+    tasks::futures_lite::AsyncReadExt,
 };
+use log::info;
 use rose_file_readers::{RoseFile, ZmsFile};
 
+// Memory tracking and asset lifecycle logging added for diagnostics
 use crate::render::{MESH_ATTRIBUTE_UV_1, MESH_ATTRIBUTE_UV_2, MESH_ATTRIBUTE_UV_3};
 
 #[derive(Debug, TypePath, Clone, Asset)]
@@ -43,6 +46,10 @@ impl AssetLoader for ZmsAssetLoader {
             let mut bytes = Vec::new();
             use bevy::tasks::futures_lite::AsyncReadExt;
             reader.read_to_end(&mut bytes).await?;
+            
+            let asset_path = load_context.path().to_string_lossy();
+            info!("[ASSET LIFECYCLE] Loading ZMS mesh asset: {}", asset_path);
+            info!("[ASSET LIFECYCLE] Asset size: {} bytes", bytes.len());
 
             match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(mut zms) => {
@@ -146,11 +153,11 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    fn load<'a>(
+    fn load<'a, 'b>(
         &'a self,
         reader: &'a mut Reader,
         _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext,
+        load_context: &'a mut LoadContext<'b>,
     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let mut bytes = Vec::new();
@@ -196,6 +203,17 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
 
                     if !zms.color.is_empty() {
                         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, zms.color);
+                    }
+
+                    if !zms.bone_weights.is_empty() {
+                        mesh.insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, zms.bone_weights);
+                    }
+
+                    if !zms.bone_indices.is_empty() {
+                        mesh.insert_attribute(
+                            Mesh::ATTRIBUTE_JOINT_INDEX,
+                            VertexAttributeValues::Uint16x4(zms.bone_indices),
+                        );
                     }
 
                     if !zms.uv1.is_empty() {

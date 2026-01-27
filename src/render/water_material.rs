@@ -1,4 +1,6 @@
 use std::num::NonZeroU32;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use bevy::{
     asset::{load_internal_asset, Handle, UntypedHandle, UntypedAssetId},
@@ -22,7 +24,7 @@ use bevy::{
             PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
         },
         render_resource::{
-            encase, AddressMode, AsBindGroup, AsBindGroupError, BindGroupEntry,
+            encase, AddressMode, AsBindGroup, AsBindGroupError, BindGroup, BindGroupEntry,
             BindGroupLayout, BindGroupLayoutEntry,
             BindingResource, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState,
             FilterMode, UnpreparedBindGroup, PushConstantRange, RenderPipelineDescriptor,
@@ -35,6 +37,9 @@ use bevy::{
     },
     utils::Uuid,
 };
+use dashmap::DashMap;
+use lazy_static::lazy_static;
+use log::info;
 
 use crate::render::zone_lighting::{SetZoneLightingBindGroup, ZoneLightingUniformMeta};
 use std::any::TypeId;
@@ -46,6 +51,41 @@ pub const WATER_MESH_MATERIAL_SHADER_HANDLE_TYPED: Handle<Shader> =
     Handle::weak_from_u128(0x333959e64b35d5d9);
 
 pub const WATER_MATERIAL_NUM_TEXTURES: usize = 25;
+
+// Bind group cache for WaterMaterial
+lazy_static! {
+    static ref WATER_BIND_GROUP_CACHE: DashMap<u64, BindGroup> = DashMap::new();
+    static ref WATER_CACHE_STATS: CacheStats = CacheStats::new();
+}
+
+struct CacheStats {
+    hits: std::sync::atomic::AtomicU64,
+    misses: std::sync::atomic::AtomicU64,
+}
+
+impl CacheStats {
+    fn new() -> Self {
+        Self {
+            hits: std::sync::atomic::AtomicU64::new(0),
+            misses: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    fn record_hit(&self) {
+        self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn record_miss(&self) {
+        self.misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn get_stats(&self) -> (u64, u64, usize) {
+        let hits = self.hits.load(std::sync::atomic::Ordering::Relaxed);
+        let misses = self.misses.load(std::sync::atomic::Ordering::Relaxed);
+        let total_entries = WATER_BIND_GROUP_CACHE.len();
+        (hits, misses, total_entries)
+    }
+}
 
 #[derive(Default)]
 pub struct WaterMaterialPlugin {
@@ -196,6 +236,34 @@ impl AsBindGroup for WaterMaterial {
         image_assets: &RenderAssets<Image>,
         fallback_image: &FallbackImage,
     ) -> Result<UnpreparedBindGroup<Self::Data>, AsBindGroupError> {
+        // Generate cache key from texture handles
+        let mut hasher = DefaultHasher::new();
+        for handle in self.textures.iter().take(WATER_MATERIAL_NUM_TEXTURES) {
+            handle.id().hash(&mut hasher);
+        }
+        let cache_key = hasher.finish();
+
+        // Check cache
+        if let Some(_cached_bind_group) = WATER_BIND_GROUP_CACHE.get(&cache_key) {
+            WATER_CACHE_STATS.record_hit();
+            let (hits, misses, total_entries) = WATER_CACHE_STATS.get_stats();
+            let hit_rate = if hits + misses > 0 {
+                (hits as f64 / (hits + misses) as f64) * 100.0
+            } else {
+                0.0
+            };
+            info!("[WATER BIND GROUP CACHE] Hit! Total: {} unique, Hits: {}, Misses: {}, Hit rate: {:.1}%",
+                total_entries, hits, misses, hit_rate);
+            return Ok(UnpreparedBindGroup {
+                bindings: vec![],
+                data: (),
+            });
+        }
+
+        // Cache miss - create new bind group
+        WATER_CACHE_STATS.record_miss();
+        info!("[MATERIAL LIFECYCLE] Creating WaterMaterial bind group with {} textures (cache miss)", self.textures.len());
+
         let mut images = vec![];
         for handle in self.textures.iter().take(WATER_MATERIAL_NUM_TEXTURES) {
             match image_assets.get(handle) {
@@ -217,7 +285,7 @@ impl AsBindGroup for WaterMaterial {
             ..Default::default()
         });
 
-        let _bind_group = render_device.create_bind_group(
+        let bind_group = render_device.create_bind_group(
             "water_material_bind_group",
             layout,
             &[
@@ -231,6 +299,18 @@ impl AsBindGroup for WaterMaterial {
                 },
             ],
         );
+
+        // Store in cache
+        WATER_BIND_GROUP_CACHE.insert(cache_key, bind_group);
+
+        let (hits, misses, total_entries) = WATER_CACHE_STATS.get_stats();
+        let hit_rate = if hits + misses > 0 {
+            (hits as f64 / (hits + misses) as f64) * 100.0
+        } else {
+            0.0
+        };
+        info!("[WATER BIND GROUP CACHE] Created new entry. Total: {} unique, Hits: {}, Misses: {}, Hit rate: {:.1}%",
+            total_entries, hits, misses, hit_rate);
 
         Ok(UnpreparedBindGroup {
             bindings: vec![],

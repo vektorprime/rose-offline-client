@@ -1,4 +1,6 @@
 use std::num::NonZeroU32;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use bevy::{
     asset::{load_internal_asset, Handle, UntypedHandle, Asset, UntypedAssetId},
@@ -16,7 +18,7 @@ use bevy::{
         render_asset::RenderAssets,
         render_phase::SetItemPipeline,
         render_resource::{
-            AddressMode, AsBindGroup, AsBindGroupError, BindGroupEntry,
+            AddressMode, AsBindGroup, AsBindGroupError, BindGroup, BindGroupEntry,
             BindGroupLayout, BindGroupLayoutEntry, BindingResource,
             BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, FilterMode,
             UnpreparedBindGroup, RenderPipelineDescriptor, SamplerBindingType, SamplerDescriptor,
@@ -28,6 +30,9 @@ use bevy::{
     },
     utils::Uuid,
 };
+use dashmap::DashMap;
+use lazy_static::lazy_static;
+use log::info;
 
 use crate::render::{
     zone_lighting::{SetZoneLightingBindGroup, ZoneLightingUniformMeta},
@@ -45,6 +50,41 @@ pub const TERRAIN_MESH_ATTRIBUTE_TILE_INFO: MeshVertexAttribute =
     MeshVertexAttribute::new("Vertex_TileInfo", 3855645392, VertexFormat::Uint32);
 
 pub const TERRAIN_MATERIAL_MAX_TEXTURES: usize = 100;
+
+// Bind group cache for TerrainMaterial
+lazy_static! {
+    static ref TERRAIN_BIND_GROUP_CACHE: DashMap<u64, BindGroup> = DashMap::new();
+    static ref TERRAIN_CACHE_STATS: CacheStats = CacheStats::new();
+}
+
+struct CacheStats {
+    hits: std::sync::atomic::AtomicU64,
+    misses: std::sync::atomic::AtomicU64,
+}
+
+impl CacheStats {
+    fn new() -> Self {
+        Self {
+            hits: std::sync::atomic::AtomicU64::new(0),
+            misses: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    fn record_hit(&self) {
+        self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn record_miss(&self) {
+        self.misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn get_stats(&self) -> (u64, u64, usize) {
+        let hits = self.hits.load(std::sync::atomic::Ordering::Relaxed);
+        let misses = self.misses.load(std::sync::atomic::Ordering::Relaxed);
+        let total_entries = TERRAIN_BIND_GROUP_CACHE.len();
+        (hits, misses, total_entries)
+    }
+}
 
 #[derive(Default)]
 pub struct TerrainMaterialPlugin {
@@ -153,6 +193,34 @@ impl AsBindGroup for TerrainMaterial {
         images: &bevy::render::render_asset::RenderAssets<bevy::prelude::Image>,
         fallback_image: &bevy::render::texture::FallbackImage,
     ) -> Result<UnpreparedBindGroup<Self::Data>, AsBindGroupError> {
+        // Generate cache key from texture handles
+        let mut hasher = DefaultHasher::new();
+        for handle in self.textures.iter().take(TERRAIN_MATERIAL_MAX_TEXTURES) {
+            handle.id().hash(&mut hasher);
+        }
+        let cache_key = hasher.finish();
+
+        // Check cache
+        if let Some(cached_bind_group) = TERRAIN_BIND_GROUP_CACHE.get(&cache_key) {
+            TERRAIN_CACHE_STATS.record_hit();
+            let (hits, misses, total_entries) = TERRAIN_CACHE_STATS.get_stats();
+            let hit_rate = if hits + misses > 0 {
+                (hits as f64 / (hits + misses) as f64) * 100.0
+            } else {
+                0.0
+            };
+            info!("[TERRAIN BIND GROUP CACHE] Hit! Total: {} unique, Hits: {}, Misses: {}, Hit rate: {:.1}%",
+                total_entries, hits, misses, hit_rate);
+            return Ok(UnpreparedBindGroup {
+                bindings: vec![],
+                data: (),
+            });
+        }
+
+        // Cache miss - create new bind group
+        TERRAIN_CACHE_STATS.record_miss();
+        info!("[MATERIAL LIFECYCLE] Creating TerrainMaterial bind group with {} textures (cache miss)", self.textures.len());
+
         let mut images_vec = vec![];
         for handle in self.textures.iter().take(TERRAIN_MATERIAL_MAX_TEXTURES) {
             match images.get(handle) {
@@ -204,6 +272,18 @@ impl AsBindGroup for TerrainMaterial {
                 },
             ],
         );
+
+        // Store in cache
+        TERRAIN_BIND_GROUP_CACHE.insert(cache_key, bind_group);
+
+        let (hits, misses, total_entries) = TERRAIN_CACHE_STATS.get_stats();
+        let hit_rate = if hits + misses > 0 {
+            (hits as f64 / (hits + misses) as f64) * 100.0
+        } else {
+            0.0
+        };
+        info!("[TERRAIN BIND GROUP CACHE] Created new entry. Total: {} unique, Hits: {}, Misses: {}, Hit rate: {:.1}%",
+            total_entries, hits, misses, hit_rate);
 
         Ok(UnpreparedBindGroup {
             bindings: vec![],

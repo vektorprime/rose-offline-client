@@ -1,6 +1,8 @@
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, OnceLock, mpsc},
+    time::{Duration, Instant},
+    collections::{HashSet, HashMap},
 };
 use uuid::Uuid;
 
@@ -28,7 +30,7 @@ use bevy::{
 use bevy_rapier3d::prelude::{
     AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, RigidBody,
 };
-use log::warn;
+use log::{warn, info};
 use thiserror::Error;
 
 use rose_data::{NpcId, SkyboxData, WarpGateId, ZoneId, ZoneList};
@@ -99,6 +101,191 @@ pub struct ZoneLoadChannelSender(pub mpsc::Sender<(ZoneId, Result<ZoneLoaderAsse
 /// Channel receiver for receiving loaded zone data from async tasks
 #[derive(Resource)]
 pub struct ZoneLoadChannelReceiver(pub std::sync::Mutex<mpsc::Receiver<(ZoneId, Result<ZoneLoaderAsset, anyhow::Error>)>>);
+
+/// Resource for tracking memory and asset lifecycle
+#[derive(Resource, Default)]
+pub struct MemoryTrackingResource {
+    /// Count of mesh handles created
+    pub mesh_handles_created: usize,
+    /// Count of material handles created
+    pub material_handles_created: usize,
+    /// Count of texture handles created
+    pub texture_handles_created: usize,
+    /// Set of unique asset paths loaded
+    pub unique_asset_paths: HashSet<String>,
+    /// Count of duplicate asset requests
+    pub duplicate_asset_requests: usize,
+    /// Total entities spawned
+    pub entities_spawned: usize,
+    /// Total entities despawned
+    pub entities_despawned: usize,
+    /// Last summary log time
+    pub last_summary_time: Option<Instant>,
+}
+
+impl MemoryTrackingResource {
+    /// Log when a mesh handle is created
+    pub fn log_mesh_handle_created(&mut self, path: &str) {
+        self.mesh_handles_created += 1;
+        let is_duplicate = !self.unique_asset_paths.insert(path.to_string());
+        if is_duplicate {
+            self.duplicate_asset_requests += 1;
+            info!("[MEMORY TRACKING] Mesh handle REUSE detected: {} (total duplicates: {})", 
+                path, self.duplicate_asset_requests);
+        } else {
+            info!("[MEMORY TRACKING] Mesh handle created: {} (total meshes: {})", 
+                path, self.mesh_handles_created);
+        }
+    }
+
+    /// Log when a material handle is created
+    pub fn log_material_handle_created(&mut self, path: &str, texture_count: usize) {
+        self.material_handles_created += 1;
+        info!("[MEMORY TRACKING] Material handle created: {} with {} textures (total materials: {})", 
+            path, texture_count, self.material_handles_created);
+    }
+
+    /// Log when a texture handle is created
+    pub fn log_texture_handle_created(&mut self, path: &str) {
+        self.texture_handles_created += 1;
+        let is_duplicate = !self.unique_asset_paths.insert(path.to_string());
+        if is_duplicate {
+            self.duplicate_asset_requests += 1;
+            info!("[MEMORY TRACKING] Texture handle REUSE detected: {} (total duplicates: {})", 
+                path, self.duplicate_asset_requests);
+        } else {
+            info!("[MEMORY TRACKING] Texture handle created: {} (total textures: {})", 
+                path, self.texture_handles_created);
+        }
+    }
+
+    /// Log when an entity is spawned
+    pub fn log_entity_spawned(&mut self, entity_type: &str, asset_count: usize) {
+        self.entities_spawned += 1;
+        info!("[MEMORY TRACKING] Entity spawned: type={}, assets={} (total entities: {})", 
+            entity_type, asset_count, self.entities_spawned);
+    }
+
+    /// Log when an entity is despawned
+    pub fn log_entity_despawned(&mut self) {
+        self.entities_despawned += 1;
+        info!("[MEMORY TRACKING] Entity despawned (total despawned: {})", self.entities_despawned);
+    }
+
+    /// Log a summary of memory statistics
+    pub fn log_summary(&mut self) {
+        let now = Instant::now();
+        let should_log = self.last_summary_time
+            .map_or(true, |last| now.duration_since(last) >= Duration::from_secs(5));
+        
+        if should_log {
+            self.last_summary_time = Some(now);
+            info!("[MEMORY TRACKING] ==========================================");
+            info!("[MEMORY TRACKING] MEMORY SUMMARY (every 5 seconds)");
+            info!("[MEMORY TRACKING] ==========================================");
+            info!("[MEMORY TRACKING] Mesh handles: {}", self.mesh_handles_created);
+            info!("[MEMORY TRACKING] Material handles: {}", self.material_handles_created);
+            info!("[MEMORY TRACKING] Texture handles: {}", self.texture_handles_created);
+            info!("[MEMORY TRACKING] Unique asset paths: {}", self.unique_asset_paths.len());
+            info!("[MEMORY TRACKING] Duplicate asset requests: {}", self.duplicate_asset_requests);
+            info!("[MEMORY TRACKING] Entities spawned: {}", self.entities_spawned);
+            info!("[MEMORY TRACKING] Entities despawned: {}", self.entities_despawned);
+            info!("[MEMORY TRACKING] Active entities: {}", self.entities_spawned - self.entities_despawned);
+            
+            // Warning if counts are growing without despawns
+            if self.entities_spawned > 0 && self.entities_despawned == 0 {
+                warn!("[MEMORY TRACKING] WARNING: {} entities spawned but 0 despawned - potential leak!", 
+                    self.entities_spawned);
+            }
+            
+            // Warning if many duplicate requests
+            if self.duplicate_asset_requests > 100 {
+                warn!("[MEMORY TRACKING] WARNING: {} duplicate asset requests detected - may indicate inefficient loading", 
+                    self.duplicate_asset_requests);
+            }
+            
+            info!("[MEMORY TRACKING] ==========================================");
+        }
+    }
+}
+
+/// Material cache to prevent duplicate material instances
+#[derive(Resource, Default)]
+pub struct MaterialCache {
+    terrain_materials: HashMap<String, Handle<TerrainMaterial>>,
+    water_materials: HashMap<String, Handle<WaterMaterial>>,
+    terrain_cache_hits: usize,
+    terrain_cache_misses: usize,
+    water_cache_hits: usize,
+    water_cache_misses: usize,
+}
+
+impl MaterialCache {
+    pub fn get_or_create_terrain_material<F>(
+        &mut self,
+        cache_key: String,
+        create_fn: F,
+    ) -> Handle<TerrainMaterial>
+    where
+        F: FnOnce() -> Handle<TerrainMaterial>,
+    {
+        if let Some(handle) = self.terrain_materials.get(&cache_key) {
+            self.terrain_cache_hits += 1;
+            log::info!("[MATERIAL CACHE] Terrain material cache HIT for key: {} (hits: {}, misses: {})",
+                cache_key, self.terrain_cache_hits, self.terrain_cache_misses);
+            handle.clone()
+        } else {
+            self.terrain_cache_misses += 1;
+            log::info!("[MATERIAL CACHE] Terrain material cache MISS for key: {} (hits: {}, misses: {})",
+                cache_key, self.terrain_cache_hits, self.terrain_cache_misses);
+            let handle = create_fn();
+            self.terrain_materials.insert(cache_key, handle.clone());
+            handle
+        }
+    }
+
+    pub fn get_or_create_water_material<F>(
+        &mut self,
+        cache_key: String,
+        create_fn: F,
+    ) -> Handle<WaterMaterial>
+    where
+        F: FnOnce() -> Handle<WaterMaterial>,
+    {
+        if let Some(handle) = self.water_materials.get(&cache_key) {
+            self.water_cache_hits += 1;
+            log::info!("[MATERIAL CACHE] Water material cache HIT for key: {} (hits: {}, misses: {})",
+                cache_key, self.water_cache_hits, self.water_cache_misses);
+            handle.clone()
+        } else {
+            self.water_cache_misses += 1;
+            log::info!("[MATERIAL CACHE] Water material cache MISS for key: {} (hits: {}, misses: {})",
+                cache_key, self.water_cache_hits, self.water_cache_misses);
+            let handle = create_fn();
+            self.water_materials.insert(cache_key, handle.clone());
+            handle
+        }
+    }
+
+    pub fn log_summary(&self) {
+        let terrain_total = self.terrain_cache_hits + self.terrain_cache_misses;
+        let water_total = self.water_cache_hits + self.water_cache_misses;
+        let terrain_hit_rate = if terrain_total > 0 {
+            (self.terrain_cache_hits as f32 / terrain_total as f32) * 100.0
+        } else {
+            0.0
+        };
+        let water_hit_rate = if water_total > 0 {
+            (self.water_cache_hits as f32 / water_total as f32) * 100.0
+        } else {
+            0.0
+        };
+        log::info!("[MATERIAL CACHE SUMMARY] Terrain: {} unique materials, {} hits, {} misses, {:.1}% hit rate",
+            self.terrain_materials.len(), self.terrain_cache_hits, self.terrain_cache_misses, terrain_hit_rate);
+        log::info!("[MATERIAL CACHE SUMMARY] Water: {} unique materials, {} hits, {} misses, {:.1}% hit rate",
+            self.water_materials.len(), self.water_cache_hits, self.water_cache_misses, water_hit_rate);
+    }
+}
 
 impl ZoneLoaderAsset {
     pub fn get_terrain_height(&self, x: f32, y: f32) -> f32 {
@@ -664,6 +851,8 @@ pub struct SpawnZoneParams<'w, 's> {
     pub object_materials: ResMut<'w, Assets<ObjectMaterial>>,
     pub water_materials: ResMut<'w, Assets<WaterMaterial>>,
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
+    pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
+    pub material_cache: ResMut<'w, MaterialCache>,
 }
 
 pub struct CachedZone {
@@ -684,6 +873,7 @@ pub struct LoadingZone {
     pub ready_frames: usize,
     pub loading_via_async_task: bool,  // Track if loading via async task vs AssetServer
     pub zone_id: Option<ZoneId>,  // Track zone_id for async-loaded zones
+    pub loading_start_time: Instant,  // Track when loading started
 }
 
 #[derive(Default)]
@@ -706,6 +896,15 @@ pub fn zone_loader_system(
     log::info!("[ZONE LOADER SYSTEM] zone_loader_system called");
     log::info!("[ZONE LOADER SYSTEM] Loading zones in queue: {}", loading_zones.len());
     log::info!("[ZONE LOADER SYSTEM] ===========================================");
+
+    // Log periodic memory summary
+    spawn_zone_params.memory_tracking.log_summary();
+
+    // Log periodic material cache summary
+    spawn_zone_params.material_cache.log_summary();
+
+    // Log periodic material cache summary
+    spawn_zone_params.material_cache.log_summary();
 
     // Check for loaded zones from async tasks via channel
     log::info!("[ZONE LOADER SYSTEM] Checking channel for loaded zones...");
@@ -789,23 +988,26 @@ pub fn zone_loader_system(
             log::info!("[ZONE LOADER SYSTEM] ===========================================");
             log::info!("[ZONE LOADER SYSTEM] Preparing to spawn async task for zone {}", zone_id.get());
             
-            // Check if AsyncComputeTaskPool is initialized
-            match AsyncComputeTaskPool::try_get() {
+            // Check if pool is initialized and get reference
+            let pool = match AsyncComputeTaskPool::try_get() {
                 Some(pool) => {
                     log::info!("[ZONE LOADER SYSTEM] AsyncComputeTaskPool is available, spawning async task");
+                    pool
                 }
                 None => {
                     log::error!("[ZONE LOADER SYSTEM] AsyncComputeTaskPool is NOT initialized! Cannot spawn async task!");
                     log::error!("[ZONE LOADER SYSTEM] This is likely why zones are not loading!");
+                    // DO NOT spawn the task - skip this zone and continue to next
+                    continue;
                 }
-            }
-            
+            };
+
             log::info!("[ZONE LOADER SYSTEM] Spawning async task to load zone {}", zone_id.get());
             log::info!("[ZONE LOADER SYSTEM] ===========================================");
-            
+
             // Spawn async task to load zone using AsyncComputeTaskPool
             // This is more appropriate for computational tasks like loading zones
-            let task = AsyncComputeTaskPool::get().spawn(async move {
+            let task = pool.spawn(async move {
                 log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
                 log::info!("[ZONE LOADER DIRECT TASK] Async task started for zone_id: {}", zone_id.get());
                 log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
@@ -856,6 +1058,7 @@ pub fn zone_loader_system(
                 ready_frames: 0,
                 loading_via_async_task: true,
                 zone_id: Some(zone_id),
+                loading_start_time: Instant::now(),  // Initialize start time
             });
             log::info!("[ZONE LOADER SYSTEM] Zone queued for async loading. Total loading zones: {}", loading_zones.len());
         } else if let Some(zone_entity) = zone_loader_cache.cache[zone_index]
@@ -879,6 +1082,7 @@ pub fn zone_loader_system(
                 ready_frames: 0,
                 loading_via_async_task: false,
                 zone_id: None,
+                loading_start_time: Instant::now(),  // Initialize start time
             });
             log::info!("[ZONE LOADER SYSTEM] LoadingZone added to queue. Total loading zones: {}", loading_zones.len());
         }
@@ -892,9 +1096,16 @@ pub fn zone_loader_system(
             LoadingZoneState::Loading => {
                 // Zones loaded via async task should stay in queue and wait for channel
                 if loading_zone.loading_via_async_task {
-                    // Zone is loading via async task - just wait for channel, don't remove from queue
                     let zone_path = loading_zone.handle.path().map(|p| p.to_string()).unwrap_or_else(|| "unknown".to_string());
-                    log::info!("[ZONE LOADER SYSTEM] Zone {} loading via async task, keeping in queue and waiting for channel", 
+
+                    // Check for timeout (30 seconds)
+                    if loading_zone.loading_start_time.elapsed() > Duration::from_secs(30) {
+                        log::error!("[ZONE LOADER SYSTEM] Zone {} loading timeout after 30s, removing from queue", zone_path);
+                        loading_zones.remove(index);
+                        continue;
+                    }
+
+                    log::info!("[ZONE LOADER SYSTEM] Zone {} loading via async task, keeping in queue and waiting for channel",
                         zone_path);
                     index += 1;
                     continue;
@@ -956,10 +1167,12 @@ pub fn zone_loader_system(
                     {
                         if let Some(spawned_entity) = cached_zone.spawned_entity.take()
                         {
+                            info!("[ASSET LIFECYCLE] Despawning zone entity: {:?}", spawned_entity);
                             spawn_zone_params
                                     .commands
                                     .entity(spawned_entity)
                                     .despawn_recursive();
+                            spawn_zone_params.memory_tracking.log_entity_despawned();
                         }
                     }
                     
@@ -1075,6 +1288,11 @@ pub fn zone_loaded_from_vfs_system(
     mut debug_inspector_state: ResMut<DebugInspector>,
     mut spawn_zone_params: SpawnZoneParams,
 ) {
+    // Log periodic memory summary
+    spawn_zone_params.memory_tracking.log_summary();
+
+    // Log periodic material cache summary
+    spawn_zone_params.material_cache.log_summary();
     // Process only one event per system call to avoid borrow issues
     if let Some(event) = events.read().next() {
         log::info!("[ZONE LOADED FROM VFS] ===========================================");
@@ -1120,6 +1338,10 @@ pub fn zone_loaded_from_vfs_system(
                 // Update debug inspector
                 debug_inspector_state.entity = Some(entity);
                 
+                // Log memory summary after zone spawn
+                info!("[MEMORY TRACKING] Zone {} loaded successfully", event.zone_id.get());
+                spawn_zone_params.memory_tracking.log_summary();
+                
                 log::info!("[ZONE LOADED FROM VFS] ===========================================");
             }
             Err(e) => {
@@ -1158,6 +1380,8 @@ pub fn spawn_zone(
         object_materials,
         water_materials,
         zone_loader_assets: _,
+        memory_tracking,
+        ref mut material_cache,
     } = params;
 
     let zone_list_entry = game_data
@@ -1172,7 +1396,9 @@ pub fn spawn_zone(
             break;
         }
 
-        tile_textures.push(asset_server.load(path));
+        let handle = asset_server.load(path);
+        memory_tracking.log_texture_handle_created(path);
+        tile_textures.push(handle);
     }
     log::info!("[SPAWN ZONE] Loaded {} tile textures", tile_textures.len());
     log::info!("[MEMORY] Tile texture handles created: {}", tile_textures.len());
@@ -1180,14 +1406,21 @@ pub fn spawn_zone(
     let water_material = {
         let mut water_material_textures = Vec::with_capacity(25);
         for i in 1..=25 {
-            water_material_textures
-                .push(asset_server.load(format!("3DDATA/JUNON/WATER/OCEAN01_{:02}.DDS", i)));
+            let path = format!("3DDATA/JUNON/WATER/OCEAN01_{:02}.DDS", i);
+            let handle = asset_server.load(&path);
+            memory_tracking.log_texture_handle_created(&path);
+            water_material_textures.push(handle);
         }
 
         let texture_count = water_material_textures.len();
-        let material = water_materials.add(WaterMaterial {
-            textures: water_material_textures,
+        // Use material cache for water materials
+        let cache_key = "water_ocean01".to_string();
+        let material = material_cache.get_or_create_water_material(cache_key, || {
+            water_materials.add(WaterMaterial {
+                textures: water_material_textures,
+            })
         });
+        info!("[MEMORY TRACKING] Water material created with {} textures", texture_count);
         log::info!("[SPAWN ZONE] Water material created with {} textures", texture_count);
         log::info!("[MEMORY] Water material handle created");
         material
@@ -1206,6 +1439,8 @@ pub fn spawn_zone(
             GlobalTransform::default(),
         ))
         .id();
+    info!("[ASSET LIFECYCLE] Zone entity spawned: {:?} (zone_id: {})", zone_entity, zone_data.zone_id.get());
+    memory_tracking.log_entity_spawned("Zone", 0);
     log::info!("[SPAWN ZONE] Zone entity spawned: {:?}", zone_entity);
     log::info!("[MEMORY] Zone entity created: {:?}", zone_entity);
 
@@ -1215,6 +1450,8 @@ pub fn spawn_zone(
     {
         log::info!("[SPAWN ZONE] Spawning skybox");
         let skybox_entity = spawn_skybox(commands, asset_server, sky_materials, skybox_data);
+        info!("[ASSET LIFECYCLE] Skybox entity spawned: {:?}", skybox_entity);
+        memory_tracking.log_entity_spawned("Skybox", 2);
         log::info!("[SPAWN ZONE] Skybox entity spawned: {:?}", skybox_entity);
         log::info!("[MEMORY] Skybox entity created: {:?}", skybox_entity);
         commands.entity(zone_entity).add_child(skybox_entity);
@@ -1243,6 +1480,7 @@ pub fn spawn_zone(
                     &tile_textures,
                     zone_data,
                     block_data,
+                    material_cache,
                 );
                 commands.entity(zone_entity).add_child(terrain_entity);
                 terrain_count += 1;
@@ -1430,8 +1668,11 @@ pub fn spawn_zone(
     log::info!("[SPAWN ZONE] Animated objects: {}", animated_object_count);
     log::info!("[SPAWN ZONE] Effect objects: {}", effect_object_count);
     log::info!("[SPAWN ZONE] Sound objects: {}", sound_object_count);
-    log::info!("[SPAWN ZONE] Total entities spawned: {}", terrain_count + water_count + event_object_count + warp_object_count + cnst_object_count + deco_object_count + animated_object_count + effect_object_count + sound_object_count);
+    let total_entities = terrain_count + water_count + event_object_count + warp_object_count + cnst_object_count + deco_object_count + animated_object_count + effect_object_count + sound_object_count;
+    log::info!("[SPAWN ZONE] Total entities spawned: {}", total_entities);
     log::info!("[MEMORY] Zone loading assets: {}", zone_loading_assets.len());
+    log::info!("[MEMORY TRACKING] Zone spawn complete - logging memory summary");
+    memory_tracking.log_summary();
     log::info!("[SPAWN ZONE] ===========================================");
 
     Ok((zone_entity, zone_loading_assets))
@@ -1449,12 +1690,20 @@ fn spawn_skybox(
     let texture_day_path = skybox_data.texture_day.path().to_string_lossy().into_owned();
     let texture_night_path = skybox_data.texture_night.path().to_string_lossy().into_owned();
 
+    let mesh_handle = asset_server.load::<Mesh>(&mesh_path);
+    let texture_day_handle = asset_server.load::<Image>(&texture_day_path);
+    let texture_night_handle = asset_server.load::<Image>(&texture_night_path);
+
+    info!("[MEMORY TRACKING] Skybox mesh handle created: {}", mesh_path);
+    info!("[MEMORY TRACKING] Skybox texture day handle created: {}", texture_day_path);
+    info!("[MEMORY TRACKING] Skybox texture night handle created: {}", texture_night_path);
+
     commands
         .spawn((
-            asset_server.load::<Mesh>(mesh_path),
+            mesh_handle,
             sky_materials.add(SkyMaterial {
-                texture_day: Some(asset_server.load::<Image>(texture_day_path)),
-                texture_night: Some(asset_server.load::<Image>(texture_night_path)),
+                texture_day: Some(texture_day_handle),
+                texture_night: Some(texture_night_handle),
             }),
             Transform::from_scale(Vec3::splat(SKYBOX_MODEL_SCALE)),
             GlobalTransform::default(),
@@ -1475,6 +1724,7 @@ fn spawn_terrain(
     tile_textures: &Vec<Handle<Image>>,
     zone_data: &ZoneLoaderAsset,
     block_data: &ZoneLoaderBlock,
+    material_cache: &mut MaterialCache,
 ) -> Entity {
     log::info!("[SPAWN TERRAIN] Spawning terrain block {}_{}", block_data.block_x, block_data.block_y);
     let offset_x = 160.0 * block_data.block_x as f32;
@@ -1558,6 +1808,21 @@ fn spawn_terrain(
             }
         }
     }
+
+    // Create cache key from sorted texture indices (excluding lightmap which is unique per block)
+    let mut texture_indices: Vec<usize> = terrain_material.textures.iter()
+        .skip(1) // Skip lightmap at index 0
+        .filter_map(|handle| {
+            // Find the index of this texture in tile_textures
+            tile_textures.iter().position(|t| t == handle)
+        })
+        .collect();
+    texture_indices.sort();
+    texture_indices.dedup();
+    let cache_key = texture_indices.iter()
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join("|");
 
     for tile_x in 0..16 {
         for tile_y in 0..16 {
@@ -1667,6 +1932,12 @@ fn spawn_terrain(
     }
 
     let texture_count = terrain_material.textures.len();
+
+    // Use material cache to avoid duplicate materials
+    let material_handle = material_cache.get_or_create_terrain_material(cache_key.clone(), || {
+        terrain_materials.add(terrain_material)
+    });
+
     let terrain_entity = commands
         .spawn((
             ZoneObject::Terrain(ZoneObjectTerrain {
@@ -1674,7 +1945,7 @@ fn spawn_terrain(
                 block_y: block_data.block_y as u32,
             }),
             meshes.add(mesh),
-            terrain_materials.add(terrain_material),
+            material_handle,
             Transform::from_xyz(offset_x, 0.0, -offset_y),
             GlobalTransform::default(),
             Visibility::default(),
@@ -1693,6 +1964,8 @@ fn spawn_terrain(
             ),
         ))
         .id();
+    info!("[ASSET LIFECYCLE] Terrain entity spawned: {:?} block {}_{} with {} textures",
+        terrain_entity, block_data.block_x, block_data.block_y, texture_count);
     log::info!("[SPAWN TERRAIN] Terrain entity created: {:?} at position ({}, 0, {})",
         terrain_entity, offset_x, offset_y);
     log::info!("[MEMORY] Terrain material created for block {}_{} with {} textures",
@@ -1747,7 +2020,7 @@ fn spawn_water(
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
 
-    commands
+    let water_entity = commands
         .spawn((
             ZoneObject::Water,
             meshes.add(mesh),
@@ -1763,7 +2036,10 @@ fn spawn_water(
             Collider::trimesh(collider_verts, collider_indices),
             CollisionGroups::new(COLLISION_GROUP_ZONE_WATER, COLLISION_FILTER_INSPECTABLE),
         ))
-        .id()
+        .id();
+    
+    info!("[ASSET LIFECYCLE] Water entity spawned: {:?}", water_entity);
+    water_entity
 }
 
 fn spawn_object(
@@ -1855,9 +2131,9 @@ fn spawn_object(
                 let mesh_path = zsc.meshes[mesh_id].path().to_string_lossy().into_owned();
                 let mesh_path_log = mesh_path.clone();
                 log::info!("[SPAWN OBJECT] Loading mesh: {}", mesh_path_log);
-                let handle = asset_server.load(mesh_path);
+                let handle = asset_server.load(&mesh_path);
                 mesh_cache.insert(mesh_id, Some(handle.clone()));
-                log::info!("[MEMORY] Mesh handle created: {}", mesh_path_log);
+                info!("[MEMORY TRACKING] Mesh handle created: {}", mesh_path_log);
                 handle
             });
             zone_loading_assets.push(UntypedHandle::from(mesh.clone()));
@@ -1871,7 +2147,13 @@ fn spawn_object(
                 lit_object.parts.get(part_index)
             });
             let lightmap_texture =
-                lit_part.map(|lit_part| asset_server.load(lightmap_path.join(&lit_part.filename)));
+                lit_part.map(|lit_part| {
+                    let path = lightmap_path.join(&lit_part.filename);
+                    let path_str = path.to_string_lossy().into_owned();
+                    let handle = asset_server.load(&path_str);
+                    info!("[MEMORY TRACKING] Lightmap texture handle created: {}", path_str);
+                    handle
+                });
             let (lightmap_uv_offset, lightmap_uv_scale) = lit_part
                 .map(|lit_part| {
                     let scale = 1.0 / lit_part.parts_per_row as f32;
@@ -1891,8 +2173,13 @@ fn spawn_object(
                 let material_path = zsc_material.path.path().to_string_lossy().into_owned();
                 let material_path_log = material_path.clone();
                 log::info!("[SPAWN OBJECT] Creating material: {}", material_path_log);
+                let base_texture_handle = asset_server.load(&material_path);
+                info!("[MEMORY TRACKING] Object material base texture handle created: {}", material_path_log);
+
+                let lightmap_count = lightmap_texture.as_ref().is_some() as usize;
+
                 let handle = object_materials.add(ObjectMaterial {
-                    base_texture: Some(asset_server.load(material_path)),
+                    base_texture: Some(base_texture_handle),
                     lightmap_texture,
                     alpha_value: if zsc_material.alpha != 1.0 {
                         Some(zsc_material.alpha)
@@ -1917,7 +2204,9 @@ fn spawn_object(
                 });
 
                 material_cache.insert(material_id, Some(handle.clone()));
-                log::info!("[MEMORY] Material handle created: {}", material_path_log);
+                info!("[MEMORY TRACKING] Material handle created: {} (textures: {})",
+                    material_path_log,
+                    1 + lightmap_count + zsc_material.specular_enabled as usize);
                 handle
             });
 
@@ -2002,9 +2291,12 @@ fn spawn_object(
 
     log::info!("[SPAWN OBJECT] Object entity created: {:?} with {} parts",
         object_entity, part_entities.len());
+    let mesh_count = mesh_cache.iter().filter(|m| m.is_some()).count();
+    let material_count = material_cache.iter().filter(|m| m.is_some()).count();
+    info!("[MEMORY TRACKING] Object entity created with {} mesh handles, {} material handles",
+        mesh_count, material_count);
     log::info!("[MEMORY] Object entity created with {} mesh handles, {} material handles",
-        mesh_cache.iter().filter(|m| m.is_some()).count(),
-        material_cache.iter().filter(|m| m.is_some()).count());
+        mesh_count, material_count);
 
     for object_effect in object.effects.iter() {
         let effect_transform = Transform::default()
@@ -2104,9 +2396,26 @@ fn spawn_animated_object(
             object_instance.scale.y,
         ));
 
+    let mesh_path_str = mesh_path.clone();
+    let texture_path_str = texture_path.clone();
+    let motion_path_str = motion_path.clone();
+    
     let mesh: Handle<Mesh> = asset_server.load(&mesh_path);
+    let texture_handle = asset_server.load(&texture_path);
+    let motion_path_buf = ZmoTextureAssetLoader::convert_path(&motion_path);
+    let motion_texture_handle = asset_server.load(ZmoTextureAssetLoader::convert_path_texture(&motion_path));
+    let motion_handle = asset_server.load(motion_path_buf.to_string_lossy().into_owned());
+    
+    // Log asset creation
+    info!("[MEMORY TRACKING] Animated object mesh handle created: {}", mesh_path_str);
+    info!("[MEMORY TRACKING] Animated object texture handle created: {}", texture_path_str);
+    info!("[MEMORY TRACKING] Animated object motion texture handle created: {}",
+        ZmoTextureAssetLoader::convert_path_texture(&motion_path));
+    info!("[MEMORY TRACKING] Animated object motion handle created: {}",
+        motion_path_buf.display());
+    
     let material = effect_mesh_materials.add(EffectMeshMaterial {
-        base_texture: Some(asset_server.load(&texture_path)),
+        base_texture: Some(texture_handle),
         alpha_enabled,
         alpha_test: alpha_test_enabled,
         two_sided,
@@ -2115,12 +2424,12 @@ fn spawn_animated_object(
         src_blend_factor: decode_blend_factor(src_blend_factor),
         dst_blend_factor: decode_blend_factor(dst_blend_factor),
         blend_op: decode_blend_op(blend_op),
-        animation_texture: Some(
-            asset_server.load(ZmoTextureAssetLoader::convert_path_texture(&motion_path)),
-        ),
+        animation_texture: Some(motion_texture_handle.clone()),
     });
 
-    commands
+    info!("[MEMORY TRACKING] Animated object material created with 3 textures (base, motion texture, motion)");
+
+    let animated_entity = commands
         .spawn((
             ZoneObject::AnimatedObject(ZoneObjectAnimatedObject {
                 mesh_path: mesh_path.to_string(),
@@ -2130,10 +2439,7 @@ fn spawn_animated_object(
             mesh,
             material,
             EffectMeshAnimationRenderState::default(),
-            MeshAnimation::repeat(
-                asset_server.load(ZmoTextureAssetLoader::convert_path(motion_path)),
-                None,
-            ),
+            MeshAnimation::repeat(motion_handle, None),
             object_transform,
             NoFrustumCulling, // AABB culling is broken for mesh animations
             NotShadowCaster,
@@ -2144,7 +2450,10 @@ fn spawn_animated_object(
             AsyncCollider(ComputedColliderShape::TriMesh),
             CollisionGroups::new(COLLISION_GROUP_ZONE_OBJECT, COLLISION_FILTER_INSPECTABLE),
         ))
-        .id()
+        .id();
+    
+    info!("[ASSET LIFECYCLE] Animated object entity spawned: {:?}", animated_entity);
+    animated_entity
 }
 
 fn spawn_effect_object(
@@ -2170,6 +2479,9 @@ fn spawn_effect_object(
         ))
         .with_scale(Vec3::new(object.scale.x, object.scale.z, object.scale.y));
 
+    let effect_path_str = effect_object.effect_path.path().to_string_lossy().to_string();
+    info!("[ASSET LIFECYCLE] Spawning effect object: {}", effect_path_str);
+
     let effect_object_entity = commands
         .spawn((
             ZoneObject::EffectObject {
@@ -2187,6 +2499,8 @@ fn spawn_effect_object(
             InheritedVisibility::default(),
         ))
         .id();
+    
+    info!("[ASSET LIFECYCLE] Effect object entity spawned: {:?}", effect_object_entity);
 
     spawn_effect(
         &vfs_resource.vfs,
@@ -2222,13 +2536,16 @@ fn spawn_sound_object(
         ))
         .with_scale(Vec3::new(object.scale.x, object.scale.z, object.scale.y));
 
+    let sound_path_str = sound_object.sound_path.path().to_string_lossy().to_string();
+    info!("[ASSET LIFECYCLE] Spawning sound object: {}", sound_path_str);
+
     let effect_object_entity = commands
         .spawn((
             ZoneObject::SoundObject {
                 ifo_object_id,
-                sound_path: sound_object.sound_path.path().to_string_lossy().to_string(),
+                sound_path: sound_path_str.clone(),
             },
-            SpatialSound::new_repeating(asset_server.load(sound_object.sound_path.path().to_string_lossy().to_string())),
+            SpatialSound::new_repeating(asset_server.load(&sound_path_str)),
             SoundRadius::new(sound_object.range as f32 / 10.0),
             object_transform,
             GlobalTransform::from(object_transform),
@@ -2237,6 +2554,7 @@ fn spawn_sound_object(
             InheritedVisibility::default(),
         ))
         .id();
-
+    
+    info!("[ASSET LIFECYCLE] Sound object entity spawned: {:?}", effect_object_entity);
     effect_object_entity
 }
