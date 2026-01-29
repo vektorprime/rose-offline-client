@@ -96,7 +96,7 @@ pub fn model_viewer_enter_system(
     // Reset ambient light
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
-        brightness: 1.0,
+        brightness: 80.0,  // Bevy 0.13 requires much higher values (was ~1.0 in 0.12)
     });
 
     // Open relevant debug windows

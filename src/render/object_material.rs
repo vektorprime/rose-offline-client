@@ -1,6 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
 use bevy::{
     asset::{Asset, Handle, UntypedAssetId, UntypedHandle, load_internal_asset},
     ecs::{
@@ -18,7 +15,7 @@ use bevy::{
         App, Component, FromWorld, Material, MaterialPlugin, Mesh, Plugin,
         Vec3, With, World,
     },
-    reflect::Reflect,
+    reflect::{Reflect, TypePath},
     render::{
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         mesh::{GpuBufferInfo, MeshVertexBufferLayout},
@@ -27,17 +24,15 @@ use bevy::{
             PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
         },
         render_resource::{
-            AsBindGroup, AsBindGroupError, BindGroup, BindGroupLayout, BlendComponent, BlendFactor, BlendOperation, BlendState, CompareFunction, RenderPipelineDescriptor, Shader, ShaderDefVal, ShaderRef, SpecializedMeshPipelineError, encase::ShaderType, UnpreparedBindGroup
+            AsBindGroup, AsBindGroupError, AsBindGroupShaderType, BindGroupLayout, BlendComponent, BlendFactor, BlendOperation, BlendState, CompareFunction, 
+            RenderPipelineDescriptor, Shader, ShaderDefVal, ShaderRef, SpecializedMeshPipelineError,
+            BindingType, TextureSampleType, TextureViewDimension, SamplerBindingType, ShaderStages, BufferBindingType,
         },
         renderer::RenderDevice,
-        texture::{Image, FallbackImage},
+        texture::Image,
     },
     utils::Uuid,
 };
-use dashmap::DashMap;
-use lazy_static::lazy_static;
-use log::info;
-use encase;
 
 use rose_file_readers::{ZscMaterialBlend, ZscMaterialGlow};
 
@@ -46,42 +41,7 @@ use crate::render::{
     MESH_ATTRIBUTE_UV_1,
 };
 
-use std::any::TypeId;
-
-// Bind group cache for ObjectMaterial
-lazy_static! {
-    static ref OBJECT_BIND_GROUP_CACHE: DashMap<u64, BindGroup> = DashMap::new();
-    static ref OBJECT_CACHE_STATS: CacheStats = CacheStats::new();
-}
-
-struct CacheStats {
-    hits: std::sync::atomic::AtomicU64,
-    misses: std::sync::atomic::AtomicU64,
-}
-
-impl CacheStats {
-    fn new() -> Self {
-        Self {
-            hits: std::sync::atomic::AtomicU64::new(0),
-            misses: std::sync::atomic::AtomicU64::new(0),
-        }
-    }
-
-    fn record_hit(&self) {
-        self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn record_miss(&self) {
-        self.misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    fn get_stats(&self) -> (u64, u64, usize) {
-        let hits = self.hits.load(std::sync::atomic::Ordering::Relaxed);
-        let misses = self.misses.load(std::sync::atomic::Ordering::Relaxed);
-        let total_entries = OBJECT_BIND_GROUP_CACHE.len();
-        (hits, misses, total_entries)
-    }
-}
+use std::any::TypeId; 
 
 pub const OBJECT_MATERIAL_SHADER_HANDLE: UntypedHandle =
     UntypedHandle::Weak(UntypedAssetId::Uuid {
@@ -96,6 +56,8 @@ pub struct ObjectMaterialPlugin {
 
 impl Plugin for ObjectMaterialPlugin {
     fn build(&self, app: &mut App) {
+        bevy::log::info!("[OBJECT MATERIAL] Building ObjectMaterialPlugin, prepass_enabled={}", self.prepass_enabled);
+        
         // Load the internal asset using the Bevy 0.13 API
         load_internal_asset!(
             app,
@@ -103,17 +65,19 @@ impl Plugin for ObjectMaterialPlugin {
             "shaders/object_material.wgsl",
             bevy::render::render_resource::Shader::from_wgsl
         );
+        bevy::log::info!("[OBJECT MATERIAL] Shader loaded successfully");
 
         app.add_plugins(ExtractComponentPlugin::<ObjectMaterialClipFace>::extract_visible());
-
-        app.register_type::<ObjectMaterial>();
-
+        bevy::log::info!("[OBJECT MATERIAL] ExtractComponentPlugin<ObjectMaterialClipFace> added");
+ 
         app.add_plugins(MaterialPlugin::<ObjectMaterial> {
             prepass_enabled: self.prepass_enabled,
             ..Default::default()
         });
+        bevy::log::info!("[OBJECT MATERIAL] MaterialPlugin<ObjectMaterial> added");
 
         app.register_type::<ObjectMaterialClipFace>();
+        bevy::log::info!("[OBJECT MATERIAL] ObjectMaterialPlugin build complete");
     }
 }
 
@@ -209,29 +173,34 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Clone, ShaderType)]
+/// Uniform data for ObjectMaterial - matches the shader layout
+/// This is used internally by the AsBindGroup implementation
+#[derive(Clone, Copy, Debug, Default, Reflect, bevy::render::render_resource::encase::ShaderType)]
 pub struct ObjectMaterialUniformData {
     pub flags: u32,
     pub alpha_cutoff: f32,
     pub alpha_value: f32,
-    pub lightmap_uv_offset: Vec2,
+    pub lightmap_uv_offset_x: f32,
+    pub lightmap_uv_offset_y: f32,
     pub lightmap_uv_scale: f32,
+    // Padding to ensure 16-byte alignment
+    pub _padding: f32,
 }
 
-impl From<&ObjectMaterial> for ObjectMaterialUniformData {
-    fn from(material: &ObjectMaterial) -> ObjectMaterialUniformData {
+impl AsBindGroupShaderType<ObjectMaterialUniformData> for ObjectMaterial {
+    fn as_bind_group_shader_type(&self, _images: &RenderAssets<Image>) -> ObjectMaterialUniformData {
         let mut flags = ObjectMaterialFlags::NONE;
         let mut alpha_cutoff = 0.5;
         let mut alpha_value = 1.0;
 
-        if material.specular_texture.is_some() {
+        if self.specular_texture.is_some() {
             flags |= ObjectMaterialFlags::ALPHA_MODE_OPAQUE | ObjectMaterialFlags::SPECULAR;
             alpha_cutoff = 1.0;
         } else {
-            if material.alpha_enabled {
+            if self.alpha_enabled {
                 flags |= ObjectMaterialFlags::ALPHA_MODE_BLEND;
 
-                if let Some(alpha_ref) = material.alpha_test {
+                if let Some(alpha_ref) = self.alpha_test {
                     flags |= ObjectMaterialFlags::ALPHA_MODE_MASK;
                     alpha_cutoff = alpha_ref;
                 }
@@ -239,7 +208,7 @@ impl From<&ObjectMaterial> for ObjectMaterialUniformData {
                 flags |= ObjectMaterialFlags::ALPHA_MODE_OPAQUE;
             }
 
-            if let Some(material_alpha_value) = material.alpha_value {
+            if let Some(material_alpha_value) = self.alpha_value {
                 if material_alpha_value == 1.0 {
                     flags |= ObjectMaterialFlags::ALPHA_MODE_OPAQUE;
                 } else {
@@ -253,8 +222,10 @@ impl From<&ObjectMaterial> for ObjectMaterialUniformData {
             flags: flags.bits(),
             alpha_cutoff,
             alpha_value,
-            lightmap_uv_offset: material.lightmap_uv_offset,
-            lightmap_uv_scale: material.lightmap_uv_scale,
+            lightmap_uv_offset_x: self.lightmap_uv_offset.x,
+            lightmap_uv_offset_y: self.lightmap_uv_offset.y,
+            lightmap_uv_scale: self.lightmap_uv_scale,
+            _padding: 0.0,
         }
     }
 }
@@ -306,13 +277,24 @@ impl From<ZscMaterialGlow> for ObjectMaterialGlow {
     }
 }
 
-#[derive(Asset, Debug, Clone, Reflect)]
+#[derive(Asset, AsBindGroup, Debug, Clone, Reflect)]
+#[bind_group_data(ObjectMaterialKey)]
+#[uniform(0, ObjectMaterialUniformData)]
 pub struct ObjectMaterial {
+    #[texture(1)]
+    #[sampler(2)]
     pub base_texture: Option<Handle<Image>>,
+
+    #[texture(3)]
+    #[sampler(4)]
     pub lightmap_texture: Option<Handle<Image>>,
+
+    #[texture(5)]
+    #[sampler(6)]
+    pub specular_texture: Option<Handle<Image>>,
+
     pub lightmap_uv_offset: Vec2,
     pub lightmap_uv_scale: f32,
-    pub specular_texture: Option<Handle<Image>>,
     pub alpha_value: Option<f32>,
     pub alpha_enabled: bool,
     pub alpha_test: Option<f32>,
@@ -358,19 +340,9 @@ impl Material for ObjectMaterial {
     }
 
     fn alpha_mode(&self) -> bevy::prelude::AlphaMode {
-        // Count texture handles for logging
-        let texture_count = [
-            self.base_texture.is_some(),
-            self.lightmap_texture.is_some(),
-            self.specular_texture.is_some(),
-        ].iter().filter(|&&x| x).count();
-
-        info!("[MATERIAL LIFECYCLE] ObjectMaterial alpha_mode called with {} textures (base: {}, lightmap: {}, specular: {})",
-            texture_count,
-            self.base_texture.is_some(),
-            self.lightmap_texture.is_some(),
-            self.specular_texture.is_some());
-
+        // CRITICAL FIX: Remove excessive logging that was causing performance issues
+        // The alpha_mode method is called frequently during rendering and should be fast
+        
         let mut alpha_mode;
 
         if self.specular_texture.is_some() {
@@ -476,280 +448,6 @@ impl Material for ObjectMaterial {
         }
 
         Ok(())
-    }
-}
-
-impl AsBindGroup for ObjectMaterial {
-    type Data = ObjectMaterialKey;
-
-    fn unprepared_bind_group(
-        &self,
-        layout: &BindGroupLayout,
-        render_device: &RenderDevice,
-        images: &RenderAssets<Image>,
-        fallback_image: &FallbackImage,
-    ) -> Result<UnpreparedBindGroup<Self::Data>, AsBindGroupError> {
-        // Generate cache key from texture handles and material properties
-        let mut hasher = DefaultHasher::new();
-
-        // Log texture handle IDs for debugging
-        let base_id = self.base_texture.as_ref().map(|h| h.id());
-        let lightmap_id = self.lightmap_texture.as_ref().map(|h| h.id());
-        let specular_id = self.specular_texture.as_ref().map(|h| h.id());
-
-        info!("[CACHE KEY DEBUG] Texture IDs - base: {:?}, lightmap: {:?}, specular: {:?}",
-            base_id, lightmap_id, specular_id);
-
-        if let Some(ref handle) = self.base_texture {
-            handle.id().hash(&mut hasher);
-        }
-        if let Some(ref handle) = self.lightmap_texture {
-            handle.id().hash(&mut hasher);
-        }
-        if let Some(ref handle) = self.specular_texture {
-            handle.id().hash(&mut hasher);
-        }
-
-        // Log material properties for debugging
-        info!("[CACHE KEY DEBUG] Material properties - alpha_enabled: {}, alpha_value: {:?}, alpha_test: {:?}, two_sided: {}, z_test: {}, z_write: {}, skinned: {}, blend: {:?}",
-            self.alpha_enabled, self.alpha_value, self.alpha_test, self.two_sided, self.z_test_enabled, self.z_write_enabled, self.skinned, self.blend);
-
-        info!("[CACHE KEY DEBUG] UV properties - offset: ({}, {}), scale: {}",
-            self.lightmap_uv_offset.x, self.lightmap_uv_offset.y, self.lightmap_uv_scale);
-
-        // Hash other material properties
-        if let Some(alpha_value) = self.alpha_value {
-            alpha_value.to_bits().hash(&mut hasher);
-        }
-        self.alpha_enabled.hash(&mut hasher);
-        if let Some(alpha_test) = self.alpha_test {
-            alpha_test.to_bits().hash(&mut hasher);
-        }
-        self.two_sided.hash(&mut hasher);
-        self.z_test_enabled.hash(&mut hasher);
-        self.z_write_enabled.hash(&mut hasher);
-        self.skinned.hash(&mut hasher);
-        self.blend.hash(&mut hasher);
-        if let Some(ref glow) = self.glow {
-            match glow {
-                ObjectMaterialGlow::Simple(v) => {
-                    v.to_array().iter().for_each(|x| x.to_bits().hash(&mut hasher));
-                    0u8.hash(&mut hasher);
-                }
-                ObjectMaterialGlow::Light(v) => {
-                    v.to_array().iter().for_each(|x| x.to_bits().hash(&mut hasher));
-                    1u8.hash(&mut hasher);
-                }
-                ObjectMaterialGlow::Texture(v) => {
-                    v.to_array().iter().for_each(|x| x.to_bits().hash(&mut hasher));
-                    2u8.hash(&mut hasher);
-                }
-                ObjectMaterialGlow::TextureLight(v) => {
-                    v.to_array().iter().for_each(|x| x.to_bits().hash(&mut hasher));
-                    3u8.hash(&mut hasher);
-                }
-                ObjectMaterialGlow::Alpha(v) => {
-                    v.to_array().iter().for_each(|x| x.to_bits().hash(&mut hasher));
-                    4u8.hash(&mut hasher);
-                }
-            }
-        }
-        self.lightmap_uv_offset.to_array().iter().for_each(|x| x.to_bits().hash(&mut hasher));
-        self.lightmap_uv_scale.to_bits().hash(&mut hasher);
-
-        let cache_key = hasher.finish();
-
-        // Log the generated cache key
-        info!("[CACHE KEY DEBUG] Generated cache key: 0x{:016x}", cache_key);
-
-        // Check cache
-        if let Some(_cached_bind_group) = OBJECT_BIND_GROUP_CACHE.get(&cache_key) {
-            OBJECT_CACHE_STATS.record_hit();
-            let (hits, misses, total_entries) = OBJECT_CACHE_STATS.get_stats();
-            let hit_rate = if hits + misses > 0 {
-                (hits as f64 / (hits + misses) as f64) * 100.0
-            } else {
-                0.0
-            };
-            info!("[OBJECT BIND GROUP CACHE] Hit! Total: {} unique, Hits: {}, Misses: {}, Hit rate: {:.1}%",
-                total_entries, hits, misses, hit_rate);
-            return Ok(UnpreparedBindGroup {
-                bindings: vec![],
-                data: ObjectMaterialKey::from(self),
-            });
-        }
-
-        // Cache miss - create new bind group
-        OBJECT_CACHE_STATS.record_miss();
-
-        let texture_count = [
-            self.base_texture.is_some(),
-            self.lightmap_texture.is_some(),
-            self.specular_texture.is_some(),
-        ].iter().filter(|&&x| x).count();
-
-        info!("[MATERIAL LIFECYCLE] Creating ObjectMaterial bind group with {} textures (cache miss)", texture_count);
-
-        // Create uniform buffer
-        let uniform_data = ObjectMaterialUniformData::from(self);
-        let mut buffer = bevy::render::render_resource::encase::UniformBuffer::new(Vec::new());
-        buffer.write(&uniform_data).unwrap();
-        let uniform_buffer = render_device.create_buffer_with_data(&bevy::render::render_resource::BufferInitDescriptor {
-            label: Some("object_material_uniform_buffer"),
-            usage: bevy::render::render_resource::BufferUsages::UNIFORM | bevy::render::render_resource::BufferUsages::COPY_DST,
-            contents: buffer.as_ref(),
-        });
-
-        // Create samplers
-        let sampler = render_device.create_sampler(&bevy::render::render_resource::SamplerDescriptor {
-            address_mode_u: bevy::render::render_resource::AddressMode::Repeat,
-            address_mode_v: bevy::render::render_resource::AddressMode::Repeat,
-            mag_filter: bevy::render::render_resource::FilterMode::Linear,
-            min_filter: bevy::render::render_resource::FilterMode::Linear,
-            ..Default::default()
-        });
-
-        // Create bind group entries
-        let mut entries = vec![
-            bevy::render::render_resource::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }
-        ];
-
-        // Add base texture and sampler
-        if let Some(ref base_texture) = self.base_texture {
-            let image = images.get(base_texture).ok_or(AsBindGroupError::RetryNextUpdate)?;
-            entries.push(bevy::render::render_resource::BindGroupEntry {
-                binding: 1,
-                resource: bevy::render::render_resource::BindingResource::TextureView(&image.texture_view),
-            });
-            entries.push(bevy::render::render_resource::BindGroupEntry {
-                binding: 2,
-                resource: bevy::render::render_resource::BindingResource::Sampler(&sampler),
-            });
-        } else {
-            entries.push(bevy::render::render_resource::BindGroupEntry {
-                binding: 1,
-                resource: bevy::render::render_resource::BindingResource::TextureView(&fallback_image.d2.texture_view),
-            });
-            entries.push(bevy::render::render_resource::BindGroupEntry {
-                binding: 2,
-                resource: bevy::render::render_resource::BindingResource::Sampler(&sampler),
-            });
-        }
-
-        // Add lightmap texture and sampler
-        if let Some(ref lightmap_texture) = self.lightmap_texture {
-            let image = images.get(lightmap_texture).ok_or(AsBindGroupError::RetryNextUpdate)?;
-            entries.push(bevy::render::render_resource::BindGroupEntry {
-                binding: 3,
-                resource: bevy::render::render_resource::BindingResource::TextureView(&image.texture_view),
-            });
-            entries.push(bevy::render::render_resource::BindGroupEntry {
-                binding: 4,
-                resource: bevy::render::render_resource::BindingResource::Sampler(&sampler),
-            });
-        }
-
-        // Add specular texture and sampler
-        if let Some(ref specular_texture) = self.specular_texture {
-            let image = images.get(specular_texture).ok_or(AsBindGroupError::RetryNextUpdate)?;
-            entries.push(bevy::render::render_resource::BindGroupEntry {
-                binding: 5,
-                resource: bevy::render::render_resource::BindingResource::TextureView(&image.texture_view),
-            });
-            entries.push(bevy::render::render_resource::BindGroupEntry {
-                binding: 6,
-                resource: bevy::render::render_resource::BindingResource::Sampler(&sampler),
-            });
-        }
-
-        let bind_group = render_device.create_bind_group(
-            "object_material_bind_group",
-            layout,
-            &entries,
-        );
-
-        // Store in cache
-        OBJECT_BIND_GROUP_CACHE.insert(cache_key, bind_group);
-
-        let (hits, misses, total_entries) = OBJECT_CACHE_STATS.get_stats();
-        let hit_rate = if hits + misses > 0 {
-            (hits as f64 / (hits + misses) as f64) * 100.0
-        } else {
-            0.0
-        };
-        info!("[OBJECT BIND GROUP CACHE] Created new entry. Total: {} unique, Hits: {}, Misses: {}, Hit rate: {:.1}%",
-            total_entries, hits, misses, hit_rate);
-
-        Ok(UnpreparedBindGroup {
-            bindings: vec![],
-            data: ObjectMaterialKey::from(self),
-        })
-    }
-
-    fn bind_group_layout_entries(_render_device: &RenderDevice) -> Vec<bevy::render::render_resource::BindGroupLayoutEntry> {
-        vec![
-            bevy::render::render_resource::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT | bevy::render::render_resource::ShaderStages::VERTEX,
-                ty: bevy::render::render_resource::BindingType::Buffer {
-                    ty: bevy::render::render_resource::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            bevy::render::render_resource::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT,
-                ty: bevy::render::render_resource::BindingType::Texture {
-                    sample_type: bevy::render::render_resource::TextureSampleType::Float { filterable: true },
-                    view_dimension: bevy::render::render_resource::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            bevy::render::render_resource::BindGroupLayoutEntry {
-                binding: 2,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT,
-                ty: bevy::render::render_resource::BindingType::Sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
-                count: None,
-            },
-            bevy::render::render_resource::BindGroupLayoutEntry {
-                binding: 3,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT,
-                ty: bevy::render::render_resource::BindingType::Texture {
-                    sample_type: bevy::render::render_resource::TextureSampleType::Float { filterable: true },
-                    view_dimension: bevy::render::render_resource::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            bevy::render::render_resource::BindGroupLayoutEntry {
-                binding: 4,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT,
-                ty: bevy::render::render_resource::BindingType::Sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
-                count: None,
-            },
-            bevy::render::render_resource::BindGroupLayoutEntry {
-                binding: 5,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT,
-                ty: bevy::render::render_resource::BindingType::Texture {
-                    sample_type: bevy::render::render_resource::TextureSampleType::Float { filterable: true },
-                    view_dimension: bevy::render::render_resource::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            bevy::render::render_resource::BindGroupLayoutEntry {
-                binding: 6,
-                visibility: bevy::render::render_resource::ShaderStages::FRAGMENT,
-                ty: bevy::render::render_resource::BindingType::Sampler(bevy::render::render_resource::SamplerBindingType::Filtering),
-                count: None,
-            },
-        ]
     }
 }
 

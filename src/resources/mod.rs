@@ -28,6 +28,9 @@ mod world_rates;
 mod world_time;
 mod zone_time;
 
+// Debug diagnostics module for zone loading issues
+pub mod zone_debug_diagnostics;
+
 pub use account::Account;
 pub use app_state::AppState;
 pub use character_list::CharacterList;

@@ -68,9 +68,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let next_frame_0: vec4<f32> = textureLoad(animation_texture, vec2<u32>(next_frame_index, vertex.vertex_idx), 0);
 
     if ((animation_state.flags & EFECT_MESH_ANIMATION_STATE_FLAGS_POSITION) != 0u) { // Has position ?
-        out.world_position = mesh.model * vec4<f32>(mix(current_frame_0.xyz, next_frame_0.xyz, animation_state.next_weight), 1.0);
+        out.world_position = bevy_pbr::mesh_bindings::mesh.world_from_local * vec4<f32>(mix(current_frame_0.xyz, next_frame_0.xyz, animation_state.next_weight), 1.0);
     } else {
-        out.world_position = mesh.model * vec4<f32>(vertex.position, 1.0);
+        out.world_position = bevy_pbr::mesh_bindings::mesh.world_from_local * vec4<f32>(vertex.position, 1.0);
     }
 
     if ((animation_state.flags & (EFECT_MESH_ANIMATION_STATE_FLAGS_NORMAL | EFECT_MESH_ANIMATION_STATE_FLAGS_UV)) != 0u) {
@@ -80,9 +80,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 #ifdef VERTEX_NORMALS
         if ((animation_state.flags & EFECT_MESH_ANIMATION_STATE_FLAGS_NORMAL) != 0u) {
-            out.world_normal = mesh_normal_local_to_world(mix(current_frame_1.xyz, next_frame_1.xyz, animation_state.next_weight));
+            out.world_normal = mesh_normal_local_to_world(bevy_pbr::mesh_bindings::mesh.world_from_local, mix(current_frame_1.xyz, next_frame_1.xyz, animation_state.next_weight));
         } else {
-            out.world_normal = mesh_normal_local_to_world(vertex.normal);
+            out.world_normal = mesh_normal_local_to_world(bevy_pbr::mesh_bindings::mesh.world_from_local, vertex.normal);
         }
 #endif
 
@@ -93,9 +93,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         }
     }
 #else
-    out.world_position = mesh.model * vec4<f32>(vertex.position, 1.0);
+    out.world_position = bevy_pbr::mesh_bindings::mesh.world_from_local * vec4<f32>(vertex.position, 1.0);
 #ifdef VERTEX_NORMALS
-    out.world_normal = mesh_normal_local_to_world(vertex.normal);
+    out.world_normal = mesh_normal_local_to_world(bevy_pbr::mesh_bindings::mesh.world_from_local, vertex.normal);
 #endif
 #endif
 

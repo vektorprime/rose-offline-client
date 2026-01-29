@@ -597,6 +597,8 @@ struct ParticleBatch {
 #[derive(Default, Resource)]
 struct MaterialBindGroups {
     values: HashMap<Handle<Image>, BindGroup>,
+    /// Track which bind groups were used this frame for cleanup
+    used_this_frame: HashMap<Handle<Image>, ()>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -614,7 +616,20 @@ fn queue_particles(
     gpu_images: Res<RenderAssets<Image>>,
     msaa: Res<Msaa>,
 ) {
+    // Clear the used_this_frame tracking at the start of each frame
+    material_bind_groups.used_this_frame.clear();
+    
     if view_uniforms.uniforms.is_empty() || particle_meta.total_count == 0 {
+        // Still clean up old bind groups even if we have no particles to render
+        let handles_to_remove: Vec<Handle<Image>> = material_bind_groups
+            .values
+            .keys()
+            .filter(|handle| !material_bind_groups.used_this_frame.contains_key(*handle))
+            .cloned()
+            .collect();
+        for handle in handles_to_remove {
+            material_bind_groups.values.remove(&handle);
+        }
         return;
     }
 
@@ -666,24 +681,30 @@ fn queue_particles(
             | ParticlePipelineKey::from_hdr(view.hdr);
 
         for (entity, batch) in particle_batches.iter() {
+            // Track that this handle is being used this frame
+            material_bind_groups.used_this_frame.insert(batch.handle.clone(), ());
+            
             if let Some(gpu_image) = gpu_images.get(&batch.handle) {
-                material_bind_groups.values.insert(
-                    batch.handle.clone(),
-                    render_device.create_bind_group(
-                        "particle_material_bind_group",
-                        &particle_pipeline.material_layout,
-                        &[
-                            BindGroupEntry {
-                                binding: 0,
-                                resource: BindingResource::TextureView(&gpu_image.texture_view),
-                            },
-                            BindGroupEntry {
-                                binding: 1,
-                                resource: BindingResource::Sampler(&particle_pipeline.sampler),
-                            },
-                        ],
-                    ),
-                );
+                // Only create bind group if it doesn't exist yet
+                if !material_bind_groups.values.contains_key(&batch.handle) {
+                    material_bind_groups.values.insert(
+                        batch.handle.clone(),
+                        render_device.create_bind_group(
+                            "particle_material_bind_group",
+                            &particle_pipeline.material_layout,
+                            &[
+                                BindGroupEntry {
+                                    binding: 0,
+                                    resource: BindingResource::TextureView(&gpu_image.texture_view),
+                                },
+                                BindGroupEntry {
+                                    binding: 1,
+                                    resource: BindingResource::Sampler(&particle_pipeline.sampler),
+                                },
+                            ],
+                        ),
+                    );
+                }
             }
 
             transparent_phase.add(Transparent3d {
@@ -699,6 +720,18 @@ fn queue_particles(
                 dynamic_offset: None,
             });
         }
+    }
+    
+    // Clean up bind groups that weren't used this frame to prevent memory leak
+    // Collect handles to remove (avoiding borrow issues)
+    let handles_to_remove: Vec<Handle<Image>> = material_bind_groups
+        .values
+        .keys()
+        .filter(|handle| !material_bind_groups.used_this_frame.contains_key(*handle))
+        .cloned()
+        .collect();
+    for handle in handles_to_remove {
+        material_bind_groups.values.remove(&handle);
     }
 }
 

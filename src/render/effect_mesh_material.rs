@@ -48,6 +48,8 @@ pub struct EffectMeshMaterialPlugin {
 
 impl Plugin for EffectMeshMaterialPlugin {
     fn build(&self, app: &mut App) {
+        bevy::log::info!("[EFFECT MESH MATERIAL] Building EffectMeshMaterialPlugin, prepass_enabled={}", self.prepass_enabled);
+        
         // Load the internal asset using the Bevy 0.13 API
         load_internal_asset!(
             app,
@@ -55,6 +57,7 @@ impl Plugin for EffectMeshMaterialPlugin {
             "shaders/effect_mesh_material.wgsl",
             Shader::from_wgsl
         );
+        bevy::log::info!("[EFFECT MESH MATERIAL] Shader loaded successfully");
 
         app.add_plugins(
             ExtractComponentPlugin::<EffectMeshAnimationRenderState>::extract_visible(),
@@ -65,6 +68,7 @@ impl Plugin for EffectMeshMaterialPlugin {
             prepass_enabled: self.prepass_enabled,
             ..Default::default()
         });
+        bevy::log::info!("[EFFECT MESH MATERIAL] MaterialPlugin<EffectMeshMaterial> added");
         //TODO? .register_asset_reflect::<EffectMeshMaterial>();
     }
 }

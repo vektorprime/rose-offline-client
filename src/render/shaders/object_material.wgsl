@@ -69,14 +69,14 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 #ifdef SKINNED
     var model = skin_model(vertex.joint_indices, vertex.joint_weights);
 #else
-    var model = mesh.model;
+    var model = bevy_pbr::mesh_bindings::mesh.world_from_local;
 #endif
 
 #ifdef VERTEX_NORMALS
 #ifdef SKINNED
     out.world_normal = skin_normals(model, vertex.normal);
 #else
-    out.world_normal = mesh_normal_local_to_world(vertex.normal);
+    out.world_normal = mesh_normal_local_to_world(model, vertex.normal);
 #endif
 #endif
 

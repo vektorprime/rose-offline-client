@@ -663,6 +663,8 @@ struct TrailEffectBatch {
 #[derive(Default, Resource)]
 struct MaterialBindGroups {
     values: HashMap<Handle<Image>, BindGroup>,
+    /// Track which bind groups were used this frame for cleanup
+    used_this_frame: HashMap<Handle<Image>, ()>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -680,7 +682,20 @@ fn queue_trail_effects(
     gpu_images: Res<RenderAssets<Image>>,
     msaa: Res<Msaa>,
 ) {
+    // Clear the used_this_frame tracking at the start of each frame
+    material_bind_groups.used_this_frame.clear();
+    
     if view_uniforms.uniforms.is_empty() || trail_effect_meta.vertex_count == 0 {
+        // Still clean up old bind groups even if we have no trail effects to render
+        let handles_to_remove: Vec<Handle<Image>> = material_bind_groups
+            .values
+            .keys()
+            .filter(|handle| !material_bind_groups.used_this_frame.contains_key(*handle))
+            .cloned()
+            .collect();
+        for handle in handles_to_remove {
+            material_bind_groups.values.remove(&handle);
+        }
         return;
     }
 
@@ -707,24 +722,30 @@ fn queue_trail_effects(
             | MeshPipelineKey::from_hdr(view.hdr);
 
         for (entity, batch) in trail_effect_batches.iter() {
+            // Track that this handle is being used this frame
+            material_bind_groups.used_this_frame.insert(batch.handle.clone(), ());
+            
             if let Some(gpu_image) = gpu_images.get(&batch.handle) {
-                material_bind_groups.values.insert(
-                    batch.handle.clone(),
-                    render_device.create_bind_group(
-                        "trail_effect_material_bind_group",
-                        &trail_effect_pipeline.material_layout,
-                        &[
-                            BindGroupEntry {
-                                binding: 0,
-                                resource: BindingResource::TextureView(&gpu_image.texture_view),
-                            },
-                            BindGroupEntry {
-                                binding: 1,
-                                resource: BindingResource::Sampler(&gpu_image.sampler),
-                            },
-                        ],
-                    ),
-                );
+                // Only create bind group if it doesn't exist yet
+                if !material_bind_groups.values.contains_key(&batch.handle) {
+                    material_bind_groups.values.insert(
+                        batch.handle.clone(),
+                        render_device.create_bind_group(
+                            "trail_effect_material_bind_group",
+                            &trail_effect_pipeline.material_layout,
+                            &[
+                                BindGroupEntry {
+                                    binding: 0,
+                                    resource: BindingResource::TextureView(&gpu_image.texture_view),
+                                },
+                                BindGroupEntry {
+                                    binding: 1,
+                                    resource: BindingResource::Sampler(&gpu_image.sampler),
+                                },
+                            ],
+                        ),
+                    );
+                }
             }
 
             transparent_phase.add(Transparent3d {
@@ -736,6 +757,17 @@ fn queue_trail_effects(
                 dynamic_offset: None,
             });
         }
+    }
+    
+    // Clean up bind groups that weren't used this frame to prevent memory leak
+    let handles_to_remove: Vec<Handle<Image>> = material_bind_groups
+        .values
+        .keys()
+        .filter(|handle| !material_bind_groups.used_this_frame.contains_key(*handle))
+        .cloned()
+        .collect();
+    for handle in handles_to_remove {
+        material_bind_groups.values.remove(&handle);
     }
 }
 

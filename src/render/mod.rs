@@ -67,8 +67,19 @@ pub struct RoseRenderPlugin;
 
 impl Plugin for RoseRenderPlugin {
     fn build(&self, app: &mut App) {
+        bevy::log::info!("[RENDER PLUGIN] Building RoseRenderPlugin");
+        
         let prepass_enabled = false;
+        bevy::log::info!("[RENDER PLUGIN] Prepass enabled: {}", prepass_enabled);
 
+        bevy::log::info!("[RENDER PLUGIN] Adding ZoneLightingPlugin...");
+        bevy::log::info!("[RENDER PLUGIN] Adding TerrainMaterialPlugin...");
+        bevy::log::info!("[RENDER PLUGIN] Adding EffectMeshMaterialPlugin...");
+        bevy::log::info!("[RENDER PLUGIN] Adding ObjectMaterialPlugin...");
+        bevy::log::info!("[RENDER PLUGIN] Adding WaterMaterialPlugin...");
+        bevy::log::info!("[RENDER PLUGIN] Adding ParticleMaterialPlugin...");
+        bevy::log::info!("[RENDER PLUGIN] Adding SkyMaterialPlugin...");
+        
         app.add_plugins((
             ZoneLightingPlugin,
             TerrainMaterialPlugin { prepass_enabled },
@@ -84,5 +95,7 @@ impl Plugin for RoseRenderPlugin {
             WorldUiRenderPlugin,
             // PostProcessingPlugin,
         ));
+        
+        bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin build complete");
     }
 }

@@ -19,8 +19,8 @@ struct VertexOutput {
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
-    out.world_position = mesh_position_local_to_world(mesh.model, vec4<f32>(vertex.position, 1.0));
-    out.world_normal = mesh_normal_local_to_world(vertex.normal);
+    out.world_position = mesh_position_local_to_world(bevy_pbr::mesh_bindings::mesh.world_from_local, vec4<f32>(vertex.position, 1.0));
+    out.world_normal = mesh_normal_local_to_world(bevy_pbr::mesh_bindings::mesh.world_from_local, vertex.normal);
     out.uv0 = vertex.uv0;
 
     out.clip_position = view.view_proj * out.world_position;

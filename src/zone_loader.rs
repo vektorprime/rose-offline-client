@@ -1,9 +1,11 @@
 use std::{
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::{Arc, OnceLock, mpsc},
     time::{Duration, Instant},
-    collections::{HashSet, HashMap},
+    collections::HashSet,
 };
+use bevy::ecs::system::Query;
 use uuid::Uuid;
 
 use anyhow::Result;
@@ -31,6 +33,7 @@ use bevy_rapier3d::prelude::{
     AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, RigidBody,
 };
 use log::{warn, info};
+use bevy::log::info_span;
 use thiserror::Error;
 
 use rose_data::{NpcId, SkyboxData, WarpGateId, ZoneId, ZoneList};
@@ -209,83 +212,6 @@ impl MemoryTrackingResource {
     }
 }
 
-/// Material cache to prevent duplicate material instances
-#[derive(Resource, Default)]
-pub struct MaterialCache {
-    terrain_materials: HashMap<String, Handle<TerrainMaterial>>,
-    water_materials: HashMap<String, Handle<WaterMaterial>>,
-    terrain_cache_hits: usize,
-    terrain_cache_misses: usize,
-    water_cache_hits: usize,
-    water_cache_misses: usize,
-}
-
-impl MaterialCache {
-    pub fn get_or_create_terrain_material<F>(
-        &mut self,
-        cache_key: String,
-        create_fn: F,
-    ) -> Handle<TerrainMaterial>
-    where
-        F: FnOnce() -> Handle<TerrainMaterial>,
-    {
-        if let Some(handle) = self.terrain_materials.get(&cache_key) {
-            self.terrain_cache_hits += 1;
-            log::info!("[MATERIAL CACHE] Terrain material cache HIT for key: {} (hits: {}, misses: {})",
-                cache_key, self.terrain_cache_hits, self.terrain_cache_misses);
-            handle.clone()
-        } else {
-            self.terrain_cache_misses += 1;
-            log::info!("[MATERIAL CACHE] Terrain material cache MISS for key: {} (hits: {}, misses: {})",
-                cache_key, self.terrain_cache_hits, self.terrain_cache_misses);
-            let handle = create_fn();
-            self.terrain_materials.insert(cache_key, handle.clone());
-            handle
-        }
-    }
-
-    pub fn get_or_create_water_material<F>(
-        &mut self,
-        cache_key: String,
-        create_fn: F,
-    ) -> Handle<WaterMaterial>
-    where
-        F: FnOnce() -> Handle<WaterMaterial>,
-    {
-        if let Some(handle) = self.water_materials.get(&cache_key) {
-            self.water_cache_hits += 1;
-            log::info!("[MATERIAL CACHE] Water material cache HIT for key: {} (hits: {}, misses: {})",
-                cache_key, self.water_cache_hits, self.water_cache_misses);
-            handle.clone()
-        } else {
-            self.water_cache_misses += 1;
-            log::info!("[MATERIAL CACHE] Water material cache MISS for key: {} (hits: {}, misses: {})",
-                cache_key, self.water_cache_hits, self.water_cache_misses);
-            let handle = create_fn();
-            self.water_materials.insert(cache_key, handle.clone());
-            handle
-        }
-    }
-
-    pub fn log_summary(&self) {
-        let terrain_total = self.terrain_cache_hits + self.terrain_cache_misses;
-        let water_total = self.water_cache_hits + self.water_cache_misses;
-        let terrain_hit_rate = if terrain_total > 0 {
-            (self.terrain_cache_hits as f32 / terrain_total as f32) * 100.0
-        } else {
-            0.0
-        };
-        let water_hit_rate = if water_total > 0 {
-            (self.water_cache_hits as f32 / water_total as f32) * 100.0
-        } else {
-            0.0
-        };
-        log::info!("[MATERIAL CACHE SUMMARY] Terrain: {} unique materials, {} hits, {} misses, {:.1}% hit rate",
-            self.terrain_materials.len(), self.terrain_cache_hits, self.terrain_cache_misses, terrain_hit_rate);
-        log::info!("[MATERIAL CACHE SUMMARY] Water: {} unique materials, {} hits, {} misses, {:.1}% hit rate",
-            self.water_materials.len(), self.water_cache_hits, self.water_cache_misses, water_hit_rate);
-    }
-}
 
 impl ZoneLoaderAsset {
     pub fn get_terrain_height(&self, x: f32, y: f32) -> f32 {
@@ -852,7 +778,6 @@ pub struct SpawnZoneParams<'w, 's> {
     pub water_materials: ResMut<'w, Assets<WaterMaterial>>,
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
-    pub material_cache: ResMut<'w, MaterialCache>,
 }
 
 pub struct CachedZone {
@@ -869,11 +794,51 @@ pub struct LoadingZone {
     pub state: LoadingZoneState,
     pub handle: Handle<ZoneLoaderAsset>,
     pub despawn_other_zones: bool,
+    /// Zone assets that are loading - CRITICAL: Must be cleared after loading to prevent memory leak
     pub zone_assets: Vec<UntypedHandle>,
     pub ready_frames: usize,
     pub loading_via_async_task: bool,  // Track if loading via async task vs AssetServer
     pub zone_id: Option<ZoneId>,  // Track zone_id for async-loaded zones
     pub loading_start_time: Instant,  // Track when loading started
+    /// Track if assets have been cleared to prevent duplicate cleanup
+    pub assets_cleared: bool,
+}
+
+impl LoadingZone {
+    /// Clear asset handles to prevent memory leak
+    /// Call this once zone is fully loaded
+    pub fn clear_asset_handles(&mut self) {
+        if !self.assets_cleared {
+            let count = self.zone_assets.len();
+            if count > 0 {
+                log::info!("[MEMORY FIX] Clearing {} zone asset handles to prevent memory leak", count);
+                self.zone_assets.clear();
+                self.zone_assets.shrink_to_fit();
+                self.assets_cleared = true;
+            }
+        }
+    }
+    
+    /// Check if all zone assets are fully loaded
+    pub fn are_assets_loaded(&self, asset_server: &AssetServer) -> bool {
+        if self.zone_assets.is_empty() {
+            return true;
+        }
+        
+        use bevy::asset::LoadState;
+        let all_loaded = self.zone_assets.iter().all(|handle| {
+            matches!(asset_server.get_load_state(handle.clone()), Some(LoadState::Loaded))
+        });
+        
+        if !all_loaded {
+            let loaded_count = self.zone_assets.iter()
+                .filter(|h| matches!(asset_server.get_load_state((*h).clone()), Some(LoadState::Loaded)))
+                .count();
+            log::debug!("[ASSET LOADING] {}/{} zone assets loaded", loaded_count, self.zone_assets.len());
+        }
+        
+        all_loaded
+    }
 }
 
 #[derive(Default)]
@@ -892,6 +857,16 @@ pub fn zone_loader_system(
     mut spawn_zone_params: SpawnZoneParams,
     mut debug_inspector_state: ResMut<DebugInspector>,
 ) {
+    let _span = info_span!("zone_loader_system").entered();
+    let has_load_events = load_zone_events.len() > 0;
+    let has_loading_zones = !loading_zones.is_empty();
+
+    // Early return if no zones are loading and no load events to process
+    // This prevents unnecessary memory allocations from logging every frame
+    if !has_load_events && !has_loading_zones {
+        return;
+    }
+
     log::info!("[ZONE LOADER SYSTEM] ===========================================");
     log::info!("[ZONE LOADER SYSTEM] zone_loader_system called");
     log::info!("[ZONE LOADER SYSTEM] Loading zones in queue: {}", loading_zones.len());
@@ -899,12 +874,6 @@ pub fn zone_loader_system(
 
     // Log periodic memory summary
     spawn_zone_params.memory_tracking.log_summary();
-
-    // Log periodic material cache summary
-    spawn_zone_params.material_cache.log_summary();
-
-    // Log periodic material cache summary
-    spawn_zone_params.material_cache.log_summary();
 
     // Check for loaded zones from async tasks via channel
     log::info!("[ZONE LOADER SYSTEM] Checking channel for loaded zones...");
@@ -976,7 +945,39 @@ pub fn zone_loader_system(
         log::info!("[ZONE LOADER SYSTEM] Despawn other zones: {}", event.despawn_other_zones);
         log::info!("[ZONE LOADER SYSTEM] ===========================================");
 
-        if zone_loader_cache.cache[zone_index].is_none() {
+        // CRITICAL FIX: Check for duplicate zone loading to prevent memory leaks
+        // and double-spawning of the same zone
+        let is_already_loading = loading_zones.iter().any(|lz| lz.zone_id == Some(event.id));
+        let is_already_loaded = zone_loader_cache.cache.get(zone_index)
+            .map(|c| c.as_ref().map(|cz| cz.spawned_entity.is_some()).unwrap_or(false))
+            .unwrap_or(false);
+
+        if is_already_loading {
+            log::warn!("[ZONE LOADER SYSTEM] Zone {} is already loading via async task, skipping duplicate request",
+                event.id.get());
+            continue;
+        }
+
+        if is_already_loaded {
+            log::warn!("[ZONE LOADER SYSTEM] Zone {} is already loaded. Consider despawning old instance first.",
+                event.id.get());
+            // Optionally: Despawn the old zone here if event.despawn_other_zones is true
+            if event.despawn_other_zones {
+                if let Some(Some(cached)) = zone_loader_cache.cache.get(zone_index) {
+                    if let Some(entity) = cached.spawned_entity {
+                        log::info!("[ZONE LOADER SYSTEM] Despawning existing zone {} entity {:?} as requested",
+                            event.id.get(), entity);
+                        spawn_zone_params.commands.entity(entity).despawn_recursive();
+                    }
+                }
+                zone_loader_cache.cache[zone_index] = None;
+            } else {
+                // Skip if already loaded and not despawning
+                continue;
+            }
+        }
+
+        if zone_loader_cache.cache.get(zone_index).map(|c| c.is_none()).unwrap_or(true) {
             log::info!("[ZONE LOADER SYSTEM] Zone not cached, loading directly from VFS");
             
             // WORKAROUND: Load zone directly from VFS without using AssetServer
@@ -1059,6 +1060,7 @@ pub fn zone_loader_system(
                 loading_via_async_task: true,
                 zone_id: Some(zone_id),
                 loading_start_time: Instant::now(),  // Initialize start time
+                assets_cleared: false,
             });
             log::info!("[ZONE LOADER SYSTEM] Zone queued for async loading. Total loading zones: {}", loading_zones.len());
         } else if let Some(zone_entity) = zone_loader_cache.cache[zone_index]
@@ -1083,6 +1085,7 @@ pub fn zone_loader_system(
                 loading_via_async_task: false,
                 zone_id: None,
                 loading_start_time: Instant::now(),  // Initialize start time
+                assets_cleared: false,
             });
             log::info!("[ZONE LOADER SYSTEM] LoadingZone added to queue. Total loading zones: {}", loading_zones.len());
         }
@@ -1101,6 +1104,10 @@ pub fn zone_loader_system(
                     // Check for timeout (30 seconds)
                     if loading_zone.loading_start_time.elapsed() > Duration::from_secs(30) {
                         log::error!("[ZONE LOADER SYSTEM] Zone {} loading timeout after 30s, removing from queue", zone_path);
+                        
+                        // MEMORY LEAK FIX: Clear asset handles before removing timed-out zone
+                        loading_zone.clear_asset_handles();
+                        
                         loading_zones.remove(index);
                         continue;
                     }
@@ -1128,6 +1135,10 @@ pub fn zone_loader_system(
                         None | Some(LoadState::Failed) => {
                             log::warn!("[ZONE LOADER SYSTEM] Zone {} failed to load (LoadState: {:?}), removing from queue", 
                                 zone_path, spawn_zone_params.asset_server.get_load_state(&loading_zone.handle));
+                            
+                            // MEMORY LEAK FIX: Clear asset handles before removing failed zone
+                            loading_zone.clear_asset_handles();
+                            
                             loading_zones.remove(index);
                         }
                     }
@@ -1153,6 +1164,10 @@ pub fn zone_loader_system(
                     }).unwrap()
                 } else {
                     log::error!("[ZONE LOADER SYSTEM] Cannot find zone_id for handle");
+                    
+                    // MEMORY LEAK FIX: Clear asset handles before removing zone with error
+                    loading_zone.clear_asset_handles();
+                    
                     loading_zones.remove(index);
                     continue;
                 };
@@ -1175,7 +1190,7 @@ pub fn zone_loader_system(
                             spawn_zone_params.memory_tracking.log_entity_despawned();
                         }
                     }
-                    
+
                     spawn_zone_params.commands.remove_resource::<CurrentZone>();
                 }
 
@@ -1234,6 +1249,10 @@ pub fn zone_loader_system(
                             
                             if assets_empty {
                                 log::info!("[ZONE LOADER SYSTEM] No additional assets to load, sending Loaded event");
+                                
+                                // MEMORY LEAK FIX: Clear asset handles before removing zone
+                                loading_zone.clear_asset_handles();
+                                
                                 zone_events.send(ZoneEvent::Loaded(zone_id));
                                 loading_zones.remove(index);
                             } else {
@@ -1243,6 +1262,10 @@ pub fn zone_loader_system(
                         }
                         Err(e) => {
                             log::error!("[ZONE LOADER SYSTEM] Failed to spawn zone: {:?}", e);
+                            
+                            // MEMORY LEAK FIX: Clear asset handles before removing zone on failure
+                            loading_zone.clear_asset_handles();
+                            
                             loading_zones.remove(index);
                         }
                     }
@@ -1264,6 +1287,11 @@ pub fn zone_loader_system(
                     loading_zone.ready_frames += 1;
 
                     if loading_zone.ready_frames == 2 {
+                        log::info!("[ZONE LOADER SYSTEM] Zone ready after 2 frames, sending Loaded event");
+                        
+                        // MEMORY LEAK FIX: Clear asset handles before removing zone
+                        loading_zone.clear_asset_handles();
+                        
                         zone_events.send(ZoneEvent::Loaded(zone_data.zone_id));
                         loading_zones.remove(index);
                     } else {
@@ -1279,7 +1307,8 @@ pub fn zone_loader_system(
 
 /// System to handle spawning zones that were loaded from VFS via async tasks
 /// This separate system avoids borrow checker conflicts by handling spawning independently
-/// Processes only one event per system call to avoid borrow issues
+/// CRITICAL FIX: Process ALL events, not just one, to prevent event queue buildup
+/// CRITICAL FIX: Deduplicate events and prevent spawning already-loaded zones
 pub fn zone_loaded_from_vfs_system(
     mut events: EventReader<ZoneLoadedFromVfsEvent>,
     mut zone_loader_cache: Local<ZoneLoaderCache>,
@@ -1287,16 +1316,59 @@ pub fn zone_loaded_from_vfs_system(
     mut current_zone: Option<ResMut<CurrentZone>>,
     mut debug_inspector_state: ResMut<DebugInspector>,
     mut spawn_zone_params: SpawnZoneParams,
+    // CRITICAL FIX: Query existing zones to prevent duplicate spawning
+    existing_zones: Query<(Entity, &Zone)>,
 ) {
-    // Log periodic memory summary
+    let _span = info_span!("zone_loaded_from_vfs_system").entered();
+    let event_count = events.len();
+    if event_count == 0 {
+        return;
+    }
+    
+    // CRITICAL FIX: Check for already-loaded zones to prevent duplicates
+    let already_loaded: std::collections::HashSet<u16> = existing_zones
+        .iter()
+        .map(|(_, zone)| zone.id.get())
+        .collect();
+    
+    if !already_loaded.is_empty() {
+        log::info!("[ZONE LOADED FROM VFS] Currently loaded zones: {:?}",
+            already_loaded.iter().collect::<Vec<_>>());
+    }
+    
+    log::info!("[ZONE LOADED FROM VFS] Processing {} zone events this frame", event_count);
     spawn_zone_params.memory_tracking.log_summary();
-
-    // Log periodic material cache summary
-    spawn_zone_params.material_cache.log_summary();
-    // Process only one event per system call to avoid borrow issues
-    if let Some(event) = events.read().next() {
+    
+    let mut processed_count = 0;
+    let mut success_count = 0;
+    let mut failed_count = 0;
+    let mut skipped_count = 0;
+    
+    // CRITICAL FIX: Deduplicate events - prevent duplicate zone IDs in same batch
+    let mut seen_zone_ids: std::collections::HashSet<u16> = std::collections::HashSet::new();
+    
+    // Process events directly, skipping duplicates
+    for event in events.read() {
+        // Deduplicate: Skip duplicate zone IDs in the same batch
+        if !seen_zone_ids.insert(event.zone_id.get()) {
+            log::warn!("[ZONE LOADED FROM VFS] DUPLICATE EVENT for zone {} ignored in batch",
+                event.zone_id.get());
+            skipped_count += 1;
+            continue;
+        }
+        
+        // CRITICAL FIX: Skip zones that are already loaded
+        if already_loaded.contains(&event.zone_id.get()) {
+            log::warn!("[ZONE LOADED FROM VFS] Zone {} already exists, skipping spawn to prevent memory leak",
+                event.zone_id.get());
+            skipped_count += 1;
+            continue;
+        }
+        
+        processed_count += 1;
         log::info!("[ZONE LOADED FROM VFS] ===========================================");
-        log::info!("[ZONE LOADED FROM VFS] Spawning zone {} from VFS", event.zone_id.get());
+        log::info!("[ZONE LOADED FROM VFS] Spawning zone {} from VFS (event {}/{})"
+            , event.zone_id.get(), processed_count, event_count);
         log::info!("[ZONE LOADED FROM VFS] ===========================================");
         
         let zone_index = event.zone_id.get() as usize;
@@ -1317,7 +1389,9 @@ pub fn zone_loaded_from_vfs_system(
         // Spawn the zone using the asset from the event
         match spawn_zone(&mut spawn_zone_params, &event.zone_asset) {
             Ok((entity, zone_assets)) => {
-                log::info!("[ZONE LOADED FROM VFS] Zone spawned successfully!");
+                success_count += 1;
+                log::info!("[ZONE LOADED FROM VFS] Zone {} spawned successfully! entity={:?}",
+                    event.zone_id.get(), entity);
                 
                 // Update cache with spawned entity
                 if let Some(cached_zone) = zone_loader_cache.cache[zone_index].as_mut() {
@@ -1325,8 +1399,8 @@ pub fn zone_loaded_from_vfs_system(
                 }
                 
                 // Update current zone if it exists
-                if let Some(mut current_zone) = current_zone {
-                    *current_zone = CurrentZone {
+                if let Some(ref mut current_zone) = current_zone {
+                    **current_zone = CurrentZone {
                         id: event.zone_id,
                         handle: Handle::default(),
                     };
@@ -1340,21 +1414,27 @@ pub fn zone_loaded_from_vfs_system(
                 
                 // Log memory summary after zone spawn
                 info!("[MEMORY TRACKING] Zone {} loaded successfully", event.zone_id.get());
-                spawn_zone_params.memory_tracking.log_summary();
-                
-                log::info!("[ZONE LOADED FROM VFS] ===========================================");
             }
             Err(e) => {
-                log::error!("[ZONE LOADED FROM VFS] Failed to spawn zone: {:?}", e);
+                failed_count += 1;
+                log::error!("[ZONE LOADED FROM VFS] Failed to spawn zone {}: {:?}",
+                    event.zone_id.get(), e);
             }
         }
     }
+    
+    log::info!("[ZONE LOADED FROM VFS] ===========================================");
+    log::info!("[ZONE LOADED FROM VFS] Processing complete: {} success, {} failed, {} skipped (duplicates) out of {}",
+        success_count, failed_count, skipped_count, processed_count);
+    spawn_zone_params.memory_tracking.log_summary();
+    log::info!("[ZONE LOADED FROM VFS] ===========================================");
 }
 
 pub fn spawn_zone(
     params: &mut SpawnZoneParams,
     zone_data: &ZoneLoaderAsset,
 ) -> Result<(Entity, Vec<UntypedHandle>), anyhow::Error> {
+    let _span = info_span!("spawn_zone", zone_id = zone_data.zone_id.get()).entered();
     log::info!("[SPAWN ZONE] ===========================================");
     log::info!("[SPAWN ZONE] spawn_zone called for zone_id: {}", zone_data.zone_id.get());
     log::info!("[SPAWN ZONE] Zone path: {:?}", zone_data.zone_path);
@@ -1381,7 +1461,6 @@ pub fn spawn_zone(
         water_materials,
         zone_loader_assets: _,
         memory_tracking,
-        ref mut material_cache,
     } = params;
 
     let zone_list_entry = game_data
@@ -1413,12 +1492,8 @@ pub fn spawn_zone(
         }
 
         let texture_count = water_material_textures.len();
-        // Use material cache for water materials
-        let cache_key = "water_ocean01".to_string();
-        let material = material_cache.get_or_create_water_material(cache_key, || {
-            water_materials.add(WaterMaterial {
-                textures: water_material_textures,
-            })
+        let material = water_materials.add(WaterMaterial {
+            textures: water_material_textures,
         });
         info!("[MEMORY TRACKING] Water material created with {} textures", texture_count);
         log::info!("[SPAWN ZONE] Water material created with {} textures", texture_count);
@@ -1432,7 +1507,7 @@ pub fn spawn_zone(
             Zone {
                 id: zone_data.zone_id,
             },
-            Visibility::default(),
+            Visibility::Visible,  // Explicitly set to Visible
             ViewVisibility::default(),
             InheritedVisibility::default(),
             Transform::default(),
@@ -1480,7 +1555,6 @@ pub fn spawn_zone(
                     &tile_textures,
                     zone_data,
                     block_data,
-                    material_cache,
                 );
                 commands.entity(zone_entity).add_child(terrain_entity);
                 terrain_count += 1;
@@ -1670,6 +1744,14 @@ pub fn spawn_zone(
     log::info!("[SPAWN ZONE] Sound objects: {}", sound_object_count);
     let total_entities = terrain_count + water_count + event_object_count + warp_object_count + cnst_object_count + deco_object_count + animated_object_count + effect_object_count + sound_object_count;
     log::info!("[SPAWN ZONE] Total entities spawned: {}", total_entities);
+
+    // Enhanced zone entity count logging
+    let object_count = event_object_count + warp_object_count + cnst_object_count + deco_object_count + animated_object_count + effect_object_count + sound_object_count;
+    info!("[ZONE] Zone '{}' spawned with {} entities", zone_data.zone_id.get(), total_entities);
+    info!("[ZONE]   Terrain entities: {}", terrain_count);
+    info!("[ZONE]   Water entities: {}", water_count);
+    info!("[ZONE]   Object entities: {}", object_count);
+
     log::info!("[MEMORY] Zone loading assets: {}", zone_loading_assets.len());
     log::info!("[MEMORY TRACKING] Zone spawn complete - logging memory summary");
     memory_tracking.log_summary();
@@ -1707,7 +1789,7 @@ fn spawn_skybox(
             }),
             Transform::from_scale(Vec3::splat(SKYBOX_MODEL_SCALE)),
             GlobalTransform::default(),
-            Visibility::default(),
+            Visibility::Visible,  // Explicitly visible
             ViewVisibility::default(),
             InheritedVisibility::default(),
             NoFrustumCulling,
@@ -1724,8 +1806,8 @@ fn spawn_terrain(
     tile_textures: &Vec<Handle<Image>>,
     zone_data: &ZoneLoaderAsset,
     block_data: &ZoneLoaderBlock,
-    material_cache: &mut MaterialCache,
 ) -> Entity {
+    let _span = info_span!("spawn_terrain", block_x = block_data.block_x, block_y = block_data.block_y).entered();
     log::info!("[SPAWN TERRAIN] Spawning terrain block {}_{}", block_data.block_x, block_data.block_y);
     let offset_x = 160.0 * block_data.block_x as f32;
     let offset_y = 160.0 * (65.0 - block_data.block_y as f32);
@@ -1932,11 +2014,7 @@ fn spawn_terrain(
     }
 
     let texture_count = terrain_material.textures.len();
-
-    // Use material cache to avoid duplicate materials
-    let material_handle = material_cache.get_or_create_terrain_material(cache_key.clone(), || {
-        terrain_materials.add(terrain_material)
-    });
+    let material_handle = terrain_materials.add(terrain_material);
 
     let terrain_entity = commands
         .spawn((
@@ -1948,7 +2026,7 @@ fn spawn_terrain(
             material_handle,
             Transform::from_xyz(offset_x, 0.0, -offset_y),
             GlobalTransform::default(),
-            Visibility::default(),
+            Visibility::Visible,  // Explicitly visible
             ViewVisibility::default(),
             InheritedVisibility::default(),
             NotShadowCaster,
@@ -2027,7 +2105,7 @@ fn spawn_water(
             water_material.clone(),
             Transform::default(),
             GlobalTransform::default(),
-            Visibility::default(),
+            Visibility::Visible,  // Explicitly visible
             ViewVisibility::default(),
             InheritedVisibility::default(),
             NotShadowCaster,
@@ -2085,7 +2163,6 @@ fn spawn_object(
             object_instance.scale.y,
         ));
 
-    let mut material_cache: Vec<Option<Handle<ObjectMaterial>>> = vec![None; zsc.materials.len()];
     let mut mesh_cache: Vec<Option<Handle<Mesh>>> = vec![None; zsc.meshes.len()];
 
     let mut part_entities: ArrayVec<Entity, 256> = ArrayVec::new();
@@ -2096,7 +2173,7 @@ fn spawn_object(
         }),
         object_transform,
         GlobalTransform::default(),
-        Visibility::default(),
+        Visibility::Visible,  // Explicitly visible
         ViewVisibility::default(),
         InheritedVisibility::default(),
         RigidBody::Fixed,
@@ -2127,6 +2204,22 @@ fn spawn_object(
                 ));
 
             let mesh_id = object_part.mesh_id as usize;
+            
+            // VALIDATION FIX: Check mesh_id bounds before using
+            if mesh_id >= zsc.meshes.len() {
+                log::warn!("[SPAWN OBJECT] Object {} part {} has invalid mesh_id {} (max: {}), skipping part",
+                    zsc_object_id, part_index, mesh_id, zsc.meshes.len().saturating_sub(1));
+                continue;
+            }
+            
+            // VALIDATION FIX: Check material_id bounds
+            let material_id = object_part.material_id as usize;
+            if material_id >= zsc.materials.len() {
+                log::warn!("[SPAWN OBJECT] Object {} part {} has invalid material_id {} (max: {}), skipping part",
+                    zsc_object_id, part_index, material_id, zsc.materials.len().saturating_sub(1));
+                continue;
+            }
+            
             let mesh = mesh_cache[mesh_id].clone().unwrap_or_else(|| {
                 let mesh_path = zsc.meshes[mesh_id].path().to_string_lossy().into_owned();
                 let mesh_path_log = mesh_path.clone();
@@ -2167,47 +2260,48 @@ fn spawn_object(
                 })
                 .unwrap_or((Vec2::new(0.0, 0.0), 1.0));
 
+            // NOTE: material_id was already validated at lines 2437-2443 above
+            // This second fetch is just for local use
             let material_id = object_part.material_id as usize;
-            let material = material_cache[material_id].clone().unwrap_or_else(|| {
-                let zsc_material = zsc.materials[material_id].clone();
-                let material_path = zsc_material.path.path().to_string_lossy().into_owned();
-                let material_path_log = material_path.clone();
-                log::info!("[SPAWN OBJECT] Creating material: {}", material_path_log);
-                let base_texture_handle = asset_server.load(&material_path);
-                info!("[MEMORY TRACKING] Object material base texture handle created: {}", material_path_log);
+            
+            let zsc_material = zsc.materials[material_id].clone();
+            let material_path = zsc_material.path.path().to_string_lossy().into_owned();
+            let material_path_log = material_path.clone();
+            
+            log::info!("[SPAWN OBJECT] Creating material: {}", material_path_log);
+            let base_texture_handle = asset_server.load(&material_path);
+            info!("[MEMORY TRACKING] Object material base texture handle created: {}", material_path_log);
 
-                let lightmap_count = lightmap_texture.as_ref().is_some() as usize;
+            let lightmap_count = lightmap_texture.as_ref().is_some() as usize;
 
-                let handle = object_materials.add(ObjectMaterial {
-                    base_texture: Some(base_texture_handle),
-                    lightmap_texture,
-                    alpha_value: if zsc_material.alpha != 1.0 {
-                        Some(zsc_material.alpha)
-                    } else {
-                        None
-                    },
-                    alpha_enabled: zsc_material.alpha_enabled,
-                    alpha_test: zsc_material.alpha_test,
-                    two_sided: zsc_material.two_sided,
-                    z_write_enabled: zsc_material.z_write_enabled,
-                    z_test_enabled: zsc_material.z_test_enabled,
-                    specular_texture: if zsc_material.specular_enabled {
-                        Some(specular_texture.image.clone())
-                    } else {
-                        None
-                    },
-                    blend: zsc_material.blend_mode.into(),
-                    glow: zsc_material.glow.map(|x| x.into()),
-                    skinned: zsc_material.is_skin,
-                    lightmap_uv_offset,
-                    lightmap_uv_scale,
-                });
-
-                material_cache.insert(material_id, Some(handle.clone()));
-                info!("[MEMORY TRACKING] Material handle created: {} (textures: {})",
-                    material_path_log,
-                    1 + lightmap_count + zsc_material.specular_enabled as usize);
-                handle
+            let material = object_materials.add(ObjectMaterial {
+                base_texture: if material_path.is_empty() || material_path == "" {
+                    log::warn!("[SPAWN OBJECT DEBUG] Empty texture path for mesh_id {}, using fallback", mesh_id);
+                    Some(asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS"))
+                } else {
+                    Some(base_texture_handle.clone())
+                },
+                lightmap_texture: lightmap_texture.clone(),
+                alpha_value: if zsc_material.alpha != 1.0 {
+                    Some(zsc_material.alpha)
+                } else {
+                    None
+                },
+                alpha_enabled: zsc_material.alpha_enabled,
+                alpha_test: zsc_material.alpha_test,
+                two_sided: zsc_material.two_sided,
+                z_write_enabled: zsc_material.z_write_enabled,
+                z_test_enabled: zsc_material.z_test_enabled,
+                specular_texture: if zsc_material.specular_enabled {
+                    Some(specular_texture.image.clone())
+                } else {
+                    None
+                },
+                blend: zsc_material.blend_mode.into(),
+                glow: zsc_material.glow.map(|x| x.into()),
+                skinned: zsc_material.is_skin,
+                lightmap_uv_offset,
+                lightmap_uv_scale,
             });
 
             let mut collision_filter = COLLISION_FILTER_INSPECTABLE;
@@ -2239,28 +2333,32 @@ fn spawn_object(
                 }
             }
 
+            // CRITICAL FIX: Validate material handle before spawning
+            let material_id = material.id();
+            let is_material_weak = material.is_weak();
+            
+            // Verify material is strong
+            if material.is_weak() {
+                log::error!("[SPAWN OBJECT] CRITICAL: Material is weak! Object {} part {} will not render!",
+                    zsc_object_id, part_index);
+            }
+            
             let mut part_commands = object_commands.spawn((
                 part_object_type(ZoneObjectPart {
                     ifo_object_id,
                     zsc_object_id,
                     zsc_part_id: part_index,
                     mesh_path: zsc.meshes[mesh_id].path().to_string_lossy().into(),
-                    // collision_shape.is_none(): cannot be hit with any raycast
-                    // collision_shape.is_some(): can be hit with forward raycast
                     collision_shape: (&object_part.collision_shape).into(),
-                    // collision_not_moveable: does not hit downwards ray cast, but can hit forwards ray cast
                     collision_not_moveable: object_part
                         .collision_flags
                         .contains(ZscCollisionFlags::NOT_MOVEABLE),
-                    // collision_not_pickable: can not be clicked on with mouse
                     collision_not_pickable: object_part
                         .collision_flags
                         .contains(ZscCollisionFlags::NOT_PICKABLE),
-                    // collision_height_only: ?
                     collision_height_only: object_part
                         .collision_flags
                         .contains(ZscCollisionFlags::HEIGHT_ONLY),
-                    // collision_no_camera: does not collide with camera
                     collision_no_camera: object_part
                         .collision_flags
                         .contains(ZscCollisionFlags::NOT_CAMERA_COLLISION),
@@ -2269,7 +2367,7 @@ fn spawn_object(
                 material,
                 part_transform,
                 GlobalTransform::default(),
-                Visibility::default(),
+                Visibility::Visible,  // Explicitly visible
                 ViewVisibility::default(),
                 InheritedVisibility::default(),
                 NotShadowCaster,
@@ -2292,11 +2390,10 @@ fn spawn_object(
     log::info!("[SPAWN OBJECT] Object entity created: {:?} with {} parts",
         object_entity, part_entities.len());
     let mesh_count = mesh_cache.iter().filter(|m| m.is_some()).count();
-    let material_count = material_cache.iter().filter(|m| m.is_some()).count();
-    info!("[MEMORY TRACKING] Object entity created with {} mesh handles, {} material handles",
-        mesh_count, material_count);
-    log::info!("[MEMORY] Object entity created with {} mesh handles, {} material handles",
-        mesh_count, material_count);
+    info!("[MEMORY TRACKING] Object entity created with {} mesh handles",
+        mesh_count);
+    log::info!("[MEMORY] Object entity created with {} mesh handles",
+        mesh_count);
 
     for object_effect in object.effects.iter() {
         let effect_transform = Transform::default()
@@ -2444,7 +2541,7 @@ fn spawn_animated_object(
             NoFrustumCulling, // AABB culling is broken for mesh animations
             NotShadowCaster,
             GlobalTransform::default(),
-            Visibility::default(),
+            Visibility::Visible,  // Explicitly visible
             ViewVisibility::default(),
             InheritedVisibility::default(),
             AsyncCollider(ComputedColliderShape::TriMesh),
@@ -2494,7 +2591,7 @@ fn spawn_effect_object(
             },
             object_transform,
             GlobalTransform::from(object_transform),
-            Visibility::default(),
+            Visibility::Visible,  // Explicitly visible
             ViewVisibility::default(),
             InheritedVisibility::default(),
         ))
@@ -2549,7 +2646,7 @@ fn spawn_sound_object(
             SoundRadius::new(sound_object.range as f32 / 10.0),
             object_transform,
             GlobalTransform::from(object_transform),
-            Visibility::default(),
+            Visibility::Visible,  // Explicitly visible
             ViewVisibility::default(),
             InheritedVisibility::default(),
         ))

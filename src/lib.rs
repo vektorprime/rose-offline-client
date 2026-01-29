@@ -7,10 +7,11 @@ use bevy::{
     core_pipeline::bloom::BloomSettings,
     log::Level,
     prelude::{
-        apply_deferred, in_state, App, AssetServer, Assets, Camera, Camera3d,
+        apply_deferred, in_state, resource_exists, App, AssetServer, Assets, Camera, Camera3d,
         ClearColorConfig, Color, Commands, Image, IntoSystemConfigs, IntoSystemSetConfigs, Msaa,
-        OnEnter, OnExit, PluginGroup, PostStartup, PostUpdate, PreUpdate, Quat, Res, ResMut,
-        Startup, State, SystemSet, Transform, Update, Vec3, World,
+        OnEnter, OnExit, PerspectiveProjection, PluginGroup, PostStartup, PostUpdate, PreUpdate,
+        Projection, Quat, Res, ResMut, Startup, State, SystemSet, Time, Transform, Update, Vec3,
+        World,
     },
     render::{
         settings::{Backends, RenderCreation, WgpuSettings},
@@ -48,6 +49,7 @@ pub mod resources;
 pub mod scripting;
 pub mod systems;
 pub mod ui;
+pub mod dds_image_loader;
 pub mod vfs_asset_io;
 pub mod zms_asset_loader;
 pub mod zone_loader;
@@ -65,7 +67,7 @@ use model_loader::ModelLoader;
 use render::{DamageDigitMaterial, RoseRenderPlugin};
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
-    AppState, ClientEntityList, DamageDigitsSpawner, DebugRenderConfig, GameData, NameTagSettings,
+    AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, GameData, NameTagSettings,
     NetworkThread, NetworkThreadMessage, RenderConfiguration, SelectedTarget, ServerConfiguration,
     SoundCache, SoundSettings, SpecularTexture, VfsResource, WorldTime, ZoneTime,
 };
@@ -78,8 +80,9 @@ use systems::{
     character_select_system, clan_system, client_entity_event_system, collision_height_only_system,
     collision_player_system, collision_player_system_join_zoin, command_system,
     conversation_dialog_system, cooldown_system, damage_digit_render_system,
-    debug_render_collider_system, debug_render_directional_light_system,
+    debug_entity_visibility, debug_render_collider_system, debug_render_directional_light_system,
     debug_render_skeleton_system, directional_light_system, effect_system, facing_direction_system,
+    render_diagnostics_system_lightweight,
     free_camera_system, game_connection_system, game_mouse_input_system, game_state_enter_system,
     game_zone_change_system, hit_event_system, item_drop_model_add_collider_system,
     item_drop_model_system, login_connection_system, login_event_system, login_state_enter_system,
@@ -114,9 +117,17 @@ use ui::{
     ui_window_sound_system, widgets::Dialog, DialogLoader, UiSoundEvent, UiStateDebugWindows,
     UiStateDragAndDrop, UiStateWindows,
 };
+use dds_image_loader::DdsImageLoader;
 use vfs_asset_io::{VfsAssetIo, VfsAssetReaderPlugin};
 use zms_asset_loader::{ZmsAssetLoader, ZmsMaterialNumFaces, ZmsNoSkinAssetLoader};
-use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, ZoneLoader, ZoneLoaderAsset, ZoneLoadChannelReceiver, ZoneLoadChannelSender, MemoryTrackingResource, MaterialCache};
+use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, ZoneLoader, ZoneLoaderAsset, ZoneLoadChannelReceiver, ZoneLoadChannelSender, MemoryTrackingResource};
+
+// Import diagnostic systems (DISABLED - can be re-enabled for debugging)
+// use systems::zone_memory_profiler_system::{
+//     zone_memory_profiler_system, command_buffer_validation_system,
+//     ZoneMemoryProfilerPlugin
+// };
+// use resources::zone_debug_diagnostics::{ZoneDebugDiagnostics, ZoneDebugDiagnosticsPlugin};
 
 use crate::components::SoundCategory;
 
@@ -678,6 +689,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // Initialise rose stuff
     log::info!("[ASSET LOADER DIAGNOSTIC] Registering asset loaders...");
+    log::info!("[ASSET LOADER DIAGNOSTIC] Registering DdsImageLoader");
     log::info!("[ASSET LOADER DIAGNOSTIC] Registering ZmsAssetLoader");
     
     // Create channel for async zone loading
@@ -689,12 +701,14 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // Initialize memory tracking resource for zone loading
     app.init_resource::<MemoryTrackingResource>();
     log::info!("[ZONE LOADER] MemoryTrackingResource initialized");
-
-    // Initialize material cache for zone loading
-    app.init_resource::<MaterialCache>();
-    log::info!("[ZONE LOADER] MaterialCache initialized");
     
-    app.register_asset_loader(ZmsAssetLoader)
+    // DIAGNOSTIC: Initialize debug diagnostics resources (DISABLED - can be re-enabled for debugging)
+    // app.init_resource::<ZoneDebugDiagnostics>();
+    // app.init_resource::<crate::systems::zone_memory_profiler_system::ZoneMemoryProfiler>();
+    // log::info!("[ZONE LOADER] Debug diagnostics resources initialized");
+    
+    app.register_asset_loader(DdsImageLoader)
+        .register_asset_loader(ZmsAssetLoader)
         .init_asset::<ZmsMaterialNumFaces>()
         .register_asset_loader(ZmsNoSkinAssetLoader)
         .register_asset_loader(ExeResourceLoader)
@@ -945,8 +959,33 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     );
 
     // Run zone change system just before physics sync which is after Update
-    app.add_systems(Update, (zone_loader_system, zone_loaded_from_vfs_system,));
-    app.add_systems(Update, (game_zone_change_system,));
+    // DIAGNOSTIC: Added explicit system ordering to ensure proper event flow:
+    // zone_loader_system → zone_loaded_from_vfs_system → game_zone_change_system
+    // CRITICAL FIX: game_zone_change_system MUST run after zone loading completes
+    // to ensure ZoneEvent::Loaded events are processed correctly.
+    app.add_systems(
+        Update,
+        (
+            zone_loader_system,
+            // zone_loaded_from_vfs_system runs after zone_loader_system to process the events it sends
+            zone_loaded_from_vfs_system.after(zone_loader_system),
+            // CRITICAL FIX: game_zone_change_system must run after BOTH zone systems
+            // to ensure it sees the ZoneEvent::Loaded events properly
+            game_zone_change_system
+                .after(zone_loader_system)
+                .after(zone_loaded_from_vfs_system),
+        )
+    );
+
+    // DIAGNOSTIC: Add zone loading diagnostic systems (DISABLED - can be re-enabled for debugging)
+    // These run after the zone loading systems to validate the results
+    // app.add_systems(
+    //     Update,
+    //     (
+    //         zone_memory_profiler_system,
+    //         command_buffer_validation_system,
+    //     )
+    // );
 
     // Run debug render stage last after physics update so it has accurate data
     app.add_systems(
@@ -960,6 +999,15 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // Zone Viewer
     app.add_systems(OnEnter(AppState::ZoneViewer), zone_viewer_enter_system);
+    app.add_systems(
+        Update,
+        debug_entity_visibility
+            .run_if(resource_exists::<CurrentZone>)
+            .run_if(|time: Res<Time>| time.elapsed_seconds() % 5.0 < time.delta_seconds()),
+    );
+
+    // Add render diagnostics system - runs every frame to check rendering state
+    app.add_systems(Update, render_diagnostics_system_lightweight);
 
     // Model Viewer, we avoid deleting any entities during CoreStage::Update by using a custom
     // stage which runs after Update. We cannot run before Update because the on_enter system
@@ -1325,9 +1373,16 @@ fn load_common_game_data(
             clear_color: ClearColorConfig::Custom(Color::rgb(0.70, 0.90, 1.0)),
             ..Default::default()
         },
-        BloomSettings::NATURAL,
-        Transform::from_xyz(5120.0, 50.0, -5120.0),
+        Projection::from(PerspectiveProjection {
+            fov: std::f32::consts::PI / 4.0,
+            near: 0.1,
+            far: 10000.0,
+            aspect_ratio: 16.0 / 9.0,
+        }),
+        Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
+            .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
         GlobalTransform::default(),
+        BloomSettings::NATURAL,
     )).id();
 
     bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);

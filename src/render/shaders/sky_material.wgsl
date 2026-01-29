@@ -18,9 +18,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
                                              view.inverse_view.z.xyzw,
                                              vec4<f32>(0.0, 0.0, 0.0, 1.0));
     let untranslated_proj = view.projection * untranslated_inv_view;
-    let untranslated_model = mat4x4<f32>(mesh.model.x.xyzw,
-                                         mesh.model.y.xyzw,
-                                         mesh.model.z.xyzw,
+    let untranslated_model = mat4x4<f32>(bevy_pbr::mesh_bindings::mesh.world_from_local.x.xyzw,
+                                         bevy_pbr::mesh_bindings::mesh.world_from_local.y.xyzw,
+                                         bevy_pbr::mesh_bindings::mesh.world_from_local.z.xyzw,
                                          vec4<f32>(0.0, 0.0, 0.0, 1.0));
     let pos = untranslated_proj * untranslated_model * vec4<f32>(vertex.position, 1.0);
 

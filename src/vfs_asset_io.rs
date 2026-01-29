@@ -13,7 +13,16 @@ use std::{
 };
 use rose_file_readers::{VfsFile, VirtualFilesystem};
 
-struct CursorWrapper(Vec<u8>);
+struct CursorWrapper {
+    data: Vec<u8>,
+    position: u64,
+}
+
+impl CursorWrapper {
+    fn new(data: Vec<u8>) -> Self {
+        Self { data, position: 0 }
+    }
+}
 
 impl bevy::tasks::futures_lite::AsyncRead for CursorWrapper {
     fn poll_read(
@@ -21,10 +30,15 @@ impl bevy::tasks::futures_lite::AsyncRead for CursorWrapper {
         _cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<std::io::Result<usize>> {
-        let cursor = &mut Cursor::new(self.0.as_slice());
-        let pos = cursor.position() as usize;
-        let to_read = std::cmp::min(buf.len(), self.0.len() - pos);
-        buf[..to_read].copy_from_slice(&self.0[pos..pos + to_read]);
+        let pos = self.position as usize;
+        let available = self.data.len().saturating_sub(pos);
+        let to_read = std::cmp::min(buf.len(), available);
+        
+        if to_read > 0 {
+            buf[..to_read].copy_from_slice(&self.data[pos..pos + to_read]);
+            self.position += to_read as u64;
+        }
+        
         Poll::Ready(Ok(to_read))
     }
 }
@@ -35,22 +49,60 @@ impl bevy::tasks::futures_lite::AsyncSeek for CursorWrapper {
         _cx: &mut Context<'_>,
         pos: std::io::SeekFrom,
     ) -> Poll<std::io::Result<u64>> {
-        let cursor = &mut Cursor::new(self.0.as_slice());
-        Poll::Ready(cursor.seek(pos))
+        use std::io::SeekFrom;
+        
+        let new_pos = match pos {
+            SeekFrom::Start(offset) => offset as i64,
+            SeekFrom::End(offset) => self.data.len() as i64 + offset,
+            SeekFrom::Current(offset) => self.position as i64 + offset,
+        };
+        
+        if new_pos < 0 {
+            return Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid seek to a negative position",
+            )));
+        }
+        
+        self.position = new_pos as u64;
+        Poll::Ready(Ok(self.position))
     }
 }
 
 impl std::io::Read for CursorWrapper {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let mut cursor = Cursor::new(self.0.as_slice());
-        cursor.read(buf)
+        let pos = self.position as usize;
+        let available = self.data.len().saturating_sub(pos);
+        let to_read = std::cmp::min(buf.len(), available);
+        
+        if to_read > 0 {
+            buf[..to_read].copy_from_slice(&self.data[pos..pos + to_read]);
+            self.position += to_read as u64;
+        }
+        
+        Ok(to_read)
     }
 }
 
 impl std::io::Seek for CursorWrapper {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-        let mut cursor = Cursor::new(self.0.as_slice());
-        cursor.seek(pos)
+        use std::io::SeekFrom;
+        
+        let new_pos = match pos {
+            SeekFrom::Start(offset) => offset as i64,
+            SeekFrom::End(offset) => self.data.len() as i64 + offset,
+            SeekFrom::Current(offset) => self.position as i64 + offset,
+        };
+        
+        if new_pos < 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid seek to a negative position",
+            ));
+        }
+        
+        self.position = new_pos as u64;
+        Ok(self.position)
     }
 }
 
@@ -99,7 +151,7 @@ impl AssetReader for VfsAssetIo {
                 log::info!("[VFS DIAGNOSTIC] Returning zone_loader data for zone_id: {}", zone_id);
                 log::info!("[VFS DIAGNOSTIC] Data length: {} bytes", data.len());
                 log::info!("[VFS DIAGNOSTIC] ===========================================");
-                return Ok(Box::new(CursorWrapper(data)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>);
+                return Ok(Box::new(CursorWrapper::new(data)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>);
             }
 
             // Try to read from VFS
@@ -110,13 +162,13 @@ impl AssetReader for VfsAssetIo {
                             log::info!("[VFS DIAGNOSTIC] Returning VFS file from buffer for path: {}", path_str);
                             log::info!("[VFS DIAGNOSTIC] Buffer size: {} bytes", buffer.len());
                             log::info!("[VFS DIAGNOSTIC] ===========================================");
-                            Ok(Box::new(CursorWrapper(buffer)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>)
+                            Ok(Box::new(CursorWrapper::new(buffer)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>)
                         }
                         VfsFile::View(view) => {
                             log::info!("[VFS DIAGNOSTIC] Returning VFS file from view for path: {}", path_str);
                             log::info!("[VFS DIAGNOSTIC] View size: {} bytes", view.len());
                             log::info!("[VFS DIAGNOSTIC] ===========================================");
-                            Ok(Box::new(CursorWrapper(view.into())) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>)
+                            Ok(Box::new(CursorWrapper::new(view.into())) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>)
                         }
                     }
                 }
@@ -135,21 +187,8 @@ impl AssetReader for VfsAssetIo {
         _path: &'a Path,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>, AssetReaderError>> + Send + 'a>> {
         Box::pin(async move {
-            log::info!("[VFS DIAGNOSTIC] ===========================================");
-            log::info!("[VFS DIAGNOSTIC] read_meta called for path: {:?}", _path);
-            
-            // FIX: Return valid metadata for .zone_loader files
-            let path_str = _path.to_str().unwrap_or("");
-            if path_str.ends_with(".zone_loader") {
-                log::info!("[VFS DIAGNOSTIC] Returning metadata for .zone_loader file: {}", path_str);
-                // Return empty metadata as valid bytes
-                let data = vec![];
-                log::info!("[VFS DIAGNOSTIC] ===========================================");
-                return Ok(Box::new(CursorWrapper(data)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>);
-            }
-            
-            log::info!("[VFS DIAGNOSTIC] ===========================================");
-            // For simplicity, just return not found for other metadata
+            // Return NotFound for metadata - this is correct behavior since VFS files
+            // don't have .meta files. Bevy will use default metadata.
             Err(AssetReaderError::NotFound(_path.into()))
         })
     }
@@ -159,22 +198,14 @@ impl AssetReader for VfsAssetIo {
         _path: &'a Path,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>, AssetReaderError>> + Send + 'a>> {
         Box::pin(async move {
-            log::info!("[VFS DIAGNOSTIC] ===========================================");
-            log::info!("[VFS DIAGNOSTIC] read_directory called for path: {:?}", _path);
-            
-            // FIX: Return .zone_loader files in ALL directory listings
-            // This makes Bevy's asset system think .zone_loader files exist in any directory
-            let path_str = _path.to_str().unwrap_or("");
-            log::info!("[VFS DIAGNOSTIC] Returning .zone_loader files for directory: {}", path_str);
-            
-            // Create a stream that returns .zone_loader files for zones 0-114
-            let paths: Vec<PathBuf> = (0..115)
-                .map(|i| PathBuf::from(format!("{}.zone_loader", i)))
-                .collect();
-            
-            let stream = bevy::tasks::futures_lite::stream::iter(paths);
-            log::info!("[VFS DIAGNOSTIC] Returning {} .zone_loader files", 115);
-            log::info!("[VFS DIAGNOSTIC] ===========================================");
+            // FIX: Return empty directory listing to prevent continuous asset reloading.
+            // Previously, this returned .zone_loader files for ALL directories, causing
+            // Bevy's asset system to continuously discover and reload zone assets,
+            // leading to massive memory allocations (2GB/second) as all assets were
+            // reloaded repeatedly.
+            //
+            // Zones should only be loaded via LoadZoneEvent, not through directory scanning.
+            let stream = bevy::tasks::futures_lite::stream::iter(Vec::<PathBuf>::new());
             Ok(Box::new(stream) as Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>)
         })
     }

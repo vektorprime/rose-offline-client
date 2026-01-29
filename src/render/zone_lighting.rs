@@ -47,6 +47,8 @@ pub struct ZoneLightingPlugin;
 
 impl Plugin for ZoneLightingPlugin {
     fn build(&self, app: &mut App) {
+        bevy::log::info!("[ZONE LIGHTING] Building ZoneLightingPlugin");
+        
         load_internal_asset!(
             app,
             ZONE_LIGHTING_SHADER_HANDLE_TYPED,
@@ -58,12 +60,16 @@ impl Plugin for ZoneLightingPlugin {
             .init_resource::<ZoneLighting>();
 
         if let Ok(render_app) = app.get_sub_app_mut(RenderApp) {
+            bevy::log::info!("[ZONE LIGHTING] Initializing render app systems");
             render_app
                 .add_systems(ExtractSchedule, extract_uniform_data)
                 .add_systems(Render, (prepare_uniform_data,).in_set(RenderSet::Prepare));
+        } else {
+            bevy::log::error!("[ZONE LIGHTING] FAILED to get render app - lighting will not work!");
         }
 
         app.add_systems(Startup, spawn_lights);
+        bevy::log::info!("[ZONE LIGHTING] ZoneLightingPlugin build complete");
     }
 
     fn finish(&self, app: &mut App) {
@@ -76,9 +82,12 @@ impl Plugin for ZoneLightingPlugin {
 }
 
 fn spawn_lights(mut commands: Commands) {
-    commands.spawn(DirectionalLightBundle {
+    bevy::log::info!("[ZONE LIGHTING] Spawning directional and ambient lights");
+    
+    let light_entity = commands.spawn(DirectionalLightBundle {
         transform: default_light_transform(),
         directional_light: DirectionalLight {
+            illuminance: 10000.0,  // Bevy 0.13 requires lux values (was ~1.0 in 0.12)
             shadows_enabled: true,
             ..Default::default()
         },
@@ -88,12 +97,16 @@ fn spawn_lights(mut commands: Commands) {
             minimum_distance: 0.1,
         },
         ..Default::default()
-    });
+    }).id();
+    
+    bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=10000.0", light_entity);
 
     commands.insert_resource(AmbientLight {
         color: Color::rgb(1.0, 1.0, 1.0),
-        brightness: 0.9,
+        brightness: 80.0,  // Bevy 0.13 requires much higher values (was ~1.0 in 0.12)
     });
+    
+    bevy::log::info!("[ZONE LIGHTING] Ambient light inserted: brightness=80.0");
 }
 
 #[derive(Resource, Reflect)]
@@ -187,6 +200,8 @@ pub struct ZoneLightingUniformMeta {
 
 impl FromWorld for ZoneLightingUniformMeta {
     fn from_world(world: &mut World) -> Self {
+        bevy::log::info!("[ZONE LIGHTING] Creating ZoneLightingUniformMeta render resources");
+        
         let render_device = world.resource::<RenderDevice>();
 
         let buffer = render_device.create_buffer(&BufferDescriptor {
@@ -195,6 +210,8 @@ impl FromWorld for ZoneLightingUniformMeta {
             mapped_at_creation: false,
             label: Some("zone_lighting_uniform_buffer"),
         });
+        bevy::log::info!("[ZONE LIGHTING] Uniform buffer created: size={} bytes",
+            ZoneLightingUniformData::min_size().get());
 
         let bind_group_layout =
             render_device.create_bind_group_layout(
@@ -210,6 +227,7 @@ impl FromWorld for ZoneLightingUniformMeta {
                     count: None,
                 }],
             );
+        bevy::log::info!("[ZONE LIGHTING] Bind group layout created");
 
         let bind_group = render_device.create_bind_group(
             "zone_lighting_uniform_bind_group",
@@ -219,6 +237,7 @@ impl FromWorld for ZoneLightingUniformMeta {
                 resource: buffer.as_entire_binding(),
             }],
         );
+        bevy::log::info!("[ZONE LIGHTING] Bind group created - ZoneLightingUniformMeta ready");
 
         ZoneLightingUniformMeta {
             buffer,
@@ -228,7 +247,22 @@ impl FromWorld for ZoneLightingUniformMeta {
     }
 }
 
-fn extract_uniform_data(mut commands: Commands, zone_lighting: Extract<Res<ZoneLighting>>) {
+fn extract_uniform_data(
+    mut commands: Commands,
+    zone_lighting: Extract<Res<ZoneLighting>>,
+    mut frame_count: bevy::ecs::system::Local<u32>,
+) {
+    *frame_count += 1;
+    
+    // Log every 60 frames to avoid spam
+    if *frame_count % 60 == 1 {
+        bevy::log::info!("[ZONE LIGHTING] Extracting uniform data (frame {})", *frame_count);
+        bevy::log::info!("[ZONE LIGHTING]   Map ambient: {:?}", zone_lighting.map_ambient_color);
+        bevy::log::info!("[ZONE LIGHTING]   Light direction: {:?}", zone_lighting.light_direction);
+        bevy::log::info!("[ZONE LIGHTING]   Fog enabled: {}, density: {}",
+            zone_lighting.color_fog_enabled, zone_lighting.fog_density);
+    }
+    
     commands.insert_resource(ZoneLightingUniformData {
         map_ambient_color: zone_lighting.map_ambient_color.extend(1.0),
         character_ambient_color: zone_lighting.character_ambient_color.extend(1.0),

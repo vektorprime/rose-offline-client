@@ -1176,20 +1176,20 @@ fn spawn_skeleton(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn spawn_model(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    object_materials: &mut Assets<ObjectMaterial>,
-    model_entity: Entity,
-    model_list: &ZscFile,
-    model_id: usize,
-    skinned_mesh: Option<&SkinnedMesh>,
-    default_bone_index: Option<usize>,
-    dummy_bone_offset: usize,
-    load_clip_faces: bool,
-    specular_image: &Handle<Image>,
-) -> Vec<Entity> {
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_model(
+        commands: &mut Commands,
+        asset_server: &AssetServer,
+        object_materials: &mut Assets<ObjectMaterial>,
+        model_entity: Entity,
+        model_list: &ZscFile,
+        model_id: usize,
+        skinned_mesh: Option<&SkinnedMesh>,
+        default_bone_index: Option<usize>,
+        dummy_bone_offset: usize,
+        load_clip_faces: bool,
+        specular_image: &Handle<Image>,
+    ) -> Vec<Entity> {
     let mut parts = Vec::new();
     let object = if let Some(object) = model_list.objects.get(model_id) {
         object
@@ -1202,6 +1202,8 @@ fn spawn_model(
         let mesh: Handle<Mesh> = asset_server.load(model_list.meshes[mesh_id].path().to_string_lossy().into_owned());
         let material_id = object_part.material_id as usize;
         let zsc_material = &model_list.materials[material_id];
+
+        // Create material directly without cache
         let material = object_materials.add(ObjectMaterial {
             base_texture: Some(asset_server.load(zsc_material.path.path().to_string_lossy().into_owned())),
             lightmap_texture: None,
@@ -1216,10 +1218,10 @@ fn spawn_model(
             z_write_enabled: zsc_material.z_write_enabled,
             z_test_enabled: zsc_material.z_test_enabled,
             specular_texture: if zsc_material.specular_enabled {
-                Some(specular_image.clone())
-            } else {
-                None
-            },
+                    Some(specular_image.clone())
+                } else {
+                    None
+                },
             skinned: zsc_material.is_skin,
             ..Default::default()
         });

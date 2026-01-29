@@ -184,10 +184,11 @@ pub fn free_camera_system(
     // Log camera position and direction periodically
     if time.elapsed_seconds() % 5.0 < time.delta_seconds() {
         let yaw_pitch = free_camera.rig.driver::<YawPitch>();
-        log::info!("[CAMERA] Free Camera - Position: ({:.2}, {:.2}, {:.2}), Yaw: {:.2}°, Pitch: {:.2}°",
+        log::info!("[CAMERA] Free camera position: ({:.1}, {:.1}, {:.1})",
             camera_transform.translation.x,
             camera_transform.translation.y,
-            camera_transform.translation.z,
+            camera_transform.translation.z);
+        log::info!("[CAMERA] Free camera rotation: yaw={:.1}°, pitch={:.1}°",
             yaw_pitch.yaw_degrees,
             yaw_pitch.pitch_degrees);
     }

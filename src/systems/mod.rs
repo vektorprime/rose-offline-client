@@ -18,6 +18,7 @@ mod debug_inspector_system;
 mod debug_render_collider_system;
 mod debug_render_directional_light_system;
 mod debug_render_skeleton_system;
+mod debug_rendering_system;
 mod directional_light_system;
 mod effect_system;
 mod facing_direction_system;
@@ -88,6 +89,11 @@ pub use debug_inspector_system::DebugInspectorPlugin;
 pub use debug_render_collider_system::debug_render_collider_system;
 pub use debug_render_directional_light_system::debug_render_directional_light_system;
 pub use debug_render_skeleton_system::debug_render_skeleton_system;
+pub use debug_rendering_system::{
+    debug_entity_visibility,
+    render_diagnostics_system,
+    render_diagnostics_system_lightweight,
+};
 pub use directional_light_system::directional_light_system;
 pub use effect_system::effect_system;
 pub use facing_direction_system::facing_direction_system;
@@ -136,3 +142,12 @@ pub use world_connection_system::world_connection_system;
 pub use world_time_system::world_time_system;
 pub use zone_time_system::zone_time_system;
 pub use zone_viewer_system::zone_viewer_enter_system;
+
+// Zone render validation systems for diagnosing black screen issues
+pub mod zone_render_validation_system;
+
+// Zone memory profiler systems for leak detection
+pub mod zone_memory_profiler_system;
+
+// Zone memory protection system for emergency detection
+pub mod zone_memory_protection_system;
