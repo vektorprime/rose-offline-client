@@ -1,8 +1,8 @@
-#import bevy_pbr::mesh_bindings mesh
-#import bevy_pbr::mesh_view_bindings view
-#import bevy_pbr::mesh_functions mesh_position_local_to_world, mesh_normal_local_to_world, mesh_position_local_to_clip, get_model_matrix
-#import bevy_pbr::shadows fetch_directional_shadow
-#import rose_client::zone_lighting apply_zone_lighting
+#import bevy_pbr::mesh_bindings::mesh
+#import bevy_pbr::mesh_view_bindings::view
+#import bevy_pbr::mesh_functions::{mesh_position_local_to_world, mesh_normal_local_to_world, mesh_position_local_to_clip, get_model_matrix}
+#import bevy_pbr::shadows::fetch_directional_shadow
+#import rose_client::zone_lighting::apply_zone_lighting
 
 struct Vertex {
     @location(0) position: vec3<f32>,

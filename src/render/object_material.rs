@@ -270,6 +270,17 @@ fn prepare_object_material_bind_groups(
         // Use AsBindGroup to prepare the uniform buffer and get bindings
         let unprepared = match material.as_bind_group(material_layout, &render_device, &images, &fallback_image) {
             Ok(unprepared) => unprepared,
+            Err(AsBindGroupError::RetryNextUpdate) => {
+                // Textures are still loading - this is expected, log at debug level only
+                bevy::log::debug!(
+                    "[OBJECT MATERIAL] Textures not ready for material {:?}: base={:?} lightmap={:?} specular={:?}",
+                    id,
+                    material.base_texture.is_some(),
+                    material.lightmap_texture.is_some(),
+                    material.specular_texture.is_some()
+                );
+                continue;
+            }
             Err(e) => {
                 bevy::log::warn!("[OBJECT MATERIAL] Failed to prepare bind group for material {:?}: {:?}", id, e);
                 continue;
@@ -466,6 +477,12 @@ impl SpecializedMeshPipeline for ObjectMaterialPipeline {
         let zone_lighting_layout = self.zone_lighting_layout.as_ref()
             .expect("ObjectMaterialPipeline should be initialized before specialize is called");
         
+        // DIAGNOSTIC: Log mesh layout BEFORE building base descriptor
+        bevy::log::warn!("[PIPELINE DEBUG] ==== specialize() called ====");
+        bevy::log::warn!("[PIPELINE DEBUG] Input layout can provide UV_1 at loc 3: {}",
+            layout.get_layout(&[MESH_ATTRIBUTE_UV_1.at_shader_location(3)]).is_ok());
+        bevy::log::warn!("[PIPELINE DEBUG] key.custom_key.vertex_uvs_lightmap: {}", key.custom_key.vertex_uvs_lightmap);
+        
         // Build base descriptor using shared infrastructure
         let mut descriptor = PipelineDescriptorBuilder::build_base_descriptor(
             mesh_pipeline,
@@ -473,6 +490,22 @@ impl SpecializedMeshPipeline for ObjectMaterialPipeline {
             &key.custom_key,
             layout,
         )?;
+        
+        // DIAGNOSTIC: Log shader defs after base descriptor build
+        bevy::log::warn!("[PIPELINE DEBUG] Base descriptor shader defs (from Bevy MeshPipeline):");
+        bevy::log::warn!("  Vertex: {:?}", descriptor.vertex.shader_defs);
+        if let Some(ref fragment) = descriptor.fragment {
+            bevy::log::warn!("  Fragment: {:?}", fragment.shader_defs);
+        }
+        
+        // DIAGNOSTIC: Check if base descriptor already has VERTEX_UVS_LIGHTMAP
+        let base_has_lightmap_def = |defs: &Vec<bevy::render::render_resource::ShaderDefVal>| -> bool {
+            defs.iter().any(|d| matches!(d, bevy::render::render_resource::ShaderDefVal::Bool(name, _) if name.as_str() == "VERTEX_UVS_LIGHTMAP"))
+        };
+        let base_vertex_has_it = base_has_lightmap_def(&descriptor.vertex.shader_defs);
+        let base_fragment_has_it = descriptor.fragment.as_ref().map(|f| base_has_lightmap_def(&f.shader_defs)).unwrap_or(false);
+        bevy::log::warn!("[PIPELINE DEBUG] Base descriptor already has VERTEX_UVS_LIGHTMAP - Vertex: {}, Fragment: {}",
+            base_vertex_has_it, base_fragment_has_it);
         
         // Check if mesh actually has UV_1 attribute at the expected location
         // This must match what the shader expects when VERTEX_UVS_LIGHTMAP is defined
@@ -509,7 +542,7 @@ impl SpecializedMeshPipeline for ObjectMaterialPipeline {
         descriptor.layout.push(zone_lighting_layout.clone());
 
         // Apply depth/stencil configuration
-        descriptor.depth_stencil.as_mut().unwrap().depth_write_enabled = 
+        descriptor.depth_stencil.as_mut().unwrap().depth_write_enabled =
             key.custom_key.alpha_mode.to_alpha_mode() != AlphaMode::Blend;
 
         // Apply face culling
@@ -519,38 +552,60 @@ impl SpecializedMeshPipeline for ObjectMaterialPipeline {
             Some(bevy::render::render_resource::Face::Back)
         };
 
-        // Add shader defines
-        descriptor
-            .vertex
-            .shader_defs
-            .push("VERTEX_UVS".into());
-        if let Some(fragment) = descriptor.fragment.as_mut() {
-            fragment
-                .shader_defs
-                .push("VERTEX_UVS".into());
-        }
-
-        if vertex_uvs_lightmap {
-            descriptor
-                .vertex
-                .shader_defs
-                .push("VERTEX_UVS_LIGHTMAP".into());
-            if let Some(fragment) = descriptor.fragment.as_mut() {
-                fragment
-                    .shader_defs
-                    .push("VERTEX_UVS_LIGHTMAP".into());
-            }
-        } else if let Some(fragment) = descriptor.fragment.as_mut() {
-            fragment
-                .shader_defs
-                .push("ZONE_LIGHTING_CHARACTER".into());
-        }
-
+        // Build shader defines from scratch to avoid conflicts with Bevy's base descriptor
+        // IMPORTANT: Shader defs MUST be applied consistently to BOTH vertex and fragment stages
+        // to prevent pipeline validation errors due to signature mismatches.
+        let mut common_shader_defs: Vec<bevy::render::render_resource::ShaderDefVal> = Vec::new();
+        
+        // Add base shader defs that match what our shader expects
+        common_shader_defs.push("VERTEX_POSITIONS".into());
+        common_shader_defs.push("VERTEX_NORMALS".into());
+        common_shader_defs.push("VERTEX_UVS".into());
+        
+        // For skinned meshes, add the SKINNED def
         if key.custom_key.skinned {
-            descriptor
-                .vertex
-                .shader_defs
-                .push("SKINNED".into());
+            common_shader_defs.push("SKINNED".into());
+        }
+
+        // For lightmapped meshes, add VERTEX_UVS_LIGHTMAP
+        // This enables the lightmap_uv attribute at location 3 in the shader
+        if vertex_uvs_lightmap {
+            common_shader_defs.push("VERTEX_UVS_LIGHTMAP".into());
+        } else {
+            common_shader_defs.push("ZONE_LIGHTING_CHARACTER".into());
+        }
+
+        // Replace shader defs entirely to avoid conflicts with Bevy's base shader defs
+        descriptor.vertex.shader_defs = common_shader_defs.clone();
+        if let Some(fragment) = descriptor.fragment.as_mut() {
+            fragment.shader_defs = common_shader_defs;
+        }
+
+        // DIAGNOSTIC: Log final shader defs
+        bevy::log::warn!("[PIPELINE DEBUG] Final shader defs AFTER applying common_shader_defs:");
+        bevy::log::warn!("  Vertex: {:?}", descriptor.vertex.shader_defs);
+        let final_fragment_has_it = descriptor.fragment.as_ref().map(|f| {
+            f.shader_defs.iter().any(|d| matches!(d, bevy::render::render_resource::ShaderDefVal::Bool(name, _) if name.as_str() == "VERTEX_UVS_LIGHTMAP"))
+        }).unwrap_or(false);
+        let final_vertex_has_it = descriptor.vertex.shader_defs.iter().any(|d| matches!(d, bevy::render::render_resource::ShaderDefVal::Bool(name, _) if name.as_str() == "VERTEX_UVS_LIGHTMAP"));
+        if let Some(ref fragment) = descriptor.fragment {
+            bevy::log::warn!("  Fragment: {:?}", fragment.shader_defs);
+        }
+        bevy::log::warn!("[PIPELINE DEBUG] vertex_uvs_lightmap={}, final_vertex_has VERTEX_UVS_LIGHTMAP={}, final_fragment_has VERTEX_UVS_LIGHTMAP={}",
+            vertex_uvs_lightmap, final_vertex_has_it, final_fragment_has_it);
+        
+        // DIAGNOSTIC: Check for mismatch
+        if final_vertex_has_it != final_fragment_has_it {
+            bevy::log::error!("[PIPELINE DEBUG] *** MISMATCH DETECTED *** Vertex and Fragment have different VERTEX_UVS_LIGHTMAP defs!");
+        }
+        
+        // DIAGNOSTIC: Log vertex buffer layout info
+        bevy::log::warn!("[PIPELINE DEBUG] Vertex buffers count: {}", descriptor.vertex.buffers.len());
+        if let Some(ref buf) = descriptor.vertex.buffers.first() {
+            bevy::log::warn!("[PIPELINE DEBUG] First buffer attributes: {:?}", buf.attributes.len());
+            for attr in buf.attributes.iter() {
+                bevy::log::warn!("[PIPELINE DEBUG]   Attr location={}, format={:?}", attr.shader_location, attr.format);
+            }
         }
 
         Ok(descriptor)
@@ -940,14 +995,20 @@ fn queue_object_material_meshes(
             .is_ok();
 
         // DIAGNOSTIC: Log mesh UV_1 detection
-        //bevy::log::info!("[QUEUE DEBUG] Entity {:?}: has_lightmap_uv={}", entity, has_lightmap_uv);
+        bevy::log::warn!("[QUEUE DEBUG] Entity {:?}: has_lightmap_uv={}, material.lightmap_texture.is_some()={}",
+            entity, has_lightmap_uv, material.lightmap_texture.is_some());
 
         // Create mesh vertex buffer layout from the GPU mesh
         let mesh_vertex_layout = MeshVertexBufferLayout::new((*gpu_mesh.layout).clone());
         
         // DIAGNOSTIC: Check if the created layout has UV_1 at location 3
         let layout_has_uv_1_loc3 = mesh_vertex_layout.get_layout(&[MESH_ATTRIBUTE_UV_1.at_shader_location(3)]).is_ok();
-        //bevy::log::info!("[QUEUE DEBUG]   Mesh vertex layout has UV_1 at location 3: {}", layout_has_uv_1_loc3);
+        bevy::log::warn!("[QUEUE DEBUG]   Mesh vertex layout has UV_1 at location 3: {}", layout_has_uv_1_loc3);
+        
+        // DIAGNOSTIC: Log what attributes are actually in the mesh layout
+        // Note: gpu_mesh.layout is Hashed<InnerMeshVertexBufferLayout>, need to access the inner layout
+        // For now just log that we can't easily access attributes
+        bevy::log::warn!("[QUEUE DEBUG]   Mesh layout type is Hashed<InnerMeshVertexBufferLayout>");
         
         // // DIAGNOSTIC: Check what attributes are actually in the mesh layout
         // if let Ok(vertex_buffer_layout) = mesh_vertex_layout.get_layout(&[]) {
@@ -966,6 +1027,10 @@ fn queue_object_material_meshes(
             .with_alpha_mode(alpha_mode)
             .with_vertex_uvs_lightmap(has_lightmap_uv);
         let pipeline_key = ObjectMaterialPipelineKey { mesh_key, custom_key };
+        
+        // DIAGNOSTIC: Log pipeline key details
+        bevy::log::warn!("[QUEUE DEBUG] Pipeline key: custom_key.vertex_uvs_lightmap={}, custom_key.skinned={}, custom_key.two_sided={}",
+            custom_key.vertex_uvs_lightmap, custom_key.skinned, custom_key.two_sided);
 
         // Get the specialized pipeline
         let pipeline = match pipelines.specialize(

@@ -290,6 +290,16 @@ fn prepare_effect_mesh_material_bind_groups(
         // Use AsBindGroup to prepare the uniform buffer and get bindings
         let unprepared = match material.as_bind_group(material_layout, &render_device, &images, &fallback_image) {
             Ok(unprepared) => unprepared,
+            Err(AsBindGroupError::RetryNextUpdate) => {
+                // Textures are still loading - this is expected, log at debug level only
+                bevy::log::debug!(
+                    "[EFFECT MESH MATERIAL] Textures not ready for material {:?}: base={:?} animation={:?}",
+                    id,
+                    material.base_texture.is_some(),
+                    material.animation_texture.is_some()
+                );
+                continue;
+            }
             Err(e) => {
                 bevy::log::warn!("[EFFECT MESH MATERIAL] Failed to prepare bind group for material {:?}: {:?}", id, e);
                 continue;
@@ -538,11 +548,13 @@ impl SpecializedMeshPipeline for EffectMeshMaterialPipeline {
         }
 
         // Disable color fog for additive blending
+        // IMPORTANT: Shader defs MUST be applied consistently to BOTH vertex and fragment stages
+        // to prevent pipeline validation errors due to signature mismatches.
         if matches!(key.blend_op, BlendOperation::Add) {
+            let fog_def = ShaderDefVal::Bool("ZONE_LIGHTING_DISABLE_COLOR_FOG".into(), true);
+            descriptor.vertex.shader_defs.push(fog_def.clone());
             if let Some(fragment) = descriptor.fragment.as_mut() {
-                fragment
-                    .shader_defs
-                    .push(ShaderDefVal::Bool("ZONE_LIGHTING_DISABLE_COLOR_FOG".into(), true));
+                fragment.shader_defs.push(fog_def);
             }
         }
 

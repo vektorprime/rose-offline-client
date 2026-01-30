@@ -395,6 +395,14 @@ impl PipelineDescriptorBuilder {
         layout: &MeshVertexBufferLayout,
     ) -> Result<RenderPipelineDescriptor, bevy::render::render_resource::SpecializedMeshPipelineError> {
         use bevy::render::render_resource::SpecializedMeshPipeline;
+        
+        // Add LIGHTMAPPED flag to mesh_key when the mesh has lightmap UVs
+        // This ensures Bevy's MeshPipeline includes the UV_1 attribute in the pipeline
+        let mut mesh_key = mesh_key;
+        if custom_key.vertex_uvs_lightmap {
+            mesh_key |= MeshPipelineKey::LIGHTMAPPED;
+        }
+        
         let mut descriptor = mesh_pipeline.specialize(mesh_key, layout)?;
 
         // Apply custom key configurations

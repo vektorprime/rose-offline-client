@@ -1,12 +1,12 @@
-#import bevy_pbr::mesh_types Mesh, SkinnedMesh
-#import bevy_pbr::mesh_view_bindings view
-#import bevy_pbr::mesh_bindings mesh
-#import bevy_pbr::mesh_functions mesh_position_local_to_world, mesh_normal_local_to_world, get_model_matrix
-#import bevy_pbr::shadows fetch_directional_shadow
-#import rose_client::zone_lighting apply_zone_lighting
+#import bevy_pbr::mesh_types::{Mesh, SkinnedMesh}
+#import bevy_pbr::mesh_view_bindings::view
+#import bevy_pbr::mesh_bindings::mesh
+#import bevy_pbr::mesh_functions::{mesh_position_local_to_world, mesh_normal_local_to_world, get_model_matrix}
+#import bevy_pbr::shadows::fetch_directional_shadow
+#import rose_client::zone_lighting::apply_zone_lighting
 
 #ifdef SKINNED
-#import bevy_pbr::skinning skin_normals, skin_model
+#import bevy_pbr::skinning::{skin_normals, skin_model}
 #endif
 
 @group(2) @binding(0)
