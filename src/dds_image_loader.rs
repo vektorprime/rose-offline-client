@@ -35,44 +35,44 @@ impl AssetLoader for DdsImageLoader {
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
             
-            info!("[DDS LOADER] Loading DDS texture: {}", asset_path);
-            info!("[DDS LOADER] File size: {} bytes", bytes.len());
+           // info!("[DDS LOADER] Loading DDS texture: {}", asset_path);
+           // info!("[DDS LOADER] File size: {} bytes", bytes.len());
             
             // Parse the DDS header to determine format
             let dds_info = parse_dds_header(&bytes)?;
-            info!("[DDS LOADER] DDS format: {:?}, {}x{}, mips: {}", 
-                dds_info.format, dds_info.width, dds_info.height, dds_info.mip_count);
+           // info!("[DDS LOADER] DDS format: {:?}, {}x{}, mips: {}", 
+                //dds_info.format, dds_info.width, dds_info.height, dds_info.mip_count);
             
             // Handle based on format - ALL paths convert to R8G8B8A8
             // This avoids Bevy 0.13.2 panics with compressed texture pixel_size
             match dds_info.format {
                 DdsFormat::R8G8B8 => {
-                    info!("[DDS LOADER] Converting R8G8B8 to R8G8B8A8");
+                   // info!("[DDS LOADER] Converting R8G8B8 to R8G8B8A8");
                     convert_rgb_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::R8G8B8A8 | DdsFormat::B8G8R8A8 => {
-                    info!("[DDS LOADER] Loading RGBA data directly");
+                   // info!("[DDS LOADER] Loading RGBA data directly");
                     load_rgba_direct(&bytes, &dds_info)
                 }
                 DdsFormat::B8G8R8 => {
-                    info!("[DDS LOADER] Converting B8G8R8 to R8G8B8A8");
+                   // info!("[DDS LOADER] Converting B8G8R8 to R8G8B8A8");
                     convert_bgr_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::Bc1Dxt1 => {
-                    info!("[DDS LOADER] Decompressing BC1/DXT1 to R8G8B8A8");
+                   // info!("[DDS LOADER] Decompressing BC1/DXT1 to R8G8B8A8");
                     decompress_bc1_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::Bc2Dxt3 => {
-                    info!("[DDS LOADER] Decompressing BC2/DXT3 to R8G8B8A8");
+                   // info!("[DDS LOADER] Decompressing BC2/DXT3 to R8G8B8A8");
                     decompress_bc2_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::Bc3Dxt5 => {
-                    info!("[DDS LOADER] Decompressing BC3/DXT5 to R8G8B8A8");
+                   // info!("[DDS LOADER] Decompressing BC3/DXT5 to R8G8B8A8");
                     decompress_bc3_to_rgba(&bytes, &dds_info)
                 }
                 _ => {
                     // Try image crate as fallback - it will also convert to RGBA8
-                    warn!("[DDS LOADER] Format {:?}, trying image crate", dds_info.format);
+                    //warn!("[DDS LOADER] Format {:?}, trying image crate", dds_info.format);
                     try_image_crate(&bytes, &asset_path)
                 }
             }
@@ -180,7 +180,7 @@ fn parse_dds_header(bytes: &[u8]) -> anyhow::Result<DdsInfo> {
                 return parse_dx10_header(bytes, width, height, depth, mip_map_count);
             }
             _ => {
-                warn!("[DDS LOADER] Unknown FourCC: {:?}", std::str::from_utf8(&pf_four_cc));
+                //warn!("[DDS LOADER] Unknown FourCC: {:?}", std::str::from_utf8(&pf_four_cc));
                 DdsFormat::Unknown
             }
         }
@@ -270,7 +270,7 @@ fn parse_dx10_header(
         98 => DdsFormat::Bc7,          // DXGI_FORMAT_BC7_UNORM
         99 => DdsFormat::Bc7,          // DXGI_FORMAT_BC7_UNORM_SRGB
         _ => {
-            warn!("[DDS LOADER] Unknown DX10 DXGI format: {}", dxgi_format);
+            //warn!("[DDS LOADER] Unknown DX10 DXGI format: {}", dxgi_format);
             DdsFormat::Unknown
         }
     };

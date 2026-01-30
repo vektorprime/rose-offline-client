@@ -578,12 +578,12 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             "4.zone_loader",
         ];
 
-        for path in test_paths {
-            match vfs_resource.vfs.open_file(path) {
-                Ok(_) => log::info!("[VFS DIAGNOSTIC] VFS contains file: {}", path),
-                Err(_) => log::warn!("[VFS DIAGNOSTIC] VFS does NOT contain file: {}", path),
-            }
-        }
+        // for path in test_paths {
+        //     match vfs_resource.vfs.open_file(path) {
+        //         Ok(_) => log::info!("[VFS DIAGNOSTIC] VFS contains file: {}", path),
+        //         Err(_) => log::warn!("[VFS DIAGNOSTIC] VFS does NOT contain file: {}", path),
+        //     }
+        // }
     });
 
     // DIAGNOSTIC: Log asset server configuration

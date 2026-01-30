@@ -144,10 +144,10 @@ impl AssetLoader for ZmoAssetLoader {
     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let asset_path = load_context.path().to_string_lossy();
-            info!("[ASSET LIFECYCLE] Loading ZMO animation asset: {}", asset_path);
+            //info!("[ASSET LIFECYCLE] Loading ZMO animation asset: {}", asset_path);
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
-            info!("[ASSET LIFECYCLE] ZMO asset size: {} bytes", bytes.len());
+            //info!("[ASSET LIFECYCLE] ZMO asset size: {} bytes", bytes.len());
             match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(zmo) => {
                     // First count how many transform channels there are
@@ -250,10 +250,10 @@ impl AssetLoader for ZmoTextureAssetLoader {
     ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
         Box::pin(async move {
             let asset_path = load_context.path().to_string_lossy();
-            info!("[ASSET LIFECYCLE] Loading ZMO texture asset: {}", asset_path);
+            //info!("[ASSET LIFECYCLE] Loading ZMO texture asset: {}", asset_path);
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
-            info!("[ASSET LIFECYCLE] ZMO texture asset size: {} bytes", bytes.len());
+            //info!("[ASSET LIFECYCLE] ZMO texture asset size: {} bytes", bytes.len());
             match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(zmo) => {
                     let mut num_vertices = 0;

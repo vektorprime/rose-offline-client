@@ -1,12 +1,13 @@
 #import bevy_pbr::mesh_bindings mesh
 #import bevy_pbr::mesh_view_bindings view
-#import bevy_pbr::mesh_functions mesh_position_local_to_world, mesh_normal_local_to_world
+#import bevy_pbr::mesh_functions mesh_position_local_to_world, mesh_normal_local_to_world, get_model_matrix
 #import rose_client::zone_lighting apply_zone_lighting
 
 struct Vertex {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv0: vec2<f32>,
+    @builtin(instance_index) instance_index: u32,
 };
 
 struct VertexOutput {
@@ -19,17 +20,18 @@ struct VertexOutput {
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
-    out.world_position = mesh_position_local_to_world(bevy_pbr::mesh_bindings::mesh.world_from_local, vec4<f32>(vertex.position, 1.0));
-    out.world_normal = mesh_normal_local_to_world(bevy_pbr::mesh_bindings::mesh.world_from_local, vertex.normal);
+    let model = get_model_matrix(vertex.instance_index);
+    out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
+    out.world_normal = mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
     out.uv0 = vertex.uv0;
 
     out.clip_position = view.view_proj * out.world_position;
     return out;
 }
 
-@group(1) @binding(0)
+@group(2) @binding(0)
 var water_array_texture: binding_array<texture_2d<f32>>;
-@group(1) @binding(1)
+@group(2) @binding(1)
 var water_array_sampler: sampler;
 
 struct WaterTextureIndex {
@@ -58,7 +60,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     // Sample water textures with animation
     let color1 = textureSample(water_array_texture[water_texture_index.current_index], water_array_sampler, in.uv0);
     let color2 = textureSample(water_array_texture[water_texture_index.next_index], water_array_sampler, in.uv0);
-    let water_color = mix(color1, color2, water_texture_index.next_weight);
+    var water_color = mix(color1, color2, water_texture_index.next_weight);
     
     // Enhanced water effects
     let N = normalize(in.world_normal);
@@ -78,7 +80,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     
     // Depth-based color variation
     let depth_factor = saturate(1.0 - view_z * 0.0001); // Adjust multiplier as needed
-    water_color.rgb = mix(water_color.rgb, vec3<f32>(0.1, 0.3, 0.6), depth_factor * 0.3);
+    water_color = vec4<f32>(mix(water_color.rgb, vec3<f32>(0.1, 0.3, 0.6), depth_factor * 0.3), water_color.a);
     
     // Apply zone lighting
     return apply_zone_lighting(in.world_position, in.world_normal, water_color, view_z);

@@ -460,8 +460,8 @@ impl SpecializedMeshPipeline for WaterMaterialPipeline {
             fragment.shader = WATER_MESH_MATERIAL_SHADER_HANDLE.typed().into();
         }
 
-        // Add material bind group layout
-        descriptor.layout.insert(1, material_layout.clone());
+        // Add material bind group layout at index 2 (after view at 0, mesh at 1)
+        descriptor.layout.insert(2, material_layout.clone());
 
         // Disable depth write for transparent water
         descriptor
@@ -558,8 +558,8 @@ impl<P: PhaseItem, const OFFSET: u32> RenderCommand<P> for SetWaterMaterialPushC
 type DrawWaterMaterial = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
-    SetWaterMaterialBindGroup<1>,
-    SetMeshBindGroup<2>,
+    SetMeshBindGroup<1>,
+    SetWaterMaterialBindGroup<2>,
     SetZoneLightingBindGroup<3>,
     SetWaterMaterialPushConstants<0>,
     DrawMesh,

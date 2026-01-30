@@ -6,6 +6,7 @@ use bevy::{
 mod damage_digit_material;
 mod damage_digit_pipeline;
 mod damage_digit_render_data;
+mod custom_mesh_pipeline;
 mod effect_mesh_material;
 mod object_material;
 mod particle_material;

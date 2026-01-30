@@ -1,6 +1,6 @@
 #import bevy_pbr::mesh_bindings mesh
 #import bevy_pbr::mesh_view_bindings view
-#import bevy_pbr::mesh_functions mesh_normal_local_to_world
+#import bevy_pbr::mesh_functions mesh_normal_local_to_world, mesh_position_local_to_world, get_model_matrix
 #import rose_client::zone_lighting apply_zone_lighting
 
 struct EffectMeshMaterialData {
@@ -16,17 +16,17 @@ const EFECT_MESH_ANIMATION_STATE_FLAGS_NORMAL: u32     = 0x2u;
 const EFECT_MESH_ANIMATION_STATE_FLAGS_UV: u32         = 0x4u;
 const EFECT_MESH_ANIMATION_STATE_FLAGS_ALPHA: u32      = 0x8u;
 
-@group(1) @binding(0)
+@group(2) @binding(0)
 var<uniform> material: EffectMeshMaterialData;
-@group(1) @binding(1)
+@group(2) @binding(1)
 var base_texture: texture_2d<f32>;
-@group(1) @binding(2)
+@group(2) @binding(2)
 var base_sampler: sampler;
 
 #ifdef HAS_ANIMATION_TEXTURE
-@group(1) @binding(3)
+@group(2) @binding(3)
 var animation_texture: texture_2d<f32>;
-@group(1) @binding(4)
+@group(2) @binding(4)
 var animation_sampler: sampler;
 
 struct AnimationState {
@@ -45,6 +45,7 @@ struct Vertex {
     @location(2) normal: vec3<f32>,
 #endif
     @builtin(vertex_index) vertex_idx: u32,
+    @builtin(instance_index) instance_index: u32,
 };
 
 struct VertexOutput {
@@ -60,6 +61,7 @@ struct VertexOutput {
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
     out.uv = vertex.uv;
+    let model = get_model_matrix(vertex.instance_index);
 
 #ifdef HAS_ANIMATION_TEXTURE
     let current_frame_index = animation_state.current_next_frame & 0xffffu;
@@ -68,9 +70,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     let next_frame_0: vec4<f32> = textureLoad(animation_texture, vec2<u32>(next_frame_index, vertex.vertex_idx), 0);
 
     if ((animation_state.flags & EFECT_MESH_ANIMATION_STATE_FLAGS_POSITION) != 0u) { // Has position ?
-        out.world_position = bevy_pbr::mesh_bindings::mesh.world_from_local * vec4<f32>(mix(current_frame_0.xyz, next_frame_0.xyz, animation_state.next_weight), 1.0);
+        out.world_position = mesh_position_local_to_world(model, vec4<f32>(mix(current_frame_0.xyz, next_frame_0.xyz, animation_state.next_weight), 1.0));
     } else {
-        out.world_position = bevy_pbr::mesh_bindings::mesh.world_from_local * vec4<f32>(vertex.position, 1.0);
+        out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
     }
 
     if ((animation_state.flags & (EFECT_MESH_ANIMATION_STATE_FLAGS_NORMAL | EFECT_MESH_ANIMATION_STATE_FLAGS_UV)) != 0u) {
@@ -80,9 +82,9 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 #ifdef VERTEX_NORMALS
         if ((animation_state.flags & EFECT_MESH_ANIMATION_STATE_FLAGS_NORMAL) != 0u) {
-            out.world_normal = mesh_normal_local_to_world(bevy_pbr::mesh_bindings::mesh.world_from_local, mix(current_frame_1.xyz, next_frame_1.xyz, animation_state.next_weight));
+            out.world_normal = mesh_normal_local_to_world(mix(current_frame_1.xyz, next_frame_1.xyz, animation_state.next_weight), vertex.instance_index);
         } else {
-            out.world_normal = mesh_normal_local_to_world(bevy_pbr::mesh_bindings::mesh.world_from_local, vertex.normal);
+            out.world_normal = mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
         }
 #endif
 
@@ -93,13 +95,13 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         }
     }
 #else
-    out.world_position = bevy_pbr::mesh_bindings::mesh.world_from_local * vec4<f32>(vertex.position, 1.0);
+    out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
 #ifdef VERTEX_NORMALS
-    out.world_normal = mesh_normal_local_to_world(bevy_pbr::mesh_bindings::mesh.world_from_local, vertex.normal);
+    out.world_normal = mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
 #endif
 #endif
 
-    out.clip_position = 1.0 * view.view_proj * out.world_position;
+    out.clip_position = view.view_proj * out.world_position;
     return out;
 }
 

@@ -17,7 +17,7 @@ pub fn zone_viewer_enter_system(
 ) {
     // Reset camera
     let camera_position = Vec3::new(5120.0, 50.0, -5120.0);
-    let camera_yaw: f32 = 135.0;
+    let camera_yaw: f32 = -45.0;
     let camera_pitch: f32 = -20.0;
 
     info!("[CAMERA FIX] Initializing zone viewer camera");

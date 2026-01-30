@@ -381,6 +381,7 @@ pub struct TerrainMaterialPipelineKey {
 pub struct TerrainMaterialPipeline {
     pub mesh_pipeline: Option<MeshPipeline>,
     pub material_layout: Option<BindGroupLayout>,
+    pub zone_lighting_layout: Option<BindGroupLayout>,
 }
 
 impl Default for TerrainMaterialPipeline {
@@ -388,6 +389,7 @@ impl Default for TerrainMaterialPipeline {
         Self {
             mesh_pipeline: None,
             material_layout: None,
+            zone_lighting_layout: None,
         }
     }
 }
@@ -398,8 +400,9 @@ impl TerrainMaterialPipeline {
         &mut self,
         mesh_pipeline: Option<&MeshPipeline>,
         material_layout: Option<&TerrainMaterialBindGroupLayout>,
+        zone_lighting_meta: Option<&ZoneLightingUniformMeta>,
     ) {
-        if self.mesh_pipeline.is_some() && self.material_layout.is_some() {
+        if self.mesh_pipeline.is_some() && self.material_layout.is_some() && self.zone_lighting_layout.is_some() {
             return;
         }
 
@@ -414,10 +417,16 @@ impl TerrainMaterialPipeline {
                 self.material_layout = layout_wrapper.0.clone();
             }
         }
+
+        if self.zone_lighting_layout.is_none() {
+            if let Some(meta) = zone_lighting_meta {
+                self.zone_lighting_layout = Some(meta.bind_group_layout.clone());
+            }
+        }
     }
 
     fn is_ready(&self) -> bool {
-        self.mesh_pipeline.is_some() && self.material_layout.is_some()
+        self.mesh_pipeline.is_some() && self.material_layout.is_some() && self.zone_lighting_layout.is_some()
     }
 }
 
@@ -433,6 +442,8 @@ impl SpecializedMeshPipeline for TerrainMaterialPipeline {
             .expect("TerrainMaterialPipeline should be initialized before specialize is called");
         let material_layout = self.material_layout.as_ref()
             .expect("TerrainMaterialPipeline should be initialized before specialize is called");
+        let zone_lighting_layout = self.zone_lighting_layout.as_ref()
+            .expect("TerrainMaterialPipeline should be initialized before specialize is called");
         
         let mut descriptor = mesh_pipeline.specialize(key.mesh_key, layout)?;
 
@@ -442,8 +453,11 @@ impl SpecializedMeshPipeline for TerrainMaterialPipeline {
             fragment.shader = TERRAIN_MATERIAL_SHADER_HANDLE.typed().into();
         }
 
-        // Add material bind group layout
-        descriptor.layout.insert(1, material_layout.clone());
+        // Add material bind group layout at index 2 (after view at 0, mesh at 1)
+        descriptor.layout.insert(2, material_layout.clone());
+
+        // Add zone lighting bind group layout at index 3
+        descriptor.layout.push(zone_lighting_layout.clone());
 
         // Apply blend state
         if let Some(ref mut fragment) = descriptor.fragment {
@@ -506,8 +520,8 @@ impl<P: PhaseItem, const I: u32> RenderCommand<P> for SetTerrainMaterialBindGrou
 type DrawTerrainMaterial = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
-    SetTerrainMaterialBindGroup<1>,
-    SetMeshBindGroup<2>,
+    SetMeshBindGroup<1>,
+    SetTerrainMaterialBindGroup<2>,
     SetZoneLightingBindGroup<3>,
     DrawMesh,
 );
@@ -526,6 +540,7 @@ fn queue_terrain_material_meshes(
     msaa: Res<ExtractedMsaa>,
     mesh_pipeline: Option<Res<MeshPipeline>>,
     material_layout: Option<Res<TerrainMaterialBindGroupLayout>>,
+    zone_lighting_meta: Option<Res<ZoneLightingUniformMeta>>,
 ) {
     let _span = info_span!("queue_terrain_material_meshes").entered();
     
@@ -540,6 +555,7 @@ fn queue_terrain_material_meshes(
     terrain_pipeline.initialize(
         mesh_pipeline.as_deref(),
         material_layout.as_deref(),
+        zone_lighting_meta.as_deref(),
     );
     
     // Skip if pipeline is not ready yet
@@ -548,7 +564,7 @@ fn queue_terrain_material_meshes(
         return;
     }
     
-    bevy::log::info!("[RENDER DEBUG] Terrain pipeline is ready");
+    //bevy::log::info!("[RENDER DEBUG] Terrain pipeline is ready");
     let draw_function = opaque_draw_functions
         .read()
         .get_id::<DrawTerrainMaterial>()

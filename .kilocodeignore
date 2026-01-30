@@ -1,5 +1,4 @@
 
-/target/
 
 **/*.rs.bk
 
@@ -54,7 +53,7 @@ assets/.cache/
 
 # Extra
 *.timestamp 
-*.exe 
+
 *.pdb
 *.rmeta
 *.o

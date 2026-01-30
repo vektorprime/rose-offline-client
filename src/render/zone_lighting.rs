@@ -218,7 +218,7 @@ impl FromWorld for ZoneLightingUniformMeta {
                 Some("zone_lighting_uniform_layout"),
                 &[BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
                     ty: BindingType::Buffer {
                         ty: BufferBindingType::Uniform,
                         has_dynamic_offset: false,

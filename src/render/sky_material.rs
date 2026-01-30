@@ -135,8 +135,8 @@ impl<P: PhaseItem, const OFFSET: u32> RenderCommand<P> for SetZoneTimePushConsta
 type DrawSkyMaterial = (
     SetItemPipeline,
     SetMeshViewBindGroup<0>,
-    SetMaterialBindGroup<SkyMaterial, 1>,
-    SetMeshBindGroup<2>,
+    SetMeshBindGroup<1>,
+    SetMaterialBindGroup<SkyMaterial, 2>,
     SetZoneTimePushConstant<0>,
     DrawMesh,
 );

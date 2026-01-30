@@ -126,10 +126,10 @@ impl AssetReader for VfsAssetIo {
         Box::pin(async move {
             // Log ALL read calls to see what's happening
             let path_str = path.to_str().unwrap_or("");
-            log::info!("[VFS DIAGNOSTIC] ===========================================");
-            log::info!("[VFS DIAGNOSTIC] VfsAssetIo::read ENTRY POINT REACHED");
-            log::info!("[VFS DIAGNOSTIC] Path: {:?}", path);
-            log::info!("[VFS DIAGNOSTIC] Path as string: {:?}", path.to_str());
+            // log::info!("[VFS DIAGNOSTIC] ===========================================");
+            // log::info!("[VFS DIAGNOSTIC] VfsAssetIo::read ENTRY POINT REACHED");
+            // log::info!("[VFS DIAGNOSTIC] Path: {:?}", path);
+            // log::info!("[VFS DIAGNOSTIC] Path as string: {:?}", path.to_str());
 
             // bevy plsssss whyyy
             // HACK: zone_loader.rs relies on a custom asset loader with extension .zone_loader
@@ -139,18 +139,18 @@ impl AssetReader for VfsAssetIo {
                 .trim_end_matches(".no_skin")
                 .trim_end_matches(".zmo_texture");
 
-            log::info!("[VFS DIAGNOSTIC] Normalized path_str: {}", path_str);
+            //log::info!("[VFS DIAGNOSTIC] Normalized path_str: {}", path_str);
 
             // DIAGNOSTIC: Check if this is a .zone_loader file
             if path_str.ends_with(".zone_loader") {
-                log::info!("[VFS DIAGNOSTIC] ===========================================");
-                log::info!("[VFS DIAGNOSTIC] Processing .zone_loader file: {}", path_str);
+                //log::info!("[VFS DIAGNOSTIC] ===========================================");
+                //log::info!("[VFS DIAGNOSTIC] Processing .zone_loader file: {}", path_str);
                 let zone_id = path_str.trim_end_matches(".zone_loader").parse::<u8>().unwrap();
-                log::info!("[VFS DIAGNOSTIC] Parsed zone_id: {}", zone_id);
+                //log::info!("[VFS DIAGNOSTIC] Parsed zone_id: {}", zone_id);
                 let data = vec![zone_id];
-                log::info!("[VFS DIAGNOSTIC] Returning zone_loader data for zone_id: {}", zone_id);
-                log::info!("[VFS DIAGNOSTIC] Data length: {} bytes", data.len());
-                log::info!("[VFS DIAGNOSTIC] ===========================================");
+                // log::info!("[VFS DIAGNOSTIC] Returning zone_loader data for zone_id: {}", zone_id);
+                // log::info!("[VFS DIAGNOSTIC] Data length: {} bytes", data.len());
+                // log::info!("[VFS DIAGNOSTIC] ===========================================");
                 return Ok(Box::new(CursorWrapper::new(data)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>);
             }
 
@@ -159,15 +159,15 @@ impl AssetReader for VfsAssetIo {
                 Ok(file) => {
                     match file {
                         VfsFile::Buffer(buffer) => {
-                            log::info!("[VFS DIAGNOSTIC] Returning VFS file from buffer for path: {}", path_str);
-                            log::info!("[VFS DIAGNOSTIC] Buffer size: {} bytes", buffer.len());
-                            log::info!("[VFS DIAGNOSTIC] ===========================================");
+                            // log::info!("[VFS DIAGNOSTIC] Returning VFS file from buffer for path: {}", path_str);
+                            // log::info!("[VFS DIAGNOSTIC] Buffer size: {} bytes", buffer.len());
+                            // log::info!("[VFS DIAGNOSTIC] ===========================================");
                             Ok(Box::new(CursorWrapper::new(buffer)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>)
                         }
                         VfsFile::View(view) => {
-                            log::info!("[VFS DIAGNOSTIC] Returning VFS file from view for path: {}", path_str);
-                            log::info!("[VFS DIAGNOSTIC] View size: {} bytes", view.len());
-                            log::info!("[VFS DIAGNOSTIC] ===========================================");
+                            // log::info!("[VFS DIAGNOSTIC] Returning VFS file from view for path: {}", path_str);
+                            // log::info!("[VFS DIAGNOSTIC] View size: {} bytes", view.len());
+                            // log::info!("[VFS DIAGNOSTIC] ===========================================");
                             Ok(Box::new(CursorWrapper::new(view.into())) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>)
                         }
                     }
@@ -220,7 +220,7 @@ impl AssetReader for VfsAssetIo {
             
             // FIX: Return false for .zone_loader files (they're files, not directories)
             if path_str.ends_with(".zone_loader") {
-                log::info!("[VFS DIAGNOSTIC] Returning false for .zone_loader file: {}", path_str);
+                //log::info!("[VFS DIAGNOSTIC] Returning false for .zone_loader file: {}", path_str);
                 return Ok(false);
             }
             

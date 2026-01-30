@@ -48,8 +48,8 @@ impl AssetLoader for ZmsAssetLoader {
             reader.read_to_end(&mut bytes).await?;
             
             let asset_path = load_context.path().to_string_lossy();
-            info!("[ASSET LIFECYCLE] Loading ZMS mesh asset: {}", asset_path);
-            info!("[ASSET LIFECYCLE] Asset size: {} bytes", bytes.len());
+            //info!("[ASSET LIFECYCLE] Loading ZMS mesh asset: {}", asset_path);
+            //info!("[ASSET LIFECYCLE] Asset size: {} bytes", bytes.len());
 
             match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(mut zms) => {

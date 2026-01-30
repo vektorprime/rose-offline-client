@@ -1,7 +1,7 @@
 #import bevy_pbr::mesh_types Mesh, SkinnedMesh
 #import bevy_pbr::mesh_view_bindings view
 #import bevy_pbr::mesh_bindings mesh
-#import bevy_pbr::mesh_functions mesh_position_local_to_world, mesh_normal_local_to_world, mesh_position_world_to_clip
+#import bevy_pbr::mesh_functions mesh_position_local_to_world, mesh_normal_local_to_world, get_model_matrix
 #import bevy_pbr::shadows fetch_directional_shadow
 #import rose_client::zone_lighting apply_zone_lighting
 
@@ -9,19 +9,19 @@
 #import bevy_pbr::skinning skin_normals, skin_model
 #endif
 
-@group(1) @binding(0)
+@group(2) @binding(0)
 var<uniform> material: StaticMeshMaterialData;
-@group(1) @binding(1)
+@group(2) @binding(1)
 var base_texture: texture_2d<f32>;
-@group(1) @binding(2)
+@group(2) @binding(2)
 var base_sampler: sampler;
-@group(1) @binding(3)
+@group(2) @binding(3)
 var lightmap_texture: texture_2d<f32>;
-@group(1) @binding(4)
+@group(2) @binding(4)
 var lightmap_sampler: sampler;
-@group(1) @binding(5)
+@group(2) @binding(5)
 var specular_texture: texture_2d<f32>;
-@group(1) @binding(6)
+@group(2) @binding(6)
 var specular_sampler: sampler;
 
 struct Vertex {
@@ -33,9 +33,7 @@ struct Vertex {
     @location(1) normal: vec3<f32>,
 #endif
 
-#ifdef VERTEX_UVS
     @location(2) uv: vec2<f32>,
-#endif
 
 #ifdef VERTEX_UVS_LIGHTMAP
     @location(3) lightmap_uv: vec2<f32>,
@@ -45,6 +43,8 @@ struct Vertex {
     @location(4) joint_indices: vec4<u32>,
     @location(5) joint_weights: vec4<f32>,
 #endif
+
+    @builtin(instance_index) instance_index: u32,
 };
 
 struct VertexOutput {
@@ -52,11 +52,10 @@ struct VertexOutput {
 
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
-
-#ifdef VERTEX_UVS
     @location(2) uv: vec2<f32>,
-#endif
 
+    // Only include lightmap_uv when lightmaps are enabled
+    // This ensures vertex and fragment shader interfaces match
 #ifdef VERTEX_UVS_LIGHTMAP
     @location(3) lightmap_uv: vec2<f32>,
 #endif
@@ -69,26 +68,25 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 #ifdef SKINNED
     var model = skin_model(vertex.joint_indices, vertex.joint_weights);
 #else
-    var model = bevy_pbr::mesh_bindings::mesh.world_from_local;
+    var model = get_model_matrix(vertex.instance_index);
 #endif
 
 #ifdef VERTEX_NORMALS
 #ifdef SKINNED
     out.world_normal = skin_normals(model, vertex.normal);
 #else
-    out.world_normal = mesh_normal_local_to_world(model, vertex.normal);
+    out.world_normal = mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
 #endif
 #endif
 
 #ifdef VERTEX_POSITIONS
     out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
-    out.clip_position = mesh_position_world_to_clip(out.world_position);
+    out.clip_position = view.view_proj * out.world_position;
 #endif
 
-#ifdef VERTEX_UVS
     out.uv = vertex.uv;
-#endif
 
+    // Only output lightmap_uv when lightmaps are enabled
 #ifdef VERTEX_UVS_LIGHTMAP
     out.lightmap_uv = vertex.lightmap_uv;
 #endif
@@ -114,11 +112,9 @@ struct FragmentInput {
     @builtin(position) frag_coord: vec4<f32>,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
-
-#ifdef VERTEX_UVS
     @location(2) uv: vec2<f32>,
-#endif
 
+    // Only include lightmap_uv when lightmaps are enabled
 #ifdef VERTEX_UVS_LIGHTMAP
     @location(3) lightmap_uv: vec2<f32>,
 #endif
@@ -195,7 +191,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         }
     }
 
-    // Apply zone lighting (now with our enhanced base lighting)
+    // Apply zone lighting (now supported with custom pipeline)
     var final_color = apply_zone_lighting(in.world_position, in.world_normal, output_color, view_z);
     
     // Safety check: Ensure opaque objects remain fully opaque
