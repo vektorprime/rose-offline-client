@@ -1,3 +1,4 @@
+// Minimal particle shader - simplified for stability
 #import bevy_render::view View
 
 @group(0) @binding(0)
@@ -22,103 +23,63 @@ var base_color_texture: texture_2d<f32>;
 var base_color_sampler: sampler;
 
 struct VertexInput {
-  @builtin(vertex_index) vertex_idx: u32,
+    @builtin(vertex_index) vertex_idx: u32,
 };
 
 struct VertexOutput {
-  @builtin(position) position: vec4<f32>,
-  @location(0) color: vec4<f32>,
-  @location(1) uv: vec2<f32>,
+    @builtin(position) position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+    @location(1) uv: vec2<f32>,
 };
 
 @vertex
 fn vs_main(model: VertexInput) -> VertexOutput {
-  var vertex_positions: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
-    vec2<f32>(-1.0, -1.0),
-    vec2<f32>(1.0, 1.0),
-    vec2<f32>(-1.0, 1.0),
-    vec2<f32>(-1.0, -1.0),
-    vec2<f32>(1.0, -1.0),
-    vec2<f32>(1.0, 1.0),
-  );
+    var vertex_positions: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(1.0, 1.0),
+        vec2<f32>(-1.0, 1.0),
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(1.0, -1.0),
+        vec2<f32>(1.0, 1.0),
+    );
 
-  let vert_idx = model.vertex_idx % 6u;
-  let particle_idx = model.vertex_idx / 6u;
+    let vert_idx = model.vertex_idx % 6u;
+    let particle_idx = model.vertex_idx / 6u;
 
-#ifdef PARTICLE_BILLBOARD_Y_AXIS
-  let camera_right =
-    normalize(vec3<f32>(view.view_proj.x.x, 0.0, view.view_proj.z.x));
-  let camera_up = vec3<f32>(0.0, 1.0, 0.0);
-#else
+    let camera_right = normalize(vec3<f32>(view.view_proj.x.x, view.view_proj.y.x, view.view_proj.z.x));
+    let camera_up = normalize(vec3<f32>(view.view_proj.x.y, view.view_proj.y.y, view.view_proj.z.y));
 
-#ifdef PARTICLE_BILLBOARD_FULL
-  let camera_right =
-    normalize(vec3<f32>(view.view_proj.x.x, view.view_proj.y.x, view.view_proj.z.x));
-  let camera_up =
-    normalize(vec3<f32>(view.view_proj.x.y, view.view_proj.y.y, view.view_proj.z.y));
-#else
+    let particle_position = positions.data[particle_idx].xyz;
+    let size = sizes.data[particle_idx];
 
-  let camera_right = vec3<f32>(1.0, 0.0, 0.0);
-  let camera_up = vec3<f32>(0.0, 0.0, 1.0);
+    let vertex_position = vertex_positions[vert_idx];
 
-#endif
+    var world_space: vec3<f32> =
+        particle_position +
+        (camera_right * vertex_position.x * size.x) +
+        (camera_up * vertex_position.y * size.y);
 
-#endif
+    var out: VertexOutput;
+    out.position = view.view_proj * vec4<f32>(world_space, 1.0);
+    out.color = colors.data[particle_idx];
 
-  let particle_position = positions.data[particle_idx].xyz;
-  let theta = positions.data[particle_idx].w;
-  let size = sizes.data[particle_idx];
-  let sin_cos = vec2<f32>(cos(theta), sin(theta));
+    let texture = textures.data[particle_idx];
+    if (vertex_positions[vert_idx].x < 0.0) {
+        out.uv.x = texture.x;
+    } else {
+        out.uv.x = texture.z;
+    }
 
-  let rotation = mat2x2<f32>(
-    vec2<f32>(sin_cos.x, -sin_cos.y),
-    vec2<f32>(sin_cos.y, sin_cos.x),
-  );
+    if (vertex_positions[vert_idx].y > 0.0) {
+        out.uv.y = texture.y;
+    } else {
+        out.uv.y = texture.w;
+    }
 
-  let vertex_position = rotation * vertex_positions[vert_idx];
-
-  var world_space: vec3<f32> =
-    particle_position +
-    (camera_right * vertex_position.x * size.x) +
-    (camera_up * vertex_position.y * size.y);
-
-  var out: VertexOutput;
-  out.position = view.view_proj * vec4<f32>(world_space, 1.0);
-  out.color = colors.data[particle_idx];
-
-  let texture = textures.data[particle_idx];
-  if (vertex_positions[vert_idx].x < 0.0) {
-    out.uv.x = texture.x;
-  } else {
-    out.uv.x = texture.z;
-  }
-
-  if (vertex_positions[vert_idx].y > 0.0) {
-    out.uv.y = texture.y;
-  } else {
-    out.uv.y = texture.w;
-  }
-
-  return out;
+    return out;
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-  var base_color = in.color * textureSample(base_color_texture, base_color_sampler, in.uv);
-  
-  // Add glow effect for bright particles (additive blending simulation)
-  if (base_color.r > 0.8 && base_color.g > 0.8 && base_color.b > 0.8) {
-    let glow = pow(base_color.rgb, vec3<f32>(2.0)) * 0.3;
-    base_color = vec4<f32>(mix(base_color.rgb, base_color.rgb + glow, 0.5), base_color.a);
-  }
-  
-  // Add subtle rim lighting for better particle definition
-  let edge = pow(1.0 - saturate(length(in.uv - vec2<f32>(0.5, 0.5)) * 2.0), 2.0) * 0.15;
-  base_color = vec4<f32>(base_color.rgb + edge * base_color.rgb * 0.5, base_color.a);
-  
-  // Soft particle effect - fade edges based on depth
-  let depth_factor = smoothstep(0.95, 1.0, in.uv.x * in.uv.y * (1.0 - in.uv.x) * (1.0 - in.uv.y));
-  base_color.a *= depth_factor * 0.8 + 0.2;
-  
-  return base_color;
+    return in.color * textureSample(base_color_texture, base_color_sampler, in.uv);
 }

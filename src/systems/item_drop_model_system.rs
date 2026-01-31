@@ -18,7 +18,6 @@ use crate::{
         COLLISION_FILTER_INSPECTABLE, COLLISION_GROUP_ITEM_DROP, COLLISION_GROUP_PHYSICS_TOY,
     },
     model_loader::ModelLoader,
-    render::ObjectMaterial,
 };
 
 pub fn item_drop_model_system(
@@ -26,7 +25,7 @@ pub fn item_drop_model_system(
     mut query: Query<(Entity, &ItemDrop, Option<&mut ItemDropModel>), Changed<ItemDrop>>,
     asset_server: Res<AssetServer>,
     model_loader: Res<ModelLoader>,
-    mut object_materials: ResMut<Assets<ObjectMaterial>>,
+    mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
 ) {
     for (entity, item_drop, mut current_item_drop_model) in query.iter_mut() {
         if let Some(current_item_drop_model) = current_item_drop_model.as_mut() {
@@ -44,7 +43,7 @@ pub fn item_drop_model_system(
         let (item_drop_model, drop_motion) = model_loader.spawn_item_drop_model(
             &mut commands,
             &asset_server,
-            &mut object_materials,
+            &mut standard_materials,
             entity,
             item_drop.item.as_ref(),
         );

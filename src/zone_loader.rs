@@ -57,9 +57,7 @@ use crate::{
     effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect},
     events::{LoadZoneEvent, ZoneEvent, ZoneLoadedFromVfsEvent},
     render::{
-        EffectMeshAnimationRenderState, EffectMeshMaterial, ObjectMaterial, ParticleMaterial,
-        SkyMaterial, TerrainMaterial, WaterMaterial, MESH_ATTRIBUTE_UV_1,
-        TERRAIN_MATERIAL_MAX_TEXTURES, TERRAIN_MESH_ATTRIBUTE_TILE_INFO,
+        MESH_ATTRIBUTE_UV_1,
     },
     resources::{CurrentZone, DebugInspector, GameData, SpecularTexture},
     VfsResource,
@@ -770,12 +768,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub vfs_resource: Res<'w, VfsResource>,
     pub meshes: ResMut<'w, Assets<Mesh>>,
     pub specular_texture: Res<'w, SpecularTexture>,
-    pub sky_materials: ResMut<'w, Assets<SkyMaterial>>,
-    pub terrain_materials: ResMut<'w, Assets<TerrainMaterial>>,
-    pub effect_mesh_materials: ResMut<'w, Assets<EffectMeshMaterial>>,
-    pub particle_materials: ResMut<'w, Assets<ParticleMaterial>>,
-    pub object_materials: ResMut<'w, Assets<ObjectMaterial>>,
-    pub water_materials: ResMut<'w, Assets<WaterMaterial>>,
+    pub standard_materials: ResMut<'w, Assets<bevy::pbr::StandardMaterial>>,
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
 }
@@ -1453,12 +1446,7 @@ pub fn spawn_zone(
         vfs_resource,
         meshes,
         specular_texture,
-        sky_materials,
-        terrain_materials,
-        effect_mesh_materials,
-        particle_materials,
-        object_materials,
-        water_materials,
+        standard_materials,
         zone_loader_assets: _,
         memory_tracking,
     } = params;
@@ -1492,8 +1480,10 @@ pub fn spawn_zone(
         }
 
         let texture_count = water_material_textures.len();
-        let material = water_materials.add(WaterMaterial {
-            textures: water_material_textures,
+        let material = standard_materials.add(bevy::pbr::StandardMaterial {
+            base_color_texture: water_material_textures.first().cloned(),
+            unlit: false,
+            ..Default::default()
         });
         //info!("[MEMORY TRACKING] Water material created with {} textures", texture_count);
         log::info!("[SPAWN ZONE] Water material created with {} textures", texture_count);
@@ -1524,7 +1514,7 @@ pub fn spawn_zone(
         .and_then(|skybox_id| game_data.skybox.get_skybox_data(skybox_id))
     {
         log::info!("[SPAWN ZONE] Spawning skybox");
-        let skybox_entity = spawn_skybox(commands, asset_server, sky_materials, skybox_data);
+        let skybox_entity = spawn_skybox(commands, asset_server, standard_materials, skybox_data);
        // info!("[ASSET LIFECYCLE] Skybox entity spawned: {:?}", skybox_entity);
         memory_tracking.log_entity_spawned("Skybox", 2);
         log::info!("[SPAWN ZONE] Skybox entity spawned: {:?}", skybox_entity);
@@ -1551,7 +1541,7 @@ pub fn spawn_zone(
                     commands,
                     asset_server,
                     meshes,
-                    terrain_materials,
+                    standard_materials,
                     &tile_textures,
                     zone_data,
                     block_data,
@@ -1568,10 +1558,11 @@ pub fn spawn_zone(
                         let water_entity = spawn_water(
                             commands,
                             meshes,
-                            &water_material,
+                            standard_materials,
                             ifo.water_size,
                             Vec3::new(plane_start.x, plane_start.y, plane_start.z),
                             Vec3::new(plane_end.x, plane_end.y, plane_end.z),
+                            &water_material,
                         );
                         commands.entity(zone_entity).add_child(water_entity);
                         water_count += 1;
@@ -1583,9 +1574,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             vfs_resource,
-                            effect_mesh_materials.as_mut(),
-                            particle_materials.as_mut(),
-                            object_materials.as_mut(),
+                            standard_materials.as_mut(),
                             specular_texture,
                             &game_data.zsc_event_object,
                             &lightmap_path,
@@ -1612,9 +1601,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             vfs_resource,
-                            effect_mesh_materials.as_mut(),
-                            particle_materials.as_mut(),
-                            object_materials.as_mut(),
+                            standard_materials.as_mut(),
                             specular_texture,
                             &game_data.zsc_special_object,
                             &lightmap_path,
@@ -1646,9 +1633,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             vfs_resource,
-                            effect_mesh_materials.as_mut(),
-                            particle_materials.as_mut(),
-                            object_materials.as_mut(),
+                            standard_materials.as_mut(),
                             specular_texture,
                             &zone_data.zsc_cnst,
                             &lightmap_path,
@@ -1676,9 +1661,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             vfs_resource,
-                            effect_mesh_materials.as_mut(),
-                            particle_materials.as_mut(),
-                            object_materials.as_mut(),
+                            standard_materials.as_mut(),
                             specular_texture,
                             &zone_data.zsc_deco,
                             &lightmap_path,
@@ -1694,31 +1677,32 @@ pub fn spawn_zone(
                         deco_object_count += 1;
                     }
 
-                    for object_instance in ifo.animated_objects.iter() {
-                        let object_entity = spawn_animated_object(
-                            commands,
-                            asset_server,
-                            effect_mesh_materials.as_mut(),
-                            &game_data.stb_morph_object,
-                            object_instance,
-                        );
-                        commands.entity(zone_entity).add_child(object_entity);
-                        animated_object_count += 1;
-                    }
+                    // Animated objects and effect objects temporarily disabled (use custom materials)
+                    // for object_instance in ifo.animated_objects.iter() {
+                    //     let object_entity = spawn_animated_object(
+                    //         commands,
+                    //         asset_server,
+                    //         effect_mesh_materials.as_mut(),
+                    //         &game_data.stb_morph_object,
+                    //         object_instance,
+                    //     );
+                    //     commands.entity(zone_entity).add_child(object_entity);
+                    //     animated_object_count += 1;
+                    // }
 
-                    for (ifo_object_id, effect_object) in ifo.effect_objects.iter().enumerate() {
-                        let object_entity = spawn_effect_object(
-                            commands,
-                            asset_server,
-                            vfs_resource,
-                            effect_mesh_materials.as_mut(),
-                            particle_materials.as_mut(),
-                            effect_object,
-                            ifo_object_id,
-                        );
-                        commands.entity(zone_entity).add_child(object_entity);
-                        effect_object_count += 1;
-                    }
+                    // for (ifo_object_id, effect_object) in ifo.effect_objects.iter().enumerate() {
+                    //     let object_entity = spawn_effect_object(
+                    //         commands,
+                    //         asset_server,
+                    //         vfs_resource,
+                    //         effect_mesh_materials.as_mut(),
+                    //         particle_materials.as_mut(),
+                    //         effect_object,
+                    //         ifo_object_id,
+                    //     );
+                    //     commands.entity(zone_entity).add_child(object_entity);
+                    //     effect_object_count += 1;
+                    // }
 
                     for (ifo_object_id, sound_object) in ifo.sound_objects.iter().enumerate() {
                         let object_entity =
@@ -1765,7 +1749,7 @@ const SKYBOX_MODEL_SCALE: f32 = 10.0;
 fn spawn_skybox(
     commands: &mut Commands,
     asset_server: &AssetServer,
-    sky_materials: &mut Assets<SkyMaterial>,
+    standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
     skybox_data: &SkyboxData,
 ) -> Entity {
     let mesh_path = skybox_data.mesh.path().to_string_lossy().into_owned();
@@ -1783,9 +1767,10 @@ fn spawn_skybox(
     commands
         .spawn((
             mesh_handle,
-            sky_materials.add(SkyMaterial {
-                texture_day: Some(texture_day_handle),
-                texture_night: Some(texture_night_handle),
+            standard_materials.add(bevy::pbr::StandardMaterial {
+                base_color_texture: Some(texture_day_handle),
+                unlit: true,
+                ..Default::default()
             }),
             Transform::from_scale(Vec3::splat(SKYBOX_MODEL_SCALE)),
             GlobalTransform::default(),
@@ -1802,7 +1787,7 @@ fn spawn_terrain(
     commands: &mut Commands,
     asset_server: &AssetServer,
     meshes: &mut Assets<Mesh>,
-    terrain_materials: &mut Assets<TerrainMaterial>,
+    standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
     tile_textures: &Vec<Handle<Image>>,
     zone_data: &ZoneLoaderAsset,
     block_data: &ZoneLoaderBlock,
@@ -1823,18 +1808,21 @@ fn spawn_terrain(
     let heightmap = &block_data.him;
 
     let mut tile_texture_map = vec![0; tile_textures.len()];
-    let mut terrain_material = TerrainMaterial {
-        textures: Vec::with_capacity(tile_textures.len() + 1),
-    };
-
-    terrain_material.textures.push(asset_server.load(format!(
+    
+    // Build list of textures for this terrain block
+    let mut terrain_textures: Vec<Handle<Image>> = Vec::with_capacity(tile_textures.len() + 1);
+    
+    // Add lightmap as first texture
+    terrain_textures.push(asset_server.load(format!(
         "{}/{1:}_{2:}/{1:}_{2:}_PLANELIGHTINGMAP.DDS",
         zone_data.zone_path.to_str().unwrap(),
         block_data.block_x,
         block_data.block_y,
-    )));
+    )    ));
 
-    // Build TerrainMaterial and tile_texture_map
+    // Simplified terrain - just use first texture for now
+    // Build tile_texture_map for UV lookup
+    let mut tile_texture_map = vec![0u32; tile_textures.len()];
     for tile_x in 0..16 {
         for tile_y in 0..16 {
             let tile = &zone_data.zon.tiles[tilemap
@@ -1857,54 +1845,10 @@ fn spawn_terrain(
                 );
             }
 
-            if tile_texture_map[tile_array_index1 as usize] == 0 {
-                let index = terrain_material.textures.len();
-                if index == TERRAIN_MATERIAL_MAX_TEXTURES {
-                    warn!(
-                        "Reached maximum TERRAIN_MATERIAL_MAX_TEXTURES for block ({}, {})",
-                        block_data.block_x, block_data.block_y
-                    );
-                    tile_texture_map[tile_array_index1 as usize] = 0;
-                } else {
-                    terrain_material
-                        .textures
-                        .push(tile_textures[tile_array_index1 as usize].clone());
-                    tile_texture_map[tile_array_index1 as usize] = index as u32;
-                }
-            }
-
-            if tile_texture_map[tile_array_index2 as usize] == 0 {
-                let index = terrain_material.textures.len();
-                if index == TERRAIN_MATERIAL_MAX_TEXTURES {
-                    warn!(
-                        "Reached maximum TERRAIN_MATERIAL_MAX_TEXTURES for block ({}, {})",
-                        block_data.block_x, block_data.block_y
-                    );
-                    tile_texture_map[tile_array_index2 as usize] = 0;
-                } else {
-                    terrain_material
-                        .textures
-                        .push(tile_textures[tile_array_index2 as usize].clone());
-                    tile_texture_map[tile_array_index2 as usize] = index as u32;
-                }
-            }
+            tile_texture_map[tile_array_index1 as usize] = tile_array_index1 as u32;
+            tile_texture_map[tile_array_index2 as usize] = tile_array_index2 as u32;
         }
     }
-
-    // Create cache key from sorted texture indices (excluding lightmap which is unique per block)
-    let mut texture_indices: Vec<usize> = terrain_material.textures.iter()
-        .skip(1) // Skip lightmap at index 0
-        .filter_map(|handle| {
-            // Find the index of this texture in tile_textures
-            tile_textures.iter().position(|t| t == handle)
-        })
-        .collect();
-    texture_indices.sort();
-    texture_indices.dedup();
-    let cache_key = texture_indices.iter()
-        .map(|i| i.to_string())
-        .collect::<Vec<_>>()
-        .join("|");
 
     for tile_x in 0..16 {
         for tile_y in 0..16 {
@@ -1980,7 +1924,6 @@ fn spawn_terrain(
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs_lightmap);
     mesh.insert_attribute(MESH_ATTRIBUTE_UV_1, uvs_tile);
-    mesh.insert_attribute(TERRAIN_MESH_ATTRIBUTE_TILE_INFO, tile_ids);
     log::info!("[SPAWN TERRAIN] Block {}_{}: Mesh created with {} vertices, {} triangles",
         block_data.block_x, block_data.block_y, vertex_count, triangle_count);
     log::info!("[MEMORY] Terrain mesh created for block {}_{}", block_data.block_x, block_data.block_y);
@@ -2013,8 +1956,13 @@ fn spawn_terrain(
         }
     }
 
-    let texture_count = terrain_material.textures.len();
-    let material_handle = terrain_materials.add(terrain_material);
+    // Use first texture from tile_textures for StandardMaterial (simplified)
+    let base_texture = tile_textures.first().cloned();
+    let material_handle = standard_materials.add(bevy::pbr::StandardMaterial {
+        base_color_texture: base_texture,
+        unlit: false,
+        ..Default::default()
+    });
 
     let terrain_entity = commands
         .spawn((
@@ -2044,21 +1992,22 @@ fn spawn_terrain(
         ))
         .id();
    // info!("[ASSET LIFECYCLE] Terrain entity spawned: {:?} block {}_{} with {} textures",
-        //terrain_entity, block_data.block_x, block_data.block_y, texture_count);
+        //terrain_entity, block_data.block_x, block_data.block_y);
     log::info!("[SPAWN TERRAIN] Terrain entity created: {:?} at position ({}, 0, {})",
         terrain_entity, offset_x, offset_y);
-    log::info!("[MEMORY] Terrain material created for block {}_{} with {} textures",
-        block_data.block_x, block_data.block_y, texture_count);
+    log::info!("[MEMORY] Terrain material created for block {}_{}",
+        block_data.block_x, block_data.block_y);
     terrain_entity
 }
 
 fn spawn_water(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    water_material: &Handle<WaterMaterial>,
+    standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
     water_size: f32,
     plane_start: Vec3,
     plane_end: Vec3,
+    water_material: &Handle<bevy::pbr::StandardMaterial>,  // Pass water material as parameter
 ) -> Entity {
     let start = Vec3::new(
         5200.0 + plane_start.x / 100.0,
@@ -2126,9 +2075,7 @@ fn spawn_object(
     asset_server: &AssetServer,
     zone_loading_assets: &mut Vec<UntypedHandle>,
     vfs_resource: &VfsResource,
-    effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
-    particle_materials: &mut Assets<ParticleMaterial>,
-    object_materials: &mut Assets<ObjectMaterial>,
+    standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
     specular_texture: &SpecularTexture,
     zsc: &ZscFile,
     lightmap_path: &Path,
@@ -2244,7 +2191,7 @@ fn spawn_object(
                 lit_part.map(|lit_part| {
                     let path = lightmap_path.join(&lit_part.filename);
                     let path_str = path.to_string_lossy().into_owned();
-                    let handle = asset_server.load(&path_str);
+                    let handle = asset_server.load::<bevy::prelude::Image>(&path_str);
                     //info!("[MEMORY TRACKING] Lightmap texture handle created: {}", path_str);
                     handle
                 });
@@ -2275,34 +2222,17 @@ fn spawn_object(
 
             let lightmap_count = lightmap_texture.as_ref().is_some() as usize;
 
-            let material = object_materials.add(ObjectMaterial {
-                base_texture: if material_path.is_empty() || material_path == "" {
+            // Simplified material using Bevy's StandardMaterial
+            let material = standard_materials.add(bevy::pbr::StandardMaterial {
+                base_color_texture: if material_path.is_empty() || material_path == "" {
                     log::warn!("[SPAWN OBJECT DEBUG] Empty texture path for mesh_id {}, using fallback", mesh_id);
                     Some(asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS"))
                 } else {
                     Some(base_texture_handle.clone())
                 },
-                lightmap_texture: lightmap_texture.clone(),
-                alpha_value: if zsc_material.alpha != 1.0 {
-                    Some(zsc_material.alpha)
-                } else {
-                    None
-                },
-                alpha_enabled: zsc_material.alpha_enabled,
-                alpha_test: zsc_material.alpha_test,
-                two_sided: zsc_material.two_sided,
-                z_write_enabled: zsc_material.z_write_enabled,
-                z_test_enabled: zsc_material.z_test_enabled,
-                specular_texture: if zsc_material.specular_enabled {
-                    Some(specular_texture.image.clone())
-                } else {
-                    None
-                },
-                blend: zsc_material.blend_mode.into(),
-                glow: zsc_material.glow.map(|x| x.into()),
-                skinned: zsc_material.is_skin,
-                lightmap_uv_offset,
-                lightmap_uv_scale,
+                unlit: false,
+                double_sided: zsc_material.two_sided,
+                ..Default::default()
             });
 
             let mut collision_filter = COLLISION_FILTER_INSPECTABLE;
@@ -2417,6 +2347,8 @@ fn spawn_object(
                 object_effect.scale.y,
             ));
 
+        // Effect spawning temporarily disabled (use custom materials)
+        /*
         if let Some(effect_path) = zsc.effects.get(object_effect.effect_id as usize) {
             if let Some(effect_entity) = spawn_effect(
                 &vfs_resource.vfs,
@@ -2446,11 +2378,14 @@ fn spawn_object(
                 }
             }
         }
+        */
     }
 
     object_entity
 }
 
+// Animated objects and effect objects temporarily disabled (use custom materials)
+/*
 fn spawn_animated_object(
     commands: &mut Commands,
     asset_server: &AssetServer,
@@ -2497,13 +2432,13 @@ fn spawn_animated_object(
     let mesh_path_str = mesh_path.clone();
     let texture_path_str = texture_path.clone();
     let motion_path_str = motion_path.clone();
-    
+
     let mesh: Handle<Mesh> = asset_server.load(&mesh_path);
     let texture_handle = asset_server.load(&texture_path);
     let motion_path_buf = ZmoTextureAssetLoader::convert_path(&motion_path);
     let motion_texture_handle = asset_server.load(ZmoTextureAssetLoader::convert_path_texture(&motion_path));
     let motion_handle = asset_server.load(motion_path_buf.to_string_lossy().into_owned());
-    
+
     // Log asset creation
     //info!("[MEMORY TRACKING] Animated object mesh handle created: {}", mesh_path_str);
     //info!("[MEMORY TRACKING] Animated object texture handle created: {}", texture_path_str);
@@ -2511,7 +2446,7 @@ fn spawn_animated_object(
        // ZmoTextureAssetLoader::convert_path_texture(&motion_path));
     //info!("[MEMORY TRACKING] Animated object motion handle created: {}",
         //motion_path_buf.display());
-    
+
     let material = effect_mesh_materials.add(EffectMeshMaterial {
         base_texture: Some(texture_handle),
         alpha_enabled,
@@ -2549,7 +2484,7 @@ fn spawn_animated_object(
             CollisionGroups::new(COLLISION_GROUP_ZONE_OBJECT, COLLISION_FILTER_INSPECTABLE),
         ))
         .id();
-    
+
    // info!("[ASSET LIFECYCLE] Animated object entity spawned: {:?}", animated_entity);
     animated_entity
 }
@@ -2597,7 +2532,7 @@ fn spawn_effect_object(
             InheritedVisibility::default(),
         ))
         .id();
-    
+
    // info!("[ASSET LIFECYCLE] Effect object entity spawned: {:?}", effect_object_entity);
 
     spawn_effect(
@@ -2613,6 +2548,7 @@ fn spawn_effect_object(
 
     effect_object_entity
 }
+*/
 
 fn spawn_sound_object(
     commands: &mut Commands,

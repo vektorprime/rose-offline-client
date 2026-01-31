@@ -1,5 +1,6 @@
 use bevy::{
     hierarchy::DespawnRecursiveExt,
+    pbr::StandardMaterial,
     prelude::{AssetServer, Assets, Changed, Commands, Entity, Or, Query, Res, ResMut},
     render::mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
 };
@@ -12,7 +13,6 @@ use crate::{
         RemoveColliderCommand,
     },
     model_loader::ModelLoader,
-    render::{EffectMeshMaterial, ObjectMaterial, ParticleMaterial},
 };
 
 pub fn character_model_update_system(
@@ -35,9 +35,7 @@ pub fn character_model_update_system(
     >,
     asset_server: Res<AssetServer>,
     model_loader: Res<ModelLoader>,
-    mut object_materials: ResMut<Assets<ObjectMaterial>>,
-    mut particle_materials: ResMut<Assets<ParticleMaterial>>,
-    mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
+    mut standard_materials: ResMut<Assets<StandardMaterial>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
 ) {
     for (
@@ -56,9 +54,7 @@ pub fn character_model_update_system(
                 model_loader.update_character_equipment(
                     &mut commands,
                     &asset_server,
-                    &mut object_materials,
-                    &mut particle_materials,
-                    &mut effect_mesh_materials,
+                    &mut standard_materials,
                     entity,
                     character_info,
                     equipment,
@@ -108,9 +104,7 @@ pub fn character_model_update_system(
             .spawn_character_model(
                 &mut commands,
                 &asset_server,
-                &mut object_materials,
-                &mut particle_materials,
-                &mut effect_mesh_materials,
+                &mut standard_materials,
                 &mut skinned_mesh_inverse_bindposes_assets,
                 entity,
                 character_info,

@@ -1,4 +1,6 @@
-// Minimal object material shader - ultra simplified
+// Simplified object material shader using Bevy's standard Material pipeline
+// This shader uses standard Bevy bindings without custom zone lighting
+
 #import bevy_pbr::mesh_view_bindings::view
 #import bevy_pbr::mesh_bindings::mesh
 #import bevy_pbr::mesh_functions::{mesh_position_local_to_world, mesh_normal_local_to_world, get_model_matrix}
@@ -7,6 +9,7 @@
 #import bevy_pbr::skinning::{skin_normals, skin_model}
 #endif
 
+// Material bindings at group 2 (standard Bevy material group)
 @group(2) @binding(0)
 var<uniform> material: StaticMeshMaterialData;
 @group(2) @binding(1)
@@ -22,34 +25,23 @@ var specular_texture: texture_2d<f32>;
 @group(2) @binding(6)
 var specular_sampler: sampler;
 
-// Zone lighting at group 3
-@group(3) @binding(0)
-var<uniform> zone_lighting: ZoneLighting;
-
-struct ZoneLighting {
-    map_ambient_color: vec4<f32>,
-    character_ambient_color: vec4<f32>,
-    character_diffuse_color: vec4<f32>,
-    light_direction: vec4<f32>,
-    fog_color: vec4<f32>,
-    fog_density: f32,
-    fog_min_density: f32,
-    fog_max_density: f32,
-    fog_alpha_range_start: f32,
-    fog_alpha_range_end: f32,
-    fog_min_height: f32,
-    fog_max_height: f32,
-    fog_height_density: f32,
-    time_of_day: f32,
-    day_color: vec4<f32>,
-    night_color: vec4<f32>,
+struct StaticMeshMaterialData {
+    flags: u32,
+    alpha_cutoff: f32,
+    alpha_value: f32,
+    lightmap_uv_offset_x: f32,
+    lightmap_uv_offset_y: f32,
+    lightmap_uv_scale: f32,
+    _padding: f32,
 };
 
+// Vertex struct must match Bevy's standard mesh layout
+// Location 0: position, 1: normal, 2: uv
 struct Vertex {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
-#ifdef VERTEX_UVS_LIGHTMAP
+#ifdef LIGHTMAP_UV
     @location(3) lightmap_uv: vec2<f32>,
 #endif
 #ifdef SKINNED
@@ -64,7 +56,7 @@ struct VertexOutput {
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
-#ifdef VERTEX_UVS_LIGHTMAP
+#ifdef LIGHTMAP_UV
     @location(3) lightmap_uv: vec2<f32>,
 #endif
 };
@@ -72,6 +64,7 @@ struct VertexOutput {
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
+    
 #ifdef SKINNED
     var model = skin_model(vertex.joint_indices, vertex.joint_weights);
     out.world_normal = skin_normals(model, vertex.normal);
@@ -79,36 +72,30 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     var model = get_model_matrix(vertex.instance_index);
     out.world_normal = mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
 #endif
+    
     out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
     out.clip_position = view.view_proj * out.world_position;
     out.uv = vertex.uv;
-#ifdef VERTEX_UVS_LIGHTMAP
+    
+#ifdef LIGHTMAP_UV
     out.lightmap_uv = vertex.lightmap_uv;
 #endif
+    
     return out;
 }
-
-struct StaticMeshMaterialData {
-    flags: u32,
-    alpha_cutoff: f32,
-    alpha_value: f32,
-    lightmap_uv_offset_x: f32,
-    lightmap_uv_offset_y: f32,
-    lightmap_uv_scale: f32,
-    _padding: f32,
-};
 
 const OBJECT_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE: u32 = 1u;
 const OBJECT_MATERIAL_FLAGS_ALPHA_MODE_MASK: u32 = 2u;
 const OBJECT_MATERIAL_FLAGS_ALPHA_MODE_BLEND: u32 = 4u;
 const OBJECT_MATERIAL_FLAGS_HAS_ALPHA_VALUE: u32 = 8u;
+const OBJECT_MATERIAL_FLAGS_SPECULAR: u32 = 16u;
 
 struct FragmentInput {
     @builtin(position) frag_coord: vec4<f32>,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
-#ifdef VERTEX_UVS_LIGHTMAP
+#ifdef LIGHTMAP_UV
     @location(3) lightmap_uv: vec2<f32>,
 #endif
 };
@@ -132,9 +119,26 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         output_color.a = 1.0;
     }
 
-    // Simple ambient lighting
-    let ambient = zone_lighting.map_ambient_color.rgb;
+    // Apply specular if enabled
+    if ((material.flags & OBJECT_MATERIAL_FLAGS_SPECULAR) != 0u) {
+        let specular = textureSample(specular_texture, specular_sampler, in.uv).r;
+        // Simple specular highlight
+        output_color = vec4<f32>(output_color.rgb + vec3<f32>(specular * 0.5), output_color.a);
+    }
+
+    // Apply lightmap if LIGHTMAP_UV is defined
+#ifdef LIGHTMAP_UV
+    // Sample lightmap at the offset/scaled UV coordinates
+    let lightmap_uv = in.lightmap_uv * material.lightmap_uv_scale + 
+                      vec2<f32>(material.lightmap_uv_offset_x, material.lightmap_uv_offset_y);
+    let lightmap_color = textureSample(lightmap_texture, lightmap_sampler, lightmap_uv);
+    // Simple lightmap blend - multiply base color with lightmap
+    output_color = vec4<f32>(output_color.rgb * lightmap_color.rgb, output_color.a);
+#else
+    // Simple ambient lighting (hardcoded since we removed zone lighting)
+    let ambient = vec3<f32>(0.6, 0.6, 0.6);
     output_color = vec4<f32>(output_color.rgb * ambient, output_color.a);
+#endif
 
     return output_color;
 }

@@ -78,7 +78,7 @@ impl ZoneMemoryProtection {
 /// Uses a single combined query to stay within Bevy's system parameter limit
 pub fn zone_memory_protection_system(
     mut protection: ResMut<ZoneMemoryProtection>,
-    zone_objects: Query<(Entity, Option<&Handle<Mesh>>, Option<&Handle<crate::render::ObjectMaterial>>, Option<&Handle<crate::render::TerrainMaterial>>, Option<&Handle<crate::render::WaterMaterial>>), With<ZoneObject>>,
+    zone_objects: Query<(Entity, Option<&Handle<Mesh>>, Option<&Handle<StandardMaterial>>), With<ZoneObject>>,
 ) {
     let total_entities = zone_objects.iter().count();
     
@@ -87,9 +87,9 @@ pub fn zone_memory_protection_system(
     let mut missing_material = 0;
     
     // Check ZoneObject entities for completeness
-    for (entity, mesh, obj_mat, terrain_mat, water_mat) in zone_objects.iter() {
-        let has_mesh = mesh.is_some();
-        let has_material = obj_mat.is_some() || terrain_mat.is_some() || water_mat.is_some();
+    for (entity, mesh, material) in zone_objects.iter() {
+        let has_mesh: bool = mesh.is_some();
+        let has_material: bool = material.is_some();
         
         if !has_mesh {
             missing_mesh += 1;

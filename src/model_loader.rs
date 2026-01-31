@@ -28,8 +28,7 @@ use crate::{
         ItemDropModel, NpcModel, PersonalStoreModel, VehicleModel,
     },
     effect_loader::spawn_effect,
-    render::{EffectMeshMaterial, ObjectMaterial, ParticleMaterial, TrailEffect},
-    zms_asset_loader::ZmsMaterialNumFaces,
+    render::{EffectMeshMaterial, ParticleMaterial, TrailEffect},
 };
 
 const TRAIL_COLOURS: [Color; 9] = [
@@ -200,10 +199,10 @@ impl ModelLoader {
         &self,
         commands: &mut Commands,
         asset_server: &AssetServer,
-        effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
-        particle_materials: &mut Assets<ParticleMaterial>,
-        object_materials: &mut Assets<ObjectMaterial>,
+        standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
         skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
+        particle_materials: &mut Assets<ParticleMaterial>,
+        effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
         model_entity: Entity,
         npc_id: NpcId,
     ) -> Option<(NpcModel, SkinnedMesh, DummyBoneOffset)> {
@@ -241,7 +240,7 @@ impl ModelLoader {
             let mut parts = spawn_model(
                 commands,
                 asset_server,
-                object_materials,
+                standard_materials,
                 model_entity,
                 &self.npc_zsc,
                 *model_id as usize,
@@ -277,12 +276,12 @@ impl ModelLoader {
             }
         }
 
-        if let Some(npc_data) = self.npc_database.get_npc(npc_id) {
+            if let Some(npc_data) = self.npc_database.get_npc(npc_id) {
             if npc_data.right_hand_part_index != 0 {
                 let mut parts = spawn_model(
                     commands,
                     asset_server,
-                    object_materials,
+                    standard_materials,
                     model_entity,
                     &self.weapon,
                     npc_data.right_hand_part_index as usize,
@@ -299,7 +298,7 @@ impl ModelLoader {
                 let mut parts = spawn_model(
                     commands,
                     asset_server,
-                    object_materials,
+                    standard_materials,
                     model_entity,
                     &self.sub_weapon,
                     npc_data.left_hand_part_index as usize,
@@ -339,7 +338,7 @@ impl ModelLoader {
         &self,
         commands: &mut Commands,
         asset_server: &AssetServer,
-        object_materials: &mut Assets<ObjectMaterial>,
+        standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
         model_entity: Entity,
         skin: usize,
     ) -> PersonalStoreModel {
@@ -356,7 +355,7 @@ impl ModelLoader {
         let model_parts = spawn_model(
             commands,
             asset_server,
-            object_materials,
+            standard_materials,
             root_bone,
             &self.field_item,
             260 + skin,
@@ -378,7 +377,7 @@ impl ModelLoader {
         &self,
         commands: &mut Commands,
         asset_server: &AssetServer,
-        object_materials: &mut Assets<ObjectMaterial>,
+        standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
         model_entity: Entity,
         dropped_item: Option<&DroppedItem>,
     ) -> (ItemDropModel, Handle<ZmoAsset>) {
@@ -409,7 +408,7 @@ impl ModelLoader {
                 model_parts: spawn_model(
                     commands,
                     asset_server,
-                    object_materials,
+                    standard_materials,
                     root_bone,
                     &self.field_item,
                     model_id,
@@ -517,6 +516,8 @@ impl ModelLoader {
         )
     }
 
+    // Gem effects temporarily disabled (use custom materials)
+    /*
     fn spawn_character_gem_effect(
         &self,
         commands: &mut Commands,
@@ -572,6 +573,7 @@ impl ModelLoader {
 
         Some(effect_entity)
     }
+    */
 
     pub fn spawn_character_weapon_trail(
         &self,
@@ -661,9 +663,7 @@ impl ModelLoader {
         &self,
         commands: &mut Commands,
         asset_server: &AssetServer,
-        object_materials: &mut Assets<ObjectMaterial>,
-        particle_materials: &mut Assets<ParticleMaterial>,
-        effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+        standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
         skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
         model_entity: Entity,
         character_info: &CharacterInfo,
@@ -701,14 +701,12 @@ impl ModelLoader {
                         model_part,
                         commands,
                         asset_server,
-                        object_materials,
+                        standard_materials,
                         model_entity,
                         model_id.id,
                         &skinned_mesh,
                         dummy_bone_offset,
                         equipment,
-                        particle_materials,
-                        effect_mesh_materials,
                     ),
                 );
             }
@@ -735,21 +733,19 @@ impl ModelLoader {
         model_part: CharacterModelPart,
         commands: &mut Commands,
         asset_server: &AssetServer,
-        object_materials: &mut Assets<ObjectMaterial>,
+        standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
         model_entity: Entity,
         model_id: usize,
         skinned_mesh: &SkinnedMesh,
         dummy_bone_offset: usize,
         equipment: &Equipment,
-        particle_materials: &mut Assets<ParticleMaterial>,
-        effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
     ) -> Vec<Entity> {
         let model_list = self.get_model_list(character_info.gender, model_part);
 
         let mut model_parts = spawn_model(
             commands,
             asset_server,
-            object_materials,
+            standard_materials,
             model_entity,
             model_list,
             model_id,
@@ -770,6 +766,8 @@ impl ModelLoader {
             model_parts.extend(weapon_trail_entities.into_iter());
         }
 
+        // Gem effects temporarily disabled (use custom materials)
+        /*
         if matches!(model_part, CharacterModelPart::Weapon) {
             if let Some(item) = equipment.get_equipment_item(EquipmentIndex::Weapon) {
                 if item.has_socket && item.gem > 300 {
@@ -818,6 +816,7 @@ impl ModelLoader {
                 }
             }
         }
+        */
 
         model_parts
     }
@@ -827,9 +826,7 @@ impl ModelLoader {
         &self,
         commands: &mut Commands,
         asset_server: &AssetServer,
-        object_materials: &mut Assets<ObjectMaterial>,
-        particle_materials: &mut Assets<ParticleMaterial>,
-        effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+        standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
         model_entity: Entity,
         character_info: &CharacterInfo,
         equipment: &Equipment,
@@ -893,14 +890,12 @@ impl ModelLoader {
                             model_part,
                             commands,
                             asset_server,
-                            object_materials,
+                            standard_materials,
                             model_entity,
                             model_id.id,
                             skinned_mesh,
                             dummy_bone_offset.index,
                             equipment,
-                            particle_materials,
-                            effect_mesh_materials,
                         ),
                     );
                 } else {
@@ -916,10 +911,10 @@ impl ModelLoader {
         &self,
         commands: &mut Commands,
         asset_server: &AssetServer,
-        object_materials: &mut Assets<ObjectMaterial>,
+        standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+        skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
         particle_materials: &mut Assets<ParticleMaterial>,
         effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
-        skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
         vehicle_model_entity: Entity,
         driver_model_entity: Entity,
         equipment: &Equipment,
@@ -960,7 +955,7 @@ impl ModelLoader {
                     spawn_model(
                         commands,
                         asset_server,
-                        object_materials,
+                        standard_materials,
                         vehicle_model_entity,
                         &self.vehicle,
                         model_id,
@@ -1180,7 +1175,7 @@ fn spawn_skeleton(
     fn spawn_model(
         commands: &mut Commands,
         asset_server: &AssetServer,
-        object_materials: &mut Assets<ObjectMaterial>,
+        standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
         model_entity: Entity,
         model_list: &ZscFile,
         model_id: usize,
@@ -1203,26 +1198,12 @@ fn spawn_skeleton(
         let material_id = object_part.material_id as usize;
         let zsc_material = &model_list.materials[material_id];
 
-        // Create material directly without cache
-        let material = object_materials.add(ObjectMaterial {
-            base_texture: Some(asset_server.load(zsc_material.path.path().to_string_lossy().into_owned())),
-            lightmap_texture: None,
-            alpha_value: if zsc_material.alpha != 1.0 {
-                Some(zsc_material.alpha)
-            } else {
-                None
-            },
-            alpha_enabled: zsc_material.alpha_enabled,
-            alpha_test: zsc_material.alpha_test,
-            two_sided: zsc_material.two_sided,
-            z_write_enabled: zsc_material.z_write_enabled,
-            z_test_enabled: zsc_material.z_test_enabled,
-            specular_texture: if zsc_material.specular_enabled {
-                    Some(specular_image.clone())
-                } else {
-                    None
-                },
-            skinned: zsc_material.is_skin,
+        // Create material using Bevy's StandardMaterial
+        let texture_handle = asset_server.load(zsc_material.path.path().to_string_lossy().into_owned());
+        let material = standard_materials.add(bevy::pbr::StandardMaterial {
+            base_color_texture: Some(texture_handle),
+            unlit: false,
+            double_sided: zsc_material.two_sided,
             ..Default::default()
         });
 

@@ -1,8 +1,9 @@
 use std::ops::RangeInclusive;
 
 use bevy::{
-    math::{Quat, Vec3, Vec4},
+    math::{Quat, Vec2, Vec3, Vec4},
     prelude::{GlobalTransform, Query, Res, Time, Transform},
+    ecs::component::Component,
 };
 use rand::Rng;
 
@@ -10,8 +11,16 @@ use rose_file_readers::{PtlKeyframeData, PtlUpdateCoords};
 
 use crate::{
     components::{ActiveParticle, ParticleSequence},
-    render::ParticleRenderData,
 };
+
+// ParticleRenderData temporarily removed - using Bevy StandardMaterial
+#[derive(Component, Default)]
+pub struct ParticleRenderData;
+
+impl ParticleRenderData {
+    pub fn clear(&mut self) {}
+    pub fn add(&mut self, _position: Vec3, _rotation: f32, _size: Vec2, _color: Vec4, _uv: Vec4) {}
+}
 
 fn rng_gen_range<R: Rng>(rng: &mut R, range: &RangeInclusive<f32>) -> f32 {
     // This function is intentionally written this way to match the
@@ -306,7 +315,7 @@ pub fn particle_sequence_system(
         for particle_index in 0..particle_sequence.particles.len() {
             if apply_timestep(&mut particle_sequence, particle_index, 4.8 * delta_time) {
                 let gravity = if matches!(particle_sequence.update_coords, PtlUpdateCoords::World) {
-                    4.8 * particle_sequence.particles[particle_index].gravity_local
+                    4.8_f32 * particle_sequence.particles[particle_index].gravity_local
                 } else {
                     Vec3::new(
                         rng_gen_range(&mut rng, &particle_sequence.gravity_x),
@@ -352,6 +361,7 @@ pub fn particle_sequence_system(
                 let mut gravity_local = Vec3::default();
                 let mut world_direction = None;
                 if matches!(particle_sequence.update_coords, PtlUpdateCoords::World) {
+                    let global_transform: &GlobalTransform = global_transform;
                     let (_, global_rotation, global_translation) =
                         global_transform.to_scale_rotation_translation();
                     let rotation = Quat::from_xyzw(
@@ -402,6 +412,7 @@ pub fn particle_sequence_system(
         let texture_atlas_uv_w = 1.0 / particle_sequence.texture_atlas_cols as f32;
         let texture_atlas_uv_h = 1.0 / particle_sequence.texture_atlas_rows as f32;
 
+        let particle_render_data: &mut ParticleRenderData = &mut particle_render_data;
         particle_render_data.clear();
         for particle in particle_sequence.particles.iter() {
             // TODO: Do we need to support negative texture index ?

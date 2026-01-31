@@ -639,10 +639,11 @@ pub fn name_tag_system(
         }
 
         for rect in name_tag_data.rects.iter() {
+            let rect: WorldUiRect = rect.clone();
             commands
                 .spawn((
                     NameTagName,
-                    rect.clone(),
+                    rect,
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::default(),

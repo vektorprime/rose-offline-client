@@ -13,7 +13,7 @@ use crate::{
     animation::SkeletalAnimation,
     components::{CharacterModel, CharacterModelPart, DummyBoneOffset, Vehicle, VehicleModel},
     model_loader::ModelLoader,
-    render::{EffectMeshMaterial, ObjectMaterial, ParticleMaterial},
+    render::{EffectMeshMaterial, ParticleMaterial},
 };
 
 pub fn vehicle_model_system(
@@ -31,7 +31,7 @@ pub fn vehicle_model_system(
     query_vehicle_model: Query<&VehicleModel>,
     asset_server: Res<AssetServer>,
     model_loader: Res<ModelLoader>,
-    mut object_materials: ResMut<Assets<ObjectMaterial>>,
+    mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
@@ -125,10 +125,10 @@ pub fn vehicle_model_system(
                 .spawn_vehicle_model(
                     &mut commands,
                     &asset_server,
-                    &mut object_materials,
+                    &mut standard_materials,
+                    &mut skinned_mesh_inverse_bindposes_assets,
                     &mut particle_materials,
                     &mut effect_mesh_materials,
-                    &mut skinned_mesh_inverse_bindposes_assets,
                     vehicle_model_entity,
                     driver_model_entity,
                     equipment,

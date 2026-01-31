@@ -45,6 +45,7 @@ pub mod exe_resource_loader;
 pub mod model_loader;
 pub mod protocol;
 pub mod render;
+pub use render::DamageDigitMaterial;
 pub mod resources;
 pub mod scripting;
 pub mod systems;
@@ -62,9 +63,20 @@ use events::{
     NumberInputDialogEvent, PartyEvent, PersonalStoreEvent, PlayerCommandEvent, QuestTriggerEvent,
     SpawnEffectEvent, SpawnProjectileEvent, SystemFuncEvent, UseItemEvent, WorldConnectionEvent,
     ZoneEvent, ZoneLoadedFromVfsEvent,
-};
+    };
 use model_loader::ModelLoader;
-use render::{DamageDigitMaterial, RoseRenderPlugin};
+use render::{
+    RoseRenderPlugin,
+    DamageDigitMaterialPlugin,
+    EffectMeshMaterialPlugin,
+    ParticleMaterialPlugin,
+    ObjectMaterialPlugin,
+    SkyMaterialPlugin,
+    WaterMaterialPlugin,
+    TerrainMaterialPlugin,
+    TrailEffectRenderPlugin,
+    ZoneLightingPlugin,
+};
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
     AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, GameData, NameTagSettings,
@@ -746,6 +758,20 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         })
         .add_plugins((
             RoseAnimationPlugin,
+            
+            // CRITICAL: Add these to fix the panic and enable rendering
+            DamageDigitMaterialPlugin,        // ← Fixes the immediate panic
+            EffectMeshMaterialPlugin { prepass_enabled: false },
+            ParticleMaterialPlugin,
+            ObjectMaterialPlugin,
+            
+            // Optional: Add these for full rendering support
+            SkyMaterialPlugin { prepass_enabled: false },
+            WaterMaterialPlugin { prepass_enabled: false },
+            TerrainMaterialPlugin { prepass_enabled: false },
+            TrailEffectRenderPlugin,
+            ZoneLightingPlugin,
+            
             RoseRenderPlugin,
             RoseScriptingPlugin,
             DebugInspectorPlugin,
@@ -1343,8 +1369,8 @@ fn load_common_game_data(
     vfs_resource: Res<VfsResource>,
     game_data: Res<GameData>,
     asset_server: Res<AssetServer>,
-    mut damage_digit_materials: ResMut<Assets<DamageDigitMaterial>>,
     mut egui_context: EguiContexts,
+    mut damage_digit_materials: ResMut<Assets<DamageDigitMaterial>>,
 ) {
     bevy::log::info!("[load_common_game_data] Starting to load common game data");
 

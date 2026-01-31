@@ -72,8 +72,8 @@ pub fn zone_render_validation_system(
     mut stats: ResMut<RenderValidationStats>,
     // Combined query for Zone entities
     zone_query: Query<(Entity, Option<&Children>), With<Zone>>,
-    // Combined query for ZoneObject entities with all render components
-    zone_object_query: Query<(Entity, Option<&Children>, Option<&Handle<Mesh>>, Option<&Visibility>, Option<&Transform>, Option<&GlobalTransform>, Option<&Handle<crate::render::ObjectMaterial>>, Option<&Handle<crate::render::TerrainMaterial>>, Option<&Handle<crate::render::WaterMaterial>>, Option<&Handle<crate::render::SkyMaterial>>), With<ZoneObject>>,
+    // Combined query for ZoneObject entities with all render components - using StandardMaterial
+    zone_object_query: Query<(Entity, Option<&Children>, Option<&Handle<Mesh>>, Option<&Visibility>, Option<&Transform>, Option<&GlobalTransform>, Option<&Handle<StandardMaterial>>), With<ZoneObject>>,
 ) {
     // Only run validation every 60 frames (approx 1 second at 60fps)
     static mut FRAME_COUNTER: usize = 0;
@@ -98,17 +98,18 @@ pub fn zone_render_validation_system(
     log::info!("[RENDER VALIDATION] Checking ZoneObject entities...");
     let mut zone_object_count = 0;
     
-    for (entity, children, mesh, visibility, transform, global_transform, obj_mat, terrain_mat, water_mat, sky_mat) in zone_object_query.iter() {
+    for (entity, children, mesh, visibility, transform, global_transform, material) in zone_object_query.iter() {
         zone_object_count += 1;
         
         // Only validate entities that have meshes (the actual renderable parts)
         if let Some(mesh_handle) = mesh {
             let has_mesh = true;
-            let has_material = obj_mat.is_some() || terrain_mat.is_some() || water_mat.is_some() || sky_mat.is_some();
-            let has_visibility = visibility.is_some();
+            let has_material: bool = material.is_some();
+            let has_visibility: bool = visibility.is_some();
             let is_visible = matches!(visibility, Some(Visibility::Visible));
-            let has_transform = transform.is_some();
-            let has_global_transform = global_transform.is_some();
+            let has_transform: bool = transform.is_some();
+            let has_global_transform: bool = global_transform.is_some();
+            let mesh_handle: &Handle<Mesh> = mesh_handle;
 
             if has_mesh { stats.entities_with_mesh += 1; }
             if has_material { stats.entities_with_material += 1; }
@@ -149,11 +150,13 @@ pub fn zone_render_validation_system(
         if let Some(children) = children {
             for &child in children.iter() {
                 // Check if child has mesh/material by querying it
-                if let Ok((_, _, child_mesh, _, _, _, child_obj_mat, child_terrain_mat, child_water_mat, child_sky_mat)) = zone_object_query.get(child) {
+                if let Ok((_, _, child_mesh, _, _, _, child_material)) = zone_object_query.get(child) {
+                    let child_mesh: Option<&Handle<Mesh>> = child_mesh;
+                    let child_material: Option<&Handle<StandardMaterial>> = child_material;
                     if child_mesh.is_some() {
                         zone_objects_with_mesh.insert(entity);
                     }
-                    if child_obj_mat.is_some() || child_terrain_mat.is_some() || child_water_mat.is_some() || child_sky_mat.is_some() {
+                    if child_material.is_some() {
                         zone_objects_with_material.insert(entity);
                     }
                 }
@@ -347,18 +350,10 @@ pub fn mesh_inspection_system(
 }
 
 /// ENHANCED DIAGNOSTIC: System to validate material assets are loaded and valid
-/// Checks all material types used by zone objects
+/// Checks StandardMaterial used by zone objects
 pub fn material_validation_system(
     standard_materials: Res<Assets<StandardMaterial>>,
-    terrain_materials: Res<Assets<crate::render::TerrainMaterial>>,
-    object_materials: Res<Assets<crate::render::ObjectMaterial>>,
-    water_materials: Res<Assets<crate::render::WaterMaterial>>,
-    sky_materials: Res<Assets<crate::render::SkyMaterial>>,
     standard_mat_query: Query<(Entity, &Handle<StandardMaterial>), With<ZoneObject>>,
-    terrain_mat_query: Query<(Entity, &Handle<crate::render::TerrainMaterial>), With<ZoneObject>>,
-    object_mat_query: Query<(Entity, &Handle<crate::render::ObjectMaterial>), With<ZoneObject>>,
-    water_mat_query: Query<(Entity, &Handle<crate::render::WaterMaterial>), With<ZoneObject>>,
-    sky_mat_query: Query<(Entity, &Handle<crate::render::SkyMaterial>), With<ZoneObject>>,
 ) {
     static mut FRAME_COUNTER: usize = 0;
     unsafe {
@@ -376,47 +371,7 @@ pub fn material_validation_system(
         total_checked += 1;
         if standard_materials.get(mat_handle).is_none() {
             not_loaded_count += 1;
-            log::warn!("[MATERIAL VALIDATION] Entity {:?} StandardMaterial not loaded! Handle: {:?}", 
-                entity, mat_handle);
-        }
-    }
-    
-    // Validate TerrainMaterials
-    for (entity, mat_handle) in terrain_mat_query.iter() {
-        total_checked += 1;
-        if terrain_materials.get(mat_handle).is_none() {
-            not_loaded_count += 1;
-            log::warn!("[MATERIAL VALIDATION] Entity {:?} TerrainMaterial not loaded! Handle: {:?}", 
-                entity, mat_handle);
-        }
-    }
-    
-    // Validate ObjectMaterials
-    for (entity, mat_handle) in object_mat_query.iter() {
-        total_checked += 1;
-        if object_materials.get(mat_handle).is_none() {
-            not_loaded_count += 1;
-            log::warn!("[MATERIAL VALIDATION] Entity {:?} ObjectMaterial not loaded! Handle: {:?}", 
-                entity, mat_handle);
-        }
-    }
-    
-    // Validate WaterMaterials
-    for (entity, mat_handle) in water_mat_query.iter() {
-        total_checked += 1;
-        if water_materials.get(mat_handle).is_none() {
-            not_loaded_count += 1;
-            log::warn!("[MATERIAL VALIDATION] Entity {:?} WaterMaterial not loaded! Handle: {:?}", 
-                entity, mat_handle);
-        }
-    }
-    
-    // Validate SkyMaterials
-    for (entity, mat_handle) in sky_mat_query.iter() {
-        total_checked += 1;
-        if sky_materials.get(mat_handle).is_none() {
-            not_loaded_count += 1;
-            log::warn!("[MATERIAL VALIDATION] Entity {:?} SkyMaterial not loaded! Handle: {:?}", 
+            log::warn!("[MATERIAL VALIDATION] Entity {:?} StandardMaterial not loaded! Handle: {:?}",
                 entity, mat_handle);
         }
     }

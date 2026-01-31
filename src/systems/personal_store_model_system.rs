@@ -6,7 +6,6 @@ use bevy::{
 use crate::{
     components::{PersonalStore, PersonalStoreModel, RemoveColliderCommand},
     model_loader::ModelLoader,
-    render::ObjectMaterial,
 };
 
 pub fn personal_store_model_system(
@@ -21,7 +20,7 @@ pub fn personal_store_model_system(
     >,
     asset_server: Res<AssetServer>,
     model_loader: Res<ModelLoader>,
-    mut object_materials: ResMut<Assets<ObjectMaterial>>,
+    mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
 ) {
     for (entity, personal_store, personal_store_model) in query.iter_mut() {
         if let Some(personal_store) = personal_store {
@@ -41,7 +40,7 @@ pub fn personal_store_model_system(
             let new_personal_store_model = model_loader.spawn_personal_store_model(
                 &mut commands,
                 &asset_server,
-                &mut object_materials,
+                &mut standard_materials,
                 entity,
                 personal_store.skin,
             );

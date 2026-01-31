@@ -3,22 +3,56 @@ use bevy::{
     render::{mesh::MeshVertexAttribute, render_resource::VertexFormat},
 };
 
-mod damage_digit_material;
-mod damage_digit_pipeline;
-mod damage_digit_render_data;
-mod custom_mesh_pipeline;
-mod effect_mesh_material;
-mod object_material;
-mod particle_material;
-mod particle_pipeline;
-mod particle_render_data;
-// mod post_processing;
-mod sky_material;
-mod terrain_material;
-mod trail_effect;
-mod water_material;
-mod world_ui;
-mod zone_lighting;
+// Simplified render module - using Bevy's built-in materials
+// Custom materials removed to use StandardMaterial instead
+
+pub mod world_ui;
+pub use world_ui::WorldUiRect;
+
+pub mod object_material_simple;
+pub use object_material_simple::*;
+pub use object_material_simple::{ObjectMaterial, ObjectMaterialPlugin};
+
+pub mod effect_mesh_material;
+pub use effect_mesh_material::*;
+pub use effect_mesh_material::{EffectMeshMaterial, EffectMeshMaterialPlugin};
+
+pub mod particle_material;
+pub use particle_material::*;
+pub use particle_material::{ParticleMaterial, ParticleMaterialPlugin};
+
+pub mod particle_pipeline;
+pub use particle_pipeline::*;
+
+pub mod particle_render_data;
+pub use particle_render_data::*;
+
+pub mod zone_lighting;
+pub use zone_lighting::ZoneLighting;
+pub use zone_lighting::ZoneLightingPlugin;
+
+pub mod trail_effect;
+pub use trail_effect::*;
+pub use trail_effect::TrailEffectRenderPlugin;
+
+pub mod damage_digit_material;
+pub use damage_digit_material::*;
+pub use damage_digit_material::{DamageDigitMaterial, DamageDigitMaterialPlugin};
+
+pub mod damage_digit_pipeline;
+pub use damage_digit_pipeline::*;
+
+pub mod damage_digit_render_data;
+pub use damage_digit_render_data::*;
+
+pub mod sky_material;
+pub use sky_material::{SkyMaterial, SkyMaterialPlugin};
+
+pub mod water_material;
+pub use water_material::{WaterMaterial, WaterMaterialPlugin};
+
+pub mod terrain_material;
+pub use terrain_material::{TerrainMaterial, TerrainMaterialPlugin};
 
 pub const MESH_ATTRIBUTE_UV_1: MeshVertexAttribute =
     MeshVertexAttribute::new("Vertex_Uv2", 280035324, VertexFormat::Float32x2);
@@ -29,74 +63,12 @@ pub const MESH_ATTRIBUTE_UV_2: MeshVertexAttribute =
 pub const MESH_ATTRIBUTE_UV_3: MeshVertexAttribute =
     MeshVertexAttribute::new("Vertex_Uv4", 519697814, VertexFormat::Float32x2);
 
-pub use damage_digit_material::DamageDigitMaterial;
-pub use damage_digit_render_data::DamageDigitRenderData;
-pub use effect_mesh_material::{
-    EffectMeshAnimationFlags, EffectMeshAnimationRenderState, EffectMeshMaterial,
-};
-pub use object_material::{
-    ObjectMaterial, ObjectMaterialBlend, ObjectMaterialClipFace, ObjectMaterialGlow,
-};
-pub use particle_material::ParticleMaterial;
-pub use particle_render_data::{ParticleRenderBillboardType, ParticleRenderData};
-// pub use post_processing::{PostProcessingPlugin, PostProcessingSettings, setup_post_processing};
-pub use sky_material::SkyMaterial;
-pub use terrain_material::{
-    TerrainMaterial, TERRAIN_MATERIAL_MAX_TEXTURES, TERRAIN_MESH_ATTRIBUTE_TILE_INFO,
-};
-pub use trail_effect::TrailEffect;
-pub use water_material::WaterMaterial;
-pub use world_ui::WorldUiRect;
-pub use zone_lighting::ZoneLighting;
-
-use damage_digit_material::DamageDigitMaterialPlugin;
-use damage_digit_pipeline::DamageDigitRenderPlugin;
-use effect_mesh_material::EffectMeshMaterialPlugin;
-use object_material::ObjectMaterialPlugin;
-use particle_material::ParticleMaterialPlugin;
-use particle_pipeline::ParticleRenderPlugin;
-use sky_material::SkyMaterialPlugin;
-use terrain_material::TerrainMaterialPlugin;
-use trail_effect::TrailEffectRenderPlugin;
-use water_material::WaterMaterialPlugin;
-use world_ui::WorldUiRenderPlugin;
-use zone_lighting::ZoneLightingPlugin;
-// use post_processing::PostProcessingPlugin;
-
 #[derive(Default)]
 pub struct RoseRenderPlugin;
 
 impl Plugin for RoseRenderPlugin {
-    fn build(&self, app: &mut App) {
-        bevy::log::info!("[RENDER PLUGIN] Building RoseRenderPlugin");
-        
-        let prepass_enabled = false;
-        bevy::log::info!("[RENDER PLUGIN] Prepass enabled: {}", prepass_enabled);
-
-        bevy::log::info!("[RENDER PLUGIN] Adding ZoneLightingPlugin...");
-        bevy::log::info!("[RENDER PLUGIN] Adding TerrainMaterialPlugin...");
-        bevy::log::info!("[RENDER PLUGIN] Adding EffectMeshMaterialPlugin...");
-        bevy::log::info!("[RENDER PLUGIN] Adding ObjectMaterialPlugin...");
-        bevy::log::info!("[RENDER PLUGIN] Adding WaterMaterialPlugin...");
-        bevy::log::info!("[RENDER PLUGIN] Adding ParticleMaterialPlugin...");
-        bevy::log::info!("[RENDER PLUGIN] Adding SkyMaterialPlugin...");
-        
-        app.add_plugins((
-            ZoneLightingPlugin,
-            TerrainMaterialPlugin { prepass_enabled },
-            EffectMeshMaterialPlugin { prepass_enabled },
-            ObjectMaterialPlugin { prepass_enabled },
-            WaterMaterialPlugin { prepass_enabled },
-            ParticleMaterialPlugin,
-            ParticleRenderPlugin,
-            DamageDigitMaterialPlugin,
-            DamageDigitRenderPlugin,
-            SkyMaterialPlugin { prepass_enabled },
-            TrailEffectRenderPlugin,
-            WorldUiRenderPlugin,
-            // PostProcessingPlugin,
-        ));
-        
-        bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin build complete");
+    fn build(&self, _app: &mut App) {
+        bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Using Bevy StandardMaterial");
+        // All custom render plugins removed - using Bevy's built-in pipeline
     }
 }

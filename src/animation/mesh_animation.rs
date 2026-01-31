@@ -38,6 +38,7 @@ pub fn mesh_animation_system(
     time: Res<Time>,
 ) {
     for (mut mesh_animation, render_state) in query_animations.iter_mut() {
+        let mesh_animation: &mut MeshAnimation = &mut mesh_animation;
         if mesh_animation.completed() {
             continue;
         }

@@ -11,8 +11,8 @@ use crate::{
     components::DummyBoneOffset,
     effect_loader::spawn_effect,
     events::{SpawnEffect, SpawnEffectData, SpawnEffectEvent},
-    render::{EffectMeshMaterial, ParticleMaterial},
     resources::GameData,
+    render::{EffectMeshMaterial, ParticleMaterial},
     VfsResource,
 };
 

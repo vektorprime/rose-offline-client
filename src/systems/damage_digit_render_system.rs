@@ -21,14 +21,17 @@ pub fn damage_digit_render_system(
     for (entity, global_transform, animation, damage_digits, mut damage_digit_render_data) in
         query.iter_mut()
     {
+        let damage_digit_render_data: &mut DamageDigitRenderData = &mut damage_digit_render_data;
         damage_digit_render_data.clear();
 
+        let animation: &TransformAnimation = animation;
         if animation.completed() {
             // Animation completed, despawn
             commands.entity(entity).despawn_recursive();
             continue;
         }
 
+        let global_transform: &GlobalTransform = global_transform;
         let (scale, _, translation) = global_transform.to_scale_rotation_translation();
         if damage_digits.damage == 0 {
             // Miss, split over 4 digits

@@ -1,4 +1,4 @@
-use bevy::prelude::{Parent, Query};
+use bevy::prelude::{Entity, Parent, Query};
 
 use rose_game_common::components::{AbilityValues, HealthPoints};
 
@@ -10,8 +10,9 @@ pub fn name_tag_update_healthbar_system(
     query_health: Query<(&HealthPoints, &AbilityValues)>,
 ) {
     for (parent, name_tag_healthbar_fg, mut rect) in query_nametag_healthbar.iter_mut() {
+        let parent_entity: Entity = parent.get();
         if let Ok((health_points, ability_values)) = query_parent
-            .get(parent.get())
+            .get(parent_entity)
             .and_then(|parent| query_health.get(parent.get()))
         {
             let health_percent =

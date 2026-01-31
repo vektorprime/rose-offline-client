@@ -13,7 +13,7 @@ use rose_game_common::components::Npc;
 use crate::{
     components::{ClientEntityName, DummyBoneOffset, ModelHeight, NpcModel, RemoveColliderCommand},
     model_loader::ModelLoader,
-    render::{EffectMeshMaterial, ObjectMaterial, ParticleMaterial},
+    render::{EffectMeshMaterial, ParticleMaterial},
     resources::GameData,
 };
 
@@ -34,7 +34,7 @@ pub fn npc_model_update_system(
     model_loader: Res<ModelLoader>,
     mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
-    mut object_materials: ResMut<Assets<ObjectMaterial>>,
+    mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
     game_data: Res<GameData>,
 ) {
@@ -77,10 +77,10 @@ pub fn npc_model_update_system(
                 .spawn_npc_model(
                     &mut commands,
                     &asset_server,
-                    &mut effect_mesh_materials,
-                    &mut particle_materials,
-                    &mut object_materials,
+                    &mut standard_materials,
                     &mut skinned_mesh_inverse_bindposes_assets,
+                    &mut particle_materials,
+                    &mut effect_mesh_materials,
                     entity,
                     npc.id,
                 )

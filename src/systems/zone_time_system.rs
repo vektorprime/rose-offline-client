@@ -13,6 +13,9 @@ use crate::{
     resources::{CurrentZone, GameData, WorldTime, ZoneTime, ZoneTimeState},
 };
 
+// Note: ZoneLighting is now used from resources::CurrentZone (via zone_lighting.rs)
+// It provides all the necessary fields for lighting calculations
+
 const MORNING_FOG_COLOR: Vec3 = Vec3::new(100.0 / 255.0, 100.0 / 255.0, 100.0 / 255.0);
 const MORNING_FOG_DENSITY: f32 = 0.0022;
 

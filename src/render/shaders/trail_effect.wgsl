@@ -1,3 +1,4 @@
+// Minimal trail effect shader - simplified for stability
 #import bevy_render::view View
 
 @group(0) @binding(0)
@@ -11,17 +12,15 @@ struct Vertex {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) world_position: vec4<f32>,
-    @location(1) uv: vec2<f32>,
-    @location(2) colour: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) colour: vec4<f32>,
 };
 
 @vertex
 fn vs_main(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
     out.uv = vertex.uv;
-    out.world_position = vec4<f32>(vertex.position, 1.0);
-    out.clip_position = view.view_proj * out.world_position;
+    out.clip_position = view.view_proj * vec4<f32>(vertex.position, 1.0);
     out.colour = vec4<f32>((vec4<u32>(vertex.colour) >> vec4<u32>(0u, 8u, 16u, 24u)) & vec4<u32>(255u)) / 255.0;
     return out;
 }
@@ -33,9 +32,8 @@ var base_sampler: sampler;
 
 struct FragmentInput {
     @builtin(position) frag_coord: vec4<f32>,
-    @location(0) world_position: vec4<f32>,
-    @location(1) uv: vec2<f32>,
-    @location(2) colour: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) colour: vec4<f32>,
 };
 
 @fragment

@@ -61,7 +61,7 @@ mod vehicle_sound_system;
 mod visible_status_effects_system;
 mod world_connection_system;
 mod world_time_system;
-mod zone_time_system;
+pub mod zone_time_system;
 mod zone_viewer_system;
 
 pub use ability_values_system::ability_values_system;
