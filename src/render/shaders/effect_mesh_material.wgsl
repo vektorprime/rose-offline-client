@@ -1,4 +1,5 @@
-// Simplified effect mesh material shader using Bevy's standard Material pipeline
+// Effect mesh material shader using Bevy's standard Material pipeline
+// Updated for Bevy 0.13 syntax but maintaining correct vertex attribute locations
 
 #import bevy_pbr::mesh_bindings::mesh
 #import bevy_pbr::mesh_view_bindings::view
@@ -22,8 +23,8 @@ var base_sampler: sampler;
 
 struct Vertex {
     @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
+    @location(1) uv: vec2<f32>,        // FIXED: uv at location 1
+    @location(2) normal: vec3<f32>,    // FIXED: normal at location 2
     @builtin(instance_index) instance_index: u32,
 };
 

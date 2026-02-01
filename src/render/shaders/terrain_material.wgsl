@@ -1,102 +1,93 @@
-// Simplified terrain material shader using Bevy's standard Material pipeline
+// Terrain material shader with texture arrays
+// Restored from Bevy 0.11 with updated 0.13 syntax
 
 #import bevy_pbr::mesh_bindings::mesh
 #import bevy_pbr::mesh_view_bindings::view
-#import bevy_pbr::mesh_functions::{mesh_normal_local_to_world, mesh_position_local_to_world, mesh_position_local_to_clip, get_model_matrix}
+#import bevy_pbr::mesh_functions::{mesh_normal_local_to_world, mesh_position_local_to_world, mesh_position_local_to_clip}
+#import bevy_pbr::shadows::fetch_directional_shadow
+#import rose_client::zone_lighting::apply_zone_lighting
 
 struct Vertex {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
-    @builtin(instance_index) instance_index: u32,
+    @location(2) uv0: vec2<f32>,
+    @location(3) uv1: vec2<f32>,      // RESTORED: uv1 for tile mapping
+    @location(4) tile_info: u32,      // RESTORED: tile_info for layer selection
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
+    @location(2) uv0: vec2<f32>,
+    @location(3) uv1: vec2<f32>,
+    @location(4) tile_info: u32,
 };
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
-    let model = get_model_matrix(vertex.instance_index);
-    out.clip_position = mesh_position_local_to_clip(model, vec4<f32>(vertex.position, 1.0));
-    out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
-    out.world_normal = mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
-    out.uv = vertex.uv;
+    out.clip_position = mesh_position_local_to_clip(mesh.model, vec4<f32>(vertex.position, 1.0));
+    out.world_position = mesh_position_local_to_world(mesh.model, vec4<f32>(vertex.position, 1.0));
+    out.world_normal = mesh_normal_local_to_world(vertex.normal);
+    out.uv0 = vertex.uv0;
+    out.uv1 = vertex.uv1;
+    out.tile_info = vertex.tile_info;
     return out;
 }
 
-// Simplified: use individual texture bindings instead of arrays
-@group(2) @binding(0)
-var texture0: texture_2d<f32>;
-@group(2) @binding(1)
-var sampler0: sampler;
-
-@group(2) @binding(2)
-var texture1: texture_2d<f32>;
-@group(2) @binding(3)
-var sampler1: sampler;
-
-@group(2) @binding(4)
-var texture2: texture_2d<f32>;
-@group(2) @binding(5)
-var sampler2: sampler;
-
-@group(2) @binding(6)
-var texture3: texture_2d<f32>;
-@group(2) @binding(7)
-var sampler3: sampler;
-
-@group(2) @binding(8)
-var detail_texture: texture_2d<f32>;
-@group(2) @binding(9)
-var detail_sampler: sampler;
+// RESTORED: Texture array binding for tile textures
+@group(1) @binding(0)
+var tile_array_texture: binding_array<texture_2d<f32>>;
+@group(1) @binding(1)
+var tile_array_sampler: sampler;
 
 struct FragmentInput {
     @builtin(position) frag_coord: vec4<f32>,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
+    @location(2) uv0: vec2<f32>,
+    @location(3) uv1: vec2<f32>,
+    @location(4) tile_info: u32,
 };
 
 @fragment
-fn fragment(input: FragmentInput) -> @location(0) vec4<f32> {
-    // Simple checkerboard pattern to blend textures based on UV coordinates
-    let uv_tile = fract(input.uv * 2.0);
-    let tile_x = u32(uv_tile.x > 0.5);
-    let tile_y = u32(uv_tile.y > 0.5);
-    let tile_index = (tile_y * 2u + tile_x) % 4u;
-    
-    // Sample from the appropriate texture
-    var color: vec4<f32>;
-    switch tile_index {
-        case 0u: {
-            color = textureSample(texture0, sampler0, input.uv * 4.0);
-        }
-        case 1u: {
-            color = textureSample(texture1, sampler1, input.uv * 4.0);
-        }
-        case 2u: {
-            color = textureSample(texture2, sampler2, input.uv * 4.0);
-        }
-        case 3u: {
-            color = textureSample(texture3, sampler3, input.uv * 4.0);
-        }
-        default: {
-            color = textureSample(texture0, sampler0, input.uv * 4.0);
-        }
+fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
+    let view_z = dot(vec4<f32>(
+        view.inverse_view[0].z,
+        view.inverse_view[1].z,
+        view.inverse_view[2].z,
+        view.inverse_view[3].z
+    ), in.world_position);
+
+    var tile_layer1_id: u32 = (in.tile_info) & 0xffu;
+    var tile_layer2_id: u32 = (in.tile_info >> 8u) & 0xffu;
+    var tile_rotation: u32 = (in.tile_info >> 16u) & 0xffu;
+    var layer2_uv: vec2<f32> = in.uv1;
+    if (tile_rotation == 2u) {
+        layer2_uv.x = 1.0 - layer2_uv.x;
+    } else if (tile_rotation == 3u) {
+        layer2_uv.y = 1.0 - layer2_uv.y;
+    } else if (tile_rotation == 4u) {
+        layer2_uv.x = 1.0 - layer2_uv.x;
+        layer2_uv.y = 1.0 - layer2_uv.y;
+    } else if (tile_rotation == 5u) {
+        var x: f32 = layer2_uv.x;
+        layer2_uv.x = layer2_uv.y;
+        layer2_uv.y = 1.0 - x;
+    } else if (tile_rotation == 6u) {
+        var x: f32 = layer2_uv.x;
+        layer2_uv.x = layer2_uv.y;
+        layer2_uv.y = x;
     }
-    
-    // Add detail texture
-    let detail = textureSample(detail_texture, detail_sampler, input.uv * 8.0);
-    color = vec4<f32>(color.rgb * detail.rgb, color.a);
 
-    // Simple ambient lighting
-    let ambient = vec3<f32>(0.5, 0.5, 0.5);
-    color = vec4<f32>(color.rgb * ambient, color.a);
+    let layer1 = textureSample(tile_array_texture[tile_layer1_id], tile_array_sampler, in.uv1);
+    let layer2 = textureSample(tile_array_texture[tile_layer2_id], tile_array_sampler, layer2_uv);
+    var lightmap = textureSample(tile_array_texture[0], tile_array_sampler, in.uv0);
+    let shadow = fetch_directional_shadow(0u, in.world_position, in.world_normal, view_z);
+    lightmap = vec4<f32>(lightmap.xyz * (shadow * 0.2 + 0.8), lightmap.w);
 
-    return color;
+    let terrain_color = mix(layer1, layer2, layer2.a) * lightmap * 2.0;
+
+    return apply_zone_lighting(in.world_position, in.world_normal, vec4<f32>(terrain_color.rgb, 1.0), view_z);
 }

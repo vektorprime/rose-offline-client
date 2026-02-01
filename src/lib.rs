@@ -575,13 +575,16 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     let mut app = App::new();
 
     log::info!("[VFS DIAGNOSTIC] Creating VfsAssetReaderPlugin");
-    // Must Initialise asset server before asset plugin
-    let vfs_for_plugin = virtual_filesystem.clone();
+    // OPTIMIZATION: Only clone once for VfsResource. VfsAssetReaderPlugin retrieves
+    // the VFS from VfsResource during build, eliminating a redundant Arc clone.
+    // Previously: 2 clones (one for plugin, one for resource)
+    // Now: 1 clone (only for resource, plugin retrieves from resource)
     app.insert_resource(VfsResource {
         vfs: virtual_filesystem.clone(),
     })
     // Register VFS asset reader BEFORE DefaultPlugins (required by Bevy 0.13)
-    .add_plugins(VfsAssetReaderPlugin::new(vfs_for_plugin));
+    // VfsAssetReaderPlugin gets the VFS from VfsResource instead of holding its own Arc
+    .add_plugins(VfsAssetReaderPlugin::new());
     log::info!("[VFS DIAGNOSTIC] VfsAssetReaderPlugin added to app");
 
     // DIAGNOSTIC: Verify VFS contains required files

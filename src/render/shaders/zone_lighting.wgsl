@@ -1,4 +1,6 @@
-// Minimal zone lighting shader - simplified for stability
+// Zone lighting shader module
+// Reverted to 14 fields to match Rust ZoneLighting struct
+
 #define_import_path rose_client::zone_lighting
 
 struct ZoneLighting {
@@ -12,32 +14,31 @@ struct ZoneLighting {
     fog_max_density: f32,
     fog_alpha_range_start: f32,
     fog_alpha_range_end: f32,
-    fog_min_height: f32,
-    fog_max_height: f32,
-    fog_height_density: f32,
-    time_of_day: f32,
-    day_color: vec4<f32>,
-    night_color: vec4<f32>,
+    // REMOVED: fog_min_height, fog_max_height, fog_height_density, time_of_day, day_color, night_color
+    // These 6 fields were added incorrectly and don't match the Rust struct
 };
 
 // Zone lighting is at group 3 (after view 0, mesh 1, material 2)
 @group(3) @binding(0)
 var<uniform> zone_lighting: ZoneLighting;
 
-// Simplified fog function
 fn apply_zone_lighting_fog(world_position: vec4<f32>, fragment_color: vec4<f32>, view_z: f32) -> vec4<f32> {
-    // Simple distance fog
-    let fog_amount = clamp(view_z * zone_lighting.fog_density * 0.001, 0.0, 1.0);
-    let final_color = mix(fragment_color.rgb, zone_lighting.fog_color.rgb, fog_amount);
-    return vec4<f32>(final_color, fragment_color.a);
+    var fog_amount: f32 = clamp(1.0 - exp2(-zone_lighting.fog_density * zone_lighting.fog_density * view_z * view_z * 1.442695), 0.0, 1.0);
+
+    var fog_color: vec4<f32> = vec4<f32>(mix(fragment_color.rgb, zone_lighting.fog_color.rgb, clamp(fog_amount, zone_lighting.fog_min_density, zone_lighting.fog_max_density)), fragment_color.a);
+
+    if (fog_amount >= zone_lighting.fog_alpha_range_end) {
+        discard;
+    } else if (fog_amount >= zone_lighting.fog_alpha_range_start) {
+        fog_color.a = fog_color.a *(1.0 - (fog_amount - zone_lighting.fog_alpha_range_start) / (zone_lighting.fog_alpha_range_end - zone_lighting.fog_alpha_range_start));
+    }
+
+    return fog_color;
 }
 
-// Simplified lighting function
 fn apply_zone_lighting(world_position: vec4<f32>, world_normal: vec3<f32>, fragment_color: vec4<f32>, view_z: f32) -> vec4<f32> {
-    // Simple ambient lighting only
-    let ambient = zone_lighting.map_ambient_color.rgb;
-    let lit_color = vec4<f32>(fragment_color.rgb * ambient, fragment_color.a);
-    
-    // Apply fog
+    let light = saturate(zone_lighting.character_ambient_color.rgb + zone_lighting.character_diffuse_color.rgb * clamp(dot(world_normal, zone_lighting.light_direction.xyz), 0.0, 1.0));
+    let lit_color = vec4<f32>(fragment_color.rgb * light.rgb, fragment_color.a);
+
     return apply_zone_lighting_fog(world_position, lit_color, view_z);
 }

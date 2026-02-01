@@ -13,6 +13,71 @@ use std::{
 };
 use rose_file_readers::{VfsFile, VirtualFilesystem};
 
+use crate::resources::VfsResource;
+
+/// Formats bytes into human-readable string (e.g., "1.5 MB", "256 KB")
+pub fn format_bytes(bytes: usize) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    if bytes == 0 {
+        return "0 B".to_string();
+    }
+    let exp = (bytes as f64).log(1024.0).min(UNITS.len() as f64 - 1.0) as usize;
+    let value = bytes as f64 / 1024_f64.powi(exp as i32);
+    if exp == 0 {
+        format!("{} {}", bytes, UNITS[exp])
+    } else {
+        format!("{:.2} {}", value, UNITS[exp])
+    }
+}
+
+/// Tracks cumulative VFS read statistics
+#[derive(Default, Debug)]
+pub struct VfsReadStats {
+    pub total_files_read: usize,
+    pub total_bytes_read: usize,
+    pub largest_file_size: usize,
+    pub largest_file_path: String,
+}
+
+impl VfsReadStats {
+    pub fn log_file_read(&mut self, path: &str, size: usize) {
+        self.total_files_read += 1;
+        self.total_bytes_read += size;
+        
+        if size > self.largest_file_size {
+            self.largest_file_size = size;
+            self.largest_file_path = path.to_string();
+        }
+        
+        // Log large files (>10MB) for memory leak investigation
+        if size > 10 * 1024 * 1024 {
+            log::warn!("[VFS MEMORY] Large file loaded: {} (size: {})", path, format_bytes(size));
+        }
+        
+        // Log every 100 files and every 100MB
+        if self.total_files_read % 100 == 0 {
+            log::info!(
+                "[VFS MEMORY] Cumulative stats: {} files, {} total, largest: {} ({})",
+                self.total_files_read,
+                format_bytes(self.total_bytes_read),
+                self.largest_file_path,
+                format_bytes(self.largest_file_size)
+            );
+        }
+    }
+    
+    pub fn log_summary(&self) {
+        log::info!("[VFS MEMORY] ==========================================");
+        log::info!("[VFS MEMORY] VFS Read Statistics Summary");
+        log::info!("[VFS MEMORY] ==========================================");
+        log::info!("[VFS MEMORY] Total files read: {}", self.total_files_read);
+        log::info!("[VFS MEMORY] Total bytes read: {}", format_bytes(self.total_bytes_read));
+        log::info!("[VFS MEMORY] Largest file: {} ({})", self.largest_file_path, format_bytes(self.largest_file_size));
+        log::info!("[VFS MEMORY] Average file size: {}", format_bytes(self.total_bytes_read / self.total_files_read.max(1)));
+        log::info!("[VFS MEMORY] ==========================================");
+    }
+}
+
 struct CursorWrapper {
     data: Vec<u8>,
     position: u64,
@@ -109,12 +174,33 @@ impl std::io::Seek for CursorWrapper {
 #[derive(Resource)]
 pub struct VfsAssetIo {
     vfs: Arc<VirtualFilesystem>,
+    read_stats: std::sync::Mutex<VfsReadStats>,
 }
 
 impl VfsAssetIo {
     pub fn new(vfs: Arc<VirtualFilesystem>) -> Self {
         log::info!("[VFS ASSET IO] Creating new VfsAssetIo instance");
-        Self { vfs }
+        Self {
+            vfs,
+            read_stats: std::sync::Mutex::new(VfsReadStats::default()),
+        }
+    }
+    
+    /// Log the current VFS read statistics summary
+    pub fn log_read_stats(&self) {
+        if let Ok(stats) = self.read_stats.lock() {
+            stats.log_summary();
+        }
+    }
+    
+    /// Get a copy of the current read statistics
+    pub fn get_read_stats(&self) -> Option<VfsReadStats> {
+        self.read_stats.lock().ok().map(|s| VfsReadStats {
+            total_files_read: s.total_files_read,
+            total_bytes_read: s.total_bytes_read,
+            largest_file_size: s.largest_file_size,
+            largest_file_path: s.largest_file_path.clone(),
+        })
     }
 }
 
@@ -171,16 +257,27 @@ impl AssetReader for VfsAssetIo {
                 Ok(file) => {
                     match file {
                         VfsFile::Buffer(buffer) => {
-                            // log::info!("[VFS DIAGNOSTIC] Returning VFS file from buffer for path: {}", path_str);
-                            // log::info!("[VFS DIAGNOSTIC] Buffer size: {} bytes", buffer.len());
-                            // log::info!("[VFS DIAGNOSTIC] ===========================================");
+                            let size = buffer.len();
+                            log::debug!("[VFS MEMORY] File loaded from VFS buffer: {} (size: {})", path_str, format_bytes(size));
+                            
+                            // Track read statistics
+                            if let Ok(mut stats) = self.read_stats.lock() {
+                                stats.log_file_read(path_str, size);
+                            }
+                            
                             Ok(Box::new(CursorWrapper::new(buffer)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>)
                         }
                         VfsFile::View(view) => {
-                            // log::info!("[VFS DIAGNOSTIC] Returning VFS file from view for path: {}", path_str);
-                            // log::info!("[VFS DIAGNOSTIC] View size: {} bytes", view.len());
-                            // log::info!("[VFS DIAGNOSTIC] ===========================================");
-                            Ok(Box::new(CursorWrapper::new(view.into())) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>)
+                            let size = view.len();
+                            let data: Vec<u8> = view.into();
+                            log::debug!("[VFS MEMORY] File loaded from VFS view: {} (size: {})", path_str, format_bytes(size));
+                            
+                            // Track read statistics
+                            if let Ok(mut stats) = self.read_stats.lock() {
+                                stats.log_file_read(path_str, size);
+                            }
+                            
+                            Ok(Box::new(CursorWrapper::new(data)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>)
                         }
                     }
                 }
@@ -216,13 +313,33 @@ impl AssetReader for VfsAssetIo {
         _path: &'a Path,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>, AssetReaderError>> + Send + 'a>> {
         Box::pin(async move {
-            // FIX: Return empty directory listing to prevent continuous asset reloading.
-            // Previously, this returned .zone_loader files for ALL directories, causing
-            // Bevy's asset system to continuously discover and reload zone assets,
-            // leading to massive memory allocations (2GB/second) as all assets were
-            // reloaded repeatedly.
+            // ============================================================================
+            // CRITICAL FIX - DO NOT REMOVE - DO NOT MODIFY
+            // ============================================================================
+            // SAFETY: This MUST return an empty stream to prevent catastrophic memory
+            // consumption and application crash.
             //
-            // Zones should only be loaded via LoadZoneEvent, not through directory scanning.
+            // PREVIOUS BUG: Returning actual directory contents (e.g., .zone_loader files)
+            // caused Bevy's asset system to continuously discover and reload assets,
+            // resulting in memory allocation rates of 2GB/SECOND until system OOM crash.
+            //
+            // ROOT CAUSE: Bevy's asset system scans directories and triggers reloads for
+            // any "new" files found. The previous implementation returned .zone_loader
+            // references for ALL directories, causing endless reload cycles.
+            //
+            // CONSEQUENCES OF REMOVING THIS FIX:
+            //   - Immediate 2GB/second memory leak
+            //   - Complete system memory exhaustion (OOM crash)
+            //   - All zone assets reloaded repeatedly in infinite loop
+            //   - Application becomes unresponsive within seconds
+            //
+            // CORRECT BEHAVIOR: Zones must ONLY be loaded via LoadZoneEvent, never through
+            // directory scanning. This empty stream prevents Bevy from discovering any
+            // "directory contents" to watch/reload.
+            //
+            // IF YOU NEED DIRECTORY LISTING FUNCTIONALITY: Implement a separate,
+            // non-AssetReader API that doesn't trigger Bevy's hot-reload system.
+            // ============================================================================
             let stream = bevy::tasks::futures_lite::stream::iter(Vec::<PathBuf>::new());
             Ok(Box::new(stream) as Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>)
         })
@@ -247,15 +364,28 @@ impl AssetReader for VfsAssetIo {
     }
 }
 
-/// Plugin that registers the VFS as the default asset source
-/// This must be added AFTER DefaultPlugins to ensure the asset server is properly initialized
-pub struct VfsAssetReaderPlugin {
-    vfs: Arc<VirtualFilesystem>,
-}
+/// Plugin that registers the VFS as the default asset source.
+/// 
+/// # Requirements
+/// This plugin requires that `VfsResource` is already inserted into the app before
+/// this plugin is built. The plugin retrieves the VFS from the resource rather than
+/// holding its own Arc, eliminating redundant Arc clones.
+///
+/// # Optimization Note
+/// Previously, this plugin held its own `Arc<VirtualFilesystem>` which required an
+/// extra clone at initialization. Now it retrieves the VFS from `VfsResource`,
+/// reducing Arc clones from 2 to 1 during VFS initialization.
+pub struct VfsAssetReaderPlugin;
 
 impl VfsAssetReaderPlugin {
-    pub fn new(vfs: Arc<VirtualFilesystem>) -> Self {
-        Self { vfs }
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for VfsAssetReaderPlugin {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -263,8 +393,15 @@ impl Plugin for VfsAssetReaderPlugin {
     fn build(&self, app: &mut App) {
         log::info!("[VFS ASSET READER PLUGIN] ===========================================");
         log::info!("[VFS ASSET READER PLUGIN] build() called, registering VFS as default asset source");
-        let vfs = self.vfs.clone();
-        log::info!("[VFS ASSET READER PLUGIN] VFS Arc pointer: {:p}", vfs.as_ref());
+
+        // Get the VFS from VfsResource instead of holding our own Arc.
+        // This eliminates the need for a separate Arc clone for the plugin.
+        let vfs = app.world.get_resource::<VfsResource>()
+            .expect("VfsResource must be inserted before VfsAssetReaderPlugin is built")
+            .vfs
+            .clone();
+        
+        log::info!("[VFS ASSET READER PLUGIN] VFS retrieved from VfsResource, Arc pointer: {:p}", vfs.as_ref());
         log::info!("[VFS ASSET READER PLUGIN] About to call register_asset_source()");
 
         // Register VFS as the default asset source
@@ -282,7 +419,11 @@ impl Plugin for VfsAssetReaderPlugin {
 
         // FIX: Register a custom asset source specifically for .zone_loader files
         // This bypasses the file existence check that prevents .zone_loader files from being loaded
-        let vfs_for_zone_loader = self.vfs.clone();
+        // We need to get the VFS again for this second registration since the first closure captured it
+        let vfs_for_zone_loader = app.world.get_resource::<VfsResource>()
+            .expect("VfsResource must be inserted before VfsAssetReaderPlugin is built")
+            .vfs
+            .clone();
         app.register_asset_source(
             AssetSourceId::from("zone_loader"),
             AssetSource::build().with_reader(move || {

@@ -1,13 +1,15 @@
-#import bevy_pbr::mesh_view_bindings::view
+// Water material shader with texture animation
+// Restored from Bevy 0.11 with updated 0.13 syntax
+
 #import bevy_pbr::mesh_bindings::mesh
-#import bevy_pbr::mesh_functions::{mesh_position_local_to_world, mesh_normal_local_to_world, get_model_matrix}
+#import bevy_pbr::mesh_view_bindings::view
+#import bevy_pbr::mesh_functions::{mesh_position_local_to_world, mesh_normal_local_to_world}
 #import rose_client::zone_lighting::apply_zone_lighting
 
 struct Vertex {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv0: vec2<f32>,
-    @builtin(instance_index) instance_index: u32,
 };
 
 struct VertexOutput {
@@ -20,18 +22,27 @@ struct VertexOutput {
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
-    let model = get_model_matrix(vertex.instance_index);
-    out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
-    out.world_normal = mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
+    out.world_position = mesh_position_local_to_world(mesh.model, vec4<f32>(vertex.position, 1.0));
+    out.world_normal = mesh_normal_local_to_world(vertex.normal);
     out.uv0 = vertex.uv0;
+
     out.clip_position = view.view_proj * out.world_position;
     return out;
 }
 
+// RESTORED: Texture array binding for animated water textures
 @group(1) @binding(0)
-var water_texture: texture_2d<f32>;
+var water_array_texture: binding_array<texture_2d<f32>>;
 @group(1) @binding(1)
-var water_sampler: sampler;
+var water_array_sampler: sampler;
+
+// RESTORED: Push constants for water texture animation
+struct WaterTextureIndex {
+    current_index: i32,
+    next_index: i32,
+    next_weight: f32,
+};
+var<push_constant> water_texture_index: WaterTextureIndex;
 
 struct FragmentInput {
     @builtin(position) frag_coord: vec4<f32>,
@@ -42,10 +53,6 @@ struct FragmentInput {
 
 @fragment
 fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
-    // Sample water texture
-    var water_color = textureSample(water_texture, water_sampler, in.uv0);
-
-    // Calculate view_z for zone lighting
     let view_z = dot(vec4<f32>(
         view.inverse_view[0].z,
         view.inverse_view[1].z,
@@ -53,8 +60,9 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         view.inverse_view[3].z
     ), in.world_position);
 
-    // Apply zone lighting
-    water_color = apply_zone_lighting(in.world_position, in.world_normal, water_color, view_z);
-
-    return water_color;
+    // RESTORED: Water texture animation with blending between frames
+    let color1 = textureSample(water_array_texture[water_texture_index.current_index], water_array_sampler, in.uv0);
+    let color2 = textureSample(water_array_texture[water_texture_index.next_index], water_array_sampler, in.uv0);
+    let water_color = mix(color1, color2, water_texture_index.next_weight);
+    return apply_zone_lighting(in.world_position, in.world_normal, water_color, view_z);
 }

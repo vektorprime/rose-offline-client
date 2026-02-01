@@ -5,6 +5,272 @@ use std::{
     time::{Duration, Instant},
     collections::HashSet,
 };
+
+/// Memory monitoring for zone transitions
+/// Tracks resident and virtual memory using Windows API
+#[cfg(target_os = "windows")]
+pub mod memory_monitor {
+    use std::mem;
+    use std::time::{Instant, Duration};
+    
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct MemoryStatusEx {
+        pub dwLength: u32,
+        pub dwMemoryLoad: u32,
+        pub ullTotalPhys: u64,
+        pub ullAvailPhys: u64,
+        pub ullTotalPageFile: u64,
+        pub ullAvailPageFile: u64,
+        pub ullTotalVirtual: u64,
+        pub ullAvailVirtual: u64,
+        pub ullAvailExtendedVirtual: u64,
+    }
+    
+    impl MemoryStatusEx {
+        pub fn new() -> Self {
+            let mut status = unsafe { mem::zeroed::<MemoryStatusEx>() };
+            status.dwLength = mem::size_of::<MemoryStatusEx>() as u32;
+            status
+        }
+    }
+    
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct ProcessMemoryCountersEx {
+        pub cb: u32,
+        pub PageFaultCount: u32,
+        pub PeakWorkingSetSize: usize,
+        pub WorkingSetSize: usize,
+        pub QuotaPeakPagedPoolUsage: usize,
+        pub QuotaPagedPoolUsage: usize,
+        pub QuotaPeakNonPagedPoolUsage: usize,
+        pub QuotaNonPagedPoolUsage: usize,
+        pub PagefileUsage: usize,
+        pub PeakPagefileUsage: usize,
+        pub PrivateUsage: usize,
+    }
+    
+    impl ProcessMemoryCountersEx {
+        pub fn new() -> Self {
+            let mut counters = unsafe { mem::zeroed::<ProcessMemoryCountersEx>() };
+            counters.cb = mem::size_of::<ProcessMemoryCountersEx>() as u32;
+            counters
+        }
+    }
+    
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GlobalMemoryStatusEx(lpBuffer: *mut MemoryStatusEx) -> i32;
+        fn GetCurrentProcess() -> *mut std::ffi::c_void;
+        fn GetProcessMemoryInfo(
+            Process: *mut std::ffi::c_void,
+            ppsmemCounters: *mut ProcessMemoryCountersEx,
+            cb: u32,
+        ) -> i32;
+    }
+    
+    /// Formats bytes into human-readable string
+    pub fn format_bytes(bytes: u64) -> String {
+        const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+        if bytes == 0 {
+            return "0 B".to_string();
+        }
+        let exp = (bytes as f64).log(1024.0).min(UNITS.len() as f64 - 1.0) as usize;
+        let value = bytes as f64 / 1024_f64.powi(exp as i32);
+        if exp == 0 {
+            format!("{} {}", bytes, UNITS[exp])
+        } else {
+            format!("{:.2} {}", value, UNITS[exp])
+        }
+    }
+    
+    /// System memory information
+    #[derive(Debug, Clone)]
+    pub struct SystemMemoryInfo {
+        pub memory_load_percent: u32,
+        pub total_physical: u64,
+        pub available_physical: u64,
+        pub total_virtual: u64,
+        pub available_virtual: u64,
+    }
+    
+    impl SystemMemoryInfo {
+        pub fn used_physical(&self) -> u64 {
+            self.total_physical.saturating_sub(self.available_physical)
+        }
+        
+        pub fn used_virtual(&self) -> u64 {
+            self.total_virtual.saturating_sub(self.available_virtual)
+        }
+    }
+    
+    /// Process memory information
+    #[derive(Debug, Clone)]
+    pub struct ProcessMemoryInfo {
+        pub working_set_size: usize,      // Resident memory (RAM)
+        pub peak_working_set_size: usize, // Peak resident memory
+        pub pagefile_usage: usize,        // Virtual memory committed
+        pub peak_pagefile_usage: usize,   // Peak virtual memory committed
+        pub private_usage: usize,         // Private bytes
+    }
+    
+    /// Get current system memory status
+    pub fn get_system_memory() -> Option<SystemMemoryInfo> {
+        let mut status = MemoryStatusEx::new();
+        unsafe {
+            if GlobalMemoryStatusEx(&mut status) != 0 {
+                Some(SystemMemoryInfo {
+                    memory_load_percent: status.dwMemoryLoad,
+                    total_physical: status.ullTotalPhys,
+                    available_physical: status.ullAvailPhys,
+                    total_virtual: status.ullTotalVirtual,
+                    available_virtual: status.ullAvailVirtual,
+                })
+            } else {
+                None
+            }
+        }
+    }
+    
+    /// Get current process memory usage
+    pub fn get_process_memory() -> Option<ProcessMemoryInfo> {
+        let mut counters = ProcessMemoryCountersEx::new();
+        unsafe {
+            let process = GetCurrentProcess();
+            if GetProcessMemoryInfo(process, &mut counters, counters.cb) != 0 {
+                Some(ProcessMemoryInfo {
+                    working_set_size: counters.WorkingSetSize,
+                    peak_working_set_size: counters.PeakWorkingSetSize,
+                    pagefile_usage: counters.PagefileUsage,
+                    peak_pagefile_usage: counters.PeakPagefileUsage,
+                    private_usage: counters.PrivateUsage,
+                })
+            } else {
+                None
+            }
+        }
+    }
+    
+    /// Log current memory status with context
+    pub fn log_memory_status(context: &str) {
+        log::info!("[MEMORY MONITOR] ==========================================");
+        log::info!("[MEMORY MONITOR] Memory Status: {}", context);
+        log::info!("[MEMORY MONITOR] ==========================================");
+        
+        if let Some(sys) = get_system_memory() {
+            log::info!("[MEMORY MONITOR] System Memory:");
+            log::info!("[MEMORY MONITOR]   Load: {}%", sys.memory_load_percent);
+            log::info!("[MEMORY MONITOR]   Physical: {} / {} (used)",
+                format_bytes(sys.used_physical()), format_bytes(sys.total_physical));
+            log::info!("[MEMORY MONITOR]   Virtual:  {} / {} (used)",
+                format_bytes(sys.used_virtual()), format_bytes(sys.total_virtual));
+        }
+        
+        if let Some(proc) = get_process_memory() {
+            log::info!("[MEMORY MONITOR] Process Memory:");
+            log::info!("[MEMORY MONITOR]   Resident (RAM):      {} (peak: {})",
+                format_bytes(proc.working_set_size as u64),
+                format_bytes(proc.peak_working_set_size as u64));
+            log::info!("[MEMORY MONITOR]   Virtual (committed): {} (peak: {})",
+                format_bytes(proc.pagefile_usage as u64),
+                format_bytes(proc.peak_pagefile_usage as u64));
+            log::info!("[MEMORY MONITOR]   Private bytes:       {}",
+                format_bytes(proc.private_usage as u64));
+        }
+        
+        log::info!("[MEMORY MONITOR] ==========================================");
+    }
+    
+    /// Memory snapshot for comparison
+    #[derive(Debug, Clone)]
+    pub struct MemorySnapshot {
+        pub timestamp: Instant,
+        pub process: ProcessMemoryInfo,
+        pub system: SystemMemoryInfo,
+        pub context: String,
+    }
+    
+    impl MemorySnapshot {
+        pub fn capture(context: &str) -> Option<Self> {
+            let process = get_process_memory()?;
+            let system = get_system_memory()?;
+            Some(Self {
+                timestamp: Instant::now(),
+                process,
+                system,
+                context: context.to_string(),
+            })
+        }
+        
+        /// Compare with another snapshot and log differences
+        pub fn compare_and_log(&self, other: &MemorySnapshot) {
+            let duration = other.timestamp.duration_since(self.timestamp);
+            
+            let resident_delta = other.process.working_set_size as i64 - self.process.working_set_size as i64;
+            let virtual_delta = other.process.pagefile_usage as i64 - self.process.pagefile_usage as i64;
+            let private_delta = other.process.private_usage as i64 - self.process.private_usage as i64;
+            
+            log::info!("[MEMORY MONITOR] ==========================================");
+            log::info!("[MEMORY MONITOR] Memory Delta: {} → {} (over {:?})",
+                self.context, other.context, duration);
+            log::info!("[MEMORY MONITOR] ==========================================");
+            log::info!("[MEMORY MONITOR] Resident Memory: {:+} bytes ({:+.2} MB)",
+                resident_delta, resident_delta as f64 / (1024.0 * 1024.0));
+            log::info!("[MEMORY MONITOR] Virtual Memory:  {:+} bytes ({:+.2} MB)",
+                virtual_delta, virtual_delta as f64 / (1024.0 * 1024.0));
+            log::info!("[MEMORY MONITOR] Private Bytes:   {:+} bytes ({:+.2} MB)",
+                private_delta, private_delta as f64 / (1024.0 * 1024.0));
+            log::info!("[MEMORY MONITOR] ==========================================");
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub mod memory_monitor {
+    use std::time::{Instant, Duration};
+    
+    pub fn format_bytes(bytes: u64) -> String {
+        const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+        if bytes == 0 {
+            return "0 B".to_string();
+        }
+        let exp = (bytes as f64).log(1024.0).min(UNITS.len() as f64 - 1.0) as usize;
+        let value = bytes as f64 / 1024_f64.powi(exp as i32);
+        if exp == 0 {
+            format!("{} {}", bytes, UNITS[exp])
+        } else {
+            format!("{:.2} {}", value, UNITS[exp])
+        }
+    }
+    
+    pub fn log_memory_status(context: &str) {
+        log::info!("[MEMORY MONITOR] Memory monitoring not available on this platform: {}", context);
+    }
+    
+    #[derive(Debug, Clone)]
+    pub struct MemorySnapshot {
+        pub timestamp: Instant,
+        pub context: String,
+    }
+    
+    impl MemorySnapshot {
+        pub fn capture(context: &str) -> Option<Self> {
+            Some(Self {
+                timestamp: Instant::now(),
+                context: context.to_string(),
+            })
+        }
+        
+        pub fn compare_and_log(&self, other: &MemorySnapshot) {
+            let duration = other.timestamp.duration_since(self.timestamp);
+            log::info!("[MEMORY MONITOR] Time delta: {:?} ({} → {})",
+                duration, self.context, other.context);
+        }
+    }
+}
+
+use memory_monitor::{MemorySnapshot, log_memory_status};
 use bevy::ecs::system::Query;
 use bevy::hierarchy::Children;
 use bevy::prelude::{Without};
@@ -517,7 +783,7 @@ async fn load_zone_direct(zone_id: ZoneId, vfs: &VirtualFilesystem) -> Result<Zo
                     if skipped_blocks.len() < 50 {
                         skipped_blocks.push((block_x, block_y, e.to_string()));
                     }
-                    log::debug!("[ZONE LOADER DIRECT] Block {}_{} skipped: {}", block_x, block_y, e);
+                    log::trace!("[ZONE LOADER DIRECT] Block {}_{} skipped: {}", block_x, block_y, e);
                 }
             }
 
@@ -669,7 +935,7 @@ async fn load_block_files_direct(
     let him_path_buf = zone_path.join(format!("{}_{}.HIM", block_x, block_y));
     let him_path_str = him_path_buf.to_string_lossy().replace('\\', "/");
     let him_path = VfsPath::from(PathBuf::from(&him_path_str));
-    log::info!("[ZONE LOADER DEBUG] Constructed HIM path: \"{}\"", him_path_str);
+    log::trace!("[ZONE LOADER DEBUG] Constructed HIM path: \"{}\"", him_path_str);
     log::trace!("[LOAD BLOCK DIRECT] Loading block {}_{} from: {:?}", block_x, block_y, him_path);
 
     // Check if HIM file exists before attempting to load it
@@ -678,7 +944,7 @@ async fn load_block_files_direct(
             log::trace!("[LOAD BLOCK DIRECT] HIM file exists for block {}_{}", block_x, block_y);
         }
         Err(_) => {
-            log::debug!("[LOAD BLOCK DIRECT] HIM file does not exist for block {}_{} - skipping this block", block_x, block_y);
+            log::trace!("[LOAD BLOCK DIRECT] HIM file does not exist for block {}_{} - skipping this block", block_x, block_y);
             return Err(anyhow::anyhow!("HIM file not found for block {}_{}", block_x, block_y));
         }
     }
@@ -807,6 +1073,8 @@ pub struct LoadingZone {
     pub loading_start_time: Instant,  // Track when loading started
     /// Track if assets have been cleared to prevent duplicate cleanup
     pub assets_cleared: bool,
+    /// Memory snapshot at the start of zone loading for comparison
+    pub memory_snapshot_start: Option<MemorySnapshot>,
 }
 
 impl LoadingZone {
@@ -1060,6 +1328,9 @@ pub fn zone_loader_system(
 
             // Add zone to loading queue to track that it's being loaded
             // This ensures we know the zone is in progress even though spawning is handled by zone_loaded_from_vfs_system
+            // MEMORY MONITOR: Capture baseline memory before starting zone load
+            let memory_snapshot = MemorySnapshot::capture(&format!("Zone {} loading start", zone_id.get()));
+            
             loading_zones.push(LoadingZone {
                 state: LoadingZoneState::Loading,
                 handle: Handle::<ZoneLoaderAsset>::default(),
@@ -1070,6 +1341,7 @@ pub fn zone_loader_system(
                 zone_id: Some(zone_id),
                 loading_start_time: Instant::now(),  // Initialize start time
                 assets_cleared: false,
+                memory_snapshot_start: memory_snapshot,
             });
             // log::info!("[ZONE LOADER SYSTEM] Zone queued for async loading. Total loading zones: {}", loading_zones.len());
         } else if let Some(zone_entity) = zone_loader_cache.cache[zone_index]
@@ -1085,6 +1357,9 @@ pub fn zone_loader_system(
             // log::info!("[ZONE LOADER SYSTEM] Zone cached but not spawned, using cached handle");
             
             let cached_zone = zone_loader_cache.cache[zone_index].as_ref().unwrap();
+            // MEMORY MONITOR: Capture baseline memory before starting zone load (cached zone path)
+            let memory_snapshot = MemorySnapshot::capture(&format!("Zone {} loading start (cached)", event.id.get()));
+            
             loading_zones.push(LoadingZone {
                 state: LoadingZoneState::Loading,
                 handle: cached_zone.data_handle.clone(),
@@ -1095,6 +1370,7 @@ pub fn zone_loader_system(
                 zone_id: None,
                 loading_start_time: Instant::now(),  // Initialize start time
                 assets_cleared: false,
+                memory_snapshot_start: memory_snapshot,
             });
             // log::info!("[ZONE LOADER SYSTEM] LoadingZone added to queue. Total loading zones: {}", loading_zones.len());
         }
@@ -1481,7 +1757,8 @@ pub fn zone_loaded_from_vfs_system(
                 debug_inspector_state.entity = Some(entity);
                 
                 // Log memory summary after zone spawn
-                //info!("[MEMORY TRACKING] Zone {} loaded successfully", event.zone_id.get());
+                // MEMORY MONITOR: Log memory status after zone spawn completes
+                log_memory_status(&format!("Zone {} spawned successfully", event.zone_id.get()));
             }
             Err(e) => {
                 failed_count += 1;
@@ -1499,6 +1776,12 @@ pub fn zone_loaded_from_vfs_system(
     log::info!("[ZONE LOADED FROM VFS] Processing complete: {} success, {} failed, {} skipped (duplicates) out of {}",
         success_count, failed_count, skipped_count, processed_count);
     spawn_zone_params.memory_tracking.log_summary();
+    
+    // MEMORY MONITOR: Log final memory status after all VFS zone processing
+    if processed_count > 0 {
+        log_memory_status("Zone loading batch complete");
+    }
+    
     log::info!("[ZONE LOADED FROM VFS] ===========================================");
 }
 
