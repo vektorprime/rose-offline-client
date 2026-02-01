@@ -4,7 +4,7 @@
 //! for rendering and helps diagnose black screen issues.
 
 use bevy::prelude::*;
-use bevy::render::{mesh::Mesh, view::Visibility};
+use bevy::render::{mesh::Mesh, primitives::Aabb, view::Visibility};
 
 use crate::components::{Zone, ZoneObject};
 use crate::resources::zone_debug_diagnostics::ZoneDebugDiagnostics;
@@ -426,6 +426,91 @@ pub fn entity_count_tracing_system(
     tracer.last_entity_count = current_count;
 }
 
+/// DIAGNOSTIC: System to check if mesh entities have AABB components
+/// This helps diagnose if missing AABBs are causing frustum culling to mark all meshes as invisible
+pub fn aabb_diagnostic_system(
+    mesh_query: Query<(Entity, &Handle<Mesh>, Option<&Aabb>, Option<&Visibility>), With<ZoneObject>>,
+) {
+    static mut FRAME_COUNTER: usize = 0;
+    unsafe {
+        FRAME_COUNTER += 1;
+        if FRAME_COUNTER % 60 != 0 {
+            return;
+        }
+    }
+
+    log::info!("========================================");
+    log::info!("AABB COMPONENT DIAGNOSTIC");
+    log::info!("========================================");
+
+    let mut total_mesh_entities = 0;
+    let mut entities_with_aabb = 0;
+    let mut entities_without_aabb = 0;
+    let mut visible_entities = 0;
+    let mut visible_without_aabb = 0;
+
+    for (entity, mesh_handle, aabb, visibility) in mesh_query.iter() {
+        total_mesh_entities += 1;
+
+        let has_aabb = aabb.is_some();
+        let is_visible = matches!(visibility, Some(Visibility::Visible));
+
+        if has_aabb {
+            entities_with_aabb += 1;
+        } else {
+            entities_without_aabb += 1;
+        }
+
+        if is_visible {
+            visible_entities += 1;
+            if !has_aabb {
+                visible_without_aabb += 1;
+            }
+        }
+
+        // Log first few entities for debugging
+        if total_mesh_entities <= 5 {
+            log::info!(
+                "Entity {:?}: mesh_id={:?}, has_aabb={}, is_visible={}",
+                entity,
+                mesh_handle.id(),
+                has_aabb,
+                is_visible
+            );
+        }
+    }
+
+    log::info!("Total mesh entities: {}", total_mesh_entities);
+    log::info!("Entities WITH AABB: {}", entities_with_aabb);
+    log::info!("Entities WITHOUT AABB: {}", entities_without_aabb);
+    log::info!("Visible entities: {}", visible_entities);
+    log::info!("Visible entities WITHOUT AABB: {}", visible_without_aabb);
+
+    if entities_without_aabb > 0 {
+        log::warn!(
+            "WARNING: {}/{} mesh entities are missing AABB components!",
+            entities_without_aabb,
+            total_mesh_entities
+        );
+        log::warn!(
+            "This can cause frustum culling to incorrectly mark meshes as invisible!"
+        );
+    }
+
+    if visible_without_aabb > 0 {
+        log::error!(
+            "CRITICAL: {}/{} visible entities are missing AABB components!",
+            visible_without_aabb,
+            visible_entities
+        );
+        log::error!(
+            "This is likely the cause of the black screen - Bevy's frustum culling requires AABBs!"
+        );
+    }
+
+    log::info!("========================================");
+}
+
 /// Plugin to add all render validation systems
 pub struct ZoneRenderValidationPlugin;
 
@@ -440,6 +525,7 @@ impl Plugin for ZoneRenderValidationPlugin {
                mesh_inspection_system,
                material_validation_system,
                entity_count_tracing_system,
+               aabb_diagnostic_system,
            ));
     }
 }

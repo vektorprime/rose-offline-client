@@ -234,12 +234,130 @@ pub fn zone_debug_diagnostics_system(
     diagnostics.end_frame();
 }
 
+/// Diagnostic system to check child entity visibility components
+/// This helps identify why child entities (terrain, objects, water) are not visible
+pub fn zone_child_visibility_diagnostic_system(
+    zone_query: Query<(Entity, &Visibility, &InheritedVisibility, &ViewVisibility, Option<&GlobalTransform>), With<crate::components::Zone>>,
+    child_query: Query<(
+        Entity,
+        &Visibility,
+        &InheritedVisibility,
+        &ViewVisibility,
+        Option<&GlobalTransform>,
+        Option<&Handle<Mesh>>,
+        Option<&Parent>
+    ), Without<crate::components::Zone>>,
+    meshes: Res<Assets<Mesh>>,
+) {
+    use bevy::hierarchy::Parent;
+
+    // Only run this diagnostic once after zone is loaded
+    // This is controlled by a frame counter in the actual system
+    let should_run = std::env::var("RUN_VISIBILITY_DIAGNOSTIC").is_ok();
+    if !should_run {
+        return;
+    }
+
+    log::info!("========================================");
+    log::info!("ZONE CHILD ENTITY VISIBILITY DIAGNOSTIC");
+    log::info!("========================================");
+
+    // Check zone entity visibility
+    for (zone_entity, visibility, inherited_visibility, view_visibility, global_transform) in zone_query.iter() {
+        log::info!("ZONE ENTITY: {:?}", zone_entity);
+        log::info!("  Visibility: {:?}", visibility);
+        log::info!("  InheritedVisibility: {:?}", inherited_visibility);
+        log::info!("  ViewVisibility: {:?}", view_visibility);
+        if let Some(transform) = global_transform {
+            log::info!("  Position: {:?}", transform.translation());
+        }
+        log::info!("  Has Mesh: false (zone is container only)");
+    }
+
+    log::info!("");
+    log::info!("CHILD ENTITIES (Terrain, Objects, Water, etc.):");
+    log::info!("");
+
+    // Check child entities
+    let mut child_count = 0;
+    let mut visible_children = 0;
+    let mut invisible_children = 0;
+    let mut children_without_mesh = 0;
+    let mut children_without_view_visibility = 0;
+
+    for (entity, visibility, inherited_visibility, view_visibility, global_transform, mesh_handle, parent) in child_query.iter() {
+        child_count += 1;
+
+        // Check if entity has a mesh
+        let has_mesh = mesh_handle.is_some();
+        if !has_mesh {
+            children_without_mesh += 1;
+        }
+
+        // Check ViewVisibility
+        let is_visible = view_visibility.get();
+        if is_visible {
+            visible_children += 1;
+        } else {
+            invisible_children += 1;
+        }
+
+        // Check if ViewVisibility component exists
+        if view_visibility.get() == false {
+            children_without_view_visibility += 1;
+        }
+
+        // Log first 10 children for detailed analysis
+        if child_count <= 10 {
+            log::info!("CHILD ENTITY #{:?}: {:?}", child_count, entity);
+            log::info!("  Visibility: {:?}", visibility);
+            log::info!("  InheritedVisibility: {:?}", inherited_visibility);
+            log::info!("  ViewVisibility: {:?}", view_visibility);
+            if let Some(transform) = global_transform {
+                log::info!("  Position: {:?}", transform.translation());
+            }
+            log::info!("  Has Mesh: {}", has_mesh);
+            if let Some(parent) = parent {
+                log::info!("  Parent: {:?}", parent.get());
+            }
+                if let Some(mesh) = mesh_handle {
+                    log::info!("  Mesh Handle: {:?}", mesh);
+                    if let Some(mesh_asset) = meshes.get(mesh) {
+                        log::info!("  Mesh Vertices: {}", mesh_asset.count_vertices());
+                        log::info!("  Mesh Primitives: {:?}", mesh_asset.primitive_topology());
+                    }
+                }
+            log::info!("");
+        }
+    }
+
+    log::info!("========================================");
+    log::info!("SUMMARY:");
+    log::info!("========================================");
+    log::info!("Total child entities: {}", child_count);
+    log::info!("Visible children (ViewVisibility=true): {}", visible_children);
+    log::info!("Invisible children (ViewVisibility=false): {}", invisible_children);
+    log::info!("Children without Mesh: {}", children_without_mesh);
+    log::info!("Children with ViewVisibility=false: {}", children_without_view_visibility);
+
+    if invisible_children > 0 {
+        log::warn!("!!! WARNING: {} child entities are NOT VISIBLE !!!", invisible_children);
+    }
+
+    if children_without_mesh > 0 {
+        log::warn!("!!! WARNING: {} child entities have NO MESH component !!!", children_without_mesh);
+    }
+
+    log::info!("========================================");
+}
+
 /// Plugin to add zone debug diagnostics
 pub struct ZoneDebugDiagnosticsPlugin;
 
 impl Plugin for ZoneDebugDiagnosticsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ZoneDebugDiagnostics>()
-           .add_systems(Update, zone_debug_diagnostics_system);
+           .add_systems(Update, zone_debug_diagnostics_system)
+           .add_systems(Update, zone_child_visibility_diagnostic_system);
     }
 }

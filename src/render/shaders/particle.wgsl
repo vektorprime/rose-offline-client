@@ -1,29 +1,19 @@
-// Minimal particle shader - simplified for stability
-#import bevy_render::view View
-
-@group(0) @binding(0)
-var<uniform> view: View;
-
-struct PositionBuffer { data: array<vec4<f32>>, };
-struct SizeBuffer { data: array<vec2<f32>>, };
-struct ColorBuffer { data: array<vec4<f32>>, };
-struct TextureBuffer { data: array<vec4<f32>>, };
+#import bevy_pbr::mesh_view_bindings::view
+#import bevy_pbr::mesh_bindings::mesh
+#import bevy_pbr::mesh_functions::{get_model_matrix, mesh_position_local_to_world}
 
 @group(1) @binding(0)
-var<storage, read> positions: PositionBuffer;
-@group(1) @binding(1)
-var<storage, read> sizes: SizeBuffer;
-@group(1) @binding(2)
-var<storage, read> colors: ColorBuffer;
-@group(1) @binding(3)
-var<storage, read> textures: TextureBuffer;
-@group(2) @binding(0)
 var base_color_texture: texture_2d<f32>;
-@group(2) @binding(1)
+@group(1) @binding(1)
 var base_color_sampler: sampler;
 
 struct VertexInput {
     @builtin(vertex_index) vertex_idx: u32,
+    @builtin(instance_index) instance_index: u32,
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(3) color: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -33,53 +23,18 @@ struct VertexOutput {
 };
 
 @vertex
-fn vs_main(model: VertexInput) -> VertexOutput {
-    var vertex_positions: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>(1.0, 1.0),
-        vec2<f32>(-1.0, 1.0),
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>(1.0, -1.0),
-        vec2<f32>(1.0, 1.0),
-    );
-
-    let vert_idx = model.vertex_idx % 6u;
-    let particle_idx = model.vertex_idx / 6u;
-
-    let camera_right = normalize(vec3<f32>(view.view_proj.x.x, view.view_proj.y.x, view.view_proj.z.x));
-    let camera_up = normalize(vec3<f32>(view.view_proj.x.y, view.view_proj.y.y, view.view_proj.z.y));
-
-    let particle_position = positions.data[particle_idx].xyz;
-    let size = sizes.data[particle_idx];
-
-    let vertex_position = vertex_positions[vert_idx];
-
-    var world_space: vec3<f32> =
-        particle_position +
-        (camera_right * vertex_position.x * size.x) +
-        (camera_up * vertex_position.y * size.y);
-
+fn vertex(model: VertexInput) -> VertexOutput {
+    let model_matrix = get_model_matrix(model.instance_index);
+    
     var out: VertexOutput;
-    out.position = view.view_proj * vec4<f32>(world_space, 1.0);
-    out.color = colors.data[particle_idx];
-
-    let texture = textures.data[particle_idx];
-    if (vertex_positions[vert_idx].x < 0.0) {
-        out.uv.x = texture.x;
-    } else {
-        out.uv.x = texture.z;
-    }
-
-    if (vertex_positions[vert_idx].y > 0.0) {
-        out.uv.y = texture.y;
-    } else {
-        out.uv.y = texture.w;
-    }
+    out.position = view.view_proj * mesh_position_local_to_world(model_matrix, vec4<f32>(model.position, 1.0));
+    out.color = model.color;
+    out.uv = model.uv;
 
     return out;
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     return in.color * textureSample(base_color_texture, base_color_sampler, in.uv);
 }

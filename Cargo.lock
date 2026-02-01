@@ -4557,6 +4557,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "toml",
+ "tracing-subscriber",
  "uuid",
 ]
 

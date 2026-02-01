@@ -36,6 +36,7 @@ pub fn npc_model_update_system(
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
+    mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
     game_data: Res<GameData>,
 ) {
     for (
@@ -81,6 +82,7 @@ pub fn npc_model_update_system(
                     &mut skinned_mesh_inverse_bindposes_assets,
                     &mut particle_materials,
                     &mut effect_mesh_materials,
+                    &mut meshes,
                     entity,
                     npc.id,
                 )

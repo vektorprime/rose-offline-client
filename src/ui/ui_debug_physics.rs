@@ -236,7 +236,7 @@ pub fn ui_debug_physics_system(
                                 )),
                                 GlobalTransform::default(),
                                 Visibility::default(),
-                                ViewVisibility::default(), InheritedVisibility::default(),
+                                InheritedVisibility::default(),
                                 CollisionGroups::new(
                                     COLLISION_GROUP_PHYSICS_TOY,
                                     bevy_rapier3d::geometry::Group::all(),
@@ -255,7 +255,7 @@ pub fn ui_debug_physics_system(
                                 )),
                                 GlobalTransform::default(),
                                 Visibility::default(),
-                                ViewVisibility::default(), InheritedVisibility::default(),
+                                InheritedVisibility::default(),
                             ))
                             .id();
 

@@ -6,6 +6,8 @@ use std::{
     collections::HashSet,
 };
 use bevy::ecs::system::Query;
+use bevy::hierarchy::Children;
+use bevy::prelude::{Without};
 use uuid::Uuid;
 
 use anyhow::Result;
@@ -17,17 +19,19 @@ use bevy::{
     math::{Quat, Vec2, Vec3},
     pbr::{NotShadowCaster, NotShadowReceiver},
     prelude::{
-        AssetServer, Commands, Entity, EventReader, EventWriter, GlobalTransform, Handle,
-        Local, Res, ResMut, Resource, Transform, UntypedHandle, Visibility,
+        AssetServer, Color, Commands, Entity, EventReader, EventWriter, GlobalTransform, Handle,
+        Local, Res, ResMut, Resource, Transform, UntypedHandle, Visibility, With,
     },
     reflect::TypePath,
     render::{
         mesh::{Indices, Mesh, PrimitiveTopology},
+        primitives::Aabb,
         render_asset::RenderAssetUsages,
         texture::Image,
-        view::{NoFrustumCulling, ViewVisibility, InheritedVisibility},
+        view::{NoFrustumCulling, ViewVisibility, InheritedVisibility, VisibilityBundle},
     },
     tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
+    transform::TransformBundle,
 };
 use bevy_rapier3d::prelude::{
     AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, RigidBody,
@@ -57,7 +61,7 @@ use crate::{
     effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect},
     events::{LoadZoneEvent, ZoneEvent, ZoneLoadedFromVfsEvent},
     render::{
-        MESH_ATTRIBUTE_UV_1,
+        EffectMeshAnimationRenderState, EffectMeshMaterial, MESH_ATTRIBUTE_UV_1, ParticleMaterial,
     },
     resources::{CurrentZone, DebugInspector, GameData, SpecularTexture},
     VfsResource,
@@ -662,7 +666,10 @@ async fn load_block_files_direct(
     block_x: usize,
     block_y: usize,
 ) -> Result<Box<ZoneLoaderBlock>, anyhow::Error> {
-    let him_path = VfsPath::from(zone_path.join(format!("{}_{}.HIM", block_x, block_y)));
+    let him_path_buf = zone_path.join(format!("{}_{}.HIM", block_x, block_y));
+    let him_path_str = him_path_buf.to_string_lossy().replace('\\', "/");
+    let him_path = VfsPath::from(PathBuf::from(&him_path_str));
+    log::info!("[ZONE LOADER DEBUG] Constructed HIM path: \"{}\"", him_path_str);
     log::trace!("[LOAD BLOCK DIRECT] Loading block {}_{} from: {:?}", block_x, block_y, him_path);
 
     // Check if HIM file exists before attempting to load it
@@ -687,7 +694,8 @@ async fn load_block_files_direct(
         }
     };
 
-    let til_path = VfsPath::from(zone_path.join(format!("{}_{}.TIL", block_x, block_y)));
+    let til_path_str = zone_path.join(format!("{}_{}.TIL", block_x, block_y)).to_string_lossy().replace('\\', "/");
+    let til_path = VfsPath::from(PathBuf::from(&til_path_str));
     let til = match vfs.read_file(&til_path) {
         Ok(data) => {
             log::trace!("[LOAD BLOCK DIRECT] Successfully loaded TIL file for block {}_{}", block_x, block_y);
@@ -711,10 +719,11 @@ async fn load_block_files_direct(
         }
     };
 
-    let lit_cnst_path = VfsPath::from(zone_path.join(format!(
+    let lit_cnst_path_str = zone_path.join(format!(
         "{}_{}/LIGHTMAP/BUILDINGLIGHTMAPDATA.LIT",
         block_x, block_y
-    )));
+    )).to_string_lossy().replace('\\', "/");
+    let lit_cnst_path = VfsPath::from(PathBuf::from(&lit_cnst_path_str));
     let lit_cnst = match vfs.read_file(&lit_cnst_path) {
         Ok(data) => {
             log::trace!("[LOAD BLOCK DIRECT] Successfully loaded LIT constant file for block {}_{}", block_x, block_y);
@@ -726,10 +735,11 @@ async fn load_block_files_direct(
         }
     };
 
-    let lit_deco_path = VfsPath::from(zone_path.join(format!(
+    let lit_deco_path_str = zone_path.join(format!(
         "{}_{}/LIGHTMAP/OBJECTLIGHTMAPDATA.LIT",
         block_x, block_y
-    )));
+    )).to_string_lossy().replace('\\', "/");
+    let lit_deco_path = VfsPath::from(PathBuf::from(&lit_deco_path_str));
     let lit_deco = match vfs.read_file(&lit_deco_path) {
         Ok(data) => {
             log::trace!("[LOAD BLOCK DIRECT] Successfully loaded LIT deco file for block {}_{}", block_x, block_y);
@@ -769,6 +779,8 @@ pub struct SpawnZoneParams<'w, 's> {
     pub meshes: ResMut<'w, Assets<Mesh>>,
     pub specular_texture: Res<'w, SpecularTexture>,
     pub standard_materials: ResMut<'w, Assets<bevy::pbr::StandardMaterial>>,
+    pub effect_mesh_materials: ResMut<'w, Assets<EffectMeshMaterial>>,
+    pub particle_materials: ResMut<'w, Assets<ParticleMaterial>>,
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
 }
@@ -926,6 +938,10 @@ pub fn zone_loader_system(
     }
 
     for event in load_zone_events.read() {
+        // DIAGNOSTIC: Track LoadZoneEvent received
+        log::info!("[ZONE LOADER SYSTEM DIAGNOSTIC] LoadZoneEvent received: zone_id={}, despawn_other_zones={}",
+            event.id.get(), event.despawn_other_zones);
+        
         let zone_index = event.id.get() as usize;
 
         // Memory tracking: Log cache state
@@ -1139,6 +1155,8 @@ pub fn zone_loader_system(
             }
 
             LoadingZoneState::Spawned => {
+                // DIAGNOSTIC: Zone transitioning to Spawned state
+                log::info!("[ZONE LOADER SYSTEM DIAGNOSTIC] LoadingZone transitioning to Spawned state for zone");
                 
                 let zone_handle = loading_zone.handle.clone();
                 
@@ -1176,6 +1194,7 @@ pub fn zone_loader_system(
                         if let Some(spawned_entity) = cached_zone.spawned_entity.take()
                         {
                            // info!("[ASSET LIFECYCLE] Despawning zone entity: {:?}", spawned_entity);
+                            log::warn!("[ZONE LOADER SYSTEM DIAGNOSTIC] ✗ Despawning existing zone entity: entity={:?}", spawned_entity);
                             spawn_zone_params
                                     .commands
                                     .entity(spawned_entity)
@@ -1187,6 +1206,10 @@ pub fn zone_loader_system(
                     spawn_zone_params.commands.remove_resource::<CurrentZone>();
                 }
 
+                // DIAGNOSTIC: About to spawn zone from zone_loader_system
+                log::info!("[ZONE LOADER SYSTEM DIAGNOSTIC] About to call spawn_zone for zone_id={}",
+                    zone_id.get());
+                
                 // Get zone_data and spawn
                 let zone_handle_clone = zone_handle.clone();
                 let spawn_result = {
@@ -1228,6 +1251,10 @@ pub fn zone_loader_system(
                         Ok((zone_entity, zone_loading_assets)) => {
                             // log::info!("[ZONE LOADER SYSTEM] Zone spawned successfully");
                             
+                            // DIAGNOSTIC: Zone entity successfully spawned from zone_loader_system
+                            log::info!("[ZONE LOADER SYSTEM DIAGNOSTIC] ✓ Zone entity created in zone_loader_system: entity={:?}, zone_id={}",
+                                zone_entity, zone_id.get());
+                            
                             // Check if assets are empty before moving
                             let assets_empty = zone_loading_assets.is_empty();
                             
@@ -1239,13 +1266,20 @@ pub fn zone_loader_system(
                             
                             loading_zone.zone_assets = zone_loading_assets;
                             loading_zone.state = LoadingZoneState::Spawned;
-                            
+
+                            // CRITICAL FIX: Set CurrentZone resource (was missing in Bevy 0.13 implementation)
+                            // This matches Bevy 0.11 behavior (lines 482-485)
+                            spawn_zone_params.commands.insert_resource(CurrentZone {
+                                id: zone_id,
+                                handle: zone_handle_clone,
+                            });
+
                             if assets_empty {
                                 // log::info!("[ZONE LOADER SYSTEM] No additional assets to load, sending Loaded event");
-                                
+
                                 // MEMORY LEAK FIX: Clear asset handles before removing zone
                                 loading_zone.clear_asset_handles();
-                                
+
                                 zone_events.send(ZoneEvent::Loaded(zone_id));
                                 loading_zones.remove(index);
                             } else {
@@ -1255,6 +1289,10 @@ pub fn zone_loader_system(
                         }
                         Err(e) => {
                             log::error!("[ZONE LOADER SYSTEM] Failed to spawn zone: {:?}", e);
+                            
+                            // DIAGNOSTIC: Zone entity spawn failed in zone_loader_system
+                            log::error!("[ZONE LOADER SYSTEM DIAGNOSTIC] ✗ spawn_zone FAILED in zone_loader_system for zone_id={}: error={:?}",
+                                zone_id.get(), e);
                             
                             // MEMORY LEAK FIX: Clear asset handles before removing zone on failure
                             loading_zone.clear_asset_handles();
@@ -1306,7 +1344,6 @@ pub fn zone_loaded_from_vfs_system(
     mut events: EventReader<ZoneLoadedFromVfsEvent>,
     mut zone_loader_cache: Local<ZoneLoaderCache>,
     mut zone_events: EventWriter<ZoneEvent>,
-    mut current_zone: Option<ResMut<CurrentZone>>,
     mut debug_inspector_state: ResMut<DebugInspector>,
     mut spawn_zone_params: SpawnZoneParams,
     // CRITICAL FIX: Query existing zones to prevent duplicate spawning
@@ -1316,6 +1353,13 @@ pub fn zone_loaded_from_vfs_system(
     let event_count = events.len();
     if event_count == 0 {
         return;
+    }
+    
+    // Initialize cache if empty
+    if zone_loader_cache.cache.is_empty() {
+        zone_loader_cache
+            .cache
+            .resize_with(spawn_zone_params.game_data.zone_list.len(), || None);
     }
     
     // CRITICAL FIX: Check for already-loaded zones to prevent duplicates
@@ -1341,7 +1385,13 @@ pub fn zone_loaded_from_vfs_system(
     let mut seen_zone_ids: std::collections::HashSet<u16> = std::collections::HashSet::new();
     
     // Process events directly, skipping duplicates
+    // DIAGNOSTIC: Track ZoneLoadedFromVfsEvent processing
+    log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] Processing {} ZoneLoadedFromVfsEvent(s)", events.len());
+    
     for event in events.read() {
+        // DIAGNOSTIC: Individual event details
+        log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] Processing event: zone_id={}", event.zone_id.get());
+        
         // Deduplicate: Skip duplicate zone IDs in the same batch
         if !seen_zone_ids.insert(event.zone_id.get()) {
             log::warn!("[ZONE LOADED FROM VFS] DUPLICATE EVENT for zone {} ignored in batch",
@@ -1365,39 +1415,64 @@ pub fn zone_loaded_from_vfs_system(
         log::info!("[ZONE LOADED FROM VFS] ===========================================");
         
         let zone_index = event.zone_id.get() as usize;
+
+        // CRITICAL FIX: Handle despawn_other_zones flag (matching AssetServer path behavior)
+        // Default to true to match the typical behavior when loading a new zone
+        let despawn_other_zones = true;
         
-        // Update cache - we don't need a handle for VFS-loaded zones
-        if zone_loader_cache.cache.len() <= zone_index {
-            // We can't use resize() because CachedZone doesn't implement Clone
-            while zone_loader_cache.cache.len() <= zone_index {
-                zone_loader_cache.cache.push(None);
+        if despawn_other_zones {
+            log::info!("[ZONE LOADED FROM VFS] Despawning other zones");
+            for cached_zone in zone_loader_cache
+                .cache
+                .iter_mut()
+                .filter_map(|x| x.as_mut())
+            {
+                if let Some(spawned_entity) = cached_zone.spawned_entity.take()
+                {
+                    log::warn!("[ZONE LOADED FROM VFS DIAGNOSTIC] ✗ Despawning existing zone entity: entity={:?}", spawned_entity);
+                    spawn_zone_params
+                            .commands
+                            .entity(spawned_entity)
+                            .despawn_recursive();
+                    spawn_zone_params.memory_tracking.log_entity_despawned();
+                }
             }
+
+            spawn_zone_params.commands.remove_resource::<CurrentZone>();
         }
         
-        zone_loader_cache.cache[zone_index] = Some(CachedZone {
-            data_handle: Handle::<ZoneLoaderAsset>::default(),
-            spawned_entity: None,
-        });
-        
         // Spawn the zone using the asset from the event
+        // DIAGNOSTIC: About to call spawn_zone
+        log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] About to call spawn_zone for zone_id={}",
+            event.zone_id.get());
         match spawn_zone(&mut spawn_zone_params, &event.zone_asset) {
-            Ok((entity, zone_assets)) => {
+            Ok((entity, _zone_assets)) => {
                 success_count += 1;
                 log::info!("[ZONE LOADED FROM VFS] Zone {} spawned successfully! entity={:?}",
                     event.zone_id.get(), entity);
                 
-                // Update cache with spawned entity
-                if let Some(cached_zone) = zone_loader_cache.cache[zone_index].as_mut() {
-                    cached_zone.spawned_entity = Some(entity);
-                }
+                // DIAGNOSTIC: Zone entity successfully created and returned
+                log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] ✓ Zone entity created in zone_loaded_from_vfs_system: entity={:?}, zone_id={}",
+                    entity, event.zone_id.get());
+
+                // CRITICAL FIX: Create a placeholder handle for VFS-loaded zones
+                // VFS zones bypass the AssetServer, so we use a default handle
+                // The entity is tracked via the zone entity itself and CurrentZone resource
+                let zone_handle = Handle::<ZoneLoaderAsset>::default();
                 
-                // Update current zone if it exists
-                if let Some(ref mut current_zone) = current_zone {
-                    **current_zone = CurrentZone {
-                        id: event.zone_id,
-                        handle: Handle::default(),
-                    };
-                }
+                // CRITICAL FIX: Cache VFS-loaded zones with placeholder handle
+                // The spawned_entity is what matters for despawning; handle is not used for VFS zones
+                zone_loader_cache.cache[zone_index] = Some(CachedZone {
+                    data_handle: zone_handle,
+                    spawned_entity: Some(entity),
+                });
+
+                // CRITICAL FIX: Set CurrentZone resource (matching AssetServer path)
+                // Note: VFS-loaded zones use a default handle since they bypass AssetServer
+                spawn_zone_params.commands.insert_resource(CurrentZone {
+                    id: event.zone_id,
+                    handle: Handle::<ZoneLoaderAsset>::default(),
+                });
                 
                 // Send loaded event
                 zone_events.send(ZoneEvent::Loaded(event.zone_id));
@@ -1412,6 +1487,10 @@ pub fn zone_loaded_from_vfs_system(
                 failed_count += 1;
                 log::error!("[ZONE LOADED FROM VFS] Failed to spawn zone {}: {:?}",
                     event.zone_id.get(), e);
+                
+                // DIAGNOSTIC: Zone entity spawn failed
+                log::error!("[ZONE LOADED FROM VFS DIAGNOSTIC] ✗ spawn_zone FAILED for zone_id={}: error={:?}",
+                    event.zone_id.get(), e);
             }
         }
     }
@@ -1421,6 +1500,37 @@ pub fn zone_loaded_from_vfs_system(
         success_count, failed_count, skipped_count, processed_count);
     spawn_zone_params.memory_tracking.log_summary();
     log::info!("[ZONE LOADED FROM VFS] ===========================================");
+}
+
+pub fn force_zone_visibility_system(
+    mut zone_query: Query<(Entity, &mut Visibility, &mut ViewVisibility), With<Zone>>,
+    children_query: Query<&Children>,
+    mut child_visibility_query: Query<(&mut Visibility, &mut ViewVisibility), Without<Zone>>,
+) {
+    for (zone_entity, mut visibility, mut view_visibility) in zone_query.iter_mut() {
+        *visibility = Visibility::Visible;
+        view_visibility.set();
+
+        // Recursively set visibility on all children
+        force_visibility_recursive(zone_entity, &children_query, &mut child_visibility_query);
+    }
+}
+
+fn force_visibility_recursive(
+    entity: Entity,
+    children_query: &Query<&Children>,
+    visibility_query: &mut Query<(&mut Visibility, &mut ViewVisibility), Without<Zone>>,
+) {
+    if let Ok(children) = children_query.get(entity) {
+        for child in children.iter() {
+            if let Ok((mut visibility, mut view_visibility)) = visibility_query.get_mut(*child) {
+                *visibility = Visibility::Visible;
+                view_visibility.set();
+            }
+            // Recurse into grandchildren
+            force_visibility_recursive(*child, children_query, visibility_query);
+        }
+    }
 }
 
 pub fn spawn_zone(
@@ -1434,6 +1544,9 @@ pub fn spawn_zone(
     log::info!("[SPAWN ZONE] Number of blocks: {}", zone_data.blocks.len());
     log::info!("[SPAWN ZONE] Number of NPCs: {}", zone_data.npcs.len());
     log::info!("[SPAWN ZONE] ===========================================");
+    
+    // DIAGNOSTIC: Track function entry
+    log::info!("[SPAWN ZONE DIAGNOSTIC] spawn_zone function ENTRY - about to spawn zone entity");
 
     // Memory tracking: Count blocks with data
     let blocks_with_data = zone_data.blocks.iter().filter(|b| b.is_some()).count();
@@ -1447,6 +1560,8 @@ pub fn spawn_zone(
         meshes,
         specular_texture,
         standard_materials,
+        effect_mesh_materials,
+        particle_materials,
         zone_loader_assets: _,
         memory_tracking,
     } = params;
@@ -1497,17 +1612,28 @@ pub fn spawn_zone(
             Zone {
                 id: zone_data.zone_id,
             },
-            Visibility::Visible,  // Explicitly set to Visible
-            ViewVisibility::default(),
-            InheritedVisibility::default(),
-            Transform::default(),
-            GlobalTransform::default(),
+            // FIX: Use VisibilityBundle + TransformBundle instead of SpatialBundle
+            // This ensures all visibility components are properly initialized for Bevy 0.13
+            VisibilityBundle {
+                visibility: Visibility::Visible,
+                inherited_visibility: InheritedVisibility::default(),
+                view_visibility: ViewVisibility::default(),
+            },
+            TransformBundle::from_transform(Transform::from_xyz(5200.0, 0.0, -5200.0)),
+            NoFrustumCulling,
+            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            bevy::render::view::RenderLayers::layer(0),
         ))
         .id();
+    log::info!("[ZONE LOADER DEBUG] Spawned Zone entity {:?} with Visibility::Visible, NoFrustumCulling, and large Aabb", zone_entity);
    // info!("[ASSET LIFECYCLE] Zone entity spawned: {:?} (zone_id: {})", zone_entity, zone_data.zone_id.get());
     memory_tracking.log_entity_spawned("Zone", 0);
     log::info!("[SPAWN ZONE] Zone entity spawned: {:?}", zone_entity);
     log::info!("[MEMORY] Zone entity created: {:?}", zone_entity);
+    
+    // DIAGNOSTIC: Confirm zone entity was spawned
+    log::info!("[SPAWN ZONE DIAGNOSTIC] ✓ Zone entity SUCCESSFULLY SPAWNED: entity={:?}, zone_id={}",
+        zone_entity, zone_data.zone_id.get());
 
     if let Some(skybox_data) = zone_list_entry
         .skybox_id
@@ -1677,32 +1803,33 @@ pub fn spawn_zone(
                         deco_object_count += 1;
                     }
 
-                    // Animated objects and effect objects temporarily disabled (use custom materials)
-                    // for object_instance in ifo.animated_objects.iter() {
-                    //     let object_entity = spawn_animated_object(
-                    //         commands,
-                    //         asset_server,
-                    //         effect_mesh_materials.as_mut(),
-                    //         &game_data.stb_morph_object,
-                    //         object_instance,
-                    //     );
-                    //     commands.entity(zone_entity).add_child(object_entity);
-                    //     animated_object_count += 1;
-                    // }
+                    // Animated objects and effect objects
+                    for object_instance in ifo.animated_objects.iter() {
+                        let object_entity = spawn_animated_object(
+                            commands,
+                            asset_server,
+                            effect_mesh_materials.as_mut(),
+                            &game_data.stb_morph_object,
+                            object_instance,
+                        );
+                        commands.entity(zone_entity).add_child(object_entity);
+                        animated_object_count += 1;
+                    }
 
-                    // for (ifo_object_id, effect_object) in ifo.effect_objects.iter().enumerate() {
-                    //     let object_entity = spawn_effect_object(
-                    //         commands,
-                    //         asset_server,
-                    //         vfs_resource,
-                    //         effect_mesh_materials.as_mut(),
-                    //         particle_materials.as_mut(),
-                    //         effect_object,
-                    //         ifo_object_id,
-                    //     );
-                    //     commands.entity(zone_entity).add_child(object_entity);
-                    //     effect_object_count += 1;
-                    // }
+                    for (ifo_object_id, effect_object) in ifo.effect_objects.iter().enumerate() {
+                        let object_entity = spawn_effect_object(
+                            commands,
+                            asset_server,
+                            vfs_resource,
+                            effect_mesh_materials.as_mut(),
+                            particle_materials.as_mut(),
+                            meshes,
+                            effect_object,
+                            ifo_object_id,
+                        );
+                        commands.entity(zone_entity).add_child(object_entity);
+                        effect_object_count += 1;
+                    }
 
                     for (ifo_object_id, sound_object) in ifo.sound_objects.iter().enumerate() {
                         let object_entity =
@@ -1741,6 +1868,10 @@ pub fn spawn_zone(
     memory_tracking.log_summary();
     log::info!("[SPAWN ZONE] ===========================================");
 
+    // DIAGNOSTIC: About to return from spawn_zone
+    log::info!("[SPAWN ZONE DIAGNOSTIC] ✓ spawn_zone returning SUCCESS: entity={:?}, assets_count={}",
+        zone_entity, zone_loading_assets.len());
+
     Ok((zone_entity, zone_loading_assets))
 }
 
@@ -1774,10 +1905,11 @@ fn spawn_skybox(
             }),
             Transform::from_scale(Vec3::splat(SKYBOX_MODEL_SCALE)),
             GlobalTransform::default(),
-            Visibility::Visible,  // Explicitly visible
-            ViewVisibility::default(),
-            InheritedVisibility::default(),
+            Visibility::Inherited,  // Inherited from parent zone
+            InheritedVisibility::default(),  // Required for visibility propagation
+            ViewVisibility::default(),  // REQUIRED: For Bevy 0.13 visibility system
             NoFrustumCulling,
+            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
         ))
         .id()
 }
@@ -1916,7 +2048,10 @@ fn spawn_terrain(
         }
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
     let vertex_count = positions.len();
     let triangle_count = indices.len() / 3;
     mesh.insert_indices(Indices::U16(indices));
@@ -1972,12 +2107,13 @@ fn spawn_terrain(
             }),
             meshes.add(mesh),
             material_handle,
-            Transform::from_xyz(offset_x, 0.0, -offset_y),
+            Transform::from_xyz(offset_x - 5200.0, 0.0, -offset_y + 5200.0),
             GlobalTransform::default(),
-            Visibility::Visible,  // Explicitly visible
-            ViewVisibility::default(),
+            Visibility::Inherited,
             InheritedVisibility::default(),
-            NoFrustumCulling, // Prevent frustum culling issues
+            ViewVisibility::default(),
+            NoFrustumCulling,
+            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             NotShadowCaster,
             RigidBody::Fixed,
             Collider::trimesh(collider_verts, collider_indices),
@@ -2010,14 +2146,14 @@ fn spawn_water(
     water_material: &Handle<bevy::pbr::StandardMaterial>,  // Pass water material as parameter
 ) -> Entity {
     let start = Vec3::new(
-        5200.0 + plane_start.x / 100.0,
+        plane_start.x / 100.0,
         plane_start.y / 100.0,
-        -(5200.0 + plane_start.z / 100.0),
+        -plane_start.z / 100.0,
     );
     let end = Vec3::new(
-        5200.0 + plane_end.x / 100.0,
+        plane_end.x / 100.0,
         plane_end.y / 100.0,
-        -(5200.0 + plane_end.z / 100.0),
+        -plane_end.z / 100.0,
     );
     let uv_x = (end.x - start.x) / (water_size / 100.0);
     let uv_y = (end.z - start.z) / (water_size / 100.0);
@@ -2042,7 +2178,10 @@ fn spawn_water(
         uvs.push(*uv);
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
     mesh.insert_indices(indices);
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
@@ -2055,16 +2194,19 @@ fn spawn_water(
             water_material.clone(),
             Transform::default(),
             GlobalTransform::default(),
-            Visibility::Visible,  // Explicitly visible
-            ViewVisibility::default(),
+            Visibility::Inherited,
             InheritedVisibility::default(),
+            ViewVisibility::default(),
+            NoFrustumCulling,
+            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            bevy::render::view::RenderLayers::layer(0),
             NotShadowCaster,
             NotShadowReceiver,
             RigidBody::Fixed,
             Collider::trimesh(collider_verts, collider_indices),
-            CollisionGroups::new(COLLISION_GROUP_ZONE_WATER, COLLISION_FILTER_INSPECTABLE),
         ))
         .id();
+    commands.entity(water_entity).insert(CollisionGroups::new(COLLISION_GROUP_ZONE_WATER, COLLISION_FILTER_INSPECTABLE));
     
    // info!("[ASSET LIFECYCLE] Water entity spawned: {:?}", water_entity);
     water_entity
@@ -2096,8 +2238,7 @@ fn spawn_object(
                 object_instance.position.x,
                 object_instance.position.z,
                 -object_instance.position.y,
-            ) / 100.0
-                + Vec3::new(5200.0, 0.0, -5200.0),
+            ) / 100.0,
         )
         .with_rotation(Quat::from_xyzw(
             object_instance.rotation.x,
@@ -2121,9 +2262,11 @@ fn spawn_object(
         }),
         object_transform,
         GlobalTransform::default(),
-        Visibility::Visible,  // Explicitly visible
-        ViewVisibility::default(),
+        Visibility::Inherited,
         InheritedVisibility::default(),
+        ViewVisibility::default(),
+        NoFrustumCulling,
+        Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
         RigidBody::Fixed,
     ));
 
@@ -2298,9 +2441,12 @@ fn spawn_object(
                 material,
                 part_transform,
                 GlobalTransform::default(),
-                Visibility::Visible,  // Explicitly visible
-                ViewVisibility::default(),
+                Visibility::Inherited,
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
+                NoFrustumCulling,
+                Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+                bevy::render::view::RenderLayers::layer(0),
                 NotShadowCaster,
                 ColliderParent::new(object_entity),
                 AsyncCollider(ComputedColliderShape::TriMesh),
@@ -2384,8 +2530,6 @@ fn spawn_object(
     object_entity
 }
 
-// Animated objects and effect objects temporarily disabled (use custom materials)
-/*
 fn spawn_animated_object(
     commands: &mut Commands,
     asset_server: &AssetServer,
@@ -2414,8 +2558,7 @@ fn spawn_animated_object(
                 object_instance.position.x,
                 object_instance.position.z,
                 -object_instance.position.y,
-            ) / 100.0
-                + Vec3::new(5200.0, 0.0, -5200.0),
+            ) / 100.0,
         )
         .with_rotation(Quat::from_xyzw(
             object_instance.rotation.x,
@@ -2474,12 +2617,13 @@ fn spawn_animated_object(
             EffectMeshAnimationRenderState::default(),
             MeshAnimation::repeat(motion_handle, None),
             object_transform,
-            NoFrustumCulling, // AABB culling is broken for mesh animations
-            NotShadowCaster,
             GlobalTransform::default(),
-            Visibility::Visible,  // Explicitly visible
-            ViewVisibility::default(),
+            Visibility::Inherited,
             InheritedVisibility::default(),
+            ViewVisibility::default(),
+            NoFrustumCulling,
+            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            NotShadowCaster,
             AsyncCollider(ComputedColliderShape::TriMesh),
             CollisionGroups::new(COLLISION_GROUP_ZONE_OBJECT, COLLISION_FILTER_INSPECTABLE),
         ))
@@ -2495,14 +2639,14 @@ fn spawn_effect_object(
     vfs_resource: &VfsResource,
     effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
     particle_materials: &mut Assets<ParticleMaterial>,
+    meshes: &mut Assets<bevy::prelude::Mesh>,
     effect_object: &IfoEffectObject,
     ifo_object_id: usize,
 ) -> Entity {
     let object = &effect_object.object;
     let object_transform = Transform::default()
         .with_translation(
-            Vec3::new(object.position.x, object.position.z, -object.position.y) / 100.0
-                + Vec3::new(5200.0, 0.0, -5200.0),
+            Vec3::new(object.position.x, object.position.z, -object.position.y) / 100.0,
         )
         .with_rotation(Quat::from_xyzw(
             object.rotation.x,
@@ -2527,9 +2671,10 @@ fn spawn_effect_object(
             },
             object_transform,
             GlobalTransform::from(object_transform),
-            Visibility::Visible,  // Explicitly visible
-            ViewVisibility::default(),
-            InheritedVisibility::default(),
+            Visibility::Inherited,  // Inherited from parent zone
+            InheritedVisibility::default(),  // Required for visibility propagation
+            ViewVisibility::default(),  // REQUIRED: For Bevy 0.13 visibility system
+            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
         ))
         .id();
 
@@ -2541,6 +2686,7 @@ fn spawn_effect_object(
         asset_server,
         particle_materials,
         effect_mesh_materials,
+        meshes,
         (&effect_object.effect_path).into(),
         false,
         Some(effect_object_entity),
@@ -2548,7 +2694,6 @@ fn spawn_effect_object(
 
     effect_object_entity
 }
-*/
 
 fn spawn_sound_object(
     commands: &mut Commands,
@@ -2559,8 +2704,7 @@ fn spawn_sound_object(
     let object = &sound_object.object;
     let object_transform = Transform::default()
         .with_translation(
-            Vec3::new(object.position.x, object.position.z, -object.position.y) / 100.0
-                + Vec3::new(5200.0, 0.0, -5200.0),
+            Vec3::new(object.position.x, object.position.z, -object.position.y) / 100.0,
         )
         .with_rotation(Quat::from_xyzw(
             object.rotation.x,
@@ -2583,9 +2727,11 @@ fn spawn_sound_object(
             SoundRadius::new(sound_object.range as f32 / 10.0),
             object_transform,
             GlobalTransform::from(object_transform),
-            Visibility::Visible,  // Explicitly visible
-            ViewVisibility::default(),
+            Visibility::Inherited,
             InheritedVisibility::default(),
+            ViewVisibility::default(),
+            NoFrustumCulling,
+            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
         ))
         .id();
     

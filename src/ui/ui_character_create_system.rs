@@ -366,7 +366,7 @@ pub fn ui_character_create_system(
                     .with_scale(Vec3::new(1.5, 1.5, 1.5)),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ViewVisibility::default(), InheritedVisibility::default(),
+                InheritedVisibility::default(),
             ))
             .id();
         ui_state.entity = Some(create_character_entity);

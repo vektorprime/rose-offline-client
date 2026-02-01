@@ -210,7 +210,7 @@ pub fn game_connection_system(
                             ),
                             GlobalTransform::default(),
                             Visibility::default(),
-                            ViewVisibility::default(), InheritedVisibility::default(),
+                            InheritedVisibility::default(),
                         )))
                         .id()
                 );
@@ -320,7 +320,7 @@ pub fn game_connection_system(
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ViewVisibility::default(), InheritedVisibility::default(),
+                        InheritedVisibility::default(),
                         VisibleStatusEffects::default(),
                     ),))
                     .id();
@@ -402,7 +402,7 @@ pub fn game_connection_system(
                         )),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ViewVisibility::default(), InheritedVisibility::default(),
+                        InheritedVisibility::default(),
                     ),
                     ))
                     .id();
@@ -485,7 +485,7 @@ pub fn game_connection_system(
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ViewVisibility::default(), InheritedVisibility::default(),
+                        InheritedVisibility::default(),
                     ),))
                     .id();
 
@@ -520,7 +520,7 @@ pub fn game_connection_system(
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
-                        ViewVisibility::default(), InheritedVisibility::default(),
+                        InheritedVisibility::default(),
                     ))
                     .id();
 

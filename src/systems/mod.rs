@@ -93,6 +93,18 @@ pub use debug_rendering_system::{
     debug_entity_visibility,
     render_diagnostics_system,
     render_diagnostics_system_lightweight,
+    frustum_culling_diagnostics,
+    material_transparency_diagnostics,
+    transform_validation_diagnostics,
+    visibility_state_diagnostics,
+    active_camera_diagnostics,
+    render_layer_diagnostics,
+    aabb_validation_diagnostics,
+    render_pipeline_diagnostics,
+    render_stage_diagnostics,
+    zone_entity_visibility_diagnostics,
+    parent_child_visibility_diagnostics,
+    zone_component_lifecycle_diagnostics,
 };
 pub use directional_light_system::directional_light_system;
 pub use effect_system::effect_system;
@@ -142,6 +154,10 @@ pub use world_connection_system::world_connection_system;
 pub use world_time_system::world_time_system;
 pub use zone_time_system::zone_time_system;
 pub use zone_viewer_system::zone_viewer_enter_system;
+pub use transform_propagation_diagnostics::{
+    transform_propagation_diagnostics,
+    post_update_systems_diagnostics,
+};
 
 // Zone render validation systems for diagnosing black screen issues
 pub mod zone_render_validation_system;
@@ -151,3 +167,6 @@ pub mod zone_memory_profiler_system;
 
 // Zone memory protection system for emergency detection
 pub mod zone_memory_protection_system;
+
+// Transform propagation diagnostics for debugging transform issues
+pub mod transform_propagation_diagnostics;

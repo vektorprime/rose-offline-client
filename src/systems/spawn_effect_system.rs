@@ -2,6 +2,7 @@ use bevy::{
     hierarchy::BuildChildren,
     prelude::{
         AssetServer, Assets, Commands, EventReader, GlobalTransform, Query, Res, ResMut, Transform,
+        Mesh,
     },
     render::mesh::skinning::SkinnedMesh,
 };
@@ -39,6 +40,7 @@ pub fn spawn_effect_system(
     vfs_resource: Res<VfsResource>,
     mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     for event in events.read() {
         match event {
@@ -51,6 +53,7 @@ pub fn spawn_effect_system(
                         &asset_server,
                         &mut particle_materials,
                         &mut effect_mesh_materials,
+                        &mut meshes,
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         Some(*effect_entity),
@@ -67,6 +70,7 @@ pub fn spawn_effect_system(
                             &asset_server,
                             &mut particle_materials,
                             &mut effect_mesh_materials,
+                            &mut meshes,
                             effect_file_path,
                             spawn_effect_data.manual_despawn,
                             None,
@@ -102,6 +106,7 @@ pub fn spawn_effect_system(
                         &asset_server,
                         &mut particle_materials,
                         &mut effect_mesh_materials,
+                        &mut meshes,
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         None,
@@ -119,6 +124,7 @@ pub fn spawn_effect_system(
                         &asset_server,
                         &mut particle_materials,
                         &mut effect_mesh_materials,
+                        &mut meshes,
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         None,

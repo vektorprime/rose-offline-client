@@ -19,10 +19,6 @@ pub use effect_mesh_material::{EffectMeshMaterial, EffectMeshMaterialPlugin};
 
 pub mod particle_material;
 pub use particle_material::*;
-pub use particle_material::{ParticleMaterial, ParticleMaterialPlugin};
-
-pub mod particle_pipeline;
-pub use particle_pipeline::*;
 
 pub mod particle_render_data;
 pub use particle_render_data::*;
@@ -37,10 +33,6 @@ pub use trail_effect::TrailEffectRenderPlugin;
 
 pub mod damage_digit_material;
 pub use damage_digit_material::*;
-pub use damage_digit_material::{DamageDigitMaterial, DamageDigitMaterialPlugin};
-
-pub mod damage_digit_pipeline;
-pub use damage_digit_pipeline::*;
 
 pub mod damage_digit_render_data;
 pub use damage_digit_render_data::*;
@@ -68,7 +60,6 @@ pub struct RoseRenderPlugin;
 
 impl Plugin for RoseRenderPlugin {
     fn build(&self, _app: &mut App) {
-        bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Using Bevy StandardMaterial");
-        // All custom render plugins removed - using Bevy's built-in pipeline
+        bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Materials registered via their own plugins");
     }
 }

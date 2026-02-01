@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.4"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
 arrayvec = "0.7"
 async-trait = "0.1"
 bevy_egui = "=0.26"

@@ -53,7 +53,10 @@ impl AssetLoader for ZmsAssetLoader {
 
             match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(mut zms) => {
-                    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+                    let mut mesh = Mesh::new(
+                        PrimitiveTopology::TriangleList,
+                        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+                    );
                     mesh.insert_indices(Indices::U16(zms.indices));
 
                     if !zms.normal.is_empty() {
@@ -166,7 +169,10 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
 
             match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(mut zms) => {
-                    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+                    let mut mesh = Mesh::new(
+                        PrimitiveTopology::TriangleList,
+                        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+                    );
                     mesh.insert_indices(Indices::U16(zms.indices));
 
                     if !zms.normal.is_empty() {

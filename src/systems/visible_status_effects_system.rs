@@ -53,7 +53,7 @@ pub fn visible_status_effects_system(
                                 Transform::default(),
                                 GlobalTransform::default(),
                                 Visibility::default(),
-                                ViewVisibility::default(), InheritedVisibility::default(),
+                                InheritedVisibility::default(),
                             ))
                             .id();
 

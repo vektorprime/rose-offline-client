@@ -7,7 +7,7 @@ use bevy::{
         AssetServer, Assets, BuildChildren, Color, Commands, DespawnRecursiveExt, Entity,
         GlobalTransform, Handle, Image, Mesh, Resource, Transform, Visibility,
     },
-    render::{mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes}, view::InheritedVisibility, view::ViewVisibility},
+    render::{mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes}, view::InheritedVisibility, view::NoFrustumCulling, view::ViewVisibility, primitives::Aabb},
 };
 use enum_map::{enum_map, EnumMap};
 
@@ -203,6 +203,7 @@ impl ModelLoader {
         skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
         particle_materials: &mut Assets<ParticleMaterial>,
         effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+        meshes: &mut Assets<Mesh>,
         model_entity: Entity,
         npc_id: NpcId,
     ) -> Option<(NpcModel, SkinnedMesh, DummyBoneOffset)> {
@@ -265,6 +266,7 @@ impl ModelLoader {
                         asset_server,
                         particle_materials,
                         effect_mesh_materials,
+                        meshes,
                         effect_path.into(),
                         false,
                         None,
@@ -345,7 +347,7 @@ impl ModelLoader {
         let root_bone = commands
             .spawn((
                 Visibility::default(),
-                ViewVisibility::default(), InheritedVisibility::default(),
+                InheritedVisibility::default(),
                 Transform::default(),
                 GlobalTransform::default(),
             ))
@@ -394,7 +396,7 @@ impl ModelLoader {
         let root_bone = commands
             .spawn((
                 Visibility::default(),
-                ViewVisibility::default(), InheritedVisibility::default(),
+                InheritedVisibility::default(),
                 Transform::default(),
                 GlobalTransform::default(),
             ))
@@ -510,7 +512,7 @@ impl ModelLoader {
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::default(),
-                    ViewVisibility::default(), InheritedVisibility::default(),
+                    InheritedVisibility::default(),
                 ))
                 .id(),
         )
@@ -915,6 +917,7 @@ impl ModelLoader {
         skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
         particle_materials: &mut Assets<ParticleMaterial>,
         effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+        meshes: &mut Assets<Mesh>,
         vehicle_model_entity: Entity,
         driver_model_entity: Entity,
         equipment: &Equipment,
@@ -983,6 +986,7 @@ impl ModelLoader {
                                     asset_server,
                                     particle_materials,
                                     effect_mesh_materials,
+                                    meshes,
                                     effect_path.into(),
                                     false,
                                     None,
@@ -1129,7 +1133,7 @@ fn spawn_skeleton(
             commands
                 .spawn((
                     Visibility::default(),
-                    ViewVisibility::default(), InheritedVisibility::default(),
+                    InheritedVisibility::default(),
                     transform,
                     GlobalTransform::default(),
                 ))
@@ -1212,8 +1216,10 @@ fn spawn_skeleton(
             material,
             Transform::default(),
             GlobalTransform::default(),
-            Visibility::default(),
-            ViewVisibility::default(), InheritedVisibility::default(),
+            Visibility::Inherited,
+            InheritedVisibility::default(),
+            ViewVisibility::default(),
+            Aabb::default(),
         ));
 
         if load_clip_faces {

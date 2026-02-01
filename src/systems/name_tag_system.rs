@@ -494,7 +494,7 @@ pub fn name_tag_system(
                 } else {
                     Visibility::Hidden
                 },
-                ViewVisibility::default(), InheritedVisibility::default(),
+                InheritedVisibility::default(),
                 Transform::from_translation(Vec3::new(0.0, object.model_height.height, 0.0)),
                 GlobalTransform::default(),
                 NoFrustumCulling,
@@ -647,7 +647,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::default(),
-                    ViewVisibility::default(), InheritedVisibility::default(),
+                    InheritedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -661,7 +661,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    ViewVisibility::default(), InheritedVisibility::default(),
+                    InheritedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -675,7 +675,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    ViewVisibility::default(), InheritedVisibility::default(),
+                    InheritedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -693,7 +693,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    ViewVisibility::default(), InheritedVisibility::default(),
+                    InheritedVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);

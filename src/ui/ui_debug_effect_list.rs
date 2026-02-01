@@ -165,7 +165,7 @@ pub fn ui_debug_effect_list_system(
                                             transform,
                                             GlobalTransform::default(),
                                             Visibility::default(),
-                                            ViewVisibility::default(), InheritedVisibility::default(),
+                                            InheritedVisibility::default(),
                                         ))
                                         .id();
 

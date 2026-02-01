@@ -21,6 +21,7 @@ use bevy::{
             ShaderType,
         },
         renderer::{RenderDevice, RenderQueue},
+        view::RenderLayers,
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
     },
     utils::Uuid,
@@ -83,22 +84,25 @@ impl Plugin for ZoneLightingPlugin {
 
 fn spawn_lights(mut commands: Commands) {
     bevy::log::info!("[ZONE LIGHTING] Spawning directional and ambient lights");
-    
-    let light_entity = commands.spawn(DirectionalLightBundle {
-        transform: default_light_transform(),
-        directional_light: DirectionalLight {
-            illuminance: 10000.0,  // Bevy 0.13 requires lux values (was ~1.0 in 0.12)
-            shadows_enabled: true,
+
+    let light_entity = commands.spawn((
+        DirectionalLightBundle {
+            transform: default_light_transform(),
+            directional_light: DirectionalLight {
+                illuminance: 10000.0,  // Bevy 0.13 requires lux values (was ~1.0 in 0.12)
+                shadows_enabled: true,
+                ..Default::default()
+            },
+            cascade_shadow_config: CascadeShadowConfig {
+                bounds: vec![10000.0],
+                overlap_proportion: 2.0,
+                minimum_distance: 0.1,
+            },
             ..Default::default()
         },
-        cascade_shadow_config: CascadeShadowConfig {
-            bounds: vec![10000.0],
-            overlap_proportion: 2.0,
-            minimum_distance: 0.1,
-        },
-        ..Default::default()
-    }).id();
-    
+        RenderLayers::all(),
+    )).id();
+
     bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=10000.0", light_entity);
 
     commands.insert_resource(AmbientLight {

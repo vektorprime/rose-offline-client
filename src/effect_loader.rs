@@ -29,6 +29,7 @@ pub fn spawn_effect(
     asset_server: &AssetServer,
     particle_materials: &mut Assets<ParticleMaterial>,
     effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+    meshes: &mut Assets<bevy::prelude::Mesh>,
     effect_path: VfsPath,
     manual_despawn: bool,
     effect_entity: Option<Entity>,
@@ -43,6 +44,7 @@ pub fn spawn_effect(
             commands,
             asset_server,
             particle_materials,
+            meshes,
             &eft_particle,
         ) {
             child_entities.push(particle_entity);
@@ -74,7 +76,7 @@ pub fn spawn_effect(
                 Transform::default(),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ViewVisibility::default(), InheritedVisibility::default(),
+                InheritedVisibility::default(),
             ))
             .push_children(&child_entities)
             .id();
@@ -134,7 +136,7 @@ fn spawn_mesh(
                 ),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ViewVisibility::default(), InheritedVisibility::default(),
+                InheritedVisibility::default(),
             ))
             .with_children(|child_builder| {
                 let mesh_path = ZmsNoSkinAssetLoader::convert_path(
@@ -161,7 +163,7 @@ fn spawn_mesh(
                         }),
                     }),
                     Visibility::default(),
-                    ViewVisibility::default(), InheritedVisibility::default(),
+                    InheritedVisibility::default(),
                     Transform::default(),
                     GlobalTransform::default(),
                 ));
@@ -208,6 +210,7 @@ fn spawn_particle(
     commands: &mut Commands,
     asset_server: &AssetServer,
     particle_materials: &mut Assets<ParticleMaterial>,
+    meshes: &mut Assets<bevy::prelude::Mesh>,
     eft_particle: &EftParticle,
 ) -> Option<Entity> {
     let ptl_file = vfs
@@ -233,7 +236,7 @@ fn spawn_particle(
                 ),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ViewVisibility::default(), InheritedVisibility::default(),
+                InheritedVisibility::default(),
             ))
             .with_children(|child_builder| {
                 for sequence in ptl_file.sequences {
@@ -254,13 +257,14 @@ fn spawn_particle(
                         particle_materials.add(ParticleMaterial {
                             texture: asset_server.load(sequence.texture_path.path().to_string_lossy().into_owned()),
                         }),
+                        meshes.add(bevy::prelude::Mesh::from(bevy::prelude::Rectangle::new(1.0, 1.0))),
                         ParticleSequence::from(sequence)
                             .with_start_delay(eft_particle.start_delay as f32 / 1000.0),
                         Transform::default(),
                         GlobalTransform::default(),
-                        Aabb::default(),
                         Visibility::default(),
-                        ViewVisibility::default(), InheritedVisibility::default(),
+                        InheritedVisibility::default(),
+                        ViewVisibility::default(),
                         NoFrustumCulling, // AABB culling is broken for particles
                     ));
 

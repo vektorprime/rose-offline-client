@@ -1,6 +1,5 @@
-// Minimal water material shader - simplified for stability
-#import bevy_pbr::mesh_bindings::mesh
 #import bevy_pbr::mesh_view_bindings::view
+#import bevy_pbr::mesh_bindings::mesh
 #import bevy_pbr::mesh_functions::{mesh_position_local_to_world, mesh_normal_local_to_world, get_model_matrix}
 #import rose_client::zone_lighting::apply_zone_lighting
 
@@ -29,17 +28,10 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     return out;
 }
 
-@group(2) @binding(0)
-var water_array_texture: binding_array<texture_2d<f32>>;
-@group(2) @binding(1)
-var water_array_sampler: sampler;
-
-struct WaterTextureIndex {
-    current_index: i32,
-    next_index: i32,
-    next_weight: f32,
-};
-var<push_constant> water_texture_index: WaterTextureIndex;
+@group(1) @binding(0)
+var water_texture: texture_2d<f32>;
+@group(1) @binding(1)
+var water_sampler: sampler;
 
 struct FragmentInput {
     @builtin(position) frag_coord: vec4<f32>,
@@ -50,10 +42,8 @@ struct FragmentInput {
 
 @fragment
 fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
-    // Sample water textures with animation
-    let color1 = textureSample(water_array_texture[water_texture_index.current_index], water_array_sampler, in.uv0);
-    let color2 = textureSample(water_array_texture[water_texture_index.next_index], water_array_sampler, in.uv0);
-    var water_color = mix(color1, color2, water_texture_index.next_weight);
+    // Sample water texture
+    var water_color = textureSample(water_texture, water_sampler, in.uv0);
 
     // Calculate view_z for zone lighting
     let view_z = dot(vec4<f32>(

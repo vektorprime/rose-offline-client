@@ -154,7 +154,19 @@ impl AssetReader for VfsAssetIo {
                 return Ok(Box::new(CursorWrapper::new(data)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>);
             }
 
+            // HACK: Exclude shaders from VFS to allow load_internal_asset! to work
+            // These are local files in the src/render/shaders directory
+            if path_str.contains("shaders/") || path_str.contains("shaders\\") {
+                log::info!("[VFS DEBUG] Path contains 'shaders/', bypassing VFS for: \"{}\"", path_str);
+                if let Ok(data) = std::fs::read(path) {
+                    log::info!("[VFS DEBUG] Successfully read shader from local filesystem: \"{}\"", path_str);
+                    return Ok(Box::new(CursorWrapper::new(data)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>);
+                }
+                log::warn!("[VFS DEBUG] Failed to read shader from local filesystem: \"{}\"", path_str);
+            }
+
             // Try to read from VFS
+            log::info!("[VFS DEBUG] Requesting path: \"{}\"", path_str);
             match self.vfs.open_file(path_str) {
                 Ok(file) => {
                     match file {
@@ -173,6 +185,12 @@ impl AssetReader for VfsAssetIo {
                     }
                 }
                 Err(e) => {
+                    // Fallback to local filesystem if not found in VFS
+                    if let Ok(data) = std::fs::read(path) {
+                        log::info!("[VFS DEBUG] File not in VFS, but found on local filesystem: \"{}\"", path_str);
+                        return Ok(Box::new(CursorWrapper::new(data)) as Box<dyn bevy::tasks::futures_lite::AsyncRead + Send + Sync + Unpin + 'a>);
+                    }
+
                     log::warn!("[VFS DIAGNOSTIC] VFS file not found for path: {}", path_str);
                     log::warn!("[VFS DIAGNOSTIC] Error: {:?}", e);
                     log::info!("[VFS DIAGNOSTIC] ===========================================");

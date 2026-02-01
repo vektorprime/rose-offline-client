@@ -35,6 +35,7 @@ pub fn vehicle_model_system(
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
+    mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
 ) {
     // Vehicle entity, where entity becomes a child of it.
     for (entity, equipment, move_mode, skinned_mesh, vehicle) in query.iter_mut() {
@@ -114,7 +115,7 @@ pub fn vehicle_model_system(
             let vehicle_model_entity = commands
                 .spawn((
                     Visibility::Inherited,
-                    ViewVisibility::default(), InheritedVisibility::default(),
+                    InheritedVisibility::default(),
                     Transform::default(),
                     GlobalTransform::default(),
                 ))
@@ -129,6 +130,7 @@ pub fn vehicle_model_system(
                     &mut skinned_mesh_inverse_bindposes_assets,
                     &mut particle_materials,
                     &mut effect_mesh_materials,
+                    &mut meshes,
                     vehicle_model_entity,
                     driver_model_entity,
                     equipment,

@@ -1,47 +1,44 @@
 use bevy::{
-    app::{App, Plugin},
-    asset::{Asset, AssetApp, Handle},
-    ecs::system::SystemParamItem,
-    reflect::TypePath,
-    render::{
-        render_asset::{PrepareAssetError, RenderAsset, RenderAssetPlugin, RenderAssetUsages},
-        texture::Image,
-    },
+    prelude::*,
+    render::render_resource::*,
+    asset::{load_internal_asset, Handle},
 };
 
-#[derive(Debug, Clone, TypePath, Asset)]
+pub const PARTICLE_MATERIAL_SHADER_HANDLE: Handle<Shader> =
+    Handle::weak_from_u128(0x5f3c4d5e6f7a8b9c);
+
+#[derive(Debug, Clone, Asset, TypePath, AsBindGroup)]
 pub struct ParticleMaterial {
+    #[texture(0)]
+    #[sampler(1)]
     pub texture: Handle<Image>,
+}
+
+impl Material for ParticleMaterial {
+    fn vertex_shader() -> ShaderRef {
+        PARTICLE_MATERIAL_SHADER_HANDLE.into()
+    }
+
+    fn fragment_shader() -> ShaderRef {
+        PARTICLE_MATERIAL_SHADER_HANDLE.into()
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Blend
+    }
 }
 
 pub struct ParticleMaterialPlugin;
 
 impl Plugin for ParticleMaterialPlugin {
     fn build(&self, app: &mut App) {
-        app.init_asset::<ParticleMaterial>()
-            .add_plugins(RenderAssetPlugin::<ParticleMaterial>::default());
-    }
-}
+        load_internal_asset!(
+            app,
+            PARTICLE_MATERIAL_SHADER_HANDLE,
+            "shaders/particle.wgsl",
+            Shader::from_wgsl
+        );
 
-#[derive(Debug, Clone, TypePath)]
-pub struct GpuParticleMaterial {
-    pub texture: Handle<Image>,
-}
-
-impl RenderAsset for ParticleMaterial {
-    type PreparedAsset = GpuParticleMaterial;
-    type Param = ();
-
-    fn asset_usage(&self) -> RenderAssetUsages {
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD
-    }
-
-    fn prepare_asset(
-        self,
-        _param: &mut SystemParamItem<Self::Param>,
-    ) -> Result<Self::PreparedAsset, PrepareAssetError<Self>> {
-        Ok(GpuParticleMaterial {
-            texture: self.texture,
-        })
+        app.add_plugins(MaterialPlugin::<ParticleMaterial>::default());
     }
 }

@@ -2,23 +2,25 @@
 #![allow(clippy::too_many_arguments)]
 
 use animation::RoseAnimationPlugin;
-use bevy::{
-    asset::AssetApp,
-    core_pipeline::bloom::BloomSettings,
-    log::Level,
-    prelude::{
-        apply_deferred, in_state, resource_exists, App, AssetServer, Assets, Camera, Camera3d,
-        ClearColorConfig, Color, Commands, Image, IntoSystemConfigs, IntoSystemSetConfigs, Msaa,
-        OnEnter, OnExit, PerspectiveProjection, PluginGroup, PostStartup, PostUpdate, PreUpdate,
-        Projection, Quat, Res, ResMut, Startup, State, SystemSet, Time, Transform, Update, Vec3,
-        World,
-    },
-    render::{
-        settings::{Backends, RenderCreation, WgpuSettings},
-    },
-    transform::{TransformSystem, components::GlobalTransform},
-    window::{Window, WindowMode},
-};
+use    bevy::{
+        asset::AssetApp,
+        core_pipeline::bloom::BloomSettings,
+        log::{info, Level},
+        prelude::{
+            apply_deferred, in_state, resource_exists, App, AssetServer, Assets, Camera, Camera3d,
+            ClearColorConfig, Color, Commands, Entity, Image, InheritedVisibility, IntoSystemConfigs,
+            IntoSystemSetConfigs, Local, Mesh, Msaa, OnEnter, OnExit, PerspectiveProjection, PluginGroup,
+            PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
+            SystemSet, Time, Transform, Update, Vec3, ViewVisibility, Visibility, With, World,
+        },
+        render::view::VisibilitySystems,
+        render::camera::Exposure,
+        render::{
+            settings::{Backends, RenderCreation, WgpuSettings},
+        },
+        transform::{TransformSystem, components::GlobalTransform},
+        window::{Window, WindowMode},
+    };
 use bevy_egui::{egui, EguiContexts, EguiSet};
 use bevy_rapier3d::plugin::PhysicsSet;
 use enum_map::enum_map;
@@ -94,7 +96,13 @@ use systems::{
     conversation_dialog_system, cooldown_system, damage_digit_render_system,
     debug_entity_visibility, debug_render_collider_system, debug_render_directional_light_system,
     debug_render_skeleton_system, directional_light_system, effect_system, facing_direction_system,
-    render_diagnostics_system_lightweight,
+    render_diagnostics_system_lightweight, frustum_culling_diagnostics,
+    material_transparency_diagnostics, transform_propagation_diagnostics,
+    transform_validation_diagnostics,
+    visibility_state_diagnostics, active_camera_diagnostics,
+    render_layer_diagnostics, aabb_validation_diagnostics,
+    render_pipeline_diagnostics, render_stage_diagnostics,
+    zone_entity_visibility_diagnostics, parent_child_visibility_diagnostics, zone_component_lifecycle_diagnostics,
     free_camera_system, game_connection_system, game_mouse_input_system, game_state_enter_system,
     game_zone_change_system, hit_event_system, item_drop_model_add_collider_system,
     item_drop_model_system, login_connection_system, login_event_system, login_state_enter_system,
@@ -132,16 +140,16 @@ use ui::{
 use dds_image_loader::DdsImageLoader;
 use vfs_asset_io::{VfsAssetIo, VfsAssetReaderPlugin};
 use zms_asset_loader::{ZmsAssetLoader, ZmsMaterialNumFaces, ZmsNoSkinAssetLoader};
-use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, ZoneLoader, ZoneLoaderAsset, ZoneLoadChannelReceiver, ZoneLoadChannelSender, MemoryTrackingResource};
+use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, force_zone_visibility_system, ZoneLoader, ZoneLoaderAsset, ZoneLoadChannelReceiver, ZoneLoadChannelSender, MemoryTrackingResource};
 
-// Import diagnostic systems (DISABLED - can be re-enabled for debugging)
+// Import diagnostic systems (ENABLED for debugging visibility issues)
 // use systems::zone_memory_profiler_system::{
 //     zone_memory_profiler_system, command_buffer_validation_system,
 //     ZoneMemoryProfilerPlugin
 // };
-// use resources::zone_debug_diagnostics::{ZoneDebugDiagnostics, ZoneDebugDiagnosticsPlugin};
+use resources::zone_debug_diagnostics::{ZoneDebugDiagnostics, ZoneDebugDiagnosticsPlugin};
 
-use crate::components::SoundCategory;
+use crate::components::{SoundCategory, Zone};
 
 #[derive(Default, Deserialize)]
 #[serde(default)]
@@ -663,8 +671,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                 .set(bevy::log::LogPlugin {
                     level: Level::INFO,
                     filter:
-                        "wgpu=error,packets=debug,quest=trace,lua=debug,con=trace,animation=info"
-                            .to_string(),
+                        "wgpu=error,bevy_render=info,rose_offline_client=debug".into(),
                     update_subscriber: None,
                 })
                 .set(bevy::pbr::PbrPlugin {
@@ -713,11 +720,11 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // Initialize memory tracking resource for zone loading
     app.init_resource::<MemoryTrackingResource>();
     log::info!("[ZONE LOADER] MemoryTrackingResource initialized");
-    
-    // DIAGNOSTIC: Initialize debug diagnostics resources (DISABLED - can be re-enabled for debugging)
-    // app.init_resource::<ZoneDebugDiagnostics>();
+
+    // DIAGNOSTIC: Initialize debug diagnostics resources (ENABLED for debugging visibility issues)
+    app.init_resource::<ZoneDebugDiagnostics>();
     // app.init_resource::<crate::systems::zone_memory_profiler_system::ZoneMemoryProfiler>();
-    // log::info!("[ZONE LOADER] Debug diagnostics resources initialized");
+    log::info!("[ZONE LOADER] Debug diagnostics resources initialized");
     
     app.register_asset_loader(DdsImageLoader)
         .register_asset_loader(ZmsAssetLoader)
@@ -813,6 +820,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         PostUpdate,
         apply_deferred,
     );
+
     app.add_systems(
         PostUpdate,
         (apply_deferred,).in_set(GameStages::DebugRenderPreFlush),
@@ -995,6 +1003,21 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             zone_loader_system,
             // zone_loaded_from_vfs_system runs after zone_loader_system to process the events it sends
             zone_loaded_from_vfs_system.after(zone_loader_system),
+        )
+    );
+
+    // AGGRESSIVE FIX: Run force_zone_visibility_system AFTER VisibilityPropagate
+    // This overwrites Bevy's computed ViewVisibility with our forced value
+    app.add_systems(
+        PostUpdate,
+        force_zone_visibility_system
+            .after(VisibilitySystems::VisibilityPropagate)
+            .before(VisibilitySystems::CheckVisibility),
+    );
+
+    app.add_systems(
+        Update,
+        (
             // CRITICAL FIX: game_zone_change_system must run after BOTH zone systems
             // to ensure it sees the ZoneEvent::Loaded events properly
             game_zone_change_system
@@ -1034,6 +1057,92 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // Add render diagnostics system - runs every frame to check rendering state
     app.add_systems(Update, render_diagnostics_system_lightweight);
+
+    // Add comprehensive diagnostic systems for debugging rendering issues
+    app.add_systems(Update, (
+        frustum_culling_diagnostics,
+        material_transparency_diagnostics,
+        transform_validation_diagnostics,
+        visibility_state_diagnostics,
+        active_camera_diagnostics,
+        render_layer_diagnostics,
+        aabb_validation_diagnostics,
+        render_pipeline_diagnostics,
+        render_stage_diagnostics,
+    ));
+
+    // CRITICAL DIAGNOSTIC: Add transform propagation diagnostics
+    // This will tell us if transform propagation is actually running
+    app.add_systems(Update, transform_propagation_diagnostics);
+
+    // CRITICAL DIAGNOSTIC: Add zone entity visibility diagnostics
+    // This will help diagnose why entities are not visible in the zone
+    app.add_systems(
+        PostUpdate,
+        (
+            zone_entity_visibility_diagnostics,
+            |query: Query<(Entity, &ViewVisibility, &Visibility), With<Zone>>| {
+                for (entity, view_vis, vis) in query.iter() {
+                    info!("[ZONE VISIBILITY CHECK] Entity: {:?}, Visibility: {:?}, ViewVisibility: {}",
+                        entity, vis, view_vis.get());
+                }
+            }
+        ).chain().in_set(GameStages::DebugRender)
+    );
+
+    // CRITICAL DIAGNOSTIC: Add parent-child visibility diagnostics
+    // This will help diagnose hierarchy visibility issues
+    app.add_systems(PostUpdate, parent_child_visibility_diagnostics.in_set(GameStages::DebugRender));
+
+    // CRITICAL DIAGNOSTIC: Add zone component lifecycle diagnostics
+    // This will help diagnose why Zone component is missing
+    app.add_systems(PostUpdate, zone_component_lifecycle_diagnostics.in_set(GameStages::DebugRender));
+
+    // CRITICAL DIAGNOSTIC: Check if transform and visibility propagation sets are running
+    app.add_systems(
+        PostUpdate,
+        (
+            |mut frame_count: Local<u32>| {
+                *frame_count += 1;
+                if *frame_count % 60 == 0 {
+                    info!("[SCHEDULE CHECK] TransformPropagate set is running");
+                }
+            }
+        ).in_set(TransformSystem::TransformPropagate)
+    );
+    app.add_systems(
+        PostUpdate,
+        (
+            |mut frame_count: Local<u32>| {
+                *frame_count += 1;
+                if *frame_count % 60 == 0 {
+                    info!("[SCHEDULE CHECK] VisibilityPropagate set is running");
+                }
+            }
+        ).in_set(VisibilitySystems::VisibilityPropagate)
+    );
+    app.add_systems(
+        PostUpdate,
+        (
+            |mut frame_count: Local<u32>| {
+                *frame_count += 1;
+                if *frame_count % 60 == 0 {
+                    info!("[SCHEDULE CHECK] CheckVisibility set is running");
+                }
+            }
+        ).in_set(VisibilitySystems::CheckVisibility)
+    );
+    app.add_systems(
+        PostUpdate,
+        (
+            |mut frame_count: Local<u32>| {
+                *frame_count += 1;
+                if *frame_count % 60 == 0 {
+                    info!("[SCHEDULE CHECK] CalculateBounds set is running");
+                }
+            }
+        ).in_set(VisibilitySystems::CalculateBounds)
+    );
 
     // Model Viewer, we avoid deleting any entities during CoreStage::Update by using a custom
     // stage which runs after Update. We cannot run before Update because the on_enter system
@@ -1224,8 +1333,29 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.configure_sets(
         PostUpdate,
         (GameStages::DebugRenderPreFlush, GameStages::DebugRender)
-            .chain()
-            .after(TransformSystem::TransformPropagate),
+            .chain(),
+    );
+
+    // CRITICAL FIX: Add explicit system ordering for transform propagation
+    // This ensures that Bevy's transform propagation runs correctly and computes
+    // GlobalTransform from local Transform without conflicts from custom systems
+    // We use a safer approach by ordering custom sets relative to Bevy's internal sets
+    // instead of chaining them all together, which can cause circular dependencies.
+    app.configure_sets(
+        PostUpdate,
+        GameStages::AfterUpdate.before(TransformSystem::TransformPropagate),
+    );
+    app.configure_sets(
+        PostUpdate,
+        VisibilitySystems::VisibilityPropagate.after(TransformSystem::TransformPropagate),
+    );
+    app.configure_sets(
+        PostUpdate,
+        VisibilitySystems::CheckVisibility.after(VisibilitySystems::VisibilityPropagate),
+    );
+    app.configure_sets(
+        PostUpdate,
+        GameStages::DebugRenderPreFlush.after(VisibilitySystems::CheckVisibility),
     );
 
     app.configure_sets(
@@ -1371,6 +1501,7 @@ fn load_common_game_data(
     asset_server: Res<AssetServer>,
     mut egui_context: EguiContexts,
     mut damage_digit_materials: ResMut<Assets<DamageDigitMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     bevy::log::info!("[load_common_game_data] Starting to load common game data");
 
@@ -1402,13 +1533,18 @@ fn load_common_game_data(
         Projection::from(PerspectiveProjection {
             fov: std::f32::consts::PI / 4.0,
             near: 0.1,
-            far: 10000.0,
+            far: 50000.0,
             aspect_ratio: 16.0 / 9.0,
         }),
         Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
             .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
         GlobalTransform::default(),
+        Visibility::default(),
+        InheritedVisibility::default(),
+        ViewVisibility::default(),
+        bevy::render::view::RenderLayers::layer(0),
         BloomSettings::NATURAL,
+        Exposure::default(),
     )).id();
 
     bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
@@ -1416,6 +1552,7 @@ fn load_common_game_data(
     commands.insert_resource(DamageDigitsSpawner::load(
         &asset_server,
         &mut damage_digit_materials,
+        &mut meshes,
     ));
 
     let mut fonts = egui::FontDefinitions::default();

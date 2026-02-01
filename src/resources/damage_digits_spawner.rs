@@ -1,9 +1,9 @@
 use bevy::{
     prelude::{
         AssetServer, Assets, BuildChildren, Commands, ViewVisibility, InheritedVisibility, GlobalTransform, Handle,
-        Resource, Transform, Vec3, Visibility,
+        Resource, Transform, Vec3, Visibility, Mesh,
     },
-    render::primitives::Aabb,
+    render::{primitives::Aabb, view::NoFrustumCulling},
 };
 
 use crate::{
@@ -18,12 +18,14 @@ pub struct DamageDigitsSpawner {
     pub texture_damage_player: Handle<DamageDigitMaterial>,
     pub texture_miss: Handle<DamageDigitMaterial>,
     pub motion: Handle<ZmoAsset>,
+    pub mesh: Handle<Mesh>,
 }
 
 impl DamageDigitsSpawner {
     pub fn load(
         asset_server: &AssetServer,
         damage_digit_materials: &mut Assets<DamageDigitMaterial>,
+        meshes: &mut Assets<Mesh>,
     ) -> Self {
         Self {
             texture_damage: damage_digit_materials.add(DamageDigitMaterial {
@@ -36,6 +38,7 @@ impl DamageDigitsSpawner {
                 texture: asset_server.load("3DDATA/EFFECT/SPECIAL/DIGITNUMBERMISS.DDS"),
             }),
             motion: asset_server.load("3DDATA/EFFECT/SPECIAL/HIT_FIGURE_01.ZMO"),
+            mesh: meshes.add(Mesh::from(bevy::prelude::Rectangle::new(1.0, 1.0))),
         }
     }
 
@@ -57,7 +60,7 @@ impl DamageDigitsSpawner {
                 ),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ViewVisibility::default(), InheritedVisibility::default(),
+                InheritedVisibility::default(),
             ))
             .with_children(|child_builder| {
                 child_builder.spawn((
@@ -70,12 +73,14 @@ impl DamageDigitsSpawner {
                     } else {
                         self.texture_damage.clone_weak()
                     },
+                    self.mesh.clone_weak(),
                     TransformAnimation::once(self.motion.clone_weak()),
                     Transform::default(),
                     GlobalTransform::default(),
-                    Aabb::default(),
                     Visibility::default(),
-                    ViewVisibility::default(), InheritedVisibility::default(),
+                    InheritedVisibility::default(),
+                    ViewVisibility::default(),
+                    NoFrustumCulling,
                 ));
             });
     }

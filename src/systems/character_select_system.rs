@@ -76,7 +76,7 @@ pub fn character_select_enter_system(
                 *transform,
                 GlobalTransform::default(),
                 Visibility::default(),
-                ViewVisibility::default(), InheritedVisibility::default(),
+                InheritedVisibility::default(),
             ))
             .id();
         models.push((None, entity));

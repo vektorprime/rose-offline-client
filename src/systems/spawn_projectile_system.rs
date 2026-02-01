@@ -68,7 +68,7 @@ pub fn spawn_projectile_system(
                 Transform::from_translation(source_global_transform.translation()),
                 GlobalTransform::default(),
                 Visibility::default(),
-                ViewVisibility::default(), InheritedVisibility::default(),
+                InheritedVisibility::default(),
             ))
             .id();
 
