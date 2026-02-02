@@ -158,7 +158,7 @@ pub fn orbit_camera_system(
 
     if let Ok(follow_transform) = query_global_transform.get(orbit_camera.follow_entity) {
         let follow_position = follow_transform.translation() + orbit_camera.follow_offset;
-        orbit_camera.rig.driver_mut::<Position>().position = follow_position;
+        orbit_camera.rig.driver_mut::<Position>().position = follow_position.into();
 
         // Log camera position and direction periodically
         if time.elapsed_seconds() % 5.0 < time.delta_seconds() {
@@ -227,8 +227,8 @@ pub fn orbit_camera_system(
 
     // Update camera
     let calculated_transform = orbit_camera.rig.update(time.delta_seconds());
-    camera_transform.translation = calculated_transform.position;
-    camera_transform.rotation = calculated_transform.rotation;
+    camera_transform.translation = calculated_transform.position.into();
+    camera_transform.rotation = calculated_transform.rotation.into();
 }
 
 pub trait Interpolate {

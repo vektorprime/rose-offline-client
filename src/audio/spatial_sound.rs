@@ -215,7 +215,7 @@ pub fn spatial_sound_system(
             spatial_sound.streaming_sound = Some(streaming_sound);
         } else if matches!(
             asset_server.get_load_state(&spatial_sound.asset_handle),
-            Some(LoadState::Failed)
+            Some(LoadState::Failed(_))
         ) {
             spatial_sound.asset_handle = Handle::default();
 

@@ -32,15 +32,15 @@ use crate::{
 };
 
 const TRAIL_COLOURS: [Color; 9] = [
-    Color::rgba(1.0, 0.0, 0.0, 1.0),
-    Color::rgba(0.0, 1.0, 0.0, 1.0),
-    Color::rgba(0.0, 0.0, 1.0, 1.0),
-    Color::rgba(0.0, 0.0, 0.0, 1.0),
-    Color::rgba(1.0, 1.0, 1.0, 1.0),
-    Color::rgba(1.0, 1.0, 0.0, 1.0),
-    Color::rgba(0.6, 0.6, 0.6, 1.0),
-    Color::rgba(1.0, 0.0, 1.0, 1.0),
-    Color::rgba(1.0, 0.5, 0.0, 1.0),
+    Color::srgba(1.0, 0.0, 0.0, 1.0),
+    Color::srgba(0.0, 1.0, 0.0, 1.0),
+    Color::srgba(0.0, 0.0, 1.0, 1.0),
+    Color::srgba(0.0, 0.0, 0.0, 1.0),
+    Color::srgba(1.0, 1.0, 1.0, 1.0),
+    Color::srgba(1.0, 1.0, 0.0, 1.0),
+    Color::srgba(0.6, 0.6, 0.6, 1.0),
+    Color::srgba(1.0, 0.0, 1.0, 1.0),
+    Color::srgba(1.0, 0.5, 0.0, 1.0),
 ];
 
 #[derive(Resource)]
@@ -1203,10 +1203,11 @@ fn spawn_skeleton(
         let zsc_material = &model_list.materials[material_id];
 
         // Create material using Bevy's StandardMaterial
+        // FIX: Use unlit: true to ensure objects are visible without requiring lights
         let texture_handle = asset_server.load(zsc_material.path.path().to_string_lossy().into_owned());
         let material = standard_materials.add(bevy::pbr::StandardMaterial {
             base_color_texture: Some(texture_handle),
-            unlit: false,
+            unlit: true,  // CHANGED: Make material unlit so it doesn't require lighting
             double_sided: zsc_material.two_sided,
             ..Default::default()
         });

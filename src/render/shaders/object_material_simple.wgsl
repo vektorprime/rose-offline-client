@@ -3,7 +3,7 @@
 
 #import bevy_pbr::mesh_view_bindings::view
 #import bevy_pbr::mesh_bindings::mesh
-#import bevy_pbr::mesh_functions::{mesh_position_local_to_world, mesh_normal_local_to_world, get_model_matrix}
+#import bevy_pbr::mesh_functions::{mesh_position_local_to_world, mesh_normal_local_to_world, get_world_from_local}
 
 #ifdef SKINNED
 #import bevy_pbr::skinning::{skin_normals, skin_model}
@@ -26,14 +26,16 @@ var specular_texture: texture_2d<f32>;
 var specular_sampler: sampler;
 
 struct StaticMeshMaterialData {
-    flags: u32,
-    alpha_cutoff: f32,
-    alpha_value: f32,
-    lightmap_uv_offset_x: f32,
-    lightmap_uv_offset_y: f32,
-    lightmap_uv_scale: f32,
-    _padding: f32,
+    // Pack first 3 fields into vec4 for alignment
+    material_params: vec4<f32>, // x = flags (as f32), y = alpha_cutoff, z = alpha_value, w = unused
+    // Pack lightmap params into vec4 for alignment
+    lightmap_params: vec4<f32>, // x = offset_x, y = offset_y, z = scale, w = unused
 };
+
+// Constants for accessing material_params components
+const MATERIAL_PARAM_FLAGS: u32 = 0u;
+const MATERIAL_PARAM_ALPHA_CUTOFF: u32 = 1u;
+const MATERIAL_PARAM_ALPHA_VALUE: u32 = 2u;
 
 // Vertex struct must match Bevy's standard mesh layout
 // Location 0: position, 1: normal, 2: uv
@@ -66,15 +68,16 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
     
 #ifdef SKINNED
-    var model = skin_model(vertex.joint_indices, vertex.joint_weights);
-    out.world_normal = skin_normals(model, vertex.normal);
+    var world_from_local = skin_model(vertex.joint_indices, vertex.joint_weights);
+    out.world_normal = skin_normals(world_from_local, vertex.normal);
 #else
-    var model = get_model_matrix(vertex.instance_index);
+    var world_from_local = get_world_from_local(vertex.instance_index);
     out.world_normal = mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
 #endif
     
-    out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
-    out.clip_position = view.view_proj * out.world_position;
+    out.world_position = mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
+    // FIXED: Changed view.view_proj to view.clip_from_world for Bevy 0.14 compatibility
+    out.clip_position = view.clip_from_world * out.world_position;
     out.uv = vertex.uv;
     
 #ifdef LIGHTMAP_UV
@@ -102,25 +105,41 @@ struct FragmentInput {
 
 @fragment
 fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
+    // Extract material values from vec4 params
+    let flags = u32(material.material_params.x);
+    let alpha_cutoff = material.material_params.y;
+    let alpha_value = material.material_params.z;
+    let lightmap_offset_x = material.lightmap_params.x;
+    let lightmap_offset_y = material.lightmap_params.y;
+    let lightmap_scale = material.lightmap_params.z;
+
+    // FIX: Add fallback color if texture sampling fails or returns black
+    // This ensures objects are visible even if textures don't load properly
     var output_color: vec4<f32> = textureSample(base_texture, base_sampler, in.uv);
+    
+    // Fallback: if color is completely black, use a bright magenta debug color
+    // This helps diagnose texture loading issues
+    if (output_color.r == 0.0 && output_color.g == 0.0 && output_color.b == 0.0) {
+        output_color = vec4<f32>(0.8, 0.2, 0.8, 1.0); // Magenta fallback
+    }
 
     // Apply alpha value if specified
-    if ((material.flags & OBJECT_MATERIAL_FLAGS_HAS_ALPHA_VALUE) != 0u) {
-        output_color.a = output_color.a * material.alpha_value;
+    if ((flags & OBJECT_MATERIAL_FLAGS_HAS_ALPHA_VALUE) != 0u) {
+        output_color.a = output_color.a * alpha_value;
     }
 
     // Alpha masking
-    if ((material.flags & OBJECT_MATERIAL_FLAGS_ALPHA_MODE_MASK) != 0u) {
-        if (output_color.a < material.alpha_cutoff) {
+    if ((flags & OBJECT_MATERIAL_FLAGS_ALPHA_MODE_MASK) != 0u) {
+        if (output_color.a < alpha_cutoff) {
             discard;
         }
         output_color.a = 1.0;
-    } else if ((material.flags & OBJECT_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE) != 0u) {
+    } else if ((flags & OBJECT_MATERIAL_FLAGS_ALPHA_MODE_OPAQUE) != 0u) {
         output_color.a = 1.0;
     }
 
     // Apply specular if enabled
-    if ((material.flags & OBJECT_MATERIAL_FLAGS_SPECULAR) != 0u) {
+    if ((flags & OBJECT_MATERIAL_FLAGS_SPECULAR) != 0u) {
         let specular = textureSample(specular_texture, specular_sampler, in.uv).r;
         // Simple specular highlight
         output_color = vec4<f32>(output_color.rgb + vec3<f32>(specular * 0.5), output_color.a);
@@ -129,8 +148,8 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     // Apply lightmap if LIGHTMAP_UV is defined
 #ifdef LIGHTMAP_UV
     // Sample lightmap at the offset/scaled UV coordinates
-    let lightmap_uv = in.lightmap_uv * material.lightmap_uv_scale + 
-                      vec2<f32>(material.lightmap_uv_offset_x, material.lightmap_uv_offset_y);
+    let lightmap_uv = in.lightmap_uv * lightmap_scale +
+                      vec2<f32>(lightmap_offset_x, lightmap_offset_y);
     let lightmap_color = textureSample(lightmap_texture, lightmap_sampler, lightmap_uv);
     // Simple lightmap blend - multiply base color with lightmap
     output_color = vec4<f32>(output_color.rgb * lightmap_color.rgb, output_color.a);

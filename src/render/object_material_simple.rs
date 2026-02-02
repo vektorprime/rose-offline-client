@@ -4,21 +4,23 @@
 //! Zone lighting is simplified to use standard Bevy lighting or hardcoded values.
 
 use bevy::{
-    asset::{load_internal_asset, AssetApp, Handle, UntypedHandle, Asset, UntypedAssetId},
+    asset::{load_internal_asset, Handle, UntypedHandle, Asset, UntypedAssetId},
     pbr::{Material, MaterialPipeline, MaterialPipelineKey},
-    prelude::{AlphaMode, App, Component, Plugin},
-    reflect::{Reflect, TypePath},
+    prelude::{App, Component, Image, Plugin},
+    reflect::Reflect,
     render::{
-        mesh::MeshVertexBufferLayout,
+        alpha::AlphaMode,
+        mesh::MeshVertexBufferLayoutRef,
         prelude::Shader,
         render_resource::{
             AsBindGroup, AsBindGroupShaderType, RenderPipelineDescriptor, ShaderRef,
-            SpecializedMeshPipelineError, TextureSampleType, TextureViewDimension,
+            SpecializedMeshPipelineError,
         },
+        texture::GpuImage,
     },
-    utils::Uuid,
 };
 use std::any::TypeId;
+use uuid::Uuid;
 
 use rose_file_readers::{ZscMaterialBlend, ZscMaterialGlow};
 
@@ -42,6 +44,7 @@ impl Plugin for ObjectMaterialPlugin {
 
         // Register the ObjectMaterial asset type with MaterialPlugin
         app.add_plugins(bevy::pbr::MaterialPlugin::<ObjectMaterial>::default());
+        bevy::log::info!("[MATERIAL PLUGIN] ObjectMaterial plugin built");
     }
 }
 
@@ -67,20 +70,17 @@ bitflags::bitflags! {
 }
 
 /// Uniform data for ObjectMaterial - matches the shader layout
+// Updated for Bevy 0.14.2 naga 0.14.2 - using vec4 for 16-byte alignment
 #[derive(Clone, Copy, Debug, Default, Reflect, bevy::render::render_resource::encase::ShaderType)]
 pub struct ObjectMaterialUniformData {
-    pub flags: u32,
-    pub alpha_cutoff: f32,
-    pub alpha_value: f32,
-    pub lightmap_uv_offset_x: f32,
-    pub lightmap_uv_offset_y: f32,
-    pub lightmap_uv_scale: f32,
-    // Padding to ensure 16-byte alignment
-    pub _padding: f32,
+    // material_params: x = flags (as f32), y = alpha_cutoff, z = alpha_value, w = unused
+    pub material_params: bevy::math::Vec4,
+    // lightmap_params: x = offset_x, y = offset_y, z = scale, w = unused
+    pub lightmap_params: bevy::math::Vec4,
 }
 
 impl AsBindGroupShaderType<ObjectMaterialUniformData> for ObjectMaterial {
-    fn as_bind_group_shader_type(&self, _images: &bevy::render::render_asset::RenderAssets<bevy::render::texture::Image>) -> ObjectMaterialUniformData {
+    fn as_bind_group_shader_type(&self, _images: &bevy::render::render_asset::RenderAssets<GpuImage>) -> ObjectMaterialUniformData {
         let mut flags = ObjectMaterialFlags::NONE;
         let mut alpha_cutoff = 0.5;
         let mut alpha_value = 1.0;
@@ -111,13 +111,18 @@ impl AsBindGroupShaderType<ObjectMaterialUniformData> for ObjectMaterial {
         }
 
         ObjectMaterialUniformData {
-            flags: flags.bits(),
-            alpha_cutoff,
-            alpha_value,
-            lightmap_uv_offset_x: self.lightmap_uv_offset.x,
-            lightmap_uv_offset_y: self.lightmap_uv_offset.y,
-            lightmap_uv_scale: self.lightmap_uv_scale,
-            _padding: 0.0,
+            material_params: bevy::math::Vec4::new(
+                flags.bits() as f32,
+                alpha_cutoff,
+                alpha_value,
+                0.0, // unused
+            ),
+            lightmap_params: bevy::math::Vec4::new(
+                self.lightmap_uv_offset.x,
+                self.lightmap_uv_offset.y,
+                self.lightmap_uv_scale,
+                0.0, // unused
+            ),
         }
     }
 }
@@ -258,7 +263,7 @@ impl Material for ObjectMaterial {
     fn specialize(
         _pipeline: &MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayout,
+        _layout: &MeshVertexBufferLayoutRef,
         key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         // Add LIGHTMAP_UV shader def if material has lightmap

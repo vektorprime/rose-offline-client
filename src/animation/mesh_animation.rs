@@ -47,7 +47,7 @@ pub fn mesh_animation_system(
         let Some(zmo_asset) = motion_assets.get(zmo_handle) else {
             if matches!(
                 asset_server.get_load_state(zmo_handle),
-                Some(LoadState::Failed)
+                Some(LoadState::Failed(_))
             ) {
                 // If the asset has failed to load, mark the animation as completed
                 mesh_animation.set_completed();

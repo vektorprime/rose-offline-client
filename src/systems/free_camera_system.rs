@@ -178,8 +178,8 @@ pub fn free_camera_system(
     }
 
     let calculated_transform = free_camera.rig.update(time.delta_seconds());
-    camera_transform.translation = calculated_transform.position;
-    camera_transform.rotation = calculated_transform.rotation;
+    camera_transform.translation = calculated_transform.position.into();
+    camera_transform.rotation = calculated_transform.rotation.into();
 
     // Log camera position and direction periodically
     if time.elapsed_seconds() % 5.0 < time.delta_seconds() {

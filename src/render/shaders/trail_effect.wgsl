@@ -1,4 +1,5 @@
 // Minimal trail effect shader - simplified for stability
+// Updated for Bevy 0.14 syntax
 #import bevy_render::view::View
 
 @group(0) @binding(0)
@@ -20,7 +21,7 @@ struct VertexOutput {
 fn vs_main(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
     out.uv = vertex.uv;
-    out.clip_position = view.view_proj * vec4<f32>(vertex.position, 1.0);
+    out.clip_position = view.clip_from_world * vec4<f32>(vertex.position, 1.0);
     out.colour = vec4<f32>((vec4<u32>(vertex.colour) >> vec4<u32>(0u, 8u, 16u, 24u)) & vec4<u32>(255u)) / 255.0;
     return out;
 }

@@ -5,19 +5,20 @@
 use bevy::{
     asset::{load_internal_asset, Handle, UntypedHandle, Asset, UntypedAssetId},
     pbr::{Material, MaterialPipeline, MaterialPipelineKey},
-    prelude::{AlphaMode, App, Plugin},
+    prelude::{App, Plugin},
     reflect::TypePath,
     render::{
-        mesh::{MeshVertexBufferLayout, MeshVertexAttribute},
+        alpha::AlphaMode,
+        mesh::{MeshVertexBufferLayoutRef, MeshVertexAttribute},
         prelude::Shader,
         render_resource::{
             AsBindGroup, RenderPipelineDescriptor, ShaderRef,
             SpecializedMeshPipelineError, VertexFormat, ShaderDefVal,
         },
     },
-    utils::Uuid,
 };
 use std::any::TypeId;
+use uuid::Uuid;
 
 pub const TERRAIN_MATERIAL_SHADER_HANDLE: UntypedHandle =
     UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0x3d7939250aff89cb) });
@@ -47,6 +48,7 @@ impl Plugin for TerrainMaterialPlugin {
 
         // Register the TerrainMaterial asset type with MaterialPlugin
         app.add_plugins(bevy::pbr::MaterialPlugin::<TerrainMaterial>::default());
+        bevy::log::info!("[MATERIAL PLUGIN] TerrainMaterial plugin built");
     }
 }
 
@@ -130,7 +132,7 @@ impl Material for TerrainMaterial {
     fn specialize(
         _pipeline: &MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayout,
+        _layout: &MeshVertexBufferLayoutRef,
         key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         // Add TEXTURE_COUNT shader def

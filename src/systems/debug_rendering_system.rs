@@ -1,11 +1,16 @@
 use bevy::prelude::*;
 use bevy::render::view::Visibility;
 use bevy::render::primitives::Aabb;
+use bevy::render::{Extract, ExtractSchedule, Render, RenderApp, RenderSet};
+use bevy::core_pipeline::core_3d::{Opaque3d, Transparent3d};
+use bevy::render::render_phase::ViewSortedRenderPhases;
+use bevy::render::view::ViewUniformOffset;
 use crate::components::{Zone, ZoneObject};
 use crate::render::{
     EffectMeshMaterial, TerrainMaterial, WaterMaterial, SkyMaterial, 
     ParticleMaterial, DamageDigitMaterial, ObjectMaterial
 };
+use crate::resources::RenderExtractionDiagnostics;
 
 /// Debug system to log entity visibility information
 pub fn debug_entity_visibility(
@@ -52,7 +57,7 @@ pub fn debug_entity_visibility(
     
     // Log first 5 visible entities with more detail
     let mut visible_logged = 0;
-    for (entity, transform, view_vis, visibility, name) in query.iter() {
+    for (_entity, transform, view_vis, visibility, name) in query.iter() {
         if view_vis.get() && visible_logged < 5 {
             let name_str = name.map(|n| n.as_str()).unwrap_or("<unnamed>");
             let visibility_str = match visibility {
@@ -69,7 +74,7 @@ pub fn debug_entity_visibility(
     
     // Log first 5 hidden entities with more detail
     let mut hidden_logged = 0;
-    for (entity, transform, view_vis, visibility, name) in query.iter() {
+    for (_entity, transform, view_vis, visibility, name) in query.iter() {
         if !view_vis.get() && hidden_logged < 5 {
             let name_str = name.map(|n| n.as_str()).unwrap_or("<unnamed>");
             let visibility_str = match visibility {
@@ -237,7 +242,7 @@ pub fn render_diagnostics_system(
             // Check material transparency for StandardMaterial
             if let Some(mat_handle) = material {
                 if let Some(mat) = material_assets.get(mat_handle) {
-                    let alpha = mat.base_color.a();
+                    let alpha = mat.base_color.alpha();
                     info!("[RENDER DIAGNOSTICS]   StandardMaterial alpha: {:.3}", alpha);
                     info!("[RENDER DIAGNOSTICS]   StandardMaterial alpha mode: {:?}", mat.alpha_mode);
                     if alpha < 0.01 {
@@ -300,6 +305,7 @@ pub fn render_diagnostics_system_lightweight(
     meshes: Query<&ViewVisibility, With<Handle<Mesh>>>,
     mesh_assets: Res<Assets<Mesh>>,
     images: Res<Assets<Image>>,
+    diagnostics: Res<RenderExtractionDiagnostics>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
@@ -319,12 +325,13 @@ pub fn render_diagnostics_system_lightweight(
     let visible_meshes = meshes.iter().filter(|vis| vis.get()).count();
     let mesh_asset_count = mesh_assets.len();
     let image_count = images.len();
+    let extracted_count = diagnostics.last_extracted_count;
     
     // Log camera position for first camera
     if let Some((_, _, transform)) = cameras.iter().next() {
         let pos = transform.translation();
-        log::info!("[RENDER STATUS] Frame {}: Cam pos=({:.1}, {:.1}, {:.1}), Meshes={}/{}, Assets={}/{} images",
-            *frame_count, pos.x, pos.y, pos.z, visible_meshes, mesh_entity_count, mesh_asset_count, image_count);
+        log::info!("[RENDER STATUS] Frame {}: Cam pos=({:.1}, {:.1}, {:.1}), Meshes={}/{}, Assets={}/{} images, RenderWorld={}",
+            *frame_count, pos.x, pos.y, pos.z, visible_meshes, mesh_entity_count, mesh_asset_count, image_count, extracted_count);
     } else {
         log::warn!("[RENDER STATUS] Frame {}: NO CAMERA FOUND!", *frame_count);
     }
@@ -336,6 +343,19 @@ pub fn render_diagnostics_system_lightweight(
     
     if mesh_entity_count > 0 && visible_meshes == 0 {
         warn!("[RENDER STATUS] {} meshes exist but none visible - possible culling or frustum issue", mesh_entity_count);
+    }
+    
+    // CRITICAL: Compare Main World vs Render World counts to detect extraction failure
+    if visible_meshes > 0 && extracted_count == 0 {
+        error!("[RENDER STATUS] CRITICAL: {} entities visible in Main World but 0 extracted to Render World!", visible_meshes);
+        error!("[RENDER STATUS]   This indicates RENDER EXTRACTION FAILURE - entities are not being copied to Render World!");
+        error!("[RENDER STATUS]   This is the root cause of the black screen issue!");
+    } else if visible_meshes > extracted_count {
+        warn!("[RENDER STATUS] WARNING: {} entities visible in Main World but only {} extracted to Render World", 
+            visible_meshes, extracted_count);
+        warn!("[RENDER STATUS]   Some entities are not being extracted - possible culling or extraction issue");
+    } else if extracted_count > visible_meshes {
+        info!("[RENDER STATUS] Render World has {} entities, Main World has {} visible", extracted_count, visible_meshes);
     }
 }
 
@@ -474,7 +494,7 @@ pub fn material_transparency_diagnostics(
         if let Some(handle) = material_handle {
             found_material = true;
             if let Some(material) = material_assets.get(handle) {
-                let alpha = material.base_color.a();
+                let alpha = material.base_color.alpha();
                 let alpha_mode = material.alpha_mode;
                 
                 info!("[MATERIAL] Entity {:?} (StandardMaterial):", entity);
@@ -594,7 +614,7 @@ pub fn transform_validation_diagnostics(
     }
     
     let mut invalid_count = 0;
-    let mut zero_scale_count = 0;
+    let zero_scale_count = 0;
     let mut nan_count = 0;
     let mut logged = 0;
     
@@ -802,7 +822,7 @@ pub fn active_camera_diagnostics(
     
     // Summary for quick diagnosis
     if active_count == 1 {
-        if let Some((entity, camera, transform)) = active_cameras.first() {
+        if let Some((entity, _camera, transform)) = active_cameras.first() {
             let position = transform.translation();
             let forward = transform.forward();
             info!("[ACTIVE CAMERA] SUMMARY: Active camera {:?} at ({:.1}, {:.1}, {:.1}), facing ({:.1}, {:.1}, {:.1})",
@@ -1202,7 +1222,6 @@ pub fn zone_entity_visibility_diagnostics(
         let global_position = global_transform.translation();
         
         // Get InheritedVisibility if it exists
-        let inherited_vis = world.get::<InheritedVisibility>(entity);
         let has_no_frustum_culling = world.get::<bevy::render::view::NoFrustumCulling>(entity).is_some();
         let aabb = world.get::<Aabb>(entity);
         let has_aabb = aabb.is_some();
@@ -1230,9 +1249,14 @@ pub fn zone_entity_visibility_diagnostics(
         info!("[ZONE ENTITY]   RenderLayers: {:?}", render_layers);
 
         if !view_vis.get() {
-            error!("[ZONE ENTITY]   CRITICAL: Zone entity ViewVisibility is FALSE!");
-            error!("[ZONE ENTITY]   This will cause ALL child entities to be invisible!");
-            error!("[ZONE ENTITY]   Child entities will inherit this visibility!");
+            if has_mesh {
+                error!("[ZONE ENTITY]   CRITICAL: Zone entity ViewVisibility is FALSE!");
+                error!("[ZONE ENTITY]   This will cause ALL child entities to be invisible!");
+                error!("[ZONE ENTITY]   Child entities will inherit this visibility!");
+            } else {
+                warn!("[ZONE ENTITY]   WARNING: Zone entity ViewVisibility is FALSE (expected for container without mesh in Bevy 0.14)");
+                warn!("[ZONE ENTITY]   However, if children are invisible, check InheritedVisibility of children.");
+            }
         } else {
             info!("[ZONE ENTITY]   ✓ Zone entity is visible");
         }
@@ -1270,6 +1294,7 @@ pub fn parent_child_visibility_diagnostics(
         Entity,
         &Zone,
         &ViewVisibility,
+        &InheritedVisibility,
     )>,
     children: Query<(
         Entity,
@@ -1292,16 +1317,17 @@ pub fn parent_child_visibility_diagnostics(
     info!("[PARENT-CHILD VISIBILITY DIAGNOSTICS] Frame {}", *frame_count);
     info!("========================================");
 
-    for (zone_entity, zone, zone_view_vis) in zones.iter() {
+    for (zone_entity, zone, zone_view_vis, zone_inherited_vis) in zones.iter() {
         info!("[PARENT-CHILD] Zone entity {:?} (ID: {}):", zone_entity, zone.id.get());
         info!("[PARENT-CHILD]   Zone ViewVisibility: {}", zone_view_vis.get());
+        info!("[PARENT-CHILD]   Zone InheritedVisibility: {}", zone_inherited_vis.get());
 
         // Count children
         let mut child_count = 0;
         let mut visible_children = 0;
         let mut invisible_children = 0;
 
-        for (child_entity, parent, child_view_vis, child_visibility, child_inherited_vis, mesh_handle) in children.iter() {
+        for (child_entity, parent, child_view_vis, child_visibility, _child_inherited_vis, mesh_handle) in children.iter() {
             // Check if this child is a child of zone
             if parent.get() == zone_entity {
                 child_count += 1;
@@ -1346,10 +1372,10 @@ pub fn parent_child_visibility_diagnostics(
         info!("[PARENT-CHILD]   Visible children: {}", visible_children);
         info!("[PARENT-CHILD]   Invisible children: {}", invisible_children);
 
-        if invisible_children > 0 && !zone_view_vis.get() {
-            error!("[PARENT-CHILD]   DIAGNOSIS: Zone entity is invisible, causing {} children to be invisible!",
+        if invisible_children > 0 && !zone_inherited_vis.get() {
+            error!("[PARENT-CHILD]   DIAGNOSIS: Zone entity InheritedVisibility is false, causing {} children to be invisible!",
                 invisible_children);
-            error!("[PARENT-CHILD]   FIX: Make zone entity visible!");
+            error!("[PARENT-CHILD]   FIX: Make zone entity visible or check its parent!");
         }
     }
 
@@ -1392,90 +1418,211 @@ pub fn zone_component_lifecycle_diagnostics(
         warn!("[ZONE COMPONENT] ✗ NO entities with Zone component found!");
         warn!("[ZONE COMPONENT] This explains why zone entity query returns 0 results");
     }
-
+    
     // Check for each required component individually using world.get()
     let mut entities_with_transform = 0;
     let mut entities_with_global_transform = 0;
+    let mut entities_with_zone = 0;
+    let mut entities_with_zone_object = 0;
     let mut entities_with_view_visibility = 0;
-    let mut entities_with_visibility = 0;
-    let mut zone_full_count = 0;
-
-    for (entity, _) in zone_entities.iter() {
-        let has_transform = world.get::<Transform>(entity).is_some();
-        let has_global_transform = world.get::<GlobalTransform>(entity).is_some();
-        let has_view_visibility = world.get::<ViewVisibility>(entity).is_some();
-        let has_visibility = world.get::<Visibility>(entity).is_some();
-
-        if has_transform { entities_with_transform += 1; }
-        if has_global_transform { entities_with_global_transform += 1; }
-        if has_view_visibility { entities_with_view_visibility += 1; }
-        if has_visibility { entities_with_visibility += 1; }
-
-        if has_transform && has_global_transform && has_view_visibility && has_visibility {
-            zone_full_count += 1;
+    let mut entities_with_inherited_visibility = 0;
+    
+    for entity in all_entities.iter() {
+        if world.get::<Transform>(entity).is_some() {
+            entities_with_transform += 1;
+        }
+        if world.get::<GlobalTransform>(entity).is_some() {
+            entities_with_global_transform += 1;
+        }
+        if world.get::<Zone>(entity).is_some() {
+            entities_with_zone += 1;
+        }
+        if world.get::<ZoneObject>(entity).is_some() {
+            entities_with_zone_object += 1;
+        }
+        if world.get::<ViewVisibility>(entity).is_some() {
+            entities_with_view_visibility += 1;
+        }
+        if world.get::<InheritedVisibility>(entity).is_some() {
+            entities_with_inherited_visibility += 1;
         }
     }
+    
+    info!("[ZONE COMPONENT] Component counts:");
+    info!("[ZONE COMPONENT]   Transform: {}", entities_with_transform);
+    info!("[ZONE COMPONENT]   GlobalTransform: {}", entities_with_global_transform);
+    info!("[ZONE COMPONENT]   Zone: {}", entities_with_zone);
+    info!("[ZONE COMPONENT]   ZoneObject: {}", entities_with_zone_object);
+    info!("[ZONE COMPONENT]   ViewVisibility: {}", entities_with_view_visibility);
+    info!("[ZONE COMPONENT]   InheritedVisibility: {}", entities_with_inherited_visibility);
+    
+    info!("========================================");
+}
 
-    info!("[ZONE COMPONENT] Zone entities with Transform: {}", entities_with_transform);
-    info!("[ZONE COMPONENT] Zone entities with GlobalTransform: {}", entities_with_global_transform);
-    info!("[ZONE COMPONENT] Zone entities with ViewVisibility: {}", entities_with_view_visibility);
-    info!("[ZONE COMPONENT] Zone entities with Visibility: {}", entities_with_visibility);
-    info!("[ZONE COMPONENT] Entities with Zone + ALL required components: {}", zone_full_count);
-
-    if zone_count > 0 && zone_full_count == 0 {
-        error!("[ZONE COMPONENT] ✗ CRITICAL: Zone entities exist but missing required components!");
-        error!("[ZONE COMPONENT] Required: Zone, Transform, GlobalTransform, ViewVisibility, Visibility");
-
-        // Check which components are missing for each entity
-        for (entity, zone) in zone_entities.iter() {
-            let has_transform = world.get::<Transform>(entity).is_some();
-            let has_global_transform = world.get::<GlobalTransform>(entity).is_some();
-            let has_view_visibility = world.get::<ViewVisibility>(entity).is_some();
-            let has_visibility = world.get::<Visibility>(entity).is_some();
-
-            info!("[ZONE COMPONENT] Zone entity {:?} component check:", entity);
-            info!("[ZONE COMPONENT]   Zone: ✓");
-            info!("[ZONE COMPONENT]   Transform: {}", if has_transform { "✓" } else { "✗" });
-            info!("[ZONE COMPONENT]   GlobalTransform: {}", if has_global_transform { "✓" } else { "✗" });
-            info!("[ZONE COMPONENT]   ViewVisibility: {}", if has_view_visibility { "✓" } else { "✗" });
-            info!("[ZONE COMPONENT]   Visibility: {}", if has_visibility { "✓" } else { "✗" });
-
-            if !has_transform || !has_global_transform || !has_view_visibility || !has_visibility {
-                error!("[ZONE COMPONENT]   MISSING COMPONENT(S):");
-                if !has_transform {
-                    error!("[ZONE COMPONENT]     - Transform");
-                }
-                if !has_global_transform {
-                    error!("[ZONE COMPONENT]     - GlobalTransform");
-                }
-                if !has_view_visibility {
-                    error!("[ZONE COMPONENT]     - ViewVisibility");
-                }
-                if !has_visibility {
-                    error!("[ZONE COMPONENT]     - Visibility");
-                }
-            }
-        }
-    } else if zone_count > 0 && zone_full_count > 0 {
-        info!("[ZONE COMPONENT] ✓ All zone entities have all required components");
-
-        for (entity, zone) in zone_entities.iter() {
-            info!("[ZONE COMPONENT] Zone entity {:?} has all components:", entity);
-            info!("[ZONE COMPONENT]   Zone ID: {}", zone.id.get());
-            if let Some(transform) = world.get::<Transform>(entity) {
-                info!("[ZONE COMPONENT]   Transform: {:?}", transform.translation);
-            }
-            if let Some(global_transform) = world.get::<GlobalTransform>(entity) {
-                info!("[ZONE COMPONENT]   GlobalTransform: {:?}", global_transform.translation());
-            }
-            if let Some(view_vis) = world.get::<ViewVisibility>(entity) {
-                info!("[ZONE COMPONENT]   ViewVisibility: {}", view_vis.get());
-            }
-            if let Some(visibility) = world.get::<Visibility>(entity) {
-                info!("[ZONE COMPONENT]   Visibility: {:?}", visibility);
-            }
+/// Render World extraction diagnostic system
+/// Tracks how many entities have been extracted from Main World to Render World
+/// This is CRITICAL because Main World visibility does NOT guarantee Render World extraction
+pub fn diagnose_render_world_extraction(
+    render_entities: Query<(&ViewUniformOffset, &GlobalTransform), With<Handle<Mesh>>>,
+    mut diagnostics: ResMut<RenderExtractionDiagnostics>,
+) {
+    let extracted_count = render_entities.iter().count();
+    diagnostics.last_extracted_count = extracted_count;
+    
+    info!(
+        "[RENDER WORLD] {} entities extracted to render world",
+        extracted_count
+    );
+    
+    // Log details for first few extracted entities
+    let mut logged = 0;
+    for (_view_offset, transform) in render_entities.iter() {
+        if logged < 3 {
+            let position = transform.translation();
+            info!(
+                "[RENDER WORLD]   Extracted entity at position: ({:.1}, {:.1}, {:.1})",
+                position.x, position.y, position.z
+            );
+            logged += 1;
         }
     }
+}
 
+/// Render Phase diagnostic system
+/// Checks if render queues (Transparent3d) have items queued for rendering
+/// Empty render queues indicate extraction failure or culling issues
+pub fn diagnose_render_phase(
+    views: Query<Entity>,
+    transparent_3d: Res<ViewSortedRenderPhases<Transparent3d>>,
+    mut frame_count: Local<u32>,
+) {
+    *frame_count += 1;
+    
+    // Only log every 60 frames to avoid spam
+    if *frame_count % 60 != 0 {
+        return;
+    }
+    
+    info!("========================================");
+    info!("[RENDER PHASE DIAGNOSTICS] Frame {}", *frame_count);
+    info!("========================================");
+    
+    let mut transparent_count = 0;
+    
+    // Count items in each view's render phases
+    for view_entity in views.iter() {
+        if let Some(transparent_phase) = transparent_3d.get(&view_entity) {
+            transparent_count += transparent_phase.items.len();
+        }
+    }
+    
+    info!("[RENDER PHASE] Transparent3d render phase: {} items", transparent_count);
+    
+    if transparent_count == 0 {
+        error!("[RENDER PHASE] CRITICAL: No items in Transparent3d render queue!");
+        error!("[RENDER PHASE]   This indicates extraction failure or culling removed all entities");
+    } else {
+        info!("[RENDER PHASE] {} items in Transparent3d render queue", transparent_count);
+    }
+    
+    info!("========================================");
+}
+
+/// Camera-Entity distance diagnostic system
+/// Verifies that visible entities are within reasonable distance of camera
+/// Helps identify entities that are "visible" but outside camera frustum
+pub fn diagnose_camera_entity_distances(
+    cameras: Query<(&GlobalTransform, &Camera)>,
+    visible_entities: Query<(Entity, &GlobalTransform, &ViewVisibility), With<Handle<Mesh>>>,
+    mut frame_count: Local<u32>,
+) {
+    *frame_count += 1;
+    
+    // Only log every 60 frames to avoid spam
+    if *frame_count % 60 != 0 {
+        return;
+    }
+    
+    info!("========================================");
+    info!("[CAMERA-ENTITY DISTANCE] Frame {}", *frame_count);
+    info!("========================================");
+    
+    for (camera_transform, camera) in cameras.iter() {
+        let camera_pos = camera_transform.translation();
+        info!("[CAMERA-ENTITY DISTANCE] Camera position: ({:.1}, {:.1}, {:.1})", 
+            camera_pos.x, camera_pos.y, camera_pos.z);
+        
+        let mut visible_count = 0;
+        let mut far_entities = 0;
+        let mut logged = 0;
+        
+        for (entity, entity_transform, view_vis) in visible_entities.iter() {
+            if !view_vis.get() {
+                continue;
+            }
+            
+            visible_count += 1;
+            let entity_pos = entity_transform.translation();
+            let distance = camera_pos.distance(entity_pos);
+            
+            // Check if entity is suspiciously far (more than 1000 units)
+            if distance > 1000.0 && logged < 5 {
+                warn!(
+                    "[CAMERA-ENTITY DISTANCE] Entity {:?} is {:.1} units from camera (visible but far!)",
+                    entity, distance
+                );
+                far_entities += 1;
+                logged += 1;
+            }
+            
+            // Log first few visible entities
+            if logged < 3 {
+                info!(
+                    "[CAMERA-ENTITY DISTANCE] Visible entity {:?}: pos=({:.1}, {:.1}, {:.1}), dist={:.1}",
+                    entity, entity_pos.x, entity_pos.y, entity_pos.z, distance
+                );
+                logged += 1;
+            }
+        }
+        
+        info!("[CAMERA-ENTITY DISTANCE] Total visible entities: {}", visible_count);
+        if far_entities > 0 {
+            warn!(
+                "[CAMERA-ENTITY DISTANCE] {} visible entities are >1000 units from camera",
+                far_entities
+            );
+        }
+    }
+    
+    info!("========================================");
+}
+
+/// Material plugin verification system
+/// Verifies that Bevy's built-in MaterialPlugin is properly extracting materials
+/// This helps diagnose if custom materials are interfering with StandardMaterial extraction
+pub fn verify_material_plugins(
+    materials: Res<Assets<StandardMaterial>>,
+    object_materials: Res<Assets<ObjectMaterial>>,
+    mut frame_count: Local<u32>,
+) {
+    *frame_count += 1;
+    
+    // Only log every 60 frames to avoid spam
+    if *frame_count % 60 != 0 {
+        return;
+    }
+    
+    info!("========================================");
+    info!("[MATERIAL PLUGIN VERIFICATION] Frame {}", *frame_count);
+    info!("========================================");
+    
+    info!("[MATERIAL PLUGIN] StandardMaterial assets: {}", materials.len());
+    info!("[MATERIAL PLUGIN] ObjectMaterial assets: {}", object_materials.len());
+    
+    if materials.len() == 0 {
+        warn!("[MATERIAL PLUGIN] WARNING: No StandardMaterial assets loaded!");
+        warn!("[MATERIAL PLUGIN]   This may indicate MaterialPlugin extraction failure");
+    }
+    
     info!("========================================");
 }

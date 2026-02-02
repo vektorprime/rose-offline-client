@@ -92,7 +92,7 @@ impl DrawWidget for Listbox {
                             |ui| {
                                 ui.add(
                                     egui::Label::new(egui::RichText::new(text).color(color))
-                                        .wrap(true)
+                                        .wrap()
                                         .sense(egui::Sense::click()),
                                 )
                             },

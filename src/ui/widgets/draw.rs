@@ -39,7 +39,7 @@ impl DrawText for egui::Ui {
     ) -> egui::Response {
         self.put(
             rect.translate(self.min_rect().min.to_vec2()),
-            egui::Label::new(text).wrap(true),
+            egui::Label::new(text).wrap(),
         )
     }
 }

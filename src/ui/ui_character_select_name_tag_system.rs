@@ -26,12 +26,13 @@ pub fn ui_character_select_name_tag_system(
 
                     egui::containers::popup::show_tooltip_at(
                         ctx,
+                        egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("character_tooltip_layer")),
                         egui::Id::new("selected_character_plate"),
-                        Some(egui::Pos2::new(
+                        egui::Pos2::new(
                             screen_pos.x - 30.0,
                             screen_size.y - screen_pos.y,
-                        )),
-                        |ui| {
+                        ),
+                        |ui: &mut egui::Ui| {
                             ui.label(
                                 egui::RichText::new(&selected_character.info.name)
                                     .font(egui::FontId::proportional(20.0))

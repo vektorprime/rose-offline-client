@@ -270,7 +270,7 @@ pub fn ui_party_system(
                                     egui::Sense::click(),
                                 );
                                 {
-                                    let ui = &mut ui.child_ui(rect, egui::Layout::default());
+                                    let ui = &mut ui.child_ui(rect, egui::Layout::default(), None);
                                     let selected =
                                         ui_state.selected_party_member_index == Some(index);
                                     let (online, name) = match member {

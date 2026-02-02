@@ -79,7 +79,6 @@ impl DamageDigitsSpawner {
                     GlobalTransform::default(),
                     Visibility::default(),
                     InheritedVisibility::default(),
-                    ViewVisibility::default(),
                     NoFrustumCulling,
                 ));
             });

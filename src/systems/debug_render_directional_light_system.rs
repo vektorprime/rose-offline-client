@@ -1,4 +1,5 @@
 use bevy::{
+    color::palettes::css::{YELLOW_GREEN},
     prelude::{Color, DirectionalLight, Gizmos, Local, Query, Res, Vec3, With},
     render::primitives::{CascadesFrusta, Frustum, HalfSpace},
 };
@@ -60,17 +61,17 @@ pub fn debug_render_directional_light_system(
 
             gizmos.linestrip(
                 [corners[0], corners[2], corners[6], corners[4], corners[0]],
-                Color::YELLOW_GREEN,
+                Color::from(YELLOW_GREEN),
             );
             gizmos.linestrip(
                 [corners[1], corners[3], corners[7], corners[5], corners[1]],
-                Color::YELLOW_GREEN,
+                Color::from(YELLOW_GREEN),
             );
 
-            gizmos.line(corners[0], corners[1], Color::YELLOW_GREEN);
-            gizmos.line(corners[2], corners[3], Color::YELLOW_GREEN);
-            gizmos.line(corners[4], corners[5], Color::YELLOW_GREEN);
-            gizmos.line(corners[6], corners[7], Color::YELLOW_GREEN);
+            gizmos.line(corners[0], corners[1], Color::from(YELLOW_GREEN));
+            gizmos.line(corners[2], corners[3], Color::from(YELLOW_GREEN));
+            gizmos.line(corners[4], corners[5], Color::from(YELLOW_GREEN));
+            gizmos.line(corners[6], corners[7], Color::from(YELLOW_GREEN));
         }
     }
 }

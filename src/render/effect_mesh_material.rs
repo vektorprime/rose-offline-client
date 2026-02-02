@@ -3,21 +3,23 @@
 //! This removes the custom render pipeline and uses Bevy's built-in material system.
 
 use bevy::{
-    asset::{load_internal_asset, AssetApp, Handle, UntypedHandle, Asset, UntypedAssetId},
+    asset::{load_internal_asset, Handle, UntypedHandle, Asset, UntypedAssetId},
     pbr::{Material, MaterialPipeline, MaterialPipelineKey},
-    prelude::{AlphaMode, App, Component, Plugin},
+    prelude::{App, Component, Image, Plugin},
     reflect::{Reflect, TypePath},
     render::{
-        mesh::MeshVertexBufferLayout,
+        alpha::AlphaMode,
+        mesh::MeshVertexBufferLayoutRef,
         prelude::Shader,
         render_resource::{
             AsBindGroup, AsBindGroupShaderType, RenderPipelineDescriptor, ShaderRef,
-            SpecializedMeshPipelineError, BlendOperation, BlendFactor,
+            BlendOperation, BlendFactor, SpecializedMeshPipelineError,
         },
+        texture::GpuImage,
     },
-    utils::Uuid,
 };
 use std::any::TypeId;
+use uuid::Uuid;
 
 pub const EFFECT_MESH_MATERIAL_SHADER_HANDLE: UntypedHandle =
     UntypedHandle::Weak(UntypedAssetId::Uuid {
@@ -42,6 +44,7 @@ impl Plugin for EffectMeshMaterialPlugin {
 
         // Register the EffectMeshMaterial asset type with MaterialPlugin
         app.add_plugins(bevy::pbr::MaterialPlugin::<EffectMeshMaterial>::default());
+        bevy::log::info!("[MATERIAL PLUGIN] EffectMeshMaterial plugin built");
     }
 }
 
@@ -85,7 +88,7 @@ pub struct EffectMeshMaterialUniformData {
 }
 
 impl AsBindGroupShaderType<EffectMeshMaterialUniformData> for EffectMeshMaterial {
-    fn as_bind_group_shader_type(&self, _images: &bevy::render::render_asset::RenderAssets<bevy::render::texture::Image>) -> EffectMeshMaterialUniformData {
+    fn as_bind_group_shader_type(&self, _images: &bevy::render::render_asset::RenderAssets<GpuImage>) -> EffectMeshMaterialUniformData {
         let mut flags = EffectMeshMaterialFlags::NONE;
         if self.alpha_test {
             flags |= EffectMeshMaterialFlags::ALPHA_MODE_MASK;
@@ -164,7 +167,7 @@ impl Material for EffectMeshMaterial {
     fn specialize(
         _pipeline: &MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayout,
+        _layout: &MeshVertexBufferLayoutRef,
         key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         // Apply depth/stencil configuration

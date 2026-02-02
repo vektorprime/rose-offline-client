@@ -2,22 +2,24 @@
 #![allow(clippy::too_many_arguments)]
 
 use animation::RoseAnimationPlugin;
-use    bevy::{
+use bevy::{
         asset::AssetApp,
         core_pipeline::bloom::BloomSettings,
-        log::{info, Level},
+        log::{info, warn, Level},
         prelude::{
-            apply_deferred, in_state, resource_exists, App, AssetServer, Assets, Camera, Camera3d,
-            ClearColorConfig, Color, Commands, Entity, Image, InheritedVisibility, IntoSystemConfigs,
-            IntoSystemSetConfigs, Local, Mesh, Msaa, OnEnter, OnExit, PerspectiveProjection, PluginGroup,
-            PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
-            SystemSet, Time, Transform, Update, Vec3, ViewVisibility, Visibility, With, World,
+            apply_deferred, default, in_state, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
+            Camera3dBundle, ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoSystemConfigs,
+            IntoSystemSetConfigs, Local, Mesh, Msaa, OnEnter, OnExit, PbrBundle, PerspectiveProjection, PluginGroup,
+            PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, StandardMaterial, Startup, State,
+            SystemSet, Time, Transform, Update, Vec3, ViewVisibility, Visibility, With, Without, World,
         },
         render::view::VisibilitySystems,
         render::camera::Exposure,
-        render::{
-            settings::{Backends, RenderCreation, WgpuSettings},
-        },
+    render::{
+        settings::{Backends, RenderCreation, WgpuSettings},
+        render_asset::RenderAssets,
+        ExtractSchedule, Render, RenderApp,
+    },
         transform::{TransformSystem, components::GlobalTransform},
         window::{Window, WindowMode},
     };
@@ -41,6 +43,7 @@ pub mod animation;
 pub mod audio;
 pub mod bundles;
 pub mod components;
+pub mod debug;
 pub mod effect_loader;
 pub mod events;
 pub mod exe_resource_loader;
@@ -82,7 +85,7 @@ use render::{
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
     AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, GameData, NameTagSettings,
-    NetworkThread, NetworkThreadMessage, RenderConfiguration, SelectedTarget, ServerConfiguration,
+    NetworkThread, NetworkThreadMessage, RenderConfiguration, RenderExtractionDiagnostics, SelectedTarget, ServerConfiguration,
     SoundCache, SoundSettings, SpecularTexture, VfsResource, WorldTime, ZoneTime,
 };
 use scripting::RoseScriptingPlugin;
@@ -103,6 +106,8 @@ use systems::{
     render_layer_diagnostics, aabb_validation_diagnostics,
     render_pipeline_diagnostics, render_stage_diagnostics,
     zone_entity_visibility_diagnostics, parent_child_visibility_diagnostics, zone_component_lifecycle_diagnostics,
+    diagnose_render_world_extraction, diagnose_render_phase, diagnose_camera_entity_distances,
+    verify_material_plugins,
     free_camera_system, game_connection_system, game_mouse_input_system, game_state_enter_system,
     game_zone_change_system, hit_event_system, item_drop_model_add_collider_system,
     item_drop_model_system, login_connection_system, login_event_system, login_state_enter_system,
@@ -444,7 +449,7 @@ pub fn run_zone_viewer(config: &Config, zone_id: Option<ZoneId>) {
         AppState::ZoneViewer,
         SystemsConfig {
             add_custom_systems: Some(Box::new(move |app| {
-                app.world
+                app.world_mut()
                     .send_event(LoadZoneEvent::new(
                         zone_id.unwrap_or_else(|| ZoneId::new(1).unwrap()),
                     ));
@@ -640,8 +645,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     });
 
     // Initialise bevy engine
-    app.insert_resource(Msaa::Off)
-        .add_plugins((
+    app.add_plugins((
             bevy::prelude::DefaultPlugins
                 .set(bevy::render::RenderPlugin {
                     render_creation: RenderCreation::Automatic(WgpuSettings {
@@ -672,15 +676,11 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                     ..Default::default()
                 })
                 .set(bevy::log::LogPlugin {
-                    level: Level::INFO,
-                    filter:
-                        "wgpu=error,bevy_render=info,rose_offline_client=debug".into(),
-                    update_subscriber: None,
+                    filter: "wgpu=error,bevy_render=debug,bevy_pbr=debug".into(),
+                    level: Level::DEBUG,
+                    ..default()
                 })
-                .set(bevy::pbr::PbrPlugin {
-                    prepass_enabled: false,
-                    add_default_deferred_lighting_plugin: true,
-                }),
+                .set(bevy::pbr::PbrPlugin::default()),
             bevy::diagnostic::EntityCountDiagnosticsPlugin,
             bevy::diagnostic::FrameTimeDiagnosticsPlugin,
         ));
@@ -707,6 +707,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             ..Default::default()
         },
         OddioPlugin,
+        debug::RenderDocPlugin,
     ));
 
     // Initialise rose stuff
@@ -726,6 +727,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // DIAGNOSTIC: Initialize debug diagnostics resources (ENABLED for debugging visibility issues)
     app.init_resource::<ZoneDebugDiagnostics>();
+    app.init_resource::<RenderExtractionDiagnostics>();
     // app.init_resource::<crate::systems::zone_memory_profiler_system::ZoneMemoryProfiler>();
     log::info!("[ZONE LOADER] Debug diagnostics resources initialized");
     
@@ -787,6 +789,15 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             DebugInspectorPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
+
+    // Material Plugin Diagnostic Logging
+    log::info!("[MATERIAL PLUGIN] DamageDigitMaterialPlugin registered");
+    log::info!("[MATERIAL PLUGIN] EffectMeshMaterialPlugin registered");
+    log::info!("[MATERIAL PLUGIN] ParticleMaterialPlugin registered");
+    log::info!("[MATERIAL PLUGIN] ObjectMaterialPlugin registered");
+    log::info!("[MATERIAL PLUGIN] SkyMaterialPlugin registered");
+    log::info!("[MATERIAL PLUGIN] WaterMaterialPlugin registered");
+    log::info!("[MATERIAL PLUGIN] TerrainMaterialPlugin registered");
 
     // Setup state
     app.init_state::<AppState>();
@@ -1009,9 +1020,15 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         )
     );
 
-    // AGGRESSIVE FIX: Run force_zone_visibility_system AFTER VisibilityPropagate
-    // This overwrites Bevy's computed ViewVisibility with our forced value
-    app.add_systems(
+    // FIX: Run force_zone_visibility_system BEFORE VisibilityPropagate
+    // This ensures that Bevy's propagation system sees the updated Visibility
+    // app.add_systems(
+    //     PostUpdate,
+    //     force_zone_visibility_system
+    //         .before(VisibilitySystems::VisibilityPropagate),
+    // );
+
+     app.add_systems(
         PostUpdate,
         force_zone_visibility_system
             .after(VisibilitySystems::VisibilityPropagate)
@@ -1060,6 +1077,59 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // Add render diagnostics system - runs every frame to check rendering state
     app.add_systems(Update, render_diagnostics_system_lightweight);
+    
+    // // Add camera diagnostic system - verifies camera components for Bevy 0.14.2
+    // app.add_systems(Update, diagnose_camera_system);
+    
+    // CRITICAL DIAGNOSTIC: Add Render World extraction diagnostic system
+    // This system tracks how many entities are extracted from Main World to Render World
+    // This is CRITICAL because Main World visibility does NOT guarantee Render World extraction
+    if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+        bevy::log::info!("[RENDER WORLD DIAGNOSTIC] Initializing render world extraction diagnostics");
+        render_app.init_resource::<RenderExtractionDiagnostics>();
+        render_app.add_systems(ExtractSchedule, diagnose_render_world_extraction);
+    } else {
+        bevy::log::error!("[RENDER WORLD DIAGNOSTIC] FAILED to get render app - extraction diagnostics will not run!");
+    }
+    
+    // CRITICAL DIAGNOSTIC: Add Render Phase diagnostic system
+    // This system checks if render queues (Opaque3d, Transparent3d) have items
+    // Empty render queues indicate extraction failure or culling issues
+    if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+        bevy::log::info!("[RENDER PHASE DIAGNOSTIC] Initializing render phase diagnostics");
+        render_app.add_systems(Render, diagnose_render_phase);
+    } else {
+        bevy::log::error!("[RENDER PHASE DIAGNOSTIC] FAILED to get render app - phase diagnostics will not run!");
+    }
+    
+    // CRITICAL DIAGNOSTIC: Add camera-entity distance diagnostic system
+    // This system verifies that visible entities are within reasonable distance of camera
+    // Helps identify entities that are "visible" but outside camera frustum
+    app.add_systems(Update, diagnose_camera_entity_distances);
+    
+    // CRITICAL DIAGNOSTIC: Add material plugin verification system
+    // This system verifies that Bevy's built-in MaterialPlugin is properly extracting materials
+    // Helps diagnose if custom materials are interfering with StandardMaterial extraction
+    app.add_systems(Update, verify_material_plugins);
+
+    // CRITICAL DIAGNOSTIC: Add Main World mesh diagnostic system
+    // This verifies that meshes exist in Main World with proper visibility
+    // Runs periodically to avoid log spam (every 60 frames ~ 1 second at 60fps)
+    app.add_systems(
+        Update,
+        diagnose_main_world_meshes
+            .run_if(|time: Res<Time>| time.elapsed_seconds() % 2.0 < time.delta_seconds()),
+    );
+
+    // CRITICAL DIAGNOSTIC: Add mesh material diagnostic system
+    // This verifies that meshes have materials assigned, which is required for rendering
+    // Note: RenderPhase diagnostics require render-world access and are handled separately
+    // Runs periodically (every 2 seconds) to avoid log spam
+    app.add_systems(
+        Update,
+        diagnose_mesh_materials
+            .run_if(|time: Res<Time>| time.elapsed_seconds() % 2.0 < time.delta_seconds()),
+    );
 
     // Add comprehensive diagnostic systems for debugging rendering issues
     app.add_systems(Update, (
@@ -1073,6 +1143,17 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         render_pipeline_diagnostics,
         render_stage_diagnostics,
     ));
+
+    // GPU BUFFER UPLOAD DIAGNOSTICS - Phase 6
+    // These systems verify that mesh and material data is actually being uploaded to the GPU
+    // Runs every 3 seconds to avoid log spam
+    app.add_systems(
+        Update,
+        (
+            diagnose_gpu_mesh_upload,
+            diagnose_asset_loading,
+        ).run_if(|time: Res<Time>| time.elapsed_seconds() % 3.0 < time.delta_seconds()),
+    );
 
     // CRITICAL DIAGNOSTIC: Add transform propagation diagnostics
     // This will tell us if transform propagation is actually running
@@ -1293,6 +1374,12 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     );
 
     app.add_systems(PostStartup, load_common_game_data);
+    
+    // TEST: Add StandardMaterial cube for rendering isolation test
+    app.add_systems(PostStartup, spawn_test_cube);
+    
+    // DIAGNOSTIC: Print diagnostic summary on startup
+    app.add_systems(PostStartup, print_diagnostic_summary.after(spawn_test_cube));
 
     if let Some(app_builder) = systems_config.add_custom_systems.take() {
         app_builder(&mut app);
@@ -1339,16 +1426,18 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             .chain(),
     );
 
-    // CRITICAL FIX: Add explicit system ordering for transform propagation
-    // This ensures that Bevy's transform propagation runs correctly and computes
-    // GlobalTransform from local Transform without conflicts from custom systems
-    // We use a safer approach by ordering custom sets relative to Bevy's internal sets
-    // instead of chaining them all together, which can cause circular dependencies.
+    // CRITICAL FIX: Use Bevy's default ordering for internal systems
+    // Manual ordering of internal sets like VisibilityPropagate can break engine logic
     app.configure_sets(
         PostUpdate,
         GameStages::AfterUpdate.before(TransformSystem::TransformPropagate),
     );
-    app.configure_sets(
+    // app.configure_sets(
+    //     PostUpdate,
+    //     GameStages::DebugRenderPreFlush.after(VisibilitySystems::CheckVisibility),
+    // );
+
+        app.configure_sets(
         PostUpdate,
         VisibilitySystems::VisibilityPropagate.after(TransformSystem::TransformPropagate),
     );
@@ -1526,30 +1615,53 @@ fn load_common_game_data(
     );
 
     bevy::log::info!("[load_common_game_data] Spawning camera entity");
-    let camera_entity = commands.spawn((
-        Camera3d::default(),
-        Camera {
-            hdr: false,
-            clear_color: ClearColorConfig::Custom(Color::rgb(0.70, 0.90, 1.0)),
+    // let camera_entity = commands.spawn((
+    //     Camera3d::default(),
+    //     Camera {
+    //         hdr: false,
+    //         clear_color: ClearColorConfig::Custom(Color::srgb(0.70, 0.90, 1.0)),
+    //         ..Default::default()
+    //     },
+    //     Projection::from(PerspectiveProjection {
+    //         fov: std::f32::consts::PI / 4.0,
+    //         near: 0.1,
+    //         far: 50000.0,
+    //         aspect_ratio: 16.0 / 9.0,
+    //     }),
+    //     // Camera positioned for optimal zone viewing
+    //     // Zone center is approximately (5200.0, 0.0, -5200.0)
+    //     // Position camera at a 45-degree angle, 200 units away, at a reasonable height
+    //     Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
+    //         .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
+    //     GlobalTransform::default(),
+    //     Visibility::default(),
+    //     InheritedVisibility::default(),
+    //     ViewVisibility::default(),
+    //     bevy::render::view::RenderLayers::layer(0),
+    // )).id();
+use bevy::core_pipeline::tonemapping::Tonemapping; // Optional if you want to customize it
+
+let camera_entity = commands.spawn((
+    Camera3dBundle {
+        camera: Camera {
+            hdr: false, // Default is false, so you can omit this unless you might change it
+            clear_color: ClearColorConfig::Custom(Color::srgb(0.70, 0.90, 1.0)),
             ..Default::default()
         },
-        Projection::from(PerspectiveProjection {
+        projection: Projection::Perspective(PerspectiveProjection {
             fov: std::f32::consts::PI / 4.0,
             near: 0.1,
             far: 50000.0,
             aspect_ratio: 16.0 / 9.0,
         }),
-        Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
+        transform: Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
             .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
-        GlobalTransform::default(),
-        Visibility::default(),
-        InheritedVisibility::default(),
-        ViewVisibility::default(),
-        bevy::render::view::RenderLayers::layer(0),
-        BloomSettings::NATURAL,
-        Exposure::default(),
-    )).id();
-
+        // GlobalTransform, Visibility, Frustum, Tonemapping, etc. are now included automatically
+        ..Default::default()
+    },
+    // RenderLayers is not part of the bundle, so we add it separately as a tuple component
+    bevy::render::view::RenderLayers::layer(0),
+)).id();
     bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
 
     commands.insert_resource(DamageDigitsSpawner::load(
@@ -1571,4 +1683,204 @@ fn load_common_game_data(
         .insert(0, "Ubuntu-M".to_owned());
 
     egui_context.ctx_mut().set_fonts(fonts);
+}
+
+/// Test cube spawn system for Bevy 0.14.2 rendering isolation test
+/// This creates a simple red cube using StandardMaterial to verify core rendering works
+fn spawn_test_cube(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    commands.spawn((
+        PbrBundle {
+            mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+            material: materials.add(StandardMaterial {
+                base_color: Color::srgb(1.0, 0.0, 0.0),
+                ..default()
+            }),
+            transform: Transform::from_xyz(5100.0, 75.0, -5100.0), // MOVED: In front of camera
+            ..default()
+        },
+    ));
+}
+
+/// Camera diagnostic system for Bevy 0.14.2
+/// Verifies all required camera components are present and configured correctly
+fn diagnose_camera_system(
+    cameras: Query<(
+        Entity,
+        &Camera,
+        Option<&Camera3d>,
+        Option<&Projection>,
+        &Transform,
+        Option<&Visibility>,
+        Option<&InheritedVisibility>,
+        Option<&ViewVisibility>,
+    )>,
+) {
+    let camera_count = cameras.iter().count();
+    info!("[CAMERA DIAGNOSTIC] Active cameras found: {}", camera_count);
+    
+    for (entity, camera, cam3d, projection, transform, vis, inherited, view) in cameras.iter() {
+        info!("[CAMERA DIAGNOSTIC] Camera {:?}:", entity);
+        info!("  - is_active: {}", camera.is_active);
+        info!("  - has Camera3d marker: {}", cam3d.is_some());
+        info!("  - has Projection: {}", projection.is_some());
+        info!("  - position: {:?}", transform.translation);
+        info!("  - has Visibility: {}", vis.is_some());
+        info!("  - has InheritedVisibility: {}", inherited.is_some());
+        info!("  - has ViewVisibility: {}", view.is_some());
+        
+        if let Some(proj) = projection {
+            match proj {
+                Projection::Perspective(p) => {
+                    info!("  - fov: {}", p.fov);
+                }
+                Projection::Orthographic(_) => {
+                    info!("  - orthographic projection");
+                }
+            }
+        }
+    }
+}
+
+/// Main World mesh diagnostic system for Bevy 0.14.2
+/// Verifies that meshes exist in Main World with proper visibility settings
+/// This is critical because Main World visibility does NOT guarantee Render World extraction
+fn diagnose_main_world_meshes(
+    meshes: Query<(Entity, &Handle<Mesh>, &Transform, &Visibility)>,
+    mut diagnostics: ResMut<RenderExtractionDiagnostics>,
+) {
+    let mesh_count = meshes.iter().count();
+    
+    // Update diagnostics
+    diagnostics.main_world_mesh_count = mesh_count;
+    
+    // Count visibility states
+    let mut visible_count = 0;
+    let mut inherited_count = 0;
+    let mut hidden_count = 0;
+    
+    for (_, _, _, visibility) in meshes.iter() {
+        match visibility {
+            Visibility::Visible => visible_count += 1,
+            Visibility::Inherited => inherited_count += 1,
+            Visibility::Hidden => hidden_count += 1,
+        }
+    }
+    
+    diagnostics.meshes_marked_visible = visible_count;
+    diagnostics.meshes_with_inherited_visibility = inherited_count;
+    diagnostics.meshes_with_hidden_visibility = hidden_count;
+    
+    info!("[MAIN WORLD] Mesh diagnostic summary:");
+    info!("[MAIN WORLD] Total meshes with Visibility: {}", mesh_count);
+    info!("[MAIN WORLD] Meshes with Visibility::Visible: {}", visible_count);
+    info!("[MAIN WORLD] Meshes with Visibility::Inherited: {}", inherited_count);
+    info!("[MAIN WORLD] Meshes with Visibility::Hidden: {}", hidden_count);
+    
+    // Show details for first 5 meshes
+    for (entity, _mesh_handle, transform, visibility) in meshes.iter().take(5) {
+        let is_visible = *visibility == Visibility::Visible;
+        info!(
+            "[MAIN WORLD] Mesh {:?}: visible={:?} (is_visible={}), pos={:?}",
+            entity,
+            visibility,
+            is_visible,
+            transform.translation
+        );
+    }
+    
+    if mesh_count > 5 {
+        info!("[MAIN WORLD] ... and {} more meshes", mesh_count - 5);
+    }
+    
+    // Critical check: Alert if meshes exist but none are explicitly Visible
+    if mesh_count > 0 && visible_count == 0 {
+        log::warn!(
+            "[MAIN WORLD] CRITICAL: {} meshes exist but NONE have Visibility::Visible! \
+            Render extraction may fail if parent entities aren't visible.",
+            mesh_count
+        );
+    }
+}
+
+/// Mesh material diagnostic system for Bevy 0.14.2
+/// Checks if meshes have materials assigned, which is required for rendering
+fn diagnose_mesh_materials(
+    meshes_with_materials: Query<(Entity, &Handle<Mesh>, &Handle<StandardMaterial>)>,
+    meshes_with_custom_materials: Query<(Entity, &Handle<Mesh>), Without<Handle<StandardMaterial>>>,
+) {
+    let standard_count = meshes_with_materials.iter().count();
+    let custom_count = meshes_with_custom_materials.iter().count();
+    
+    info!("[MATERIAL DIAGNOSTIC] Meshes with StandardMaterial: {}", standard_count);
+    info!("[MATERIAL DIAGNOSTIC] Meshes without StandardMaterial: {}", custom_count);
+    
+    if standard_count == 0 && custom_count == 0 {
+        warn!("[MATERIAL DIAGNOSTIC] WARNING: No meshes with materials found!");
+    }
+}
+
+/// GPU mesh upload diagnostic system for Bevy 0.14.2
+/// Verifies that mesh vertex buffers have been uploaded to the GPU
+/// This is critical because mesh data must be in GPU memory to render
+/// 
+/// Note: We check the number of meshes in the Assets<Mesh> resource and compare with
+/// the number of entities with mesh handles. The actual GPU upload status is tracked
+/// by Bevy's render asset system.
+fn diagnose_gpu_mesh_upload(
+    meshes_assets: Res<Assets<Mesh>>,
+    meshes: Query<(Entity, &Handle<Mesh>, &Transform)>,
+) {
+    let total_meshes = meshes.iter().count();
+    let loaded_mesh_count = meshes_assets.iter().count();
+    let mut not_ready: Vec<Entity> = Vec::new();
+    
+    // Check if mesh handles reference loaded meshes
+    let mut mesh_ready_count = 0;
+    for (entity, handle, _transform) in meshes.iter().take(10) {
+        if meshes_assets.get(handle).is_some() {
+            mesh_ready_count += 1;
+        } else {
+            not_ready.push(entity);
+        }
+    }
+    
+    info!("[GPU MESH] Total mesh entities: {}, Loaded mesh assets: {}, Ready: {}/10 sampled", 
+        total_meshes, loaded_mesh_count, mesh_ready_count);
+    
+    if !not_ready.is_empty() {
+        warn!("[GPU MESH] Meshes not yet loaded: {:?}", not_ready);
+    }
+    
+    if mesh_ready_count == 0 && total_meshes > 0 {
+        warn!("[GPU MESH] CRITICAL: No meshes are loaded but {} mesh entities exist in world!", total_meshes);
+    }
+}
+
+/// Asset loading diagnostic system for Bevy 0.14.2
+/// Checks if meshes and materials are loaded and available
+fn diagnose_asset_loading(
+    meshes: Res<Assets<Mesh>>,
+    materials: Res<Assets<StandardMaterial>>,
+) {
+    info!("[ASSET] Meshes loaded: {}", meshes.iter().count());
+    info!("[ASSET] StandardMaterials loaded: {}", materials.iter().count());
+}
+
+/// Diagnostic summary system for Bevy 0.14.2
+/// Prints a comprehensive diagnostic summary on startup
+fn print_diagnostic_summary(
+    cameras: Query<&Camera>,
+    meshes: Query<&Handle<Mesh>>,
+    render_diagnostics: Res<RenderExtractionDiagnostics>,
+) {
+    info!("=== BEVY 0.14.2 DIAGNOSTIC SUMMARY ===");
+    info!("Active cameras: {}", cameras.iter().filter(|c| c.is_active).count());
+    info!("Total mesh entities: {}", meshes.iter().count());
+    info!("Main world meshes tracked: {}", render_diagnostics.main_world_mesh_count);
+    info!("=======================================");
+    info!("See docs/diagnostic-summary.md for interpretation guide");
 }

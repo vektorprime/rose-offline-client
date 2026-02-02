@@ -1,9 +1,9 @@
 // Effect mesh material shader using Bevy's standard Material pipeline
-// Updated for Bevy 0.13 syntax but maintaining correct vertex attribute locations
+// Updated for Bevy 0.14 syntax but maintaining correct vertex attribute locations
 
 #import bevy_pbr::mesh_bindings::mesh
 #import bevy_pbr::mesh_view_bindings::view
-#import bevy_pbr::mesh_functions::{mesh_normal_local_to_world, mesh_position_local_to_world, get_model_matrix}
+#import bevy_pbr::mesh_functions::{mesh_normal_local_to_world, mesh_position_local_to_world, get_world_from_local}
 
 struct EffectMeshMaterialData {
     flags: u32,
@@ -20,6 +20,10 @@ var<uniform> material: EffectMeshMaterialData;
 var base_texture: texture_2d<f32>;
 @group(2) @binding(2)
 var base_sampler: sampler;
+@group(2) @binding(3)
+var animation_texture: texture_2d<f32>;
+@group(2) @binding(4)
+var animation_sampler: sampler;
 
 struct Vertex {
     @location(0) position: vec3<f32>,
@@ -38,12 +42,12 @@ struct VertexOutput {
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
-    let model = get_model_matrix(vertex.instance_index);
+    let model = get_world_from_local(vertex.instance_index);
 
     out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
     out.world_normal = mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
     out.uv = vertex.uv;
-    out.clip_position = view.view_proj * out.world_position;
+    out.clip_position = view.clip_from_world * out.world_position;
     return out;
 }
 

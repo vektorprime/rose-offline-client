@@ -398,6 +398,7 @@ impl<'w> DragAndDropSlot<'w> {
                         stroke: Stroke::NONE,
                         fill_texture_id: egui::TextureId::default(),
                         uv: egui::Rect::ZERO,
+                        blur_width: 0.0,
                     }));
 
                     ui.painter().add(Shape::galley(
@@ -443,6 +444,7 @@ impl<'w> DragAndDropSlot<'w> {
                     },
                     fill_texture_id: egui::TextureId::default(),
                     uv: egui::Rect::ZERO,
+                    blur_width: 0.0,
                 }));
             }
         }

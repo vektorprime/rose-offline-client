@@ -105,6 +105,10 @@ pub use debug_rendering_system::{
     zone_entity_visibility_diagnostics,
     parent_child_visibility_diagnostics,
     zone_component_lifecycle_diagnostics,
+    diagnose_render_world_extraction,
+    diagnose_render_phase,
+    diagnose_camera_entity_distances,
+    verify_material_plugins,
 };
 pub use directional_light_system::directional_light_system;
 pub use effect_system::effect_system;

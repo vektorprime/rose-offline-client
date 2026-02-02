@@ -176,7 +176,7 @@ fn create_pending_nametag(
         .map(|x| x.format.color)
         .map(|x| {
             let [r, g, b, _] = x.to_array().map(|c| c as f32 / 255.0);
-            Color::rgb_linear(r, g, b)
+            Color::linear_rgb(r, g, b)
         })
         .collect();
     let galley = egui_context

@@ -1,5 +1,5 @@
 // Particle shader using storage buffers for GPU-driven rendering
-// Reverted from mesh-based to storage buffer approach (Bevy 0.11 style with 0.13 syntax)
+// Reverted from mesh-based to storage buffer approach (Bevy 0.11 style with 0.14 syntax)
 
 #import bevy_render::view::View
 
@@ -11,13 +11,13 @@ struct SizeBuffer { data: array<vec2<f32>>, };
 struct ColorBuffer { data: array<vec4<f32>>, };
 struct TextureBuffer { data: array<vec4<f32>>, };
 
-@group(1) @binding(0)
+@group(3) @binding(0)
 var<storage, read> positions: PositionBuffer;
-@group(1) @binding(1)
+@group(3) @binding(1)
 var<storage, read> sizes: SizeBuffer;
-@group(1) @binding(2)
+@group(3) @binding(2)
 var<storage, read> colors: ColorBuffer;
-@group(1) @binding(3)
+@group(3) @binding(3)
 var<storage, read> textures: TextureBuffer;
 @group(2) @binding(0)
 var base_color_texture: texture_2d<f32>;
@@ -50,15 +50,13 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 
 #ifdef PARTICLE_BILLBOARD_Y_AXIS
   let camera_right =
-    normalize(vec3<f32>(view.view_proj.x.x, 0.0, view.view_proj.z.x));
+    normalize(vec3<f32>(view.world_from_view[0].x, 0.0, view.world_from_view[0].z));
   let camera_up = vec3<f32>(0.0, 1.0, 0.0);
 #else
 
 #ifdef PARTICLE_BILLBOARD_FULL
-  let camera_right =
-    normalize(vec3<f32>(view.view_proj.x.x, view.view_proj.y.x, view.view_proj.z.x));
-  let camera_up =
-    normalize(vec3<f32>(view.view_proj.x.y, view.view_proj.y.y, view.view_proj.z.y));
+  let camera_right = view.world_from_view[0].xyz;
+  let camera_up = view.world_from_view[1].xyz;
 #else
 
   let camera_right = vec3<f32>(1.0, 0.0, 0.0);
@@ -86,7 +84,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     (camera_up * vertex_position.y * size.y);
 
   var out: VertexOutput;
-  out.position = view.view_proj * vec4<f32>(world_space, 1.0);
+  out.position = view.clip_from_world * vec4<f32>(world_space, 1.0);
   out.color = colors.data[particle_idx];
 
   let texture = textures.data[particle_idx];

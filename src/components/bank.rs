@@ -1,4 +1,4 @@
-use bevy::ecs::prelude::Component;
+use bevy::prelude::Component;
 
 use rose_data::Item;
 

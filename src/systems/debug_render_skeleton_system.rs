@@ -1,4 +1,5 @@
 use bevy::{
+    color::palettes::css::{GRAY, PINK, PURPLE},
     hierarchy::Parent,
     prelude::{Color, Gizmos, GlobalTransform, Query, Res},
     render::mesh::skinning::SkinnedMesh,
@@ -29,7 +30,7 @@ pub fn debug_render_skeleton_system(
                             translation,
                             parent_transform.translation(),
                             Color::WHITE,
-                            Color::GRAY,
+                            Color::from(GRAY),
                         );
                     }
                 }
@@ -37,7 +38,7 @@ pub fn debug_render_skeleton_system(
                 if debug_render_config.bone_up {
                     let start = translation;
                     let end = translation + rotation.mul_vec3([0.0, 0.0, -0.2].into());
-                    gizmos.line_gradient(start, end, Color::PINK, Color::PURPLE);
+                    gizmos.line_gradient(start, end, Color::from(PINK), Color::from(PURPLE));
                 }
             }
         }

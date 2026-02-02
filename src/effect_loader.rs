@@ -264,7 +264,6 @@ fn spawn_particle(
                         GlobalTransform::default(),
                         Visibility::default(),
                         InheritedVisibility::default(),
-                        ViewVisibility::default(),
                         NoFrustumCulling, // AABB culling is broken for particles
                     ));
 

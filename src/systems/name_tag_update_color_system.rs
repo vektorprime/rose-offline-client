@@ -1,4 +1,5 @@
 use bevy::{
+    color::Srgba,
     ecs::query::QueryData,
     prelude::{Changed, Children, Color, Or, Parent, Query, With},
 };
@@ -38,9 +39,9 @@ pub fn name_tag_update_color_system(
                     .get(parent.get())
                     .map_or(false, |team| team.id != player.team.id)
                 {
-                    Color::RED
+                    Color::Srgba(Srgba::RED)
                 } else {
-                    Color::WHITE
+                    Color::Srgba(Srgba::WHITE)
                 }
             }
             NameTagType::Monster => {
@@ -51,7 +52,7 @@ pub fn name_tag_update_color_system(
                 )
                 .to_array();
 
-                Color::rgb_linear(
+                Color::linear_rgb(
                     color[0] as f32 / 255.0,
                     color[1] as f32 / 255.0,
                     color[2] as f32 / 255.0,

@@ -157,7 +157,7 @@ pub fn global_sound_system(
             global_sound.streaming_sound = Some(streaming_sound);
         } else {
             let load_state = asset_server.get_load_state(&global_sound.asset_handle);
-            if matches!(load_state, Some(LoadState::Failed) | Some(LoadState::NotLoaded)) {
+            if matches!(load_state, Some(LoadState::Failed(_)) | Some(LoadState::NotLoaded)) {
                 global_sound.asset_handle = Handle::default();
 
                 if !global_sound.repeating {

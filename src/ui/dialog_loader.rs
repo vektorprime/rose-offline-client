@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{Asset, AssetId, AssetLoader, io::Reader, BoxedFuture, LoadContext},
+    asset::{AssetId, AssetLoader, io::Reader, LoadContext},
     prelude::{AssetEvent, Assets, EventReader, Local, Res, ResMut},
 };
 
@@ -20,13 +20,12 @@ impl AssetLoader for DialogLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    fn load<'a, 'b>(
+    async fn load<'a>(
         &'a self,
-        reader: &'a mut Reader,
+        reader: &'a mut Reader<'_>,
         _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'b>,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
+        load_context: &'a mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
             let path = load_context.path().to_string_lossy().to_string();
             
             // SAFETY: This is only for diagnostic logging during single-threaded asset loading
@@ -60,7 +59,6 @@ impl AssetLoader for DialogLoader {
             let bytes_str = std::str::from_utf8(&bytes)?;
             let dialog: Dialog = quick_xml::de::from_str(bytes_str)?;
             Ok(dialog)
-        })
     }
 
     fn extensions(&self) -> &[&str] {

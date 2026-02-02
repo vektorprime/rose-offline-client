@@ -1,4 +1,4 @@
-use bevy::asset::{AssetLoader, BoxedFuture, io::Reader, LoadContext};
+use bevy::asset::{AssetLoader, io::Reader, LoadContext};
 use bevy::tasks::futures_lite::AsyncReadExt;
 use lewton::{
     audio::AudioReadError, inside_ogg::OggStreamReader, samples::InterleavedSamples, VorbisError,
@@ -16,23 +16,21 @@ impl AssetLoader for OggLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    fn load<'a, 'b>(
+    async fn load<'a>(
         &'a self,
-        reader: &'a mut Reader,
+        reader: &'a mut Reader<'_>,
         _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'b>,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut bytes = Vec::new();
-            reader.read_to_end(&mut bytes).await?;
-            Ok(AudioSource {
-                bytes: bytes.into(),
-                decoded: None,
-                create_streaming_source_fn: |audio_source| {
-                    OggAudioSource::new(audio_source)
-                        .map(|source| Box::new(source) as Box<dyn StreamingAudioSource + Send + Sync>)
-                },
-            })
+        _load_context: &'a mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await?;
+        Ok(AudioSource {
+            bytes: bytes.into(),
+            decoded: None,
+            create_streaming_source_fn: |audio_source| {
+                OggAudioSource::new(audio_source)
+                    .map(|source| Box::new(source) as Box<dyn StreamingAudioSource + Send + Sync>)
+            },
         })
     }
 

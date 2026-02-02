@@ -1,7 +1,7 @@
 // Minimal object material shader - ultra simplified
 #import bevy_pbr::mesh_view_bindings::view
 #import bevy_pbr::mesh_bindings::mesh
-#import bevy_pbr::mesh_functions::{mesh_position_local_to_world, mesh_normal_local_to_world, get_model_matrix}
+#import bevy_pbr::mesh_functions::{mesh_position_local_to_world, mesh_normal_local_to_world, get_world_from_local}
 
 #ifdef SKINNED
 #import bevy_pbr::skinning::{skin_normals, skin_model}
@@ -21,29 +21,6 @@ var lightmap_sampler: sampler;
 var specular_texture: texture_2d<f32>;
 @group(2) @binding(6)
 var specular_sampler: sampler;
-
-// Zone lighting at group 3
-@group(3) @binding(0)
-var<uniform> zone_lighting: ZoneLighting;
-
-struct ZoneLighting {
-    map_ambient_color: vec4<f32>,
-    character_ambient_color: vec4<f32>,
-    character_diffuse_color: vec4<f32>,
-    light_direction: vec4<f32>,
-    fog_color: vec4<f32>,
-    fog_density: f32,
-    fog_min_density: f32,
-    fog_max_density: f32,
-    fog_alpha_range_start: f32,
-    fog_alpha_range_end: f32,
-    fog_min_height: f32,
-    fog_max_height: f32,
-    fog_height_density: f32,
-    time_of_day: f32,
-    day_color: vec4<f32>,
-    night_color: vec4<f32>,
-};
 
 struct Vertex {
     @location(0) position: vec3<f32>,
@@ -73,14 +50,14 @@ struct VertexOutput {
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
 #ifdef SKINNED
-    var model = skin_model(vertex.joint_indices, vertex.joint_weights);
-    out.world_normal = skin_normals(model, vertex.normal);
+    var world_from_local = skin_model(vertex.joint_indices, vertex.joint_weights);
+    out.world_normal = skin_normals(world_from_local, vertex.normal);
 #else
-    var model = get_model_matrix(vertex.instance_index);
+    var world_from_local = get_world_from_local(vertex.instance_index);
     out.world_normal = mesh_normal_local_to_world(vertex.normal, vertex.instance_index);
 #endif
-    out.world_position = mesh_position_local_to_world(model, vec4<f32>(vertex.position, 1.0));
-    out.clip_position = view.view_proj * out.world_position;
+    out.world_position = mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
+    out.clip_position = view.clip_from_world * out.world_position;
     out.uv = vertex.uv;
 #ifdef VERTEX_UVS_LIGHTMAP
     out.lightmap_uv = vertex.lightmap_uv;
@@ -133,7 +110,7 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     }
 
     // Simple ambient lighting
-    let ambient = zone_lighting.map_ambient_color.rgb;
+    let ambient = vec3<f32>(0.6, 0.6, 0.6);
     output_color = vec4<f32>(output_color.rgb * ambient, output_color.a);
 
     return output_color;

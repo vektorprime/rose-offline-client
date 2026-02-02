@@ -2,6 +2,7 @@ use std::{cmp::Ordering, ops::Range};
 
 use bevy::{
     asset::{AssetId, Handle, UntypedAssetId, UntypedHandle, load_internal_asset},
+    math::Mat4,
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         query::ROQueryItem,
@@ -11,18 +12,26 @@ use bevy::{
     },
     pbr::MeshPipelineKey,
     prelude::{
-        App, Assets, Color, Commands, Component, FromWorld, GlobalTransform, InheritedVisibility, IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3, ViewVisibility, World
+        App, Assets, Color, Commands, Component, Entity, FromWorld, GlobalTransform, InheritedVisibility, IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3, ViewVisibility, World
     },
     render::{
-        Extract, ExtractSchedule, Render, RenderApp, RenderSet, render_asset::RenderAssets, render_phase::{
+        Extract, ExtractSchedule, Render, RenderApp, RenderSet,
+        render_asset::RenderAssets,
+        render_phase::{
             AddRenderCommand, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult,
-            RenderPhase, SetItemPipeline, TrackedRenderPass,
-        }, render_resource::{
-            BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferBindingType, BufferUsages, BufferVec, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, FragmentState, FrontFace, MultisampleState, PipelineCache, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipelineDescriptor, SamplerBindingType, Shader, ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode
-        }, renderer::{RenderDevice, RenderQueue}, texture::{BevyDefault, Image}, view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms}
+            SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
+        },
+        render_resource::{
+            BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferBindingType, BufferUsages, RawBufferVec, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, FragmentState, FrontFace, MultisampleState, PipelineCache, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipelineDescriptor, SamplerBindingType, Shader, ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode
+        },
+        renderer::{RenderDevice, RenderQueue},
+        texture::{BevyDefault, GpuImage, Image},
+        view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms}
     },
-    utils::{HashMap, Uuid},
+    utils::HashMap,
+    color::ColorToComponents,
 };
+use uuid::Uuid;
 use std::any::TypeId;
 use bytemuck::{Pod, Zeroable};
 
@@ -46,7 +55,7 @@ impl Plugin for WorldUiRenderPlugin {
             Shader::from_wgsl
         );
 
-        if let Ok(render_app) = app.get_sub_app_mut(RenderApp) {
+        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app
                 .init_resource::<ExtractedWorldUi>()
                 .init_resource::<WorldUiMeta>()
@@ -59,9 +68,8 @@ impl Plugin for WorldUiRenderPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        let render_app = match app.get_sub_app_mut(RenderApp) {
-            Ok(render_app) => render_app,
-            Err(_) => return,
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
+            return;
         };
 
         render_app.init_resource::<WorldUiPipeline>();
@@ -150,14 +158,14 @@ struct WorldUiVertex {
 
 #[derive(Resource)]
 pub struct WorldUiMeta {
-    vertices: BufferVec<WorldUiVertex>,
+    vertices: RawBufferVec<WorldUiVertex>,
     view_bind_group: Option<BindGroup>,
 }
 
 impl Default for WorldUiMeta {
     fn default() -> Self {
         Self {
-            vertices: BufferVec::new(BufferUsages::VERTEX),
+            vertices: RawBufferVec::new(BufferUsages::VERTEX),
             view_bind_group: None,
         }
     }
@@ -437,12 +445,13 @@ pub fn queue_world_ui_meshes(
     mut pipelines: ResMut<SpecializedRenderPipelines<WorldUiPipeline>>,
     pipeline_cache: Res<PipelineCache>,
     msaa: Res<Msaa>,
-    mut views: Query<(&ExtractedView, &mut RenderPhase<Transparent3d>)>,
+    views: Query<(Entity, &ExtractedView)>,
+    mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
     mut extracted_world_ui: ResMut<ExtractedWorldUi>,
     mut world_ui_meta: ResMut<WorldUiMeta>,
     mut commands: Commands,
     mut image_bind_groups: ResMut<ImageBindGroups>,
-    gpu_images: Res<RenderAssets<Image>>,
+    gpu_images: Res<RenderAssets<GpuImage>>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     view_uniforms: Res<ViewUniforms>,
@@ -469,13 +478,19 @@ pub fn queue_world_ui_meshes(
         });
     }
 
-    for (view, mut transparent_phase) in views.iter_mut() {
+    // Query for views and look up their phases from the resource
+    for (view_entity, view) in views.iter() {
+        let Some(transparent_phase) = transparent_render_phases.get_mut(&view_entity) else {
+            continue;
+        };
+
         let view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
             | MeshPipelineKey::from_hdr(view.hdr);
         let pipeline = pipelines.specialize(&pipeline_cache, &world_ui_pipeline, view_key);
-        let inverse_view_transform = view.transform.compute_matrix().inverse();
+        let view_matrix = view.world_from_view.compute_matrix();
+        let inverse_view_transform = view_matrix.inverse();
         let inverse_view_row_2 = inverse_view_transform.row(2);
-        let view_proj = view.projection * inverse_view_transform;
+        let view_proj = view.clip_from_world.unwrap_or(Mat4::IDENTITY);
         let view_width = view.viewport.z as f32;
         let view_height = view.viewport.w as f32;
 
@@ -546,7 +561,7 @@ pub fn queue_world_ui_meshes(
             ];
 
             const QUAD_INDICES: [usize; 6] = [0, 2, 3, 0, 1, 2];
-            let color = rect.color.as_linear_rgba_f32();
+            let color = rect.color.to_linear().to_f32_array();
 
             let item_start = world_ui_meta.vertices.len() as u32;
             for i in QUAD_INDICES {
@@ -586,13 +601,13 @@ pub fn queue_world_ui_meshes(
                     )
                 });
 
-            transparent_phase.add(Transparent3d {
+            transparent_phase.items.push(Transparent3d {
                 entity: visible_entity,
                 draw_function: draw_alpha_mask,
                 pipeline,
                 distance: inverse_view_row_2.dot(rect.world_position.extend(1.0)) + 999999.0,
                 batch_range: 0..1,
-                dynamic_offset: None,
+                extra_index: bevy::render::render_phase::PhaseItemExtraIndex(0),
             });
         }
     }

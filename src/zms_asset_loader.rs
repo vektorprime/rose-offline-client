@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::{
-    asset::{io::Reader, Asset, AssetLoader, BoxedFuture, LoadContext},
+    asset::{io::Reader, Asset, AssetLoader, LoadContext},
     prelude::Mesh,
     reflect::TypePath,
     render::{
@@ -36,16 +36,15 @@ impl AssetLoader for ZmsAssetLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    fn load<'a, 'b>(
+    async fn load<'a>(
         &'a self,
-        reader: &'a mut Reader,
+        reader: &'a mut Reader<'_>,
         _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'b>,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut bytes = Vec::new();
-            use bevy::tasks::futures_lite::AsyncReadExt;
-            reader.read_to_end(&mut bytes).await?;
+        load_context: &'a mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut bytes = Vec::new();
+        use bevy::tasks::futures_lite::AsyncReadExt;
+        reader.read_to_end(&mut bytes).await?;
             
             let asset_path = load_context.path().to_string_lossy();
             //info!("[ASSET LIFECYCLE] Loading ZMS mesh asset: {}", asset_path);
@@ -135,7 +134,6 @@ impl AssetLoader for ZmsAssetLoader {
                 }
                 Err(error) => Err(error),
             }
-        })
     }
 
     fn extensions(&self) -> &[&str] {
@@ -156,16 +154,15 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    fn load<'a, 'b>(
+    async fn load<'a>(
         &'a self,
-        reader: &'a mut Reader,
+        reader: &'a mut Reader<'_>,
         _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'b>,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut bytes = Vec::new();
-            use bevy::tasks::futures_lite::AsyncReadExt;
-            reader.read_to_end(&mut bytes).await?;
+        load_context: &'a mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut bytes = Vec::new();
+        use bevy::tasks::futures_lite::AsyncReadExt;
+        reader.read_to_end(&mut bytes).await?;
 
             match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(mut zms) => {
@@ -251,7 +248,6 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
                 }
                 Err(error) => Err(error),
             }
-        })
     }
 
     fn extensions(&self) -> &[&str] {

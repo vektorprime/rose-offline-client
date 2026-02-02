@@ -1,7 +1,6 @@
 use bevy::{
     asset::{Asset, AssetLoader, io::Reader, LoadContext},
     reflect::{TypePath},
-    utils::BoxedFuture,
     tasks::futures_lite::AsyncReadExt,
     window::CursorIcon,
 };
@@ -19,23 +18,21 @@ impl AssetLoader for ExeResourceLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    fn load<'a, 'b>(
+    async fn load<'a>(
         &'a self,
-        reader: &'a mut Reader,
+        reader: &'a mut Reader<'_>,
         _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'b>,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let mut bytes = Vec::new();
-            reader.read_to_end(&mut bytes).await?;
+        _load_context: &'a mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await?;
 
-            // TODO: CursorIcon::Custom was removed in Bevy 0.13
-            // Need to find new way to load custom cursors
-            // For now, just return Default cursor
-            let cursor = CursorIcon::Default;
+        // TODO: CursorIcon::Custom was removed in Bevy 0.13
+        // Need to find new way to load custom cursors
+        // For now, just return Default cursor
+        let cursor = CursorIcon::Default;
 
-            Ok(ExeResourceCursor { cursor })
-        })
+        Ok(ExeResourceCursor { cursor })
     }
 
     fn extensions(&self) -> &[&str] {

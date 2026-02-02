@@ -1,14 +1,27 @@
-use bevy::prelude::{Color, Entity, Resource};
+use bevy::{
+    color::Srgba,
+    prelude::{Color, Entity, Resource},
+};
+
+/// Resource to track render extraction diagnostics between Main World and Render World
+#[derive(Resource, Default)]
+pub struct RenderExtractionDiagnostics {
+    pub main_world_mesh_count: usize,
+    pub last_extracted_count: usize,
+    pub meshes_marked_visible: usize,
+    pub meshes_with_inherited_visibility: usize,
+    pub meshes_with_hidden_visibility: usize,
+}
 
 const DEBUG_RENDER_COLOR_LIST: [Color; 8] = [
-    Color::RED,
-    Color::GREEN,
-    Color::BLUE,
-    Color::YELLOW,
-    Color::CYAN,
-    Color::FUCHSIA,
-    Color::WHITE,
-    Color::BLACK,
+    Color::Srgba(Srgba::RED),
+    Color::Srgba(Srgba::GREEN),
+    Color::Srgba(Srgba::BLUE),
+    Color::Srgba(Srgba::new(1.0, 1.0, 0.0, 1.0)), // YELLOW
+    Color::Srgba(Srgba::new(0.0, 1.0, 1.0, 1.0)), // CYAN
+    Color::Srgba(Srgba::new(1.0, 0.0, 1.0, 1.0)), // FUCHSIA/MAGENTA
+    Color::Srgba(Srgba::WHITE),
+    Color::Srgba(Srgba::BLACK),
 ];
 
 #[derive(Default, Resource)]

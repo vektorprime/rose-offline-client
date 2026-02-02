@@ -211,7 +211,7 @@ pub fn asset_loading_validation_system(
                     log::debug!("[ASSET VALIDATION] Entity {:?} mesh still loading", entity);
                 }
                 LoadState::Loaded => {}
-                LoadState::Failed => {
+                LoadState::Failed(_) => {
                     log::error!("[ASSET VALIDATION] Entity {:?} mesh load FAILED", entity);
                 }
                 _ => {}

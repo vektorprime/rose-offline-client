@@ -106,6 +106,7 @@ pub fn ui_item_drop_name_system(
             stroke: style.visuals.window_stroke,
             fill_texture_id: egui::TextureId::default(),
             uv: egui::Rect::ZERO,
+            blur_width: 0.0,
         });
         tooltip_painter.add(egui::epaint::TextShape {
             pos: visible_name.pos,

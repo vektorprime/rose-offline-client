@@ -1,6 +1,6 @@
 use bevy::{
     prelude::*,
-    render::render_resource::*,
+    render::{alpha::AlphaMode, render_resource::*},
     asset::{load_internal_asset, Handle},
 };
 
@@ -40,5 +40,6 @@ impl Plugin for DamageDigitMaterialPlugin {
         );
 
         app.add_plugins(MaterialPlugin::<DamageDigitMaterial>::default());
+        bevy::log::info!("[MATERIAL PLUGIN] DamageDigitMaterial plugin built");
     }
 }

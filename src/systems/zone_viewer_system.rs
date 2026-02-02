@@ -15,14 +15,16 @@ pub fn zone_viewer_enter_system(
     query_cameras: Query<Entity, With<Camera3d>>,
     mut ui_state_debug_windows: ResMut<UiStateDebugWindows>,
 ) {
-    // Reset camera
-    let camera_position = Vec3::new(5120.0, 50.0, -5120.0);
+    // Reset camera to optimal zone viewing position
+    // Zone center is approximately (5200.0, 0.0, -5200.0)
+    let camera_position = Vec3::new(5000.0, 150.0, -5000.0);
     let camera_yaw: f32 = -45.0;
-    let camera_pitch: f32 = -20.0;
+    let camera_pitch: f32 = -30.0;  // Slightly steeper angle to see terrain
 
-    info!("[CAMERA FIX] Initializing zone viewer camera");
+    info!("[CAMERA FIX] Initializing zone viewer camera for Bevy 0.14");
     info!("[CAMERA FIX] Camera position: {:?}", camera_position);
-    info!("[CAMERA FIX] Camera yaw: {} degrees (looking towards negative Z)", camera_yaw);
+    info!("[CAMERA FIX] Looking toward zone center: (5200.0, 0.0, -5200.0)");
+    info!("[CAMERA FIX] Camera yaw: {} degrees", camera_yaw);
     info!("[CAMERA FIX] Camera pitch: {} degrees", camera_pitch);
 
     // Calculate forward vector for verification

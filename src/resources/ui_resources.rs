@@ -326,7 +326,7 @@ pub fn update_ui_resources(
                 texture.size = Some(image.size().as_vec2());
             } else if matches!(
                 asset_server.get_load_state(&texture.handle),
-                Some(LoadState::Failed)
+                Some(LoadState::Failed(_))
             ) {
                 texture.size = Some(Vec2::ZERO);
             } else {
@@ -344,7 +344,7 @@ pub fn update_ui_resources(
             ui_cursor.cursor = Some(resource_cursor.cursor.clone());
         } else if matches!(
             asset_server.get_load_state(&ui_cursor.handle),
-            Some(LoadState::Failed)
+            Some(LoadState::Failed(_))
         ) {
             ui_cursor.cursor = Some(CursorIcon::Default);
         } else {
@@ -361,7 +361,7 @@ pub fn update_ui_resources(
                             texture.size = Some(image.size().as_vec2());
                         } else if matches!(
                             asset_server.get_load_state(&texture.handle),
-                            Some(LoadState::Failed)
+                            Some(LoadState::Failed(_))
                         ) {
                             texture.size = Some(Vec2::ZERO);
                         } else {
@@ -380,7 +380,7 @@ pub fn update_ui_resources(
                     }
                 }
             }
-        } else if !matches!(asset_server.get_load_state(skill_tree), Some(LoadState::Failed)) {
+        } else if !matches!(asset_server.get_load_state(skill_tree), Some(LoadState::Failed(_))) {
             loaded_all = false;
         }
     };

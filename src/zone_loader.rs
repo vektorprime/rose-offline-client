@@ -271,7 +271,7 @@ pub mod memory_monitor {
 }
 
 use memory_monitor::{MemorySnapshot, log_memory_status};
-use bevy::ecs::system::Query;
+use bevy::prelude::Query;
 use bevy::hierarchy::Children;
 use bevy::prelude::{Without};
 use uuid::Uuid;
@@ -279,14 +279,14 @@ use uuid::Uuid;
 use anyhow::Result;
 use arrayvec::ArrayVec;
 use bevy::{
-    asset::{Asset, AssetLoader, Assets, BoxedFuture, io::Reader, LoadContext, LoadState},
+    asset::{Asset, AssetLoader, Assets, io::Reader, LoadContext, LoadState},
     ecs::system::SystemParam,
     hierarchy::{BuildChildren, DespawnRecursiveExt},
     math::{Quat, Vec2, Vec3},
     pbr::{NotShadowCaster, NotShadowReceiver},
     prelude::{
         AssetServer, Color, Commands, Entity, EventReader, EventWriter, GlobalTransform, Handle,
-        Local, Res, ResMut, Resource, Transform, UntypedHandle, Visibility, With,
+        Local, Res, ResMut, Resource, Transform, TransformBundle, UntypedHandle, Visibility, With,
     },
     reflect::TypePath,
     render::{
@@ -294,10 +294,9 @@ use bevy::{
         primitives::Aabb,
         render_asset::RenderAssetUsages,
         texture::Image,
-        view::{NoFrustumCulling, ViewVisibility, InheritedVisibility, VisibilityBundle},
+        view::{NoFrustumCulling, ViewVisibility, InheritedVisibility, VisibilityBundle, RenderLayers},
     },
     tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
-    transform::TransformBundle,
 };
 use bevy_rapier3d::prelude::{
     AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, RigidBody,
@@ -563,30 +562,28 @@ impl AssetLoader for ZoneLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    fn load<'a>(
+    async fn load<'a>(
         &'a self,
         reader: &'a mut Reader<'_>,
         _settings: &'a Self::Settings,
         load_context: &'a mut LoadContext<'_>,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            log::info!("[ZONE LOADER ASSET LOADER] ===========================================");
-            log::info!("[ZONE LOADER ASSET LOADER] ZoneLoader::load called");
-            log::info!("[ZONE LOADER ASSET LOADER] ===========================================");
+    ) -> Result<Self::Asset, Self::Error> {
+        log::info!("[ZONE LOADER ASSET LOADER] ===========================================");
+        log::info!("[ZONE LOADER ASSET LOADER] ZoneLoader::load called");
+        log::info!("[ZONE LOADER ASSET LOADER] ===========================================");
 
-            let mut bytes = Vec::new();
-            log::info!("[ZONE LOADER ASSET LOADER] Reading bytes from reader...");
-            reader.read_to_end(&mut bytes).await?;
-            log::info!("[ZONE LOADER ASSET LOADER] Read {} bytes", bytes.len());
+        let mut bytes = Vec::new();
+        log::info!("[ZONE LOADER ASSET LOADER] Reading bytes from reader...");
+        reader.read_to_end(&mut bytes).await?;
+        log::info!("[ZONE LOADER ASSET LOADER] Read {} bytes", bytes.len());
 
-            let zone_id = ZoneId::new(bytes[0] as u16).unwrap();
-            log::info!("[ZONE LOADER ASSET LOADER] Zone ID parsed: {}", zone_id.get());
+        let zone_id = ZoneId::new(bytes[0] as u16).unwrap();
+        log::info!("[ZONE LOADER ASSET LOADER] Zone ID parsed: {}", zone_id.get());
 
-            log::info!("[ZONE LOADER ASSET LOADER] Calling load_zone...");
-            let result = load_zone(zone_id, load_context).await;
-            log::info!("[ZONE LOADER ASSET LOADER] load_zone completed with result: {:?}", result.is_ok());
-            result
-        })
+        log::info!("[ZONE LOADER ASSET LOADER] Calling load_zone...");
+        let result = load_zone(zone_id, load_context).await;
+        log::info!("[ZONE LOADER ASSET LOADER] load_zone completed with result: {:?}", result.is_ok());
+        result
     }
 
     fn extensions(&self) -> &[&str] {
@@ -1100,12 +1097,12 @@ impl LoadingZone {
         
         use bevy::asset::LoadState;
         let all_loaded = self.zone_assets.iter().all(|handle| {
-            matches!(asset_server.get_load_state(handle.clone()), Some(LoadState::Loaded))
+            matches!(asset_server.get_load_state(handle.id()), Some(LoadState::Loaded))
         });
         
         if !all_loaded {
             let loaded_count = self.zone_assets.iter()
-                .filter(|h| matches!(asset_server.get_load_state((*h).clone()), Some(LoadState::Loaded)))
+                .filter(|h| matches!(asset_server.get_load_state(h.id()), Some(LoadState::Loaded)))
                 .count();
             log::debug!("[ASSET LOADING] {}/{} zone assets loaded", loaded_count, self.zone_assets.len());
         }
@@ -1417,7 +1414,7 @@ pub fn zone_loader_system(
                             loading_zone.state = LoadingZoneState::Spawned;
                             index += 1;
                         }
-                        None | Some(LoadState::Failed) => {
+                        None | Some(LoadState::Failed(_)) => {
                             log::warn!("[ZONE LOADER SYSTEM] Zone {} failed to load (LoadState: {:?}), removing from queue", 
                                 zone_path, spawn_zone_params.asset_server.get_load_state(&loading_zone.handle));
                             
@@ -1786,32 +1783,12 @@ pub fn zone_loaded_from_vfs_system(
 }
 
 pub fn force_zone_visibility_system(
-    mut zone_query: Query<(Entity, &mut Visibility, &mut ViewVisibility), With<Zone>>,
-    children_query: Query<&Children>,
-    mut child_visibility_query: Query<(&mut Visibility, &mut ViewVisibility), Without<Zone>>,
+    mut zone_query: Query<&mut Visibility, With<Zone>>,
 ) {
-    for (zone_entity, mut visibility, mut view_visibility) in zone_query.iter_mut() {
-        *visibility = Visibility::Visible;
-        view_visibility.set();
-
-        // Recursively set visibility on all children
-        force_visibility_recursive(zone_entity, &children_query, &mut child_visibility_query);
-    }
-}
-
-fn force_visibility_recursive(
-    entity: Entity,
-    children_query: &Query<&Children>,
-    visibility_query: &mut Query<(&mut Visibility, &mut ViewVisibility), Without<Zone>>,
-) {
-    if let Ok(children) = children_query.get(entity) {
-        for child in children.iter() {
-            if let Ok((mut visibility, mut view_visibility)) = visibility_query.get_mut(*child) {
-                *visibility = Visibility::Visible;
-                view_visibility.set();
-            }
-            // Recurse into grandchildren
-            force_visibility_recursive(*child, children_query, visibility_query);
+    for mut visibility in zone_query.iter_mut() {
+        if *visibility != Visibility::Visible {
+            log::info!("[FORCE VISIBILITY] Forcing Zone to Visibility::Visible");
+            *visibility = Visibility::Visible;
         }
     }
 }
@@ -1880,7 +1857,7 @@ pub fn spawn_zone(
         let texture_count = water_material_textures.len();
         let material = standard_materials.add(bevy::pbr::StandardMaterial {
             base_color_texture: water_material_textures.first().cloned(),
-            unlit: false,
+            unlit: true,  // CHANGED: Make material unlit so it doesn't require lighting
             ..Default::default()
         });
         //info!("[MEMORY TRACKING] Water material created with {} textures", texture_count);
@@ -1895,17 +1872,13 @@ pub fn spawn_zone(
             Zone {
                 id: zone_data.zone_id,
             },
-            // FIX: Use VisibilityBundle + TransformBundle instead of SpatialBundle
-            // This ensures all visibility components are properly initialized for Bevy 0.13
-            VisibilityBundle {
-                visibility: Visibility::Visible,
-                inherited_visibility: InheritedVisibility::default(),
-                view_visibility: ViewVisibility::default(),
-            },
-            TransformBundle::from_transform(Transform::from_xyz(5200.0, 0.0, -5200.0)),
+            Visibility::Visible,
+            InheritedVisibility::default(),
+            Transform::from_xyz(5200.0, 0.0, -5200.0),
+            GlobalTransform::default(),
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
-            bevy::render::view::RenderLayers::layer(0),
+            RenderLayers::layer(0),
         ))
         .id();
     log::info!("[ZONE LOADER DEBUG] Spawned Zone entity {:?} with Visibility::Visible, NoFrustumCulling, and large Aabb", zone_entity);
@@ -2188,11 +2161,11 @@ fn spawn_skybox(
             }),
             Transform::from_scale(Vec3::splat(SKYBOX_MODEL_SCALE)),
             GlobalTransform::default(),
-            Visibility::Inherited,  // Inherited from parent zone
-            InheritedVisibility::default(),  // Required for visibility propagation
-            ViewVisibility::default(),  // REQUIRED: For Bevy 0.13 visibility system
+            Visibility::Visible,
+            InheritedVisibility::default(),
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            RenderLayers::layer(0),
         ))
         .id()
 }
@@ -2375,10 +2348,11 @@ fn spawn_terrain(
     }
 
     // Use first texture from tile_textures for StandardMaterial (simplified)
+    // FIX: Use unlit: true to ensure terrain is visible without requiring lights
     let base_texture = tile_textures.first().cloned();
     let material_handle = standard_materials.add(bevy::pbr::StandardMaterial {
         base_color_texture: base_texture,
-        unlit: false,
+        unlit: true,  // CHANGED: Make material unlit so it doesn't require lighting
         ..Default::default()
     });
 
@@ -2392,11 +2366,11 @@ fn spawn_terrain(
             material_handle,
             Transform::from_xyz(offset_x - 5200.0, 0.0, -offset_y + 5200.0),
             GlobalTransform::default(),
-            Visibility::Inherited,
+            Visibility::Visible,
             InheritedVisibility::default(),
-            ViewVisibility::default(),
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            RenderLayers::layer(0),
             NotShadowCaster,
             RigidBody::Fixed,
             Collider::trimesh(collider_verts, collider_indices),
@@ -2477,12 +2451,11 @@ fn spawn_water(
             water_material.clone(),
             Transform::default(),
             GlobalTransform::default(),
-            Visibility::Inherited,
+            Visibility::Visible,
             InheritedVisibility::default(),
-            ViewVisibility::default(),
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
-            bevy::render::view::RenderLayers::layer(0),
+            RenderLayers::layer(0),
             NotShadowCaster,
             NotShadowReceiver,
             RigidBody::Fixed,
@@ -2545,11 +2518,11 @@ fn spawn_object(
         }),
         object_transform,
         GlobalTransform::default(),
-        Visibility::Inherited,
-        InheritedVisibility::default(),
-        ViewVisibility::default(),
+            Visibility::Visible,
+            InheritedVisibility::default(),
         NoFrustumCulling,
         Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+        bevy::render::view::RenderLayers::layer(0),
         RigidBody::Fixed,
     ));
 
@@ -2649,6 +2622,7 @@ fn spawn_object(
             let lightmap_count = lightmap_texture.as_ref().is_some() as usize;
 
             // Simplified material using Bevy's StandardMaterial
+            // FIX: Use unlit: true to ensure objects are visible without requiring lights
             let material = standard_materials.add(bevy::pbr::StandardMaterial {
                 base_color_texture: if material_path.is_empty() || material_path == "" {
                     log::warn!("[SPAWN OBJECT DEBUG] Empty texture path for mesh_id {}, using fallback", mesh_id);
@@ -2656,7 +2630,7 @@ fn spawn_object(
                 } else {
                     Some(base_texture_handle.clone())
                 },
-                unlit: false,
+                unlit: true,  // CHANGED: Make material unlit so it doesn't require lighting
                 double_sided: zsc_material.two_sided,
                 ..Default::default()
             });
@@ -2724,12 +2698,11 @@ fn spawn_object(
                 material,
                 part_transform,
                 GlobalTransform::default(),
-                Visibility::Inherited,
-                InheritedVisibility::default(),
-                ViewVisibility::default(),
+            Visibility::Visible,
+            InheritedVisibility::default(),
                 NoFrustumCulling,
                 Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
-                bevy::render::view::RenderLayers::layer(0),
+                RenderLayers::layer(0),
                 NotShadowCaster,
                 ColliderParent::new(object_entity),
                 AsyncCollider(ComputedColliderShape::TriMesh),
@@ -2901,11 +2874,13 @@ fn spawn_animated_object(
             MeshAnimation::repeat(motion_handle, None),
             object_transform,
             GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
+            VisibilityBundle {
+                visibility: Visibility::Visible,
+                ..Default::default()
+            },
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            RenderLayers::layer(0),
             NotShadowCaster,
             AsyncCollider(ComputedColliderShape::TriMesh),
             CollisionGroups::new(COLLISION_GROUP_ZONE_OBJECT, COLLISION_FILTER_INSPECTABLE),
@@ -2954,10 +2929,10 @@ fn spawn_effect_object(
             },
             object_transform,
             GlobalTransform::from(object_transform),
-            Visibility::Inherited,  // Inherited from parent zone
-            InheritedVisibility::default(),  // Required for visibility propagation
-            ViewVisibility::default(),  // REQUIRED: For Bevy 0.13 visibility system
+            Visibility::Visible,
+            InheritedVisibility::default(),
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            RenderLayers::layer(0),
         ))
         .id();
 
@@ -3010,11 +2985,11 @@ fn spawn_sound_object(
             SoundRadius::new(sound_object.range as f32 / 10.0),
             object_transform,
             GlobalTransform::from(object_transform),
-            Visibility::Inherited,
+            Visibility::Visible,
             InheritedVisibility::default(),
-            ViewVisibility::default(),
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            RenderLayers::layer(0),
         ))
         .id();
     

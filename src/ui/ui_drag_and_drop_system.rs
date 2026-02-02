@@ -1,5 +1,4 @@
-use bevy::ecs::event::EventWriter;
-use bevy::prelude::{Local, ResMut, Resource};
+use bevy::prelude::{EventWriter, Local, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::components::ItemSlot;

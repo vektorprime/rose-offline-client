@@ -8,9 +8,9 @@ anyhow = "1.0.4"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 arrayvec = "0.7"
 async-trait = "0.1"
-bevy_egui = "=0.26"
-bevy-inspector-egui = "=0.24"
-bevy_rapier3d = "=0.26"
+bevy_egui = "=0.28"
+bevy-inspector-egui = "=0.25"
+bevy_rapier3d = "=0.27"
 bitflags = "2.3"
 bytemuck = { version = "1.7.0", features = [ "derive" ] }
 chrono = "0.4"
@@ -20,11 +20,11 @@ crossbeam-channel = "0.5"
 dashmap = "5.5"
 directories = "5.0"
 encase = "0.8"
-dolly = "0.4.2"
-egui = "0.26"
-egui_extras = "0.26"
+dolly = "0.6.0"
+egui = "0.28"
+egui_extras = "0.28"
 enum-map = { version = "2.0", features = ["serde"] }
-glam = "0.25"
+glam = "0.27"
 hound = "3.4"
 image = { version = "0.24", default-features = false, features = [ "dds", "ico", "tga", "png", "jpeg" ] }
 lazy_static = "1.4.0"
@@ -45,6 +45,7 @@ toml = "0.7.2"
 uuid = "1"
 quick-xml = { version = "0.26.0", features = ["serialize"] }
 regex = "1"
+renderdoc = "0.11"
 rose-data = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-data" }
 rose-data-irose = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-data-irose" }
 rose-file-readers = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-file-readers" }
@@ -54,18 +55,19 @@ rose-network-common = { path = "C:/Users/vicha/RustroverProjects/rose-offline/ro
 rose-network-irose = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-network-irose" }
 
 [dependencies.bevy]
-version = "=0.13.2"
+version = "=0.14.2"
 default-features = false
 features = [
-    "bevy_asset", 
-    "bevy_winit", 
-    "bevy_core_pipeline", 
-    "bevy_pbr", 
-    "bevy_render", 
-    "multi-threaded", 
-    "dds", 
-    "tga", 
-    "x11", 
+    "bevy_asset",
+    "bevy_winit",
+    "bevy_core_pipeline",
+    "bevy_pbr",
+    "bevy_render",
+    "bevy_state",
+    "multi_threaded",
+    "dds",
+    "tga",
+    "x11",
     "bevy_gizmos",
     # Profiling features - uncomment the ones you need:
      "trace_tracy",        # Enable Tracy profiler integration for CPU profiling

@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{io::Reader, AssetLoader, BoxedFuture, LoadContext},
+    asset::{io::Reader, AssetLoader, LoadContext},
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
@@ -22,18 +22,17 @@ impl AssetLoader for DdsImageLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    fn load<'a, 'b>(
+    async fn load<'a>(
         &'a self,
-        reader: &'a mut Reader,
+        reader: &'a mut Reader<'_>,
         _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'b>,
-    ) -> BoxedFuture<'a, Result<Self::Asset, Self::Error>> {
-        Box::pin(async move {
-            let asset_path = load_context.path().to_string_lossy().to_string();
-            
-            // Read all bytes from the reader
-            let mut bytes = Vec::new();
-            reader.read_to_end(&mut bytes).await?;
+        load_context: &'a mut LoadContext<'_>,
+    ) -> Result<Self::Asset, Self::Error> {
+        let asset_path = load_context.path().to_string_lossy().to_string();
+        
+        // Read all bytes from the reader
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await?;
             
            // info!("[DDS LOADER] Loading DDS texture: {}", asset_path);
            // info!("[DDS LOADER] File size: {} bytes", bytes.len());
@@ -76,7 +75,6 @@ impl AssetLoader for DdsImageLoader {
                     try_image_crate(&bytes, &asset_path)
                 }
             }
-        })
     }
 
     fn extensions(&self) -> &[&str] {

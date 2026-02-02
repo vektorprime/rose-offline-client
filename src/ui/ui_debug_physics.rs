@@ -1,9 +1,10 @@
 use bevy::{
+    color::{Srgba, Alpha},
     hierarchy::BuildChildren,
     math::Vec3,
-    pbr::{AlphaMode, StandardMaterial},
+    pbr::StandardMaterial,
     prelude::{
-        Assets, ButtonInput, Camera, Camera3d, Color, Commands, GlobalTransform,
+        AlphaMode, Assets, ButtonInput, Camera, Camera3d, Color, Commands, GlobalTransform,
         Handle, KeyCode, Local, Mesh, Query, Res, ResMut, Time, Transform, Visibility, With,
     },
     math::primitives::Sphere,
@@ -24,45 +25,19 @@ use crate::{
     ui::UiStateDebugWindows,
 };
 
-const COLOR_LIST: [Color; 38] = [
-    Color::ALICE_BLUE,
-    Color::ANTIQUE_WHITE,
-    Color::AQUAMARINE,
-    Color::AZURE,
-    Color::BEIGE,
-    Color::BISQUE,
-    Color::BLACK,
-    Color::BLUE,
-    Color::CRIMSON,
-    Color::CYAN,
-    Color::DARK_GRAY,
-    Color::DARK_GREEN,
-    Color::FUCHSIA,
-    Color::GOLD,
-    Color::GRAY,
-    Color::GREEN,
-    Color::INDIGO,
-    Color::LIME_GREEN,
-    Color::MAROON,
-    Color::MIDNIGHT_BLUE,
-    Color::NAVY,
-    Color::NONE,
-    Color::OLIVE,
-    Color::ORANGE,
-    Color::ORANGE_RED,
-    Color::PINK,
-    Color::PURPLE,
-    Color::RED,
-    Color::SALMON,
-    Color::SEA_GREEN,
-    Color::SILVER,
-    Color::TEAL,
-    Color::TOMATO,
-    Color::TURQUOISE,
-    Color::VIOLET,
-    Color::WHITE,
-    Color::YELLOW,
-    Color::YELLOW_GREEN,
+const COLOR_LIST: [Color; 12] = [
+    Color::Srgba(Srgba::BLACK),
+    Color::Srgba(Srgba::BLUE),
+    Color::Srgba(Srgba::GREEN),
+    Color::Srgba(Srgba::RED),
+    Color::Srgba(Srgba::WHITE),
+    Color::Srgba(Srgba::new(1.0, 0.0, 1.0, 1.0)), // Magenta/Fuchsia
+    Color::Srgba(Srgba::new(1.0, 1.0, 0.0, 1.0)), // Yellow
+    Color::Srgba(Srgba::new(0.0, 1.0, 1.0, 1.0)), // Cyan
+    Color::Srgba(Srgba::new(1.0, 0.5, 0.0, 1.0)), // Orange
+    Color::Srgba(Srgba::new(0.5, 0.0, 0.5, 1.0)), // Purple
+    Color::Srgba(Srgba::new(0.5, 0.5, 0.5, 1.0)), // Gray
+    Color::Srgba(Srgba::new(0.0, 0.5, 0.5, 1.0)), // Teal
 ];
 
 pub struct UiDebugPhysicsState {
@@ -171,7 +146,7 @@ pub fn ui_debug_physics_system(
                 ui_state_debug_physics
                     .materials
                     .push(materials.add(StandardMaterial {
-                        base_color: *color.clone().set_a(0.3),
+                        base_color: color.with_alpha(0.3),
                         alpha_mode: AlphaMode::Blend,
                         ..Default::default()
                     }));

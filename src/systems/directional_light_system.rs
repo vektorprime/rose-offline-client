@@ -24,7 +24,7 @@ pub fn directional_light_system(
 
     if let Ok(light_transform) = query_light.get_single() {
         let light_direction = light_transform.forward();
-        let view = Mat4::look_at_rh(Vec3::ZERO, light_direction, Vec3::Y);
+        let view = Mat4::look_at_rh(Vec3::ZERO, *light_direction, Vec3::Y);
         let projected = view.mul_vec4(lookat_position.extend(1.0));
 
         let projection = Mat4::orthographic_rh(

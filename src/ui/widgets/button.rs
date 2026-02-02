@@ -115,7 +115,7 @@ impl DrawWidget for Button {
             if let Some(label) = label {
                 let rect = rect.shrink(2.0);
                 let mut child_ui =
-                    ui.child_ui(rect, egui::Layout::top_down_justified(egui::Align::Center));
+                    ui.child_ui(rect, egui::Layout::top_down_justified(egui::Align::Center), None);
                 let style = ui.style();
                 let mut font_id = style.override_text_style.clone().map_or_else(
                     || egui::FontSelection::Default.resolve(style),
@@ -140,7 +140,7 @@ impl DrawWidget for Button {
                     .last()
                     .and_then(|row| row.glyphs.last())
                     .map_or(false, |glyph| glyph.chr == '…');
-                egui::Label::new(galley).wrap(true).ui(&mut child_ui);
+                egui::Label::new(galley).wrap().ui(&mut child_ui);
 
                 if was_truncated {
                     response = response.on_hover_text(label);

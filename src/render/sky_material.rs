@@ -1,17 +1,12 @@
 use bevy::{
     asset::{Asset, Handle, load_internal_asset},
-    ecs::system::{SystemParamItem, lifetimeless::SRes},
-    pbr::{DrawMesh, MaterialPipeline, MeshPipelineKey, SetMaterialBindGroup, SetMeshBindGroup, SetMeshViewBindGroup},
-    prelude::{App, Image, Material, MaterialPlugin, Mesh, Plugin},
+    pbr::{MaterialPipeline, MeshPipelineKey},
+    prelude::{App, Image, Material, MaterialPlugin, Mesh, Plugin, Assets, Res, ResMut, Query},
     reflect::TypePath,
     render::{
-        extract_resource::ExtractResourcePlugin,
-        mesh::MeshVertexBufferLayout,
-        render_phase::{
-            PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
-        },
+        mesh::MeshVertexBufferLayoutRef,
         render_resource::{
-            AsBindGroup, CompareFunction, PushConstantRange, RenderPipelineDescriptor, Shader, ShaderStages, SpecializedMeshPipelineError
+            AsBindGroup, CompareFunction, RenderPipelineDescriptor, Shader, SpecializedMeshPipelineError
         },
     },
 };
@@ -35,13 +30,14 @@ impl Plugin for SkyMaterialPlugin {
             Shader::from_wgsl
         );
 
-        app.add_plugins((
-            ExtractResourcePlugin::<ZoneTime>::default(),
+        app.add_plugins(
             MaterialPlugin::<SkyMaterial> {
                 prepass_enabled: self.prepass_enabled,
                 ..Default::default()
             },
-        ));
+        );
+        app.add_systems(bevy::prelude::Update, sky_material_system);
+        bevy::log::info!("[MATERIAL PLUGIN] SkyMaterial plugin built");
     }
 }
 
@@ -54,6 +50,19 @@ pub struct SkyMaterial {
     #[texture(2)]
     #[sampler(3)]
     pub texture_night: Option<Handle<Image>>,
+
+    #[uniform(4)]
+    pub day_weight: f32,
+}
+
+impl Default for SkyMaterial {
+    fn default() -> Self {
+        Self {
+            texture_day: None,
+            texture_night: None,
+            day_weight: 1.0,
+        }
+    }
 }
 
 impl Material for SkyMaterial {
@@ -65,8 +74,8 @@ impl Material for SkyMaterial {
         SKY_MATERIAL_SHADER_HANDLE_TYPED.into()
     }
 
-    fn alpha_mode(&self) -> bevy::prelude::AlphaMode {
-        bevy::prelude::AlphaMode::Opaque
+    fn alpha_mode(&self) -> bevy::render::alpha::AlphaMode {
+        bevy::render::alpha::AlphaMode::Opaque
     }
 
     fn depth_bias(&self) -> f32 {
@@ -74,9 +83,9 @@ impl Material for SkyMaterial {
     }
 
     fn specialize(
-        pipeline: &MaterialPipeline<Self>,
+        _pipeline: &MaterialPipeline<Self>,
         descriptor: &mut RenderPipelineDescriptor,
-        layout: &MeshVertexBufferLayout,
+        layout: &MeshVertexBufferLayoutRef,
         key: bevy::pbr::MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         descriptor
@@ -93,50 +102,33 @@ impl Material for SkyMaterial {
             return Ok(());
         }
 
-        let vertex_layout = layout.get_layout(&[
+        let vertex_layout = layout.0.get_layout(&[
             Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
             Mesh::ATTRIBUTE_UV_0.at_shader_location(1),
         ])?;
         descriptor.vertex.buffers = vec![vertex_layout];
 
-        descriptor.push_constant_ranges.push(PushConstantRange {
-            stages: ShaderStages::FRAGMENT,
-            range: 0..4,
-        });
-
         Ok(())
     }
 }
 
-struct SetZoneTimePushConstant<const OFFSET: u32>;
-impl<P: PhaseItem, const OFFSET: u32> RenderCommand<P> for SetZoneTimePushConstant<OFFSET> {
-    type Param = SRes<ZoneTime>;
-    type ViewQuery = ();
-    type ItemQuery = ();
+pub fn sky_material_system(
+    zone_time: Res<ZoneTime>,
+    mut sky_materials: ResMut<Assets<SkyMaterial>>,
+    query: Query<&Handle<SkyMaterial>>,
+) {
+    let day_weight = match zone_time.state {
+        ZoneTimeState::Morning => zone_time.state_percent_complete,
+        ZoneTimeState::Day => 1.0f32,
+        ZoneTimeState::Evening => 1.0f32 - zone_time.state_percent_complete,
+        ZoneTimeState::Night => 0.0f32,
+    };
 
-    fn render<'w>(
-        _: &P,
-        _: bevy::ecs::query::ROQueryItem<'w, Self::ViewQuery>,
-        _: Option<bevy::ecs::query::ROQueryItem<'w, Self::ItemQuery>>,
-        zone_time: SystemParamItem<'w, '_, Self::Param>,
-        pass: &mut TrackedRenderPass<'w>,
-    ) -> RenderCommandResult {
-        let day_weight = match zone_time.state {
-            ZoneTimeState::Morning => zone_time.state_percent_complete,
-            ZoneTimeState::Day => 1.0f32,
-            ZoneTimeState::Evening => 1.0f32 - zone_time.state_percent_complete,
-            ZoneTimeState::Night => 0.0f32,
-        };
-        pass.set_push_constants(ShaderStages::FRAGMENT, OFFSET, &day_weight.to_le_bytes());
-        RenderCommandResult::Success
+    for handle in query.iter() {
+        if let Some(material) = sky_materials.get_mut(handle) {
+            if (material.day_weight - day_weight).abs() > 0.001 {
+                material.day_weight = day_weight;
+            }
+        }
     }
 }
-
-type DrawSkyMaterial = (
-    SetItemPipeline,
-    SetMeshViewBindGroup<0>,
-    SetMeshBindGroup<1>,
-    SetMaterialBindGroup<SkyMaterial, 2>,
-    SetZoneTimePushConstant<0>,
-    DrawMesh,
-);

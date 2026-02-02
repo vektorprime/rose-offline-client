@@ -45,7 +45,7 @@ pub fn ability_values_system(
     )>,
     game_data: Res<GameData>,
 ) {
-    query_set.p0().for_each_mut(
+    query_set.p0().iter_mut().for_each(
         |(
             mut ability_values,
             character_info,
@@ -69,7 +69,7 @@ pub fn ability_values_system(
 
     query_set
         .p1()
-        .for_each_mut(|(mut ability_values, npc, status_effects)| {
+        .iter_mut().for_each(|(mut ability_values, npc, status_effects)| {
             // Update NPC ability values
             *ability_values = game_data
                 .ability_value_calculator
@@ -82,7 +82,7 @@ pub fn ability_values_system(
                 .unwrap();
         });
 
-    query_set.p2().for_each_mut(
+    query_set.p2().iter_mut().for_each(
         |(mut ability_values, move_mode, mut move_speed, mut health_points, mana_points)| {
             // Update is_driving so vehicle stats are used correctly
             ability_values.is_driving = matches!(move_mode, MoveMode::Drive);

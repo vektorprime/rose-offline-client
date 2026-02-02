@@ -132,6 +132,6 @@ pub fn ui_login_system(
     }
 
     if response_cancel.map_or(false, |r| r.clicked()) {
-        exit_events.send(AppExit);
+        exit_events.send(AppExit::Success);
     }
 }

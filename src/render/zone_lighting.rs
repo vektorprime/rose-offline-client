@@ -7,8 +7,8 @@ use bevy::{
     math::{Vec3, Vec4},
     pbr::CascadeShadowConfig,
     prelude::{
-        AmbientLight, App, Color, Commands, DirectionalLight, DirectionalLightBundle, EulerRot,
-        FromWorld, IntoSystemConfigs, Plugin, Quat, ReflectResource, Res, ResMut,
+        AmbientLight, App, Color, Commands, DirectionalLight, EulerRot,
+        FromWorld, IntoSystemConfigs, Local, Plugin, Quat, ReflectResource, Res, ResMut,
         Resource, Shader, Startup, Transform, World,
     },
     reflect::{Reflect, TypePath},
@@ -24,9 +24,9 @@ use bevy::{
         view::RenderLayers,
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
     },
-    utils::Uuid,
 };
 use std::any::TypeId;
+use uuid::Uuid;
 
 pub const ZONE_LIGHTING_SHADER_HANDLE: UntypedHandle =
     UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0x444949d32b35d5d9) });
@@ -60,7 +60,7 @@ impl Plugin for ZoneLightingPlugin {
         app.register_type::<ZoneLighting>()
             .init_resource::<ZoneLighting>();
 
-        if let Ok(render_app) = app.get_sub_app_mut(RenderApp) {
+        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             bevy::log::info!("[ZONE LIGHTING] Initializing render app systems");
             render_app
                 .add_systems(ExtractSchedule, extract_uniform_data)
@@ -74,43 +74,42 @@ impl Plugin for ZoneLightingPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        let render_app = match app.get_sub_app_mut(RenderApp) {
-            Ok(render_app) => render_app,
-            Err(_) => return,
+        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
+            return;
         };
         render_app.init_resource::<ZoneLightingUniformMeta>();
     }
 }
 
 fn spawn_lights(mut commands: Commands) {
-    bevy::log::info!("[ZONE LIGHTING] Spawning directional and ambient lights");
+    //bevy::log::info!("[ZONE LIGHTING] Spawning directional and ambient lights for Bevy 0.14");
 
+    // Bevy 0.14: Use individual components instead of DirectionalLightBundle
     let light_entity = commands.spawn((
-        DirectionalLightBundle {
-            transform: default_light_transform(),
-            directional_light: DirectionalLight {
-                illuminance: 10000.0,  // Bevy 0.13 requires lux values (was ~1.0 in 0.12)
-                shadows_enabled: true,
-                ..Default::default()
-            },
-            cascade_shadow_config: CascadeShadowConfig {
-                bounds: vec![10000.0],
-                overlap_proportion: 2.0,
-                minimum_distance: 0.1,
-            },
+        DirectionalLight {
+            illuminance: 50000.0,  // Increased for Bevy 0.14 (was 10000.0 in 0.13)
+            shadows_enabled: true,
             ..Default::default()
         },
-        RenderLayers::all(),
+        default_light_transform(),
+        CascadeShadowConfig {
+            bounds: vec![100.0, 500.0, 2000.0, 10000.0],  // Multiple cascade levels for better shadow quality
+            overlap_proportion: 0.2,
+            minimum_distance: 0.1,
+        },
+        RenderLayers::default(),
     )).id();
 
-    bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=10000.0", light_entity);
+    //bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=50000.0", light_entity);
 
+    // Bevy 0.14: AmbientLight is now a component that can be spawned as an entity
+    // or kept as a resource. Using as resource for global ambient light.
     commands.insert_resource(AmbientLight {
-        color: Color::rgb(1.0, 1.0, 1.0),
-        brightness: 80.0,  // Bevy 0.13 requires much higher values (was ~1.0 in 0.12)
+        color: Color::srgb(1.0, 1.0, 1.0),
+        brightness: 1.0,  // Bevy 0.14 uses normalized values (0.0-1.0 range)
     });
     
-    bevy::log::info!("[ZONE LIGHTING] Ambient light inserted: brightness=80.0");
+    //bevy::log::info!("[ZONE LIGHTING] Ambient light inserted: brightness=1.0");
 }
 
 #[derive(Resource, Reflect)]
@@ -169,30 +168,25 @@ impl Default for ZoneLighting {
 
 #[derive(Clone, ShaderType, Resource)]
 pub struct ZoneLightingUniformData {
+    // Group 0: 64 bytes (4 vec4)
     pub map_ambient_color: Vec4,
     pub character_ambient_color: Vec4,
     pub character_diffuse_color: Vec4,
     pub light_direction: Vec4,
 
+    // Group 1: 64 bytes (4 vec4)
     pub fog_color: Vec4,
-    pub fog_density: f32,
-    pub fog_min_density: f32,
-    pub fog_max_density: f32,
-    
-    // Height-based fog parameters
-    pub fog_min_height: f32,
-    pub fog_max_height: f32,
-    pub fog_height_density: f32,
-    
-    // Time of day parameters
-    pub time_of_day: f32,
     pub day_color: Vec4,
     pub night_color: Vec4,
-
-    // TODO: Calculate camera far plane based on alpha fog:
-    // far = sqrt(log2(1.0 - fog_alpha_weight_end) / (-fog_density * fog_density * 1.442695))
-    pub fog_alpha_weight_start: f32,
-    pub fog_alpha_weight_end: f32,
+    // Pack 4 f32 values into vec4 for alignment: fog_density, fog_min_density, fog_max_density, fog_height_density
+    pub fog_params: Vec4,
+    
+    // Group 2: 48 bytes (3 vec4)
+    // Pack 4 f32 values into vec4 for alignment: fog_min_height, fog_max_height, time_of_day, unused
+    pub fog_height_params: Vec4,
+    // Pack 2 f32 values with padding: fog_alpha_range_start, fog_alpha_range_end, unused, unused
+    pub fog_alpha_params: Vec4,
+    pub _padding: Vec4, // Padding to ensure total size is multiple of 16
 }
 
 #[derive(Resource)]
@@ -204,7 +198,7 @@ pub struct ZoneLightingUniformMeta {
 
 impl FromWorld for ZoneLightingUniformMeta {
     fn from_world(world: &mut World) -> Self {
-        bevy::log::info!("[ZONE LIGHTING] Creating ZoneLightingUniformMeta render resources");
+        //bevy::log::info!("[ZONE LIGHTING] Creating ZoneLightingUniformMeta render resources");
         
         let render_device = world.resource::<RenderDevice>();
 
@@ -214,8 +208,8 @@ impl FromWorld for ZoneLightingUniformMeta {
             mapped_at_creation: false,
             label: Some("zone_lighting_uniform_buffer"),
         });
-        bevy::log::info!("[ZONE LIGHTING] Uniform buffer created: size={} bytes",
-            ZoneLightingUniformData::min_size().get());
+        //bevy::log::info!("[ZONE LIGHTING] Uniform buffer created: size={} bytes",
+            //ZoneLightingUniformData::min_size().get());
 
         let bind_group_layout =
             render_device.create_bind_group_layout(
@@ -231,7 +225,7 @@ impl FromWorld for ZoneLightingUniformMeta {
                     count: None,
                 }],
             );
-        bevy::log::info!("[ZONE LIGHTING] Bind group layout created");
+        //bevy::log::info!("[ZONE LIGHTING] Bind group layout created");
 
         let bind_group = render_device.create_bind_group(
             "zone_lighting_uniform_bind_group",
@@ -241,7 +235,7 @@ impl FromWorld for ZoneLightingUniformMeta {
                 resource: buffer.as_entire_binding(),
             }],
         );
-        bevy::log::info!("[ZONE LIGHTING] Bind group created - ZoneLightingUniformMeta ready");
+        //bevy::log::info!("[ZONE LIGHTING] Bind group created - ZoneLightingUniformMeta ready");
 
         ZoneLightingUniformMeta {
             buffer,
@@ -254,18 +248,18 @@ impl FromWorld for ZoneLightingUniformMeta {
 fn extract_uniform_data(
     mut commands: Commands,
     zone_lighting: Extract<Res<ZoneLighting>>,
-    mut frame_count: bevy::ecs::system::Local<u32>,
+    mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
     
-    // Log every 60 frames to avoid spam
-    if *frame_count % 60 == 1 {
-        bevy::log::info!("[ZONE LIGHTING] Extracting uniform data (frame {})", *frame_count);
-        bevy::log::info!("[ZONE LIGHTING]   Map ambient: {:?}", zone_lighting.map_ambient_color);
-        bevy::log::info!("[ZONE LIGHTING]   Light direction: {:?}", zone_lighting.light_direction);
-        bevy::log::info!("[ZONE LIGHTING]   Fog enabled: {}, density: {}",
-            zone_lighting.color_fog_enabled, zone_lighting.fog_density);
-    }
+    // // Log every 60 frames to avoid spam
+    // if *frame_count % 60 == 1 {
+    //     bevy::log::info!("[ZONE LIGHTING] Extracting uniform data (frame {})", *frame_count);
+    //     bevy::log::info!("[ZONE LIGHTING]   Map ambient: {:?}", zone_lighting.map_ambient_color);
+    //     bevy::log::info!("[ZONE LIGHTING]   Light direction: {:?}", zone_lighting.light_direction);
+    //     bevy::log::info!("[ZONE LIGHTING]   Fog enabled: {}, density: {}",
+    //         zone_lighting.color_fog_enabled, zone_lighting.fog_density);
+    // }
     
     commands.insert_resource(ZoneLightingUniformData {
         map_ambient_color: zone_lighting.map_ambient_color.extend(1.0),
@@ -273,39 +267,30 @@ fn extract_uniform_data(
         character_diffuse_color: zone_lighting.character_diffuse_color.extend(1.0),
         light_direction: zone_lighting.light_direction.extend(1.0),
         fog_color: zone_lighting.fog_color.extend(1.0),
-        fog_density: if zone_lighting.color_fog_enabled {
-            zone_lighting.fog_density
-        } else {
-            0.0
-        },
-        fog_min_density: if zone_lighting.color_fog_enabled {
-            zone_lighting.fog_min_density
-        } else {
-            0.0
-        },
-        fog_max_density: if zone_lighting.color_fog_enabled {
-            zone_lighting.fog_max_density
-        } else {
-            0.0
-        },
-        // Height-based fog parameters
-        fog_min_height: zone_lighting.fog_min_height,
-        fog_max_height: zone_lighting.fog_max_height,
-        fog_height_density: zone_lighting.fog_height_density,
-        // Time of day parameters
-        time_of_day: zone_lighting.time_of_day,
         day_color: zone_lighting.day_color.extend(1.0),
         night_color: zone_lighting.night_color.extend(1.0),
-        fog_alpha_weight_start: if zone_lighting.alpha_fog_enabled {
-            zone_lighting.fog_alpha_weight_start
-        } else {
-            99999999999.0
-        },
-        fog_alpha_weight_end: if zone_lighting.alpha_fog_enabled {
-            zone_lighting.fog_alpha_weight_end
-        } else {
-            999999999.0
-        },
+        // Pack fog params: fog_density, fog_min_density, fog_max_density, fog_height_density
+        fog_params: Vec4::new(
+            if zone_lighting.color_fog_enabled { zone_lighting.fog_density } else { 0.0 },
+            if zone_lighting.color_fog_enabled { zone_lighting.fog_min_density } else { 0.0 },
+            if zone_lighting.color_fog_enabled { zone_lighting.fog_max_density } else { 0.0 },
+            zone_lighting.fog_height_density,
+        ),
+        // Pack fog height params: fog_min_height, fog_max_height, time_of_day, unused
+        fog_height_params: Vec4::new(
+            zone_lighting.fog_min_height,
+            zone_lighting.fog_max_height,
+            zone_lighting.time_of_day,
+            0.0, // unused
+        ),
+        // Pack fog alpha params: fog_alpha_range_start, fog_alpha_range_end, unused, unused
+        fog_alpha_params: Vec4::new(
+            if zone_lighting.alpha_fog_enabled { zone_lighting.fog_alpha_weight_start } else { 99999999999.0 },
+            if zone_lighting.alpha_fog_enabled { zone_lighting.fog_alpha_weight_end } else { 999999999.0 },
+            0.0, // unused
+            0.0, // unused
+        ),
+        _padding: Vec4::ZERO,
     });
 }
 

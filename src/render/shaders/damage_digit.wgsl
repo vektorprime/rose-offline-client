@@ -1,5 +1,5 @@
 // Damage Digit shader using storage buffers for GPU-driven rendering
-// Reverted from mesh-based to storage buffer approach (Bevy 0.11 style with 0.13 syntax)
+// Reverted from mesh-based to storage buffer approach (Bevy 0.11 style with 0.14 syntax)
 
 #import bevy_render::view::View
 
@@ -10,11 +10,11 @@ struct PositionBuffer { data: array<vec4<f32>>, };
 struct SizeBuffer { data: array<vec2<f32>>, };
 struct UvBuffer { data: array<vec4<f32>>, };
 
-@group(1) @binding(0)
+@group(3) @binding(0)
 var<storage, read> positions: PositionBuffer;
-@group(1) @binding(1)
+@group(3) @binding(1)
 var<storage, read> sizes: SizeBuffer;
-@group(1) @binding(2)
+@group(3) @binding(2)
 var<storage, read> uvs: UvBuffer;
 @group(2) @binding(0)
 var base_color_texture: texture_2d<f32>;
@@ -44,10 +44,8 @@ fn vs_main(model: VertexInput) -> VertexOutput {
   let vert_idx = model.vertex_idx % 6u;
   let digit_idx = model.vertex_idx / 6u;
 
-  let camera_right =
-    normalize(vec3<f32>(view.view_proj.x.x, view.view_proj.y.x, view.view_proj.z.x));
-  let camera_up =
-    normalize(vec3<f32>(view.view_proj.x.y, view.view_proj.y.y, view.view_proj.z.y));
+  let camera_right = view.world_from_view[0].xyz;
+  let camera_up = view.world_from_view[1].xyz;
 
   let particle_position = positions.data[digit_idx].xyz;
   let x_offset = positions.data[digit_idx].w;
@@ -61,7 +59,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     (camera_up * vertex_position.y * size.y);
 
   var out: VertexOutput;
-  out.position = view.view_proj * vec4<f32>(world_space, 1.0);
+  out.position = view.clip_from_world * vec4<f32>(world_space, 1.0);
 
   let texture = uvs.data[digit_idx];
   if (vertex_positions[vert_idx].x < 0.0) {
