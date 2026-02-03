@@ -9,6 +9,8 @@ use rose_offline_client::{
 };
 
 fn main() {
+    println!("=== PROGRAM STARTING ===");
+    println!("main() function entered");
     let command = clap::Command::new("rose-offline-client")
         .arg(
             clap::Arg::new("config")
@@ -146,8 +148,11 @@ fn main() {
                 .value_parser(["irose"])
                 .help("Select which game version to use for ui."),
         );
+    println!("Parsing command line arguments...");
     let matches = command.get_matches();
+    println!("Command line arguments parsed successfully");
 
+    println!("Loading config...");
     let mut config = matches
         .value_of("config")
         .map(Path::new)
@@ -257,9 +262,12 @@ fn main() {
             .push(FilesystemDeviceConfig::Vfs("data.idx".into()));
     }
 
+    println!("Determining which mode to run...");
     if matches.is_present("model-viewer") {
+        println!("Running in model viewer mode");
         run_model_viewer(&config);
     } else if matches.is_present("zone-viewer") {
+        println!("Running in zone viewer mode");
         run_zone_viewer(
             &config,
             matches
@@ -268,6 +276,7 @@ fn main() {
                 .and_then(ZoneId::new),
         );
     } else {
+        println!("Running in game mode");
         run_game(&config, SystemsConfig::default());
     }
 }

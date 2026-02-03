@@ -1,12 +1,17 @@
 use bevy::{
     ecs::query::QueryEntityError,
     math::{Vec3, Vec3A},
+    pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
         AssetServer, Assets, BuildChildren, Changed, Commands, Entity, GlobalTransform, Handle,
         Mesh, Query, Res, ResMut, Transform, With, Without,
     },
-    render::primitives::Aabb,
+    render::{
+        alpha::AlphaMode,
+        primitives::Aabb,
+    },
 };
+use crate::render::object_material_extension::RoseObjectExtension;
 use bevy_rapier3d::prelude::{Collider, CollisionGroups};
 
 use rose_game_common::components::ItemDrop;
@@ -26,6 +31,7 @@ pub fn item_drop_model_system(
     asset_server: Res<AssetServer>,
     model_loader: Res<ModelLoader>,
     mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
+    mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
 ) {
     for (entity, item_drop, mut current_item_drop_model) in query.iter_mut() {
         if let Some(current_item_drop_model) = current_item_drop_model.as_mut() {
@@ -44,6 +50,7 @@ pub fn item_drop_model_system(
             &mut commands,
             &asset_server,
             &mut standard_materials,
+            &mut object_materials,
             entity,
             item_drop.item.as_ref(),
         );

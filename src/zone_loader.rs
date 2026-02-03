@@ -278,26 +278,27 @@ use uuid::Uuid;
 
 use anyhow::Result;
 use arrayvec::ArrayVec;
-use bevy::{
-    asset::{Asset, AssetLoader, Assets, io::Reader, LoadContext, LoadState},
-    ecs::system::SystemParam,
-    hierarchy::{BuildChildren, DespawnRecursiveExt},
-    math::{Quat, Vec2, Vec3},
-    pbr::{NotShadowCaster, NotShadowReceiver},
-    prelude::{
-        AssetServer, Color, Commands, Entity, EventReader, EventWriter, GlobalTransform, Handle,
-        Local, Res, ResMut, Resource, Transform, TransformBundle, UntypedHandle, Visibility, With,
-    },
-    reflect::TypePath,
-    render::{
-        mesh::{Indices, Mesh, PrimitiveTopology},
-        primitives::Aabb,
-        render_asset::RenderAssetUsages,
-        texture::Image,
-        view::{NoFrustumCulling, ViewVisibility, InheritedVisibility, VisibilityBundle, RenderLayers},
-    },
-    tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
-};
+use    bevy::{
+        asset::{Asset, AssetLoader, Assets, io::Reader, LoadContext, LoadState},
+        ecs::system::SystemParam,
+        hierarchy::{BuildChildren, DespawnRecursiveExt},
+        math::{Quat, Vec2, Vec3},
+        pbr::{ExtendedMaterial, NotShadowCaster, NotShadowReceiver, StandardMaterial},
+        prelude::{
+            AssetServer, Color, Commands, Entity, EventReader, EventWriter, GlobalTransform, Handle,
+            Local, Res, ResMut, Resource, Transform, TransformBundle, UntypedHandle, Visibility, With,
+        },
+        reflect::TypePath,
+        render::{
+            alpha::AlphaMode,
+            mesh::{Indices, Mesh, PrimitiveTopology},
+            primitives::Aabb,
+            render_asset::RenderAssetUsages,
+            texture::Image,
+            view::{NoFrustumCulling, ViewVisibility, InheritedVisibility, VisibilityBundle, RenderLayers},
+        },
+        tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
+    };
 use bevy_rapier3d::prelude::{
     AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, RigidBody,
 };
@@ -326,7 +327,7 @@ use crate::{
     effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect},
     events::{LoadZoneEvent, ZoneEvent, ZoneLoadedFromVfsEvent},
     render::{
-        EffectMeshAnimationRenderState, EffectMeshMaterial, MESH_ATTRIBUTE_UV_1, ParticleMaterial,
+        MESH_ATTRIBUTE_UV_1, ParticleMaterial, RoseEffectExtension,
     },
     resources::{CurrentZone, DebugInspector, GameData, SpecularTexture},
     VfsResource,
@@ -1042,7 +1043,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub meshes: ResMut<'w, Assets<Mesh>>,
     pub specular_texture: Res<'w, SpecularTexture>,
     pub standard_materials: ResMut<'w, Assets<bevy::pbr::StandardMaterial>>,
-    pub effect_mesh_materials: ResMut<'w, Assets<EffectMeshMaterial>>,
+    pub effect_mesh_materials: ResMut<'w, Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     pub particle_materials: ResMut<'w, Assets<ParticleMaterial>>,
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
@@ -1873,6 +1874,7 @@ pub fn spawn_zone(
                 id: zone_data.zone_id,
             },
             Visibility::Visible,
+            ViewVisibility::default(),
             InheritedVisibility::default(),
             Transform::from_xyz(5200.0, 0.0, -5200.0),
             GlobalTransform::default(),
@@ -2161,6 +2163,7 @@ fn spawn_skybox(
             }),
             Transform::from_scale(Vec3::splat(SKYBOX_MODEL_SCALE)),
             GlobalTransform::default(),
+            ViewVisibility::default(),
             Visibility::Visible,
             InheritedVisibility::default(),
             NoFrustumCulling,
@@ -2367,6 +2370,7 @@ fn spawn_terrain(
             Transform::from_xyz(offset_x - 5200.0, 0.0, -offset_y + 5200.0),
             GlobalTransform::default(),
             Visibility::Visible,
+            ViewVisibility::default(),
             InheritedVisibility::default(),
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
@@ -2453,6 +2457,7 @@ fn spawn_water(
             GlobalTransform::default(),
             Visibility::Visible,
             InheritedVisibility::default(),
+            ViewVisibility::default(),
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
@@ -2520,6 +2525,7 @@ fn spawn_object(
         GlobalTransform::default(),
             Visibility::Visible,
             InheritedVisibility::default(),
+            ViewVisibility::default(),
         NoFrustumCulling,
         Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
         bevy::render::view::RenderLayers::layer(0),
@@ -2700,6 +2706,7 @@ fn spawn_object(
                 GlobalTransform::default(),
             Visibility::Visible,
             InheritedVisibility::default(),
+            ViewVisibility::default(),
                 NoFrustumCulling,
                 Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
                 RenderLayers::layer(0),
@@ -2789,7 +2796,7 @@ fn spawn_object(
 fn spawn_animated_object(
     commands: &mut Commands,
     asset_server: &AssetServer,
-    effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+    effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
     stb_morph_object: &StbFile,
     object_instance: &IfoObject,
 ) -> Entity {
@@ -2846,17 +2853,22 @@ fn spawn_animated_object(
     //info!("[MEMORY TRACKING] Animated object motion handle created: {}",
         //motion_path_buf.display());
 
-    let material = effect_mesh_materials.add(EffectMeshMaterial {
-        base_texture: Some(texture_handle),
-        alpha_enabled,
-        alpha_test: alpha_test_enabled,
-        two_sided,
-        z_test_enabled,
-        z_write_enabled,
-        src_blend_factor: decode_blend_factor(src_blend_factor),
-        dst_blend_factor: decode_blend_factor(dst_blend_factor),
-        blend_op: decode_blend_op(blend_op),
-        animation_texture: Some(motion_texture_handle.clone()),
+    let material = effect_mesh_materials.add(ExtendedMaterial {
+        base: StandardMaterial {
+            base_color_texture: Some(texture_handle),
+            alpha_mode: if alpha_enabled || !z_write_enabled {
+                AlphaMode::Blend
+            } else if alpha_test_enabled {
+                AlphaMode::Mask(0.5)
+            } else {
+                AlphaMode::Opaque
+            },
+            double_sided: two_sided,
+            ..Default::default()
+        },
+        extension: RoseEffectExtension {
+            animation_texture: Some(motion_texture_handle.clone()),
+        },
     });
 
     //info!("[MEMORY TRACKING] Animated object material created with 3 textures (base, motion texture, motion)");
@@ -2870,13 +2882,13 @@ fn spawn_animated_object(
             }),
             mesh,
             material,
-            EffectMeshAnimationRenderState::default(),
             MeshAnimation::repeat(motion_handle, None),
             object_transform,
             GlobalTransform::default(),
             VisibilityBundle {
                 visibility: Visibility::Visible,
-                ..Default::default()
+                inherited_visibility: InheritedVisibility::default(),
+                view_visibility: ViewVisibility::default(),
             },
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
@@ -2895,7 +2907,7 @@ fn spawn_effect_object(
     commands: &mut Commands,
     asset_server: &AssetServer,
     vfs_resource: &VfsResource,
-    effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+    effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
     particle_materials: &mut Assets<ParticleMaterial>,
     meshes: &mut Assets<bevy::prelude::Mesh>,
     effect_object: &IfoEffectObject,
@@ -2931,6 +2943,7 @@ fn spawn_effect_object(
             GlobalTransform::from(object_transform),
             Visibility::Visible,
             InheritedVisibility::default(),
+            ViewVisibility::default(),
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
         ))
@@ -2987,6 +3000,7 @@ fn spawn_sound_object(
             GlobalTransform::from(object_transform),
             Visibility::Visible,
             InheritedVisibility::default(),
+            ViewVisibility::default(),
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),

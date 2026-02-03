@@ -7,7 +7,6 @@ use bevy_egui::{egui, EguiContexts};
 
 use crate::{
     components::{EventObject, WarpObject},
-    render::ObjectMaterial,
     resources::DebugRenderConfig,
     ui::UiStateDebugWindows,
 };
@@ -25,8 +24,6 @@ pub fn ui_debug_render_system(
     mut debug_render_config: ResMut<DebugRenderConfig>,
     query_event_objects: Query<&Children, With<EventObject>>,
     query_warp_objects: Query<&Children, With<WarpObject>>,
-    query_object_material: Query<&Handle<ObjectMaterial>>,
-    mut object_materials: ResMut<Assets<ObjectMaterial>>,
     rapier_debug: Option<ResMut<bevy_rapier3d::prelude::DebugRenderContext>>,
     mut gizmo_config_store: ResMut<GizmoConfigStore>,
 ) {
@@ -59,27 +56,8 @@ pub fn ui_debug_render_system(
                 )
                 .clicked()
             {
-                if ui_state_debug_render.render_event_objects {
-                    for children in query_event_objects.iter() {
-                        for child_entity in children.iter() {
-                            if let Ok(handle) = query_object_material.get(*child_entity) {
-                                if let Some(material) = object_materials.get_mut(handle) {
-                                    material.alpha_value = Some(0.75);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    for children in query_event_objects.iter() {
-                        for child_entity in children.iter() {
-                            if let Ok(handle) = query_object_material.get(*child_entity) {
-                                if let Some(material) = object_materials.get_mut(handle) {
-                                    material.alpha_value = None;
-                                }
-                            }
-                        }
-                    }
-                }
+                // TODO: Event object alpha transparency removed with old material system
+                // This functionality needs to be reimplemented with new ExtendedMaterial pattern
             }
 
             if ui
@@ -89,27 +67,8 @@ pub fn ui_debug_render_system(
                 )
                 .clicked()
             {
-                if ui_state_debug_render.render_warp_objects {
-                    for children in query_warp_objects.iter() {
-                        for child_entity in children.iter() {
-                            if let Ok(handle) = query_object_material.get(*child_entity) {
-                                if let Some(material) = object_materials.get_mut(handle) {
-                                    material.alpha_value = Some(0.75);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    for children in query_warp_objects.iter() {
-                        for child_entity in children.iter() {
-                            if let Ok(handle) = query_object_material.get(*child_entity) {
-                                if let Some(material) = object_materials.get_mut(handle) {
-                                    material.alpha_value = None;
-                                }
-                            }
-                        }
-                    }
-                }
+                // TODO: Warp object alpha transparency removed with old material system
+                // This functionality needs to be reimplemented with new ExtendedMaterial pattern
             }
 
             ui.separator();

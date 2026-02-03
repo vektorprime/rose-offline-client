@@ -1,7 +1,10 @@
 use bevy::{
     hierarchy::DespawnRecursiveExt,
+    pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{AssetServer, Assets, Changed, Commands, Entity, Query, Res, ResMut},
 };
+
+use crate::render::object_material_extension::RoseObjectExtension;
 
 use crate::{
     components::{PersonalStore, PersonalStoreModel, RemoveColliderCommand},
@@ -21,6 +24,7 @@ pub fn personal_store_model_system(
     asset_server: Res<AssetServer>,
     model_loader: Res<ModelLoader>,
     mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
+    mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
 ) {
     for (entity, personal_store, personal_store_model) in query.iter_mut() {
         if let Some(personal_store) = personal_store {
@@ -41,6 +45,7 @@ pub fn personal_store_model_system(
                 &mut commands,
                 &asset_server,
                 &mut standard_materials,
+                &mut object_materials,
                 entity,
                 personal_store.skin,
             );

@@ -1,10 +1,14 @@
 use bevy::{
+    pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
         AssetServer, Assets, BuildChildren, Changed, Commands, ViewVisibility, InheritedVisibility,
         DespawnRecursiveExt, Entity, GlobalTransform, Query, Res, ResMut, Transform, Visibility,
         World,
     },
-    render::mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
+    render::{
+        alpha::AlphaMode,
+        mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
+    },
 };
 
 use rose_game_common::components::{Equipment, MoveMode};
@@ -13,7 +17,8 @@ use crate::{
     animation::SkeletalAnimation,
     components::{CharacterModel, CharacterModelPart, DummyBoneOffset, Vehicle, VehicleModel},
     model_loader::ModelLoader,
-    render::{EffectMeshMaterial, ParticleMaterial},
+    render::{ParticleMaterial, RoseEffectExtension},
+    render::object_material_extension::RoseObjectExtension,
 };
 
 pub fn vehicle_model_system(
@@ -32,8 +37,9 @@ pub fn vehicle_model_system(
     asset_server: Res<AssetServer>,
     model_loader: Res<ModelLoader>,
     mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
+    mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
-    mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
+    mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
     mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
 ) {
@@ -127,6 +133,7 @@ pub fn vehicle_model_system(
                     &mut commands,
                     &asset_server,
                     &mut standard_materials,
+                    &mut object_materials,
                     &mut skinned_mesh_inverse_bindposes_assets,
                     &mut particle_materials,
                     &mut effect_mesh_materials,

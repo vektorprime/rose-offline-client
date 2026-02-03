@@ -5,6 +5,7 @@ use bevy::{
         render_resource::*,
     },
     asset::{load_internal_asset, Handle},
+    pbr::Material,
 };
 
 pub const PARTICLE_MATERIAL_SHADER_HANDLE: Handle<Shader> =
@@ -42,7 +43,7 @@ impl Plugin for ParticleMaterialPlugin {
             Shader::from_wgsl
         );
 
-        app.add_plugins(MaterialPlugin::<ParticleMaterial>::default());
+        app.add_plugins(bevy::pbr::MaterialPlugin::<ParticleMaterial>::default());
         bevy::log::info!("[MATERIAL PLUGIN] ParticleMaterial plugin built");
     }
 }

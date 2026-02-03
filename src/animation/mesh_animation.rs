@@ -7,7 +7,7 @@ use bevy::{
 
 use crate::{
     animation::{AnimationState, ZmoAsset},
-    render::{EffectMeshAnimationFlags, EffectMeshAnimationRenderState},
+    render::{RoseEffectExtension},
 };
 
 #[derive(Component, Reflect, Deref, DerefMut)]
@@ -29,15 +29,12 @@ impl MeshAnimation {
 }
 
 pub fn mesh_animation_system(
-    mut query_animations: Query<(
-        &mut MeshAnimation,
-        Option<&mut EffectMeshAnimationRenderState>,
-    )>,
+    mut query_animations: Query<&mut MeshAnimation>,
     motion_assets: Res<Assets<ZmoAsset>>,
     asset_server: Res<AssetServer>,
     time: Res<Time>,
 ) {
-    for (mut mesh_animation, render_state) in query_animations.iter_mut() {
+    for mut mesh_animation in query_animations.iter_mut() {
         let mesh_animation: &mut MeshAnimation = &mut mesh_animation;
         if mesh_animation.completed() {
             continue;
@@ -49,7 +46,7 @@ pub fn mesh_animation_system(
                 asset_server.get_load_state(zmo_handle),
                 Some(LoadState::Failed(_))
             ) {
-                // If the asset has failed to load, mark the animation as completed
+                // If asset has failed to load, mark the animation as completed
                 mesh_animation.set_completed();
             }
 
@@ -59,39 +56,9 @@ pub fn mesh_animation_system(
         let animation = &mut mesh_animation.0;
         animation.advance(zmo_asset, &time);
 
-        let Some(mut render_state) = render_state else {
-            continue;
-        };
-        if let Some(animation_texture) = zmo_asset.animation_texture.as_ref() {
-            let mut flags = EffectMeshAnimationFlags::NONE;
-
-            if animation_texture.has_position_channel {
-                flags |= EffectMeshAnimationFlags::ANIMATE_POSITION;
-            }
-
-            if animation_texture.has_normal_channel {
-                flags |= EffectMeshAnimationFlags::ANIMATE_NORMALS;
-            }
-
-            if animation_texture.has_uv1_channel {
-                flags |= EffectMeshAnimationFlags::ANIMATE_UV;
-            }
-
-            if animation_texture.has_alpha_channel {
-                flags |= EffectMeshAnimationFlags::ANIMATE_ALPHA;
-
-                let current_alpha = animation_texture.alphas[animation.current_frame_index()];
-                let next_alpha = animation_texture.alphas[animation.next_frame_index()];
-                render_state.alpha = current_alpha * (1.0 - animation.current_frame_fract())
-                    + next_alpha * animation.current_frame_fract();
-            }
-
-            render_state.flags = flags.bits() | (zmo_asset.num_frames as u32) << 4;
-            render_state.current_next_frame = animation.current_frame_index() as u32
-                | (animation.next_frame_index() as u32) << 16;
-            render_state.next_weight = animation.current_frame_fract();
-        } else {
-            render_state.flags = 0;
-        }
+        // TODO: Effect mesh animation rendering state removed with old material system
+        // This functionality needs to be reimplemented with new ExtendedMaterial pattern
+        // The EffectMeshAnimationRenderState component was used to pass animation data to shaders
+        // through the RoseEffectExtension material extension
     }
 }

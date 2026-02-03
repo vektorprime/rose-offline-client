@@ -1,17 +1,12 @@
-use bevy::prelude::{Assets, Commands, Handle, Query, Res, Time};
+use bevy::prelude::{Query, Res, Time};
 use rand::Rng;
 
 use crate::{
     components::{CharacterBlinkTimer, CharacterModel, CharacterModelPart, Dead},
-    render::ObjectMaterialClipFace,
-    zms_asset_loader::ZmsMaterialNumFaces,
 };
 
 pub fn character_model_blink_system(
-    mut commands: Commands,
     mut query_characters: Query<(&CharacterModel, &mut CharacterBlinkTimer, Option<&Dead>)>,
-    query_material: Query<&Handle<ZmsMaterialNumFaces>>,
-    material_assets: Res<Assets<ZmsMaterialNumFaces>>,
     time: Res<Time>,
 ) {
     for (character_model, mut blink_timer, dead) in query_characters.iter_mut() {
@@ -48,26 +43,10 @@ pub fn character_model_blink_system(
         }
 
         if changed {
-            for face_model_entity in character_model.model_parts[CharacterModelPart::CharacterFace]
-                .1
-                .iter()
-            {
-                if let Ok(face_mesh_handle) = query_material.get(*face_model_entity) {
-                    if let Some(face_mesh) = material_assets.get(face_mesh_handle) {
-                        if let Some(num_clip_faces) = face_mesh.material_num_faces.last() {
-                            if blink_timer.is_open {
-                                commands
-                                    .entity(*face_model_entity)
-                                    .insert(ObjectMaterialClipFace::First(*num_clip_faces as u32));
-                            } else {
-                                commands
-                                    .entity(*face_model_entity)
-                                    .insert(ObjectMaterialClipFace::Last(*num_clip_faces as u32));
-                            }
-                        }
-                    }
-                }
-            }
+            // TODO: Character face blinking removed with old material system
+            // This functionality needs to be reimplemented with new ExtendedMaterial pattern
+            // The ObjectMaterialClipFace component was used to control which faces to render
+            // for blinking eyes (First or Last faces)
         }
     }
 }

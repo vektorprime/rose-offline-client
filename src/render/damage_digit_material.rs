@@ -2,6 +2,7 @@ use bevy::{
     prelude::*,
     render::{alpha::AlphaMode, render_resource::*},
     asset::{load_internal_asset, Handle},
+    pbr::Material,
 };
 
 pub const DAMAGE_DIGIT_MATERIAL_SHADER_HANDLE: Handle<Shader> =
@@ -39,7 +40,7 @@ impl Plugin for DamageDigitMaterialPlugin {
             Shader::from_wgsl
         );
 
-        app.add_plugins(MaterialPlugin::<DamageDigitMaterial>::default());
+        app.add_plugins(bevy::pbr::MaterialPlugin::<DamageDigitMaterial>::default());
         bevy::log::info!("[MATERIAL PLUGIN] DamageDigitMaterial plugin built");
     }
 }

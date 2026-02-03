@@ -6,11 +6,12 @@ use bevy::{
         asset::AssetApp,
         core_pipeline::bloom::BloomSettings,
         log::{info, warn, Level},
+        pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial},
         prelude::{
             apply_deferred, default, in_state, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
             Camera3dBundle, ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoSystemConfigs,
             IntoSystemSetConfigs, Local, Mesh, Msaa, OnEnter, OnExit, PbrBundle, PerspectiveProjection, PluginGroup,
-            PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, StandardMaterial, Startup, State,
+            PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
             SystemSet, Time, Transform, Update, Vec3, ViewVisibility, Visibility, With, Without, World,
         },
         render::view::VisibilitySystems,
@@ -73,12 +74,12 @@ use model_loader::ModelLoader;
 use render::{
     RoseRenderPlugin,
     DamageDigitMaterialPlugin,
-    EffectMeshMaterialPlugin,
     ParticleMaterialPlugin,
-    ObjectMaterialPlugin,
+    RoseObjectExtension,
+    RoseTerrainExtension,
+    RoseWaterExtension,
+    RoseEffectExtension,
     SkyMaterialPlugin,
-    WaterMaterialPlugin,
-    TerrainMaterialPlugin,
     TrailEffectRenderPlugin,
     ZoneLightingPlugin,
 };
@@ -558,6 +559,7 @@ enum CharacterSelectSystemOrdering {
 }
 
 fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsConfig) {
+    println!("run_client() function entered");
     log::info!("[VFS INIT] Starting VFS initialization...");
     log::info!("[VFS INIT] Config has {} filesystem devices", config.filesystem.devices.len());
     
@@ -770,20 +772,37 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         })
         .add_plugins((
             RoseAnimationPlugin,
-            
+
             // CRITICAL: Add these to fix the panic and enable rendering
             DamageDigitMaterialPlugin,        // ← Fixes the immediate panic
-            EffectMeshMaterialPlugin { prepass_enabled: false },
             ParticleMaterialPlugin,
-            ObjectMaterialPlugin,
-            
+
+            // ExtendedMaterial plugins for object, terrain, water, and effect mesh
+            MaterialPlugin::<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>::default(),
+        ));
+    log::info!("[MATERIAL PLUGIN] RoseObjectExtension plugin registered successfully");
+
+    app.add_plugins((
+            MaterialPlugin::<ExtendedMaterial<StandardMaterial, RoseTerrainExtension>>::default(),
+        ));
+    log::info!("[MATERIAL PLUGIN] RoseTerrainExtension plugin registered successfully");
+
+    app.add_plugins((
+            MaterialPlugin::<ExtendedMaterial<StandardMaterial, RoseWaterExtension>>::default(),
+        ));
+    log::info!("[MATERIAL PLUGIN] RoseWaterExtension plugin registered successfully");
+
+    app.add_plugins((
+            MaterialPlugin::<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>::default(),
+        ));
+    log::info!("[MATERIAL PLUGIN] RoseEffectExtension plugin registered successfully");
+
+    app.add_plugins((
             // Optional: Add these for full rendering support
             SkyMaterialPlugin { prepass_enabled: false },
-            WaterMaterialPlugin { prepass_enabled: false },
-            TerrainMaterialPlugin { prepass_enabled: false },
             TrailEffectRenderPlugin,
             ZoneLightingPlugin,
-            
+
             RoseRenderPlugin,
             RoseScriptingPlugin,
             DebugInspectorPlugin,
@@ -792,12 +811,12 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // Material Plugin Diagnostic Logging
     log::info!("[MATERIAL PLUGIN] DamageDigitMaterialPlugin registered");
-    log::info!("[MATERIAL PLUGIN] EffectMeshMaterialPlugin registered");
     log::info!("[MATERIAL PLUGIN] ParticleMaterialPlugin registered");
-    log::info!("[MATERIAL PLUGIN] ObjectMaterialPlugin registered");
+    log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseObjectExtension> registered");
+    log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseTerrainExtension> registered");
+    log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseWaterExtension> registered");
+    log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseEffectExtension> registered");
     log::info!("[MATERIAL PLUGIN] SkyMaterialPlugin registered");
-    log::info!("[MATERIAL PLUGIN] WaterMaterialPlugin registered");
-    log::info!("[MATERIAL PLUGIN] TerrainMaterialPlugin registered");
 
     // Setup state
     app.init_state::<AppState>();

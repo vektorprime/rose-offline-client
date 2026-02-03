@@ -61,6 +61,7 @@ impl DamageDigitsSpawner {
                 GlobalTransform::default(),
                 Visibility::default(),
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
             ))
             .with_children(|child_builder| {
                 child_builder.spawn((
@@ -79,6 +80,7 @@ impl DamageDigitsSpawner {
                     GlobalTransform::default(),
                     Visibility::default(),
                     InheritedVisibility::default(),
+                    ViewVisibility::default(),
                     NoFrustumCulling,
                 ));
             });

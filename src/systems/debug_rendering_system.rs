@@ -5,10 +5,11 @@ use bevy::render::{Extract, ExtractSchedule, Render, RenderApp, RenderSet};
 use bevy::core_pipeline::core_3d::{Opaque3d, Transparent3d};
 use bevy::render::render_phase::ViewSortedRenderPhases;
 use bevy::render::view::ViewUniformOffset;
+use bevy::pbr::ExtendedMaterial;
 use crate::components::{Zone, ZoneObject};
 use crate::render::{
-    EffectMeshMaterial, TerrainMaterial, WaterMaterial, SkyMaterial, 
-    ParticleMaterial, DamageDigitMaterial, ObjectMaterial
+    SkyMaterial,
+    ParticleMaterial, DamageDigitMaterial, RoseEffectExtension
 };
 use crate::resources::RenderExtractionDiagnostics;
 
@@ -99,29 +100,23 @@ pub fn render_diagnostics_system(
         &GlobalTransform,
     )>,
     meshes: Query<(
-        Entity,
-        &Handle<Mesh>,
-        &GlobalTransform,
-        &ViewVisibility,
-        &Visibility,
-        Option<&Handle<StandardMaterial>>,
-        Option<&Handle<EffectMeshMaterial>>,
-        Option<&Handle<TerrainMaterial>>,
-        Option<&Handle<WaterMaterial>>,
-        Option<&Handle<SkyMaterial>>,
-        Option<&Handle<ParticleMaterial>>,
-        Option<&Handle<DamageDigitMaterial>>,
-        Option<&Handle<ObjectMaterial>>,
-    )>,
+    Entity,
+    &Handle<Mesh>,
+    &GlobalTransform,
+    &ViewVisibility,
+    &Visibility,
+    Option<&Handle<StandardMaterial>>,
+    Option<&Handle<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+    Option<&Handle<SkyMaterial>>,
+    Option<&Handle<ParticleMaterial>>,
+    Option<&Handle<DamageDigitMaterial>>,
+)>,
     mesh_assets: Res<Assets<Mesh>>,
     material_assets: Res<Assets<StandardMaterial>>,
-    effect_material_assets: Res<Assets<EffectMeshMaterial>>,
-    terrain_material_assets: Res<Assets<TerrainMaterial>>,
-    water_material_assets: Res<Assets<WaterMaterial>>,
+    effect_material_assets: Res<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     sky_material_assets: Res<Assets<SkyMaterial>>,
     particle_material_assets: Res<Assets<ParticleMaterial>>,
     damage_digit_material_assets: Res<Assets<DamageDigitMaterial>>,
-    object_material_assets: Res<Assets<ObjectMaterial>>,
     images: Res<Assets<Image>>,
     windows: Query<&Window>,
 ) {
@@ -170,7 +165,7 @@ pub fn render_diagnostics_system(
     info!("[RENDER DIAGNOSTICS] Mesh entities: {}", mesh_entity_count);
     
     let visible_meshes = meshes.iter()
-        .filter(|(_, _, _, vis, _, _, _, _, _, _, _, _, _)| vis.get())
+        .filter(|(_, _, _, vis, _, _, _, _, _, _)| vis.get())
         .count();
     info!("[RENDER DIAGNOSTICS] Visible mesh entities: {}", visible_meshes);
     
@@ -179,7 +174,7 @@ pub fn render_diagnostics_system(
     let mut hidden_component_count = 0;
     let mut inherited_component_count = 0;
     
-    for (_, _, _, _, visibility, _, _, _, _, _, _, _, _) in meshes.iter() {
+    for (_, _, _, _, visibility, _, _, _, _, _) in meshes.iter() {
         match visibility {
             Visibility::Visible => visible_component_count += 1,
             Visibility::Hidden => hidden_component_count += 1,
@@ -207,9 +202,8 @@ pub fn render_diagnostics_system(
     
     // Check first few mesh entities with more detail
     let mut logged = 0;
-    for (entity, mesh_handle, transform, view_vis, visibility, 
-         material, effect_material, terrain_material, water_material, 
-         sky_material, particle_material, damage_digit_material, object_material) in meshes.iter() {
+    for (entity, mesh_handle, transform, view_vis, visibility,
+         material, effect_material, sky_material, particle_material, damage_digit_material) in meshes.iter() {
         if logged < 3 {
             let position = transform.translation();
             let visibility_str = match visibility {
@@ -218,10 +212,9 @@ pub fn render_diagnostics_system(
                 Visibility::Inherited => "Inherited",
             };
             
-            let has_material = material.is_some() || effect_material.is_some() || 
-                              terrain_material.is_some() || water_material.is_some() || 
-                              sky_material.is_some() || particle_material.is_some() || 
-                              damage_digit_material.is_some() || object_material.is_some();
+            let has_material = material.is_some() || effect_material.is_some() ||
+                              sky_material.is_some() || particle_material.is_some() ||
+                              damage_digit_material.is_some();
             
             info!("[RENDER DIAGNOSTICS] Mesh entity {:?}:", entity);
             info!("[RENDER DIAGNOSTICS]   Position: ({:.2}, {:.2}, {:.2})", position.x, position.y, position.z);
@@ -259,13 +252,10 @@ pub fn render_diagnostics_system(
     info!("[RENDER DIAGNOSTICS] Asset counts:");
     info!("[RENDER DIAGNOSTICS]   Meshes: {}", mesh_assets.len());
     info!("[RENDER DIAGNOSTICS]   StandardMaterials: {}", material_assets.len());
-    info!("[RENDER DIAGNOSTICS]   EffectMeshMaterials: {}", effect_material_assets.len());
-    info!("[RENDER DIAGNOSTICS]   TerrainMaterials: {}", terrain_material_assets.len());
-    info!("[RENDER DIAGNOSTICS]   WaterMaterials: {}", water_material_assets.len());
+    info!("[RENDER DIAGNOSTICS]   ExtendedMaterials<StandardMaterial, RoseEffectExtension>: {}", effect_material_assets.len());
     info!("[RENDER DIAGNOSTICS]   SkyMaterials: {}", sky_material_assets.len());
     info!("[RENDER DIAGNOSTICS]   ParticleMaterials: {}", particle_material_assets.len());
     info!("[RENDER DIAGNOSTICS]   DamageDigitMaterials: {}", damage_digit_material_assets.len());
-    info!("[RENDER DIAGNOSTICS]   ObjectMaterials: {}", object_material_assets.len());
     info!("[RENDER DIAGNOSTICS]   Images: {}", images.len());
     
     if mesh_assets.len() == 0 {
@@ -444,22 +434,16 @@ pub fn material_transparency_diagnostics(
         &GlobalTransform,
         &ViewVisibility,
         Option<&Handle<StandardMaterial>>,
-        Option<&Handle<EffectMeshMaterial>>,
-        Option<&Handle<TerrainMaterial>>,
-        Option<&Handle<WaterMaterial>>,
+        Option<&Handle<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
         Option<&Handle<SkyMaterial>>,
         Option<&Handle<ParticleMaterial>>,
         Option<&Handle<DamageDigitMaterial>>,
-        Option<&Handle<ObjectMaterial>>,
     )>,
     material_assets: Res<Assets<StandardMaterial>>,
-    effect_material_assets: Res<Assets<EffectMeshMaterial>>,
-    terrain_material_assets: Res<Assets<TerrainMaterial>>,
-    water_material_assets: Res<Assets<WaterMaterial>>,
+    effect_material_assets: Res<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     sky_material_assets: Res<Assets<SkyMaterial>>,
     particle_material_assets: Res<Assets<ParticleMaterial>>,
     damage_digit_material_assets: Res<Assets<DamageDigitMaterial>>,
-    object_material_assets: Res<Assets<ObjectMaterial>>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
@@ -478,9 +462,8 @@ pub fn material_transparency_diagnostics(
     info!("[MATERIAL DIAGNOSTICS] Frame {}", *frame_count);
     info!("========================================");
     
-    for (entity, transform, view_vis, 
-         material_handle, effect_handle, terrain_handle, water_handle, 
-         sky_handle, particle_handle, damage_digit_handle, object_handle) in meshes.iter() {
+    for (entity, transform, view_vis,
+         material_handle, effect_handle, sky_handle, particle_handle, damage_digit_handle) in meshes.iter() {
         if logged >= 5 {
             break;
         }
@@ -517,34 +500,16 @@ pub fn material_transparency_diagnostics(
             }
         }
 
-        // Check EffectMeshMaterial
+        // Check ExtendedMaterial<StandardMaterial, RoseEffectExtension>
         if let Some(handle) = effect_handle {
             found_material = true;
             if effect_material_assets.contains(handle) {
-                info!("[MATERIAL] Entity {:?} (EffectMeshMaterial):", entity);
+                info!("[MATERIAL] Entity {:?} (ExtendedMaterial<StandardMaterial, RoseEffectExtension>):", entity);
                 info!("[MATERIAL]   Position: {:?}", position);
                 info!("[MATERIAL]   ViewVisibility: {}", is_visible);
                 opaque_count += 1; // Assume opaque for diagnostics unless we can check alpha
             } else {
-                warn!("[MATERIAL] Entity {:?} has EffectMeshMaterial handle but material not loaded!", entity);
-            }
-        }
-
-        // Check TerrainMaterial
-        if let Some(handle) = terrain_handle {
-            found_material = true;
-            if terrain_material_assets.contains(handle) {
-                info!("[MATERIAL] Entity {:?} (TerrainMaterial):", entity);
-                opaque_count += 1;
-            }
-        }
-
-        // Check WaterMaterial
-        if let Some(handle) = water_handle {
-            found_material = true;
-            if water_material_assets.contains(handle) {
-                info!("[MATERIAL] Entity {:?} (WaterMaterial):", entity);
-                transparent_count += 1;
+                warn!("[MATERIAL] Entity {:?} has ExtendedMaterial<StandardMaterial, RoseEffectExtension> handle but material not loaded!", entity);
             }
         }
 
@@ -572,15 +537,6 @@ pub fn material_transparency_diagnostics(
             if damage_digit_material_assets.contains(handle) {
                 info!("[MATERIAL] Entity {:?} (DamageDigitMaterial):", entity);
                 transparent_count += 1;
-            }
-        }
-
-        // Check ObjectMaterial
-        if let Some(handle) = object_handle {
-            found_material = true;
-            if object_material_assets.contains(handle) {
-                info!("[MATERIAL] Entity {:?} (ObjectMaterial):", entity);
-                opaque_count += 1;
             }
         }
 
@@ -1028,23 +984,17 @@ pub fn render_pipeline_diagnostics(
         &GlobalTransform,
         &ViewVisibility,
         Option<&Handle<StandardMaterial>>,
-        Option<&Handle<EffectMeshMaterial>>,
-        Option<&Handle<TerrainMaterial>>,
-        Option<&Handle<WaterMaterial>>,
+        Option<&Handle<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
         Option<&Handle<SkyMaterial>>,
         Option<&Handle<ParticleMaterial>>,
         Option<&Handle<DamageDigitMaterial>>,
-        Option<&Handle<ObjectMaterial>>,
     ), With<Handle<Mesh>>>,
     mesh_assets: Res<Assets<Mesh>>,
     material_assets: Res<Assets<StandardMaterial>>,
-    effect_material_assets: Res<Assets<EffectMeshMaterial>>,
-    terrain_material_assets: Res<Assets<TerrainMaterial>>,
-    water_material_assets: Res<Assets<WaterMaterial>>,
+    effect_material_assets: Res<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     sky_material_assets: Res<Assets<SkyMaterial>>,
     particle_material_assets: Res<Assets<ParticleMaterial>>,
     damage_digit_material_assets: Res<Assets<DamageDigitMaterial>>,
-    object_material_assets: Res<Assets<ObjectMaterial>>,
     cameras: Query<&Camera>,
     mut frame_count: Local<u32>,
 ) {
@@ -1069,9 +1019,8 @@ pub fn render_pipeline_diagnostics(
     let mut not_visible = 0;
     let mut logged = 0;
 
-    for (entity, mesh_handle, transform, view_vis, 
-         material_handle, effect_handle, terrain_handle, water_handle, 
-         sky_handle, particle_handle, damage_digit_handle, object_handle) in meshes.iter() {
+    for (entity, mesh_handle, transform, view_vis,
+         material_handle, effect_handle, sky_handle, particle_handle, damage_digit_handle) in meshes.iter() {
         if logged >= 5 {
             break;
         }
@@ -1082,12 +1031,9 @@ pub fn render_pipeline_diagnostics(
         
         let has_material = material_handle.map_or(false, |h| material_assets.contains(h)) ||
                           effect_handle.map_or(false, |h| effect_material_assets.contains(h)) ||
-                          terrain_handle.map_or(false, |h| terrain_material_assets.contains(h)) ||
-                          water_handle.map_or(false, |h| water_material_assets.contains(h)) ||
                           sky_handle.map_or(false, |h| sky_material_assets.contains(h)) ||
                           particle_handle.map_or(false, |h| particle_material_assets.contains(h)) ||
-                          damage_digit_handle.map_or(false, |h| damage_digit_material_assets.contains(h)) ||
-                          object_handle.map_or(false, |h| object_material_assets.contains(h));
+                          damage_digit_handle.map_or(false, |h| damage_digit_material_assets.contains(h));
 
         info!("[RENDER PIPELINE] Entity {:?}:", entity);
         info!("[RENDER PIPELINE]   Position: {:?}", position);
@@ -1602,7 +1548,6 @@ pub fn diagnose_camera_entity_distances(
 /// This helps diagnose if custom materials are interfering with StandardMaterial extraction
 pub fn verify_material_plugins(
     materials: Res<Assets<StandardMaterial>>,
-    object_materials: Res<Assets<ObjectMaterial>>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
@@ -1617,7 +1562,6 @@ pub fn verify_material_plugins(
     info!("========================================");
     
     info!("[MATERIAL PLUGIN] StandardMaterial assets: {}", materials.len());
-    info!("[MATERIAL PLUGIN] ObjectMaterial assets: {}", object_materials.len());
     
     if materials.len() == 0 {
         warn!("[MATERIAL PLUGIN] WARNING: No StandardMaterial assets loaded!");

@@ -35,7 +35,7 @@ struct VertexOutput {
 };
 
 @vertex
-fn vs_main(model: VertexInput) -> VertexOutput {
+fn vertex(model: VertexInput) -> VertexOutput {
   var vertex_positions: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
     vec2<f32>(-1.0, -1.0),
     vec2<f32>(1.0, 1.0),
@@ -104,6 +104,6 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
   return in.color * textureSample(base_color_texture, base_color_sampler, in.uv);
 }

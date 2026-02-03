@@ -2,12 +2,17 @@ use std::sync::Arc;
 
 use arrayvec::ArrayVec;
 use bevy::{
-    math::{Mat4, Quat, Vec3},
+    math::{Mat4, Quat, Vec2, Vec3, Vec4},
+    pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
         AssetServer, Assets, BuildChildren, Color, Commands, DespawnRecursiveExt, Entity,
         GlobalTransform, Handle, Image, Mesh, Resource, Transform, Visibility,
     },
-    render::{mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes}, view::InheritedVisibility, view::NoFrustumCulling, view::ViewVisibility, primitives::Aabb},
+    render::{
+        alpha::AlphaMode,
+        mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes}, view::InheritedVisibility, view::NoFrustumCulling, view::ViewVisibility, primitives::Aabb,
+        render_resource::Face,
+    },
 };
 use enum_map::{enum_map, EnumMap};
 
@@ -28,7 +33,10 @@ use crate::{
         ItemDropModel, NpcModel, PersonalStoreModel, VehicleModel,
     },
     effect_loader::spawn_effect,
-    render::{EffectMeshMaterial, ParticleMaterial, TrailEffect},
+    render::{
+        ParticleMaterial, TrailEffect, RoseEffectExtension,
+        object_material_extension::RoseObjectExtension,
+    },
 };
 
 const TRAIL_COLOURS: [Color; 9] = [
@@ -42,6 +50,34 @@ const TRAIL_COLOURS: [Color; 9] = [
     Color::srgba(1.0, 0.0, 1.0, 1.0),
     Color::srgba(1.0, 0.5, 0.0, 1.0),
 ];
+
+/// Helper function to create ExtendedMaterial for ROSE objects
+pub fn create_rose_object_material(
+    materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    base_texture: Handle<Image>,
+    lightmap_texture: Option<Handle<Image>>,
+    specular_texture: Option<Handle<Image>>,
+    lightmap_offset: Vec2,
+    lightmap_scale: f32,
+    alpha_mode: AlphaMode,
+    two_sided: bool,
+) -> Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>> {
+    materials.add(ExtendedMaterial {
+        base: StandardMaterial {
+            base_color_texture: Some(base_texture),
+            alpha_mode,
+            double_sided: two_sided,
+            cull_mode: if two_sided { None } else { Some(Face::Back) },
+            unlit: false,
+            ..StandardMaterial::default()
+        },
+        extension: RoseObjectExtension {
+            lightmap_params: Vec4::new(lightmap_offset.x, lightmap_offset.y, lightmap_scale, 0.0),
+            lightmap_texture,
+            specular_texture,
+        },
+    })
+}
 
 #[derive(Resource)]
 pub struct ModelLoader {
@@ -200,9 +236,10 @@ impl ModelLoader {
         commands: &mut Commands,
         asset_server: &AssetServer,
         standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+        object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
         skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
         particle_materials: &mut Assets<ParticleMaterial>,
-        effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+        effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
         meshes: &mut Assets<Mesh>,
         model_entity: Entity,
         npc_id: NpcId,
@@ -242,6 +279,7 @@ impl ModelLoader {
                 commands,
                 asset_server,
                 standard_materials,
+                object_materials,
                 model_entity,
                 &self.npc_zsc,
                 *model_id as usize,
@@ -284,6 +322,7 @@ impl ModelLoader {
                     commands,
                     asset_server,
                     standard_materials,
+                    object_materials,
                     model_entity,
                     &self.weapon,
                     npc_data.right_hand_part_index as usize,
@@ -301,6 +340,7 @@ impl ModelLoader {
                     commands,
                     asset_server,
                     standard_materials,
+                    object_materials,
                     model_entity,
                     &self.sub_weapon,
                     npc_data.left_hand_part_index as usize,
@@ -341,6 +381,7 @@ impl ModelLoader {
         commands: &mut Commands,
         asset_server: &AssetServer,
         standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+        object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
         model_entity: Entity,
         skin: usize,
     ) -> PersonalStoreModel {
@@ -348,6 +389,7 @@ impl ModelLoader {
             .spawn((
                 Visibility::default(),
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
                 Transform::default(),
                 GlobalTransform::default(),
             ))
@@ -358,6 +400,7 @@ impl ModelLoader {
             commands,
             asset_server,
             standard_materials,
+            object_materials,
             root_bone,
             &self.field_item,
             260 + skin,
@@ -380,6 +423,7 @@ impl ModelLoader {
         commands: &mut Commands,
         asset_server: &AssetServer,
         standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+        object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
         model_entity: Entity,
         dropped_item: Option<&DroppedItem>,
     ) -> (ItemDropModel, Handle<ZmoAsset>) {
@@ -397,6 +441,7 @@ impl ModelLoader {
             .spawn((
                 Visibility::default(),
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
                 Transform::default(),
                 GlobalTransform::default(),
             ))
@@ -411,6 +456,7 @@ impl ModelLoader {
                     commands,
                     asset_server,
                     standard_materials,
+                    object_materials,
                     root_bone,
                     &self.field_item,
                     model_id,
@@ -513,6 +559,7 @@ impl ModelLoader {
                     GlobalTransform::default(),
                     Visibility::default(),
                     InheritedVisibility::default(),
+                    ViewVisibility::default(),
                 ))
                 .id(),
         )
@@ -666,6 +713,7 @@ impl ModelLoader {
         commands: &mut Commands,
         asset_server: &AssetServer,
         standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+        object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
         skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
         model_entity: Entity,
         character_info: &CharacterInfo,
@@ -704,6 +752,7 @@ impl ModelLoader {
                         commands,
                         asset_server,
                         standard_materials,
+                        object_materials,
                         model_entity,
                         model_id.id,
                         &skinned_mesh,
@@ -736,6 +785,7 @@ impl ModelLoader {
         commands: &mut Commands,
         asset_server: &AssetServer,
         standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+        object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
         model_entity: Entity,
         model_id: usize,
         skinned_mesh: &SkinnedMesh,
@@ -748,6 +798,7 @@ impl ModelLoader {
             commands,
             asset_server,
             standard_materials,
+            object_materials,
             model_entity,
             model_list,
             model_id,
@@ -829,6 +880,7 @@ impl ModelLoader {
         commands: &mut Commands,
         asset_server: &AssetServer,
         standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+        object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
         model_entity: Entity,
         character_info: &CharacterInfo,
         equipment: &Equipment,
@@ -893,6 +945,7 @@ impl ModelLoader {
                             commands,
                             asset_server,
                             standard_materials,
+                            object_materials,
                             model_entity,
                             model_id.id,
                             skinned_mesh,
@@ -914,9 +967,10 @@ impl ModelLoader {
         commands: &mut Commands,
         asset_server: &AssetServer,
         standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+        object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
         skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
         particle_materials: &mut Assets<ParticleMaterial>,
-        effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+        effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
         meshes: &mut Assets<Mesh>,
         vehicle_model_entity: Entity,
         driver_model_entity: Entity,
@@ -959,6 +1013,7 @@ impl ModelLoader {
                         commands,
                         asset_server,
                         standard_materials,
+                        object_materials,
                         vehicle_model_entity,
                         &self.vehicle,
                         model_id,
@@ -1134,6 +1189,7 @@ fn spawn_skeleton(
                 .spawn((
                     Visibility::default(),
                     InheritedVisibility::default(),
+                    ViewVisibility::default(),
                     transform,
                     GlobalTransform::default(),
                 ))
@@ -1180,6 +1236,7 @@ fn spawn_skeleton(
         commands: &mut Commands,
         asset_server: &AssetServer,
         standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+        object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
         model_entity: Entity,
         model_list: &ZscFile,
         model_id: usize,
@@ -1196,21 +1253,28 @@ fn spawn_skeleton(
         return parts;
     };
 
-    for object_part in object.parts.iter() {
+        for object_part in object.parts.iter() {
         let mesh_id = object_part.mesh_id as usize;
         let mesh: Handle<Mesh> = asset_server.load(model_list.meshes[mesh_id].path().to_string_lossy().into_owned());
         let material_id = object_part.material_id as usize;
         let zsc_material = &model_list.materials[material_id];
 
-        // Create material using Bevy's StandardMaterial
-        // FIX: Use unlit: true to ensure objects are visible without requiring lights
+        // Determine if material is alpha-blended
+        // Alpha-blended materials have alpha enabled and z-write disabled
+        let alpha_blended = zsc_material.alpha_enabled && !zsc_material.z_write_enabled;
+
+        // Create material using ExtendedMaterial<StandardMaterial, RoseObjectExtension>
         let texture_handle = asset_server.load(zsc_material.path.path().to_string_lossy().into_owned());
-        let material = standard_materials.add(bevy::pbr::StandardMaterial {
-            base_color_texture: Some(texture_handle),
-            unlit: true,  // CHANGED: Make material unlit so it doesn't require lighting
-            double_sided: zsc_material.two_sided,
-            ..Default::default()
-        });
+        let material = create_rose_object_material(
+            object_materials,
+            texture_handle,
+            None, // lightmap_texture
+            Some(specular_image.clone()), // specular_texture
+            Vec2::new(0.0, 0.0), // lightmap_offset
+            1.0, // lightmap_scale
+            AlphaMode::Opaque, // alpha_mode
+            zsc_material.two_sided, // two_sided
+        );
 
         let mut entity_commands = commands.spawn((
             mesh,

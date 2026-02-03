@@ -1,11 +1,17 @@
 use bevy::{
     math::Vec3,
+    pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
         AssetServer, Assets, Changed, Commands, DespawnRecursiveExt, Entity, Query, Res, ResMut,
         Transform,
     },
-    render::mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
+    render::{
+        alpha::AlphaMode,
+        mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
+    },
 };
+
+use crate::render::object_material_extension::RoseObjectExtension;
 use enum_map::EnumMap;
 
 use rose_game_common::components::Npc;
@@ -13,7 +19,7 @@ use rose_game_common::components::Npc;
 use crate::{
     components::{ClientEntityName, DummyBoneOffset, ModelHeight, NpcModel, RemoveColliderCommand},
     model_loader::ModelLoader,
-    render::{EffectMeshMaterial, ParticleMaterial},
+    render::{ParticleMaterial, RoseEffectExtension},
     resources::GameData,
 };
 
@@ -32,9 +38,10 @@ pub fn npc_model_update_system(
     >,
     asset_server: Res<AssetServer>,
     model_loader: Res<ModelLoader>,
-    mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
+    mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
+    mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
     mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
     game_data: Res<GameData>,
@@ -79,6 +86,7 @@ pub fn npc_model_update_system(
                     &mut commands,
                     &asset_server,
                     &mut standard_materials,
+                    &mut object_materials,
                     &mut skinned_mesh_inverse_bindposes_assets,
                     &mut particle_materials,
                     &mut effect_mesh_materials,

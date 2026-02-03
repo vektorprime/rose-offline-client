@@ -12,7 +12,6 @@ use rose_game_common::{components::*, messages::ClientEntityId};
 
 use crate::{
     components::*,
-    render::{ObjectMaterialBlend, ObjectMaterialGlow},
     resources::DebugInspector,
 };
 
@@ -68,8 +67,6 @@ impl Plugin for DebugInspectorPlugin {
             .register_type::<NextCommand>()
             .register_type::<NightTimeEffect>()
             .register_type::<Npc>()
-            .register_type::<ObjectMaterialBlend>()
-            .register_type::<ObjectMaterialGlow>()
             .register_type::<PassiveRecoveryTime>()
             .register_type::<PersonalStore>()
             .register_type::<PersonalStoreModel>()

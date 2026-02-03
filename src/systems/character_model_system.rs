@@ -1,9 +1,11 @@
 use bevy::{
     hierarchy::DespawnRecursiveExt,
-    pbr::StandardMaterial,
+    pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{AssetServer, Assets, Changed, Commands, Entity, Or, Query, Res, ResMut},
     render::mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
 };
+
+use crate::render::object_material_extension::RoseObjectExtension;
 
 use rose_game_common::components::{CharacterInfo, Equipment};
 
@@ -36,6 +38,7 @@ pub fn character_model_update_system(
     asset_server: Res<AssetServer>,
     model_loader: Res<ModelLoader>,
     mut standard_materials: ResMut<Assets<StandardMaterial>>,
+    mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
 ) {
     for (
@@ -55,6 +58,7 @@ pub fn character_model_update_system(
                     &mut commands,
                     &asset_server,
                     &mut standard_materials,
+                    &mut object_materials,
                     entity,
                     character_info,
                     equipment,
@@ -105,6 +109,7 @@ pub fn character_model_update_system(
                 &mut commands,
                 &asset_server,
                 &mut standard_materials,
+                &mut object_materials,
                 &mut skinned_mesh_inverse_bindposes_assets,
                 entity,
                 character_info,

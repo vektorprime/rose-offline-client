@@ -1,10 +1,12 @@
 use bevy::{
     hierarchy::BuildChildren,
     math::{Quat, Vec3},
+    pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
         AssetServer, Assets, Commands, Entity, GlobalTransform, Transform, Visibility,
     },
     render::{
+        alpha::AlphaMode,
         primitives::Aabb,
         render_resource::{BlendFactor, BlendOperation},
         view::{ViewVisibility, InheritedVisibility, NoFrustumCulling},
@@ -17,7 +19,7 @@ use crate::{
     animation::{TransformAnimation, ZmoTextureAssetLoader},
     components::{Effect, EffectMesh, EffectParticle, ParticleSequence},
     render::{
-        EffectMeshAnimationRenderState, EffectMeshMaterial, ParticleMaterial,
+        ParticleMaterial, RoseEffectExtension,
         ParticleRenderBillboardType, ParticleRenderData,
     },
     zms_asset_loader::ZmsNoSkinAssetLoader,
@@ -28,7 +30,7 @@ pub fn spawn_effect(
     commands: &mut Commands,
     asset_server: &AssetServer,
     particle_materials: &mut Assets<ParticleMaterial>,
-    effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+    effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
     meshes: &mut Assets<bevy::prelude::Mesh>,
     effect_path: VfsPath,
     manual_despawn: bool,
@@ -77,6 +79,7 @@ pub fn spawn_effect(
                 GlobalTransform::default(),
                 Visibility::default(),
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
             ))
             .push_children(&child_entities)
             .id();
@@ -116,7 +119,7 @@ pub fn decode_blend_factor(value: u32) -> BlendFactor {
 fn spawn_mesh(
     commands: &mut Commands,
     asset_server: &AssetServer,
-    effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
+    effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
     eft_mesh: &EftMesh,
 ) -> Option<Entity> {
     Some(
@@ -137,6 +140,7 @@ fn spawn_mesh(
                 GlobalTransform::default(),
                 Visibility::default(),
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
             ))
             .with_children(|child_builder| {
                 let mesh_path = ZmsNoSkinAssetLoader::convert_path(
@@ -146,24 +150,30 @@ fn spawn_mesh(
                 let mut entity_comands = child_builder.spawn((
                     EffectMesh {},
                     mesh,
-                    effect_mesh_materials.add(EffectMeshMaterial {
-                        base_texture: Some(asset_server.load(eft_mesh.mesh_texture_file.path().to_string_lossy().into_owned())),
-                        alpha_enabled: eft_mesh.alpha_enabled,
-                        alpha_test: eft_mesh.alpha_test_enabled,
-                        two_sided: eft_mesh.two_sided,
-                        z_test_enabled: eft_mesh.depth_test_enabled,
-                        z_write_enabled: eft_mesh.depth_write_enabled,
-                        src_blend_factor: decode_blend_factor(eft_mesh.src_blend_factor),
-                        dst_blend_factor: decode_blend_factor(eft_mesh.dst_blend_factor),
-                        blend_op: decode_blend_op(eft_mesh.blend_op),
-                        animation_texture: eft_mesh.mesh_animation_file.as_ref().map(|path| {
-                            asset_server.load(ZmoTextureAssetLoader::convert_path_texture(
-                                path.path().to_str().unwrap(),
-                            ))
-                        }),
+                    effect_mesh_materials.add(ExtendedMaterial {
+                        base: StandardMaterial {
+                            base_color_texture: Some(asset_server.load(eft_mesh.mesh_texture_file.path().to_string_lossy().into_owned())),
+                            alpha_mode: if eft_mesh.alpha_enabled || !eft_mesh.depth_write_enabled {
+                                AlphaMode::Blend
+                            } else if eft_mesh.alpha_test_enabled {
+                                AlphaMode::Mask(0.5)
+                            } else {
+                                AlphaMode::Opaque
+                            },
+                            double_sided: eft_mesh.two_sided,
+                            ..Default::default()
+                        },
+                        extension: RoseEffectExtension {
+                            animation_texture: eft_mesh.mesh_animation_file.as_ref().map(|path| {
+                                asset_server.load(ZmoTextureAssetLoader::convert_path_texture(
+                                    path.path().to_str().unwrap(),
+                                ))
+                            }),
+                        },
                     }),
                     Visibility::default(),
                     InheritedVisibility::default(),
+                    ViewVisibility::default(),
                     Transform::default(),
                     GlobalTransform::default(),
                 ));
@@ -185,7 +195,6 @@ fn spawn_mesh(
                             },
                         )
                         .with_start_delay(eft_mesh.start_delay as f32 / 1000.0),
-                        EffectMeshAnimationRenderState::default(),
                     ));
                 }
 
@@ -237,6 +246,7 @@ fn spawn_particle(
                 GlobalTransform::default(),
                 Visibility::default(),
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
             ))
             .with_children(|child_builder| {
                 for sequence in ptl_file.sequences {
@@ -264,6 +274,7 @@ fn spawn_particle(
                         GlobalTransform::default(),
                         Visibility::default(),
                         InheritedVisibility::default(),
+                        ViewVisibility::default(),
                         NoFrustumCulling, // AABB culling is broken for particles
                     ));
 

@@ -9,14 +9,6 @@ use bevy::{
 pub mod world_ui;
 pub use world_ui::WorldUiRect;
 
-pub mod object_material_simple;
-pub use object_material_simple::*;
-pub use object_material_simple::{ObjectMaterial, ObjectMaterialPlugin};
-
-pub mod effect_mesh_material;
-pub use effect_mesh_material::*;
-pub use effect_mesh_material::{EffectMeshMaterial, EffectMeshMaterialPlugin};
-
 pub mod particle_material;
 pub use particle_material::*;
 
@@ -40,11 +32,17 @@ pub use damage_digit_render_data::*;
 pub mod sky_material;
 pub use sky_material::{SkyMaterial, SkyMaterialPlugin};
 
-pub mod water_material;
-pub use water_material::{WaterMaterial, WaterMaterialPlugin};
+pub mod object_material_extension;
+pub use object_material_extension::*;
 
-pub mod terrain_material;
-pub use terrain_material::{TerrainMaterial, TerrainMaterialPlugin};
+pub mod terrain_material_extension;
+pub use terrain_material_extension::*;
+
+pub mod water_material_extension;
+pub use water_material_extension::*;
+
+pub mod effect_mesh_extension;
+pub use effect_mesh_extension::*;
 
 pub const MESH_ATTRIBUTE_UV_1: MeshVertexAttribute =
     MeshVertexAttribute::new("Vertex_Uv2", 280035324, VertexFormat::Float32x2);

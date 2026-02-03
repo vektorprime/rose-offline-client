@@ -1,5 +1,6 @@
 use bevy::{
     hierarchy::BuildChildren,
+    pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
         AssetServer, Assets, Commands, EventReader, GlobalTransform, Query, Res, ResMut, Transform,
         Mesh,
@@ -13,7 +14,7 @@ use crate::{
     effect_loader::spawn_effect,
     events::{SpawnEffect, SpawnEffectData, SpawnEffectEvent},
     resources::GameData,
-    render::{EffectMeshMaterial, ParticleMaterial},
+    render::{ParticleMaterial, RoseEffectExtension},
     VfsResource,
 };
 
@@ -38,7 +39,7 @@ pub fn spawn_effect_system(
     game_data: Res<GameData>,
     asset_server: Res<AssetServer>,
     vfs_resource: Res<VfsResource>,
-    mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
+    mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {

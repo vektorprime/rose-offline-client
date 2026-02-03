@@ -1,13 +1,17 @@
-use bevy::prelude::{
-    AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, DespawnRecursiveExt, Entity, EventReader,
-    GlobalTransform, Local, Res, ResMut, Transform, Visibility, Mesh,
+use bevy::{
+    pbr::{ExtendedMaterial, StandardMaterial},
+    prelude::{
+        AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, DespawnRecursiveExt, Entity, EventReader,
+        GlobalTransform, Local, Res, ResMut, Transform, Visibility, Mesh,
+    },
+    render::alpha::AlphaMode,
 };
 use rose_data::EffectFileId;
 
 use crate::{
     effect_loader::spawn_effect,
     events::MoveDestinationEffectEvent,
-    render::{EffectMeshMaterial, ParticleMaterial},
+    render::{ParticleMaterial, RoseEffectExtension},
     resources::{GameData, VfsResource},
 };
 
@@ -23,7 +27,7 @@ pub fn move_destination_effect_system(
     game_data: Res<GameData>,
     asset_server: Res<AssetServer>,
     vfs_resource: Res<VfsResource>,
-    mut effect_mesh_materials: ResMut<Assets<EffectMeshMaterial>>,
+    mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
