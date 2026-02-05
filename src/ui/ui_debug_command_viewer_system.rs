@@ -123,7 +123,7 @@ pub fn ui_debug_command_viewer_system(
         .show(ctx, |ui| {
             if let Ok(command) = query_player.get_single() {
                 if ui_state_debug_command_viewer.current_command.as_ref() == Some(command) {
-                    ui_state_debug_command_viewer.current_duration += time.delta_seconds();
+                    ui_state_debug_command_viewer.current_duration += time.delta_secs();
                 } else {
                     if let Some(last_command) = ui_state_debug_command_viewer.current_command.take()
                     {

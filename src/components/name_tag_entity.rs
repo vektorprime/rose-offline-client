@@ -43,12 +43,12 @@ impl<'w> RemoveNameTagCommand for EntityCommands<'w> {
     fn remove_and_despawn_name_tag(&mut self) -> &mut Self {
         let entity = self.id();
 
-        self.commands().add(move |world: &mut World| {
+        self.commands().queue(move |world: &mut World| {
             let mut world_entity = world.entity_mut(entity);
             if let Some(nametag_entity) = world_entity.get::<NameTagEntity>() {
                 let nametag_entity = nametag_entity.0;
                 world_entity.remove::<NameTagEntity>();
-                despawn_with_children_recursive(world, nametag_entity);
+                despawn_with_children_recursive(world, nametag_entity, false);
             }
         });
 

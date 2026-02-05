@@ -24,7 +24,7 @@ impl<'a> RemoveColliderCommand for EntityCommands<'a> {
     fn remove_and_despawn_collider(&mut self) -> &mut Self {
         let entity = self.id();
 
-        self.commands().add(move |world: &mut World| {
+        self.commands().queue(move |world: &mut World| {
             let mut world_entity = world.entity_mut(entity);
             if let Some(collider_entity) = world_entity.get::<ColliderEntity>() {
                 let collider_entity = collider_entity.entity;

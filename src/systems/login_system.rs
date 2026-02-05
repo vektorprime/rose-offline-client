@@ -25,8 +25,8 @@ pub fn login_state_enter_system(
 ) {
     // Ensure cursor is not locked
     if let Ok(mut window) = query_window.get_single_mut() {
-        window.cursor.grab_mode = CursorGrabMode::None;
-        window.cursor.visible = true;
+        window.cursor_options.grab_mode = CursorGrabMode::None;
+        window.cursor_options.visible = true;
     }
 
     // Reset camera

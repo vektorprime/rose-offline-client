@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use bevy::prelude::*;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+use bevy::render::mesh::Mesh3d;
 
 /// Resource for tracking detailed zone loading diagnostics
 #[derive(Resource, Default, Debug)]
@@ -244,7 +245,7 @@ pub fn zone_child_visibility_diagnostic_system(
         &InheritedVisibility,
         &ViewVisibility,
         Option<&GlobalTransform>,
-        Option<&Handle<Mesh>>,
+        Option<&Mesh3d>,
         Option<&Parent>
     ), Without<crate::components::Zone>>,
     meshes: Res<Assets<Mesh>>,

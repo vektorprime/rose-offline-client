@@ -3,7 +3,7 @@ use bevy::{
     math::Vec3,
     prelude::{
         Camera, Camera3d, Entity, EventWriter, GlobalTransform, MouseButton, Query, Res, ResMut,
-        With,
+        State, With,
     },
     window::{CursorGrabMode, PrimaryWindow, Window},
 };
@@ -18,17 +18,18 @@ use crate::{
         COLLISION_FILTER_CLICKABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_PLAYER,
     },
     events::{MoveDestinationEffectEvent, PlayerCommandEvent},
-    resources::{SelectedTarget, UiCursorType, UiRequestedCursor},
+    resources::{AppState, SelectedTarget, UiCursorType, UiRequestedCursor},
 };
 
 pub type PlayerQuery<'w> = (Entity, &'w Team);
 
 #[allow(clippy::too_many_arguments)]
 pub fn game_mouse_input_system(
+    app_state: Res<State<AppState>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     query_window: Query<&Window, With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    rapier_context: Res<RapierContext>,
+    rapier_context: RapierContext,
     mut egui_ctx: EguiContexts,
     query_collider_parent: Query<&ColliderParent>,
     query_hit_entity: Query<(
@@ -44,6 +45,10 @@ pub fn game_mouse_input_system(
     mut selected_target: ResMut<SelectedTarget>,
     mut ui_requested_cursor: ResMut<UiRequestedCursor>,
 ) {
+    // Check if we're in the game state
+    if *app_state.get() != AppState::Game {
+        return;
+    }
     selected_target.hover = None;
     ui_requested_cursor.world_cursor = UiCursorType::Default;
 
@@ -51,7 +56,7 @@ pub fn game_mouse_input_system(
         return;
     };
 
-    if !matches!(window.cursor.grab_mode, CursorGrabMode::None) {
+    if !matches!(window.cursor_options.grab_mode, CursorGrabMode::None) {
         // Cursor is currently grabbed
         return;
     }
@@ -74,7 +79,7 @@ pub fn game_mouse_input_system(
         return;
     };
 
-    if let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+    if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
         if let Some((collider_entity, distance)) = rapier_context.cast_ray(
             ray.origin,
             *ray.direction,

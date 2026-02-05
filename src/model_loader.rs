@@ -3,10 +3,10 @@ use std::sync::Arc;
 use arrayvec::ArrayVec;
 use bevy::{
     math::{Mat4, Quat, Vec2, Vec3, Vec4},
-    pbr::{ExtendedMaterial, StandardMaterial},
+    pbr::{ExtendedMaterial, MeshMaterial3d, StandardMaterial},
     prelude::{
         AssetServer, Assets, BuildChildren, Color, Commands, DespawnRecursiveExt, Entity,
-        GlobalTransform, Handle, Image, Mesh, Resource, Transform, Visibility,
+        GlobalTransform, Handle, Image, Mesh, Mesh3d, Resource, Transform, Visibility,
     },
     render::{
         alpha::AlphaMode,
@@ -14,6 +14,7 @@ use bevy::{
         render_resource::Face,
     },
 };
+use bevy::render::storage::ShaderStorageBuffer;
 use enum_map::{enum_map, EnumMap};
 
 use rose_data::{
@@ -32,6 +33,7 @@ use crate::{
         CharacterModel, CharacterModelPart, CharacterModelPartIndex, DummyBoneOffset,
         ItemDropModel, NpcModel, PersonalStoreModel, VehicleModel,
     },
+    diagnostics::render_diagnostics::{log_alpha_blend_mesh_setup_simple},
     effect_loader::spawn_effect,
     render::{
         ParticleMaterial, TrailEffect, RoseEffectExtension,
@@ -241,6 +243,7 @@ impl ModelLoader {
         particle_materials: &mut Assets<ParticleMaterial>,
         effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
         meshes: &mut Assets<Mesh>,
+        storage_buffers: &mut Assets<ShaderStorageBuffer>,
         model_entity: Entity,
         npc_id: NpcId,
     ) -> Option<(NpcModel, SkinnedMesh, DummyBoneOffset)> {
@@ -270,7 +273,14 @@ impl ModelLoader {
                 skeleton.bones.len(),
             )
         } else {
-            (SkinnedMesh::default(), Vec3::ZERO, 0)
+            // CRITICAL FIX: NPC has no skeleton - do NOT add SkinnedMesh component
+            // This prevents bind group mismatch errors when meshes don't have joint attributes
+            log::warn!(
+                "[SKINNED_MESH_FIX] NPC {} has no skeleton (skeleton_index: {}), spawning as non-skinned mesh to prevent bind group mismatch",
+                npc_id.get(),
+                npc_model_data.skeleton_index
+            );
+            return None;
         };
 
         let mut model_parts = Vec::with_capacity(16);
@@ -298,13 +308,14 @@ impl ModelLoader {
                     .joints
                     .get(dummy_bone_offset + *link_dummy_bone_id as usize)
                 {
-                    if let Some(effect_entity) = spawn_effect(
+                if let Some(effect_entity) = spawn_effect(
                         &self.vfs,
                         commands,
                         asset_server,
                         particle_materials,
                         effect_mesh_materials,
                         meshes,
+                        storage_buffers,
                         effect_path.into(),
                         false,
                         None,
@@ -972,6 +983,7 @@ impl ModelLoader {
         particle_materials: &mut Assets<ParticleMaterial>,
         effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
         meshes: &mut Assets<Mesh>,
+        storage_buffers: &mut Assets<ShaderStorageBuffer>,
         vehicle_model_entity: Entity,
         driver_model_entity: Entity,
         equipment: &Equipment,
@@ -1035,17 +1047,18 @@ impl ModelLoader {
                             if let Some(dummy_bone_entity) =
                                 skinned_mesh.joints.get(dummy_bone_offset + dummy_index)
                             {
-                                if let Some(effect_entity) = spawn_effect(
-                                    &self.vfs,
-                                    commands,
-                                    asset_server,
-                                    particle_materials,
-                                    effect_mesh_materials,
-                                    meshes,
-                                    effect_path.into(),
-                                    false,
-                                    None,
-                                ) {
+                if let Some(effect_entity) = spawn_effect(
+                        &self.vfs,
+                        commands,
+                        asset_server,
+                        particle_materials,
+                        effect_mesh_materials,
+                        meshes,
+                        storage_buffers,
+                        effect_path.into(),
+                        false,
+                        None,
+                    ) {
                                     commands.entity(*dummy_bone_entity).add_child(effect_entity);
                                     model_parts[vehicle_part_index].1.push(effect_entity);
                                 }
@@ -1197,6 +1210,28 @@ fn spawn_skeleton(
         );
     }
 
+    // CRITICAL VALIDATION: Ensure skeleton has bones
+    assert!(
+        !skeleton.bones.is_empty(),
+        "Skeleton has no bones! This will cause rendering errors."
+    );
+
+    assert_eq!(
+        bone_entities.len(),
+        skeleton.bones.len() + skeleton.dummy_bones.len(),
+        "Bone entity count mismatch: expected {}, got {}",
+        skeleton.bones.len() + skeleton.dummy_bones.len(),
+        bone_entities.len()
+    );
+
+    assert_eq!(
+        bind_pose.len(),
+        bone_entities.len(),
+        "Bind pose count mismatch: expected {}, got {}",
+        bone_entities.len(),
+        bind_pose.len()
+    );
+
     // Apply parent-child transform hierarchy to calculate bind pose for each bone
     transform_children(skeleton, &mut bind_pose, 0);
     for (dummy_id, dummy_bone) in skeleton.dummy_bones.iter().enumerate() {
@@ -1208,6 +1243,18 @@ fn spawn_skeleton(
         .iter()
         .map(|x| x.compute_matrix().inverse())
         .collect();
+
+    assert!(!inverse_bind_pose.is_empty(), "Skeleton has no inverse bind poses!");
+
+    // Validate inverse bind poses are not degenerate
+    for (i, matrix) in inverse_bind_pose.iter().enumerate() {
+        if matrix.determinant().abs() < 0.0001 {
+            log::warn!(
+                "Skeleton bone {} has near-zero determinant inverse bind pose",
+                i
+            );
+        }
+    }
 
     for (i, bone) in skeleton
         .bones
@@ -1224,9 +1271,31 @@ fn spawn_skeleton(
         }
     }
 
+    let inverse_bindposes = SkinnedMeshInverseBindposes::from(inverse_bind_pose);
+    let handle = skinned_mesh_inverse_bindposes_assets.add(inverse_bindposes);
+
+    // VERIFY: Asset was actually added (critical for preventing bind group mismatch)
+    if skinned_mesh_inverse_bindposes_assets.get(&handle).is_none() {
+        log::error!(
+            "[SKINNED_MESH_FIX] CRITICAL: Failed to add inverse bind poses asset to assets collection! This will cause a bind group mismatch!"
+        );
+        panic!("Failed to add inverse bind poses asset");
+    }
+
+    debug_assert!(
+        skinned_mesh_inverse_bindposes_assets.get(&handle).is_some(),
+        "Failed to add inverse bind poses asset"
+    );
+
+    log::info!(
+        "[SKINNED_MESH_FIX] Created skeleton with {} bones ({} real, {} dummy), inverse_bindposes asset loaded successfully",
+        bone_entities.len(),
+        skeleton.bones.len(),
+        skeleton.dummy_bones.len()
+    );
+
     SkinnedMesh {
-        inverse_bindposes: skinned_mesh_inverse_bindposes_assets
-            .add(SkinnedMeshInverseBindposes::from(inverse_bind_pose)),
+        inverse_bindposes: handle,
         joints: bone_entities,
     }
 }
@@ -1263,6 +1332,18 @@ fn spawn_skeleton(
         // Alpha-blended materials have alpha enabled and z-write disabled
         let alpha_blended = zsc_material.alpha_enabled && !zsc_material.z_write_enabled;
 
+        // Log alpha-blended mesh setup for diagnostic purposes (Crash #2)
+        if alpha_blended {
+            log_alpha_blend_mesh_setup_simple(
+                model_id,
+                material_id,
+                zsc_material.alpha_enabled,
+                zsc_material.z_write_enabled,
+                zsc_material.two_sided,
+                zsc_material.is_skin,
+            );
+        }
+
         // Create material using ExtendedMaterial<StandardMaterial, RoseObjectExtension>
         let texture_handle = asset_server.load(zsc_material.path.path().to_string_lossy().into_owned());
         let material = create_rose_object_material(
@@ -1277,27 +1358,61 @@ fn spawn_skeleton(
         );
 
         let mut entity_commands = commands.spawn((
-            mesh,
-            material,
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
             Transform::default(),
             GlobalTransform::default(),
             Visibility::Inherited,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-            Aabb::default(),
         ));
+        entity_commands.insert(Aabb::default());
+
+        // DIAGNOSTIC LOG: Log mesh spawning details
+        log::info!(
+            "[DIAGNOSTIC] Spawned mesh - model_id: {}, mesh_id: {}, material_id: {}, is_skin: {}, has_skinned_mesh_param: {}",
+            model_id,
+            mesh_id,
+            material_id,
+            zsc_material.is_skin,
+            skinned_mesh.is_some()
+        );
 
         if load_clip_faces {
-            let zms_material_num_faces: bevy::prelude::Handle<crate::zms_asset_loader::ZmsMaterialNumFaces> = asset_server.load(format!(
+            let zms_material_num_faces = crate::zms_asset_loader::ZmsMaterialNumFacesHandle(asset_server.load(format!(
                 "{}#material_num_faces",
                 model_list.meshes[mesh_id].path().to_string_lossy()
-            ));
+            )));
             entity_commands.insert(zms_material_num_faces);
         }
 
         if zsc_material.is_skin {
             if let Some(skinned_mesh) = skinned_mesh {
-                entity_commands.insert(skinned_mesh.clone());
+                // CRITICAL VALIDATION: Ensure SkinnedMesh has valid joints
+                if skinned_mesh.joints.is_empty() {
+                    log::error!(
+                        "[SKINNED_MESH_FIX] CRITICAL: Mesh (model_id: {}, mesh_id: {}) is marked as is_skin but SkinnedMesh has no joints! This will cause a bind group mismatch!",
+                        model_id,
+                        mesh_id
+                    );
+                    // Do NOT insert SkinnedMesh to prevent crash
+                } else {
+                    // DIAGNOSTIC LOG: SkinnedMesh component inserted on mesh entity
+                    log::info!(
+                        "[SKINNED_MESH_FIX] Inserting SkinnedMesh component on mesh entity - model_id: {}, mesh_id: {}, joints_count: {}",
+                        model_id,
+                        mesh_id,
+                        skinned_mesh.joints.len()
+                    );
+                    entity_commands.insert(skinned_mesh.clone());
+                }
+            } else {
+                // DIAGNOSTIC LOG: Mesh marked as is_skin but no SkinnedMesh provided
+                log::warn!(
+                    "[SKINNED_MESH_FIX] Mesh (model_id: {}, mesh_id: {}) is marked as is_skin but no SkinnedMesh component was provided. Spawning as non-skinned mesh to prevent bind group mismatch!",
+                    model_id,
+                    mesh_id
+                );
             }
         }
 

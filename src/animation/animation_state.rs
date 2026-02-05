@@ -166,7 +166,7 @@ impl AnimationState {
         }
 
         if let Some(start_delay) = self.start_delay.as_mut() {
-            *start_delay -= time.delta_seconds();
+            *start_delay -= time.delta_secs();
             if *start_delay > 0.0 {
                 // Waiting until start time
                 return false;
@@ -175,7 +175,7 @@ impl AnimationState {
             }
         }
 
-        let current_time = time.elapsed_seconds_f64();
+        let current_time = time.elapsed_secs_f64();
         let start_time = if let Some(start_time) = self.start_time {
             start_time
         } else {
@@ -184,7 +184,7 @@ impl AnimationState {
         };
 
         if self.interpolate_weight < 1.0 {
-            self.interpolate_weight += time.delta_seconds() / zmo_asset.interpolation_interval;
+            self.interpolate_weight += time.delta_secs() / zmo_asset.interpolation_interval;
         }
 
         let animation_frame_number =

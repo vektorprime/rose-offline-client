@@ -1,13 +1,14 @@
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
+    prelude::Image,
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        texture::Image,
     },
     tasks::futures_lite::AsyncReadExt,
 };
 use log::{info, warn};
+use std::future::Future;
 
 /// Custom asset loader for DDS files that handles unsupported formats like R8G8B8
 /// by converting them to formats Bevy can render (R8G8B8A8).
@@ -22,12 +23,13 @@ impl AssetLoader for DdsImageLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    async fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader<'_>,
-        _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
+    fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        load_context: &mut LoadContext<'_>,
+    ) -> impl Future<Output = Result<Self::Asset, Self::Error>> + Send {
+        async move {
         let asset_path = load_context.path().to_string_lossy().to_string();
         
         // Read all bytes from the reader
@@ -75,6 +77,7 @@ impl AssetLoader for DdsImageLoader {
                     try_image_crate(&bytes, &asset_path)
                 }
             }
+        }
     }
 
     fn extensions(&self) -> &[&str] {

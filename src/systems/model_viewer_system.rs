@@ -197,6 +197,7 @@ pub fn model_viewer_system(
                             Npc::new(npc.id, 0),
                             Visibility::default(),
                             InheritedVisibility::default(),
+                            ViewVisibility::default(),
                             GlobalTransform::default(),
                             Transform::default().with_translation(Vec3::new(
                                 2.5 + (count / 30) as f32 * NPC_SPACING,
@@ -289,6 +290,8 @@ pub fn model_viewer_system(
                             character_info,
                             equipment,
                             Visibility::default(),
+                            InheritedVisibility::default(),
+                            ViewVisibility::default(),
                             InheritedVisibility::default(),
                             GlobalTransform::default(),
                             Transform::default().with_translation(Vec3::new(

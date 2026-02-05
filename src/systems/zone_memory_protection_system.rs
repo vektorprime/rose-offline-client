@@ -6,6 +6,8 @@
 //! 3. Suggesting cleanup actions
 
 use bevy::prelude::*;
+use bevy::render::mesh::Mesh3d;
+use bevy::pbr::MeshMaterial3d;
 
 use crate::components::ZoneObject;
 
@@ -78,7 +80,7 @@ impl ZoneMemoryProtection {
 /// Uses a single combined query to stay within Bevy's system parameter limit
 pub fn zone_memory_protection_system(
     mut protection: ResMut<ZoneMemoryProtection>,
-    zone_objects: Query<(Entity, Option<&Handle<Mesh>>, Option<&Handle<StandardMaterial>>), With<ZoneObject>>,
+    zone_objects: Query<(Entity, Option<&Mesh3d>, Option<&MeshMaterial3d<StandardMaterial>>), With<ZoneObject>>,
 ) {
     let total_entities = zone_objects.iter().count();
     

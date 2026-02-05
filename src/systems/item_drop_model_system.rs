@@ -4,7 +4,7 @@ use bevy::{
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
         AssetServer, Assets, BuildChildren, Changed, Commands, Entity, GlobalTransform, Handle,
-        Mesh, Query, Res, ResMut, Transform, With, Without,
+        Mesh, Mesh3d, Query, Res, ResMut, Transform, With, Without,
     },
     render::{
         alpha::AlphaMode,
@@ -67,7 +67,7 @@ pub fn item_drop_model_system(
 pub fn item_drop_model_add_collider_system(
     mut commands: Commands,
     query_models: Query<(Entity, &ItemDropModel), Without<ColliderEntity>>,
-    query_aabb: Query<Option<&Aabb>, With<Handle<Mesh>>>,
+    query_aabb: Query<Option<&Aabb>, With<Mesh3d>>,
 ) {
     // Add colliders to NPC models without one
     for (entity, item_drop_model) in query_models.iter() {

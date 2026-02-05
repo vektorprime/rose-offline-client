@@ -7,7 +7,7 @@ use bevy::{
 // Custom materials removed to use StandardMaterial instead
 
 pub mod world_ui;
-pub use world_ui::WorldUiRect;
+pub use world_ui::{WorldUiRect, WorldUiRenderPlugin};
 
 pub mod particle_material;
 pub use particle_material::*;
@@ -43,6 +43,9 @@ pub use water_material_extension::*;
 
 pub mod effect_mesh_extension;
 pub use effect_mesh_extension::*;
+
+pub mod extension_material_plugin;
+pub use extension_material_plugin::ExtensionMaterialPlugin;
 
 pub const MESH_ATTRIBUTE_UV_1: MeshVertexAttribute =
     MeshVertexAttribute::new("Vertex_Uv2", 280035324, VertexFormat::Float32x2);

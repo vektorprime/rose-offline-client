@@ -5,7 +5,10 @@ use bevy::{
         AssetServer, Assets, Commands, EventReader, GlobalTransform, Query, Res, ResMut, Transform,
         Mesh,
     },
-    render::mesh::skinning::SkinnedMesh,
+    render::{
+        mesh::skinning::SkinnedMesh,
+        storage::ShaderStorageBuffer,
+    },
 };
 use rose_file_readers::VfsPath;
 
@@ -42,6 +45,7 @@ pub fn spawn_effect_system(
     mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
 ) {
     for event in events.read() {
         match event {
@@ -55,6 +59,7 @@ pub fn spawn_effect_system(
                         &mut particle_materials,
                         &mut effect_mesh_materials,
                         &mut meshes,
+                        &mut storage_buffers,
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         Some(*effect_entity),
@@ -72,6 +77,7 @@ pub fn spawn_effect_system(
                             &mut particle_materials,
                             &mut effect_mesh_materials,
                             &mut meshes,
+                            &mut storage_buffers,
                             effect_file_path,
                             spawn_effect_data.manual_despawn,
                             None,
@@ -108,6 +114,7 @@ pub fn spawn_effect_system(
                         &mut particle_materials,
                         &mut effect_mesh_materials,
                         &mut meshes,
+                        &mut storage_buffers,
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         None,
@@ -126,6 +133,7 @@ pub fn spawn_effect_system(
                         &mut particle_materials,
                         &mut effect_mesh_materials,
                         &mut meshes,
+                        &mut storage_buffers,
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         None,

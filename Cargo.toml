@@ -4,13 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+accesskit = "0.17"
 anyhow = "1.0.4"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 arrayvec = "0.7"
 async-trait = "0.1"
-bevy_egui = "=0.28"
-bevy-inspector-egui = "=0.25"
-bevy_rapier3d = "=0.27"
+bevy_egui = "0.32"
+bevy-inspector-egui = "0.29"
+bevy_rapier3d = "0.28"
 bitflags = "2.3"
 bytemuck = { version = "1.7.0", features = [ "derive" ] }
 chrono = "0.4"
@@ -21,10 +22,10 @@ dashmap = "5.5"
 directories = "5.0"
 encase = "0.8"
 dolly = "0.6.0"
-egui = "0.28"
-egui_extras = "0.28"
+egui = "0.30"
+egui_extras = "0.30"
 enum-map = { version = "2.0", features = ["serde"] }
-glam = "0.27"
+glam = "0.29"
 hound = "3.4"
 image = { version = "0.24", default-features = false, features = [ "dds", "ico", "tga", "png", "jpeg" ] }
 lazy_static = "1.4.0"
@@ -33,6 +34,7 @@ lru = "0.12"
 log = "0.4.14"
 futures-io = "0.3"
 md5 = "0.7.0"
+mint = "0.5"
 num-derive = "0.4"
 num-traits = "0.2"
 oddio = "0.6"
@@ -55,7 +57,7 @@ rose-network-common = { path = "C:/Users/vicha/RustroverProjects/rose-offline/ro
 rose-network-irose = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-network-irose" }
 
 [dependencies.bevy]
-version = "=0.14.2"
+version = "0.15"
 default-features = false
 features = [
     "bevy_asset",

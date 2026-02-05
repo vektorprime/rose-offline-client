@@ -52,7 +52,7 @@ pub fn name_tag_update_color_system(
                 )
                 .to_array();
 
-                Color::linear_rgb(
+                Color::srgb(
                     color[0] as f32 / 255.0,
                     color[1] as f32 / 255.0,
                     color[2] as f32 / 255.0,

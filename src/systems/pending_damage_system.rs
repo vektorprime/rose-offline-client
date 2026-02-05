@@ -48,7 +48,7 @@ pub fn pending_damage_system(
     time: Res<Time>,
     mut client_entity_list: ResMut<ClientEntityList>,
 ) {
-    let delta_time = time.delta_seconds();
+    let delta_time = time.delta_secs();
 
     for (entity, client_entity, mut health_points, mut pending_damage_list) in query_target.iter_mut() {
         let mut i = 0;

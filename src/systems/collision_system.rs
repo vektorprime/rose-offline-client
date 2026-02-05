@@ -4,7 +4,7 @@ use bevy::{
         Assets, Changed, Commands, Entity, EventWriter, Or, Query, Res, Time, Transform, With,
     },
 };
-use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter, RapierContext};
+use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter, ReadDefaultRapierContext};
 use bevy_rapier3d::geometry::ShapeCastOptions;
 
 use rose_game_common::messages::client::ClientMessage;
@@ -30,7 +30,7 @@ pub fn collision_height_only_system(
             Or<(Changed<Position>, Changed<Transform>)>,
         ),
     >,
-    rapier_context: Res<RapierContext>,
+    rapier_context: ReadDefaultRapierContext,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
 ) {
@@ -84,7 +84,7 @@ pub fn collision_height_only_system(
 #[allow(clippy::too_many_arguments)]
 pub fn collision_player_system_join_zoin(
     mut query_collision_entity: Query<(&mut Position, &mut Transform), Changed<CollisionPlayer>>,
-    rapier_context: Res<RapierContext>,
+    rapier_context: ReadDefaultRapierContext,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
 ) {
@@ -148,7 +148,7 @@ pub fn collision_player_system(
     query_collider_parent: Query<&ColliderParent>,
     current_zone: Option<Res<CurrentZone>>,
     game_connection: Option<Res<GameConnection>>,
-    rapier_context: Res<RapierContext>,
+    rapier_context: ReadDefaultRapierContext,
     time: Res<Time>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
 ) {
@@ -213,7 +213,7 @@ pub fn collision_player_system(
         }
 
         // Cast ray down to see if we are standing on any objects
-        let fall_distance = time.delta_seconds() * 9.81;
+        let fall_distance = time.delta().as_secs_f32() * 9.81;
         let ray_origin = Vec3::new(
             position.x / 100.0,
             position.z / 100.0 + 1.35,
@@ -275,17 +275,17 @@ pub fn collision_player_system(
                     .map_or(hit_entity, |collider_parent| collider_parent.entity);
 
                 if let Ok(mut hit_event_object) = query_event_object.get_mut(hit_entity) {
-                    if time.elapsed_seconds_f64() - hit_event_object.last_collision > 5.0 {
+                    if time.elapsed().as_secs_f64() - hit_event_object.last_collision > 5.0 {
                         if !hit_event_object.quest_trigger_name.is_empty() {
                             quest_trigger_events.send(QuestTriggerEvent::DoTrigger(
                                 hit_event_object.quest_trigger_name.as_str().into(),
                             ));
                         }
 
-                        hit_event_object.last_collision = time.elapsed_seconds_f64();
+                        hit_event_object.last_collision = time.elapsed().as_secs_f64();
                     }
                 } else if let Ok(mut hit_warp_object) = query_warp_object.get_mut(hit_entity) {
-                    if time.elapsed_seconds_f64() - hit_warp_object.last_collision > 5.0 {
+                    if time.elapsed().as_secs_f64() - hit_warp_object.last_collision > 5.0 {
                         if let Some(game_connection) = game_connection.as_ref() {
                             game_connection
                                 .client_message_tx
@@ -295,7 +295,7 @@ pub fn collision_player_system(
                                 .ok();
                         }
 
-                        hit_warp_object.last_collision = time.elapsed_seconds_f64();
+                        hit_warp_object.last_collision = time.elapsed().as_secs_f64();
                     }
                 }
                 true

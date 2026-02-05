@@ -36,6 +36,6 @@ impl Default for RoseWaterExtension {
 
 impl MaterialExtension for RoseWaterExtension {
     fn fragment_shader() -> ShaderRef {
-        "shaders/rose_water_extension.wgsl".into()
+        crate::render::extension_material_plugin::ROSE_WATER_EXTENSION_SHADER_HANDLE.into()
     }
 }

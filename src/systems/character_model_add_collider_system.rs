@@ -2,7 +2,7 @@ use bevy::{
     ecs::query::QueryEntityError,
     math::{Quat, Vec3, Vec3A},
     prelude::{
-        Assets, BuildChildren, Commands, Entity, GlobalTransform, Handle, Mesh, Query, Res,
+        Assets, BuildChildren, Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Res,
         Transform, With, Without,
     },
     render::{
@@ -29,7 +29,7 @@ pub fn character_model_add_collider_system(
         ),
         (Without<ColliderEntity>, Without<PersonalStore>),
     >,
-    query_aabb: Query<Option<&Aabb>, With<Handle<Mesh>>>,
+    query_aabb: Query<Option<&Aabb>, With<Mesh3d>>,
     inverse_bindposes: Res<Assets<SkinnedMeshInverseBindposes>>,
 ) {
     // Add colliders to character models without one

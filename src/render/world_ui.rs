@@ -1,4 +1,5 @@
 use std::{cmp::Ordering, ops::Range};
+use std::ops::Deref;
 
 use bevy::{
     asset::{AssetId, Handle, UntypedAssetId, UntypedHandle, load_internal_asset},
@@ -12,11 +13,12 @@ use bevy::{
     },
     pbr::MeshPipelineKey,
     prelude::{
-        App, Assets, Color, Commands, Component, Entity, FromWorld, GlobalTransform, InheritedVisibility, IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3, ViewVisibility, World
+        App, Assets, Color, Commands, Component, Entity, FromWorld, GlobalTransform, InheritedVisibility, IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3, ViewVisibility, World, Image
     },
     render::{
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
         render_asset::RenderAssets,
+        texture::GpuImage,
         render_phase::{
             AddRenderCommand, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult,
             SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
@@ -25,7 +27,6 @@ use bevy::{
             BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferBindingType, BufferUsages, RawBufferVec, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, FragmentState, FrontFace, MultisampleState, PipelineCache, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipelineDescriptor, SamplerBindingType, Shader, ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode
         },
         renderer::{RenderDevice, RenderQueue},
-        texture::{BevyDefault, GpuImage, Image},
         view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms}
     },
     utils::HashMap,
@@ -35,7 +36,12 @@ use uuid::Uuid;
 use std::any::TypeId;
 use bytemuck::{Pod, Zeroable};
 
-use crate::render::zone_lighting::{SetZoneLightingBindGroup, ZoneLightingUniformMeta};
+use crate::render::zone_lighting::{SetZoneLightingBindGroup, ZoneLightingUniformMeta, ZoneLightingUniformData};
+use crate::diagnostics::render_diagnostics::{
+    log_pipeline_cache_access,
+    log_pipeline_creation,
+    PipelineType,
+};
 
 pub const WORLD_UI_SHADER_HANDLE: UntypedHandle =
     UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0xd5cdda11c713e3a7) });
@@ -71,7 +77,7 @@ impl Plugin for WorldUiRenderPlugin {
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
-
+ 
         render_app.init_resource::<WorldUiPipeline>();
     }
 }
@@ -227,7 +233,7 @@ impl SpecializedRenderPipeline for WorldUiPipeline {
                 targets: vec![Some(ColorTargetState {
                     format: match key.contains(MeshPipelineKey::HDR) {
                         true => ViewTarget::TEXTURE_FORMAT_HDR,
-                        false => TextureFormat::bevy_default(),
+                        false => TextureFormat::Bgra8UnormSrgb,
                     },
                     blend: Some(BlendState {
                         color: BlendComponent {
@@ -281,6 +287,7 @@ impl SpecializedRenderPipeline for WorldUiPipeline {
             },
             label: Some("world_ui_pipeline".into()),
             push_constant_ranges: Vec::default(),
+            zero_initialize_workgroup_memory: false,
         }
     }
 }
@@ -326,15 +333,43 @@ impl FromWorld for WorldUiPipeline {
             ],
         );
 
+        // Get zone lighting layout, or create a fallback if resource doesn't exist
+        let zone_lighting_layout = match world.get_resource::<ZoneLightingUniformMeta>() {
+            Some(meta) => meta.bind_group_layout.clone(),
+            None => {
+                // Create a fallback bind group layout if ZoneLightingUniformMeta is not available
+                log::warn!("[WORLD UI] ZoneLightingUniformMeta not found, creating fallback bind group layout");
+                render_device.create_bind_group_layout(
+                    Some("fallback_zone_lighting_layout"),
+                    &[BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: Some(ZoneLightingUniformData::min_size()),
+                        },
+                        count: None,
+                    }],
+                )
+            }
+        };
+
+        // DIAGNOSTIC: Log pipeline creation (after layouts are created)
+        let mut diagnostics_state = world.resource_mut::<crate::diagnostics::render_diagnostics::RenderDiagnosticsState>();
+        log_pipeline_creation(
+            &mut diagnostics_state,
+            "world_ui_pipeline",
+            PipelineType::Render,
+            3, // Number of bind groups (view, material, zone_lighting)
+        );
+
         WorldUiPipeline {
             view_layout,
             vertex_shader: WORLD_UI_SHADER_HANDLE_TYPED,
             fragment_shader: WORLD_UI_SHADER_HANDLE_TYPED,
             material_layout,
-            zone_lighting_layout: world
-                .resource::<ZoneLightingUniformMeta>()
-                .bind_group_layout
-                .clone(),
+            zone_lighting_layout,
         }
     }
 }
@@ -444,21 +479,29 @@ pub fn queue_world_ui_meshes(
     world_ui_pipeline: Res<WorldUiPipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<WorldUiPipeline>>,
     pipeline_cache: Res<PipelineCache>,
-    msaa: Res<Msaa>,
-    views: Query<(Entity, &ExtractedView)>,
+    views: Query<(Entity, &ExtractedView, Option<&Msaa>)>,
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
     mut extracted_world_ui: ResMut<ExtractedWorldUi>,
     mut world_ui_meta: ResMut<WorldUiMeta>,
     mut commands: Commands,
     mut image_bind_groups: ResMut<ImageBindGroups>,
-    gpu_images: Res<RenderAssets<GpuImage>>,
+    render_images: Res<RenderAssets<GpuImage>>,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     view_uniforms: Res<ViewUniforms>,
+    mut diagnostics_state: ResMut<crate::diagnostics::render_diagnostics::RenderDiagnosticsState>,
 ) {
     if view_uniforms.uniforms.is_empty() {
         return;
     }
+
+    // DIAGNOSTIC: Log pipeline cache access before using it
+    log_pipeline_cache_access(
+        &mut diagnostics_state,
+        None,
+        PipelineType::Render,
+        0, // Cache size not directly accessible, will be logged on access
+    );
 
     let draw_alpha_mask = transparent_draw_functions
         .read()
@@ -479,13 +522,23 @@ pub fn queue_world_ui_meshes(
     }
 
     // Query for views and look up their phases from the resource
-    for (view_entity, view) in views.iter() {
+    for (view_entity, view, msaa) in views.iter() {
         let Some(transparent_phase) = transparent_render_phases.get_mut(&view_entity) else {
             continue;
         };
 
-        let view_key = MeshPipelineKey::from_msaa_samples(msaa.samples())
+        let msaa_samples = msaa.map(|m| m.samples()).unwrap_or(1);
+        let view_key = MeshPipelineKey::from_msaa_samples(msaa_samples)
             | MeshPipelineKey::from_hdr(view.hdr);
+        
+        // DIAGNOSTIC: Log pipeline cache access before specialization
+        log_pipeline_cache_access(
+            &mut diagnostics_state,
+            None,
+            PipelineType::Render,
+            0, // Cache size not directly accessible
+        );
+        
         let pipeline = pipelines.specialize(&pipeline_cache, &world_ui_pipeline, view_key);
         let view_matrix = view.world_from_view.compute_matrix();
         let inverse_view_transform = view_matrix.inverse();
@@ -512,7 +565,7 @@ pub fn queue_world_ui_meshes(
 
         for rect in extracted_world_ui.rects.iter() {
             let gpu_image =
-                if let Some(gpu_image) = gpu_images.get(rect.image_handle_id) {
+                if let Some(gpu_image) = render_images.get(rect.image_handle_id) {
                     gpu_image
                 } else {
                     // Image not ready yet, ignore
@@ -602,7 +655,7 @@ pub fn queue_world_ui_meshes(
                 });
 
             transparent_phase.items.push(Transparent3d {
-                entity: visible_entity,
+                entity: (visible_entity, visible_entity.into()),
                 draw_function: draw_alpha_mask,
                 pipeline,
                 distance: inverse_view_row_2.dot(rect.world_position.extend(1.0)) + 999999.0,

@@ -5,7 +5,7 @@ use bevy::render::{Extract, ExtractSchedule, Render, RenderApp, RenderSet};
 use bevy::core_pipeline::core_3d::{Opaque3d, Transparent3d};
 use bevy::render::render_phase::ViewSortedRenderPhases;
 use bevy::render::view::ViewUniformOffset;
-use bevy::pbr::ExtendedMaterial;
+use bevy::pbr::{ExtendedMaterial, MeshMaterial3d};
 use crate::components::{Zone, ZoneObject};
 use crate::render::{
     SkyMaterial,
@@ -21,7 +21,7 @@ pub fn debug_entity_visibility(
         &ViewVisibility,
         &Visibility,
         Option<&Name>,
-    ), (With<Handle<Mesh>>, Without<Camera>)>,
+    ), (With<Mesh3d>, Without<Camera>)>,
 ) {
     let total_entities = query.iter().count();
     
@@ -101,15 +101,15 @@ pub fn render_diagnostics_system(
     )>,
     meshes: Query<(
     Entity,
-    &Handle<Mesh>,
+    &Mesh3d,
     &GlobalTransform,
     &ViewVisibility,
     &Visibility,
-    Option<&Handle<StandardMaterial>>,
-    Option<&Handle<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
-    Option<&Handle<SkyMaterial>>,
-    Option<&Handle<ParticleMaterial>>,
-    Option<&Handle<DamageDigitMaterial>>,
+    Option<&MeshMaterial3d<StandardMaterial>>,
+    Option<&MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+    Option<&MeshMaterial3d<SkyMaterial>>,
+    Option<&MeshMaterial3d<ParticleMaterial>>,
+    Option<&MeshMaterial3d<DamageDigitMaterial>>,
 )>,
     mesh_assets: Res<Assets<Mesh>>,
     material_assets: Res<Assets<StandardMaterial>>,
@@ -292,7 +292,7 @@ pub fn render_diagnostics_system(
 /// Lightweight render diagnostics that runs every frame without being too verbose
 pub fn render_diagnostics_system_lightweight(
     cameras: Query<(Entity, &Camera, &GlobalTransform)>,
-    meshes: Query<&ViewVisibility, With<Handle<Mesh>>>,
+    meshes: Query<&ViewVisibility, With<Mesh3d>>,
     mesh_assets: Res<Assets<Mesh>>,
     images: Res<Assets<Image>>,
     diagnostics: Res<RenderExtractionDiagnostics>,
@@ -361,7 +361,7 @@ pub fn frustum_culling_diagnostics(
         &GlobalTransform,
         &ViewVisibility,
         &Visibility,
-        Option<&Handle<Mesh>>,
+        Option<&Mesh3d>,
     ), Without<Camera>>,
     mesh_assets: Res<Assets<Mesh>>,
     mut frame_count: Local<u32>,
@@ -373,16 +373,16 @@ pub fn frustum_culling_diagnostics(
         return;
     }
     
-    info!("========================================");
-    info!("[FRUSTUM DIAGNOSTICS] Frame {}", *frame_count);
-    info!("========================================");
+    // info!("========================================");
+    // info!("[FRUSTUM DIAGNOSTICS] Frame {}", *frame_count);
+    // info!("========================================");
     
     for (cam_entity, camera, cam_transform) in cameras.iter() {
-        info!("[FRUSTUM] Camera {:?}:", cam_entity);
-        info!("[FRUSTUM]   Position: {:?}", cam_transform.translation());
-        info!("[FRUSTUM]   Rotation (forward): {:?}", cam_transform.forward());
-        info!("[FRUSTUM]   Is active: {}", camera.is_active);
-        info!("[FRUSTUM]   Target: {:?}", camera.target);
+        // info!("[FRUSTUM] Camera {:?}:", cam_entity);
+        // info!("[FRUSTUM]   Position: {:?}", cam_transform.translation());
+        // info!("[FRUSTUM]   Rotation (forward): {:?}", cam_transform.forward());
+        // info!("[FRUSTUM]   Is active: {}", camera.is_active);
+        // info!("[FRUSTUM]   Target: {:?}", camera.target);
 
         // Calculate distance to first few meshes
         let cam_pos = cam_transform.translation();
@@ -406,25 +406,25 @@ pub fn frustum_culling_diagnostics(
                 Visibility::Inherited => "Inherited",
             };
             
-            info!("[FRUSTUM]   Mesh {:?}:", mesh_entity);
-            info!("[FRUSTUM]     Position: {:?}", mesh_pos);
-            info!("[FRUSTUM]     Distance: {:.2}", distance);
-            info!("[FRUSTUM]     Angle from camera forward: {:.2}°", angle_to_mesh);
-            info!("[FRUSTUM]     Visibility component: {}", visibility_str);
-            info!("[FRUSTUM]     ViewVisibility (computed): {}", view_vis.get());
-            info!("[FRUSTUM]     In front of camera: {} (dot={:.2})",
-                dot_product > 0.0, dot_product);
+            // info!("[FRUSTUM]   Mesh {:?}:", mesh_entity);
+            // info!("[FRUSTUM]     Position: {:?}", mesh_pos);
+            // info!("[FRUSTUM]     Distance: {:.2}", distance);
+            // info!("[FRUSTUM]     Angle from camera forward: {:.2}°", angle_to_mesh);
+            // info!("[FRUSTUM]     Visibility component: {}", visibility_str);
+            // info!("[FRUSTUM]     ViewVisibility (computed): {}", view_vis.get());
+            // info!("[FRUSTUM]     In front of camera: {} (dot={:.2})",
+            //     dot_product > 0.0, dot_product);
             
             // Check if mesh has valid asset
             if let Some(handle) = mesh_handle {
-                info!("[FRUSTUM]     Mesh asset loaded: {}", mesh_assets.contains(handle));
+                // info!("[FRUSTUM]     Mesh asset loaded: {}", mesh_assets.contains(handle));
             }
             
             logged += 1;
         }
     }
     
-    info!("========================================");
+    // info!("========================================");
 }
 
 /// Material transparency diagnostics to check if materials are rendering invisible
@@ -433,11 +433,11 @@ pub fn material_transparency_diagnostics(
         Entity,
         &GlobalTransform,
         &ViewVisibility,
-        Option<&Handle<StandardMaterial>>,
-        Option<&Handle<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
-        Option<&Handle<SkyMaterial>>,
-        Option<&Handle<ParticleMaterial>>,
-        Option<&Handle<DamageDigitMaterial>>,
+        Option<&MeshMaterial3d<StandardMaterial>>,
+        Option<&MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+        Option<&MeshMaterial3d<SkyMaterial>>,
+        Option<&MeshMaterial3d<ParticleMaterial>>,
+        Option<&MeshMaterial3d<DamageDigitMaterial>>,
     )>,
     material_assets: Res<Assets<StandardMaterial>>,
     effect_material_assets: Res<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
@@ -853,7 +853,7 @@ pub fn render_layer_diagnostics(
         Entity,
         &GlobalTransform,
         &ViewVisibility,
-    ), With<Handle<Mesh>>>,
+    ), With<Mesh3d>>,
     cameras: Query<(
         Entity,
         &Camera,
@@ -904,7 +904,7 @@ pub fn aabb_validation_diagnostics(
         &GlobalTransform,
         &ViewVisibility,
         Option<&Aabb>,
-    ), With<Handle<Mesh>>>,
+    ), With<Mesh3d>>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
@@ -980,15 +980,15 @@ pub fn aabb_validation_diagnostics(
 pub fn render_pipeline_diagnostics(
     meshes: Query<(
         Entity,
-        &Handle<Mesh>,
+        &Mesh3d,
         &GlobalTransform,
         &ViewVisibility,
-        Option<&Handle<StandardMaterial>>,
-        Option<&Handle<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
-        Option<&Handle<SkyMaterial>>,
-        Option<&Handle<ParticleMaterial>>,
-        Option<&Handle<DamageDigitMaterial>>,
-    ), With<Handle<Mesh>>>,
+        Option<&MeshMaterial3d<StandardMaterial>>,
+        Option<&MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+        Option<&MeshMaterial3d<SkyMaterial>>,
+        Option<&MeshMaterial3d<ParticleMaterial>>,
+        Option<&MeshMaterial3d<DamageDigitMaterial>>,
+    ), With<Mesh3d>>,
     mesh_assets: Res<Assets<Mesh>>,
     material_assets: Res<Assets<StandardMaterial>>,
     effect_material_assets: Res<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
@@ -1080,7 +1080,7 @@ pub fn render_pipeline_diagnostics(
 
 /// Render stage diagnostics to log number of entities in each render stage
 pub fn render_stage_diagnostics(
-    meshes: Query<Entity, With<Handle<Mesh>>>,
+    meshes: Query<Entity, With<Mesh3d>>,
     cameras: Query<Entity, With<Camera>>,
     lights: Query<Entity, With<DirectionalLight>>,
     mut frame_count: Local<u32>,
@@ -1173,7 +1173,7 @@ pub fn zone_entity_visibility_diagnostics(
         let has_aabb = aabb.is_some();
         let parent = world.get::<Parent>(entity);
         let render_layers = world.get::<bevy::render::view::RenderLayers>(entity);
-        let has_mesh = world.get::<Handle<Mesh>>(entity).is_some();
+        let has_mesh = world.get::<Mesh3d>(entity).is_some();
         let has_computed_visibility = world.get::<bevy::render::view::ViewVisibility>(entity).is_some();
         let inherited_vis_comp = world.get::<InheritedVisibility>(entity);
 
@@ -1248,7 +1248,7 @@ pub fn parent_child_visibility_diagnostics(
         &ViewVisibility,
         &Visibility,
         &InheritedVisibility,
-        Option<&Handle<Mesh>>,
+        Option<&Mesh3d>,
     )>,
     mut frame_count: Local<u32>,
 ) {
@@ -1260,13 +1260,13 @@ pub fn parent_child_visibility_diagnostics(
     }
 
     info!("========================================");
-    info!("[PARENT-CHILD VISIBILITY DIAGNOSTICS] Frame {}", *frame_count);
+    // info!("[PARENT-CHILD VISIBILITY DIAGNOSTICS] Frame {}", *frame_count);
     info!("========================================");
 
     for (zone_entity, zone, zone_view_vis, zone_inherited_vis) in zones.iter() {
-        info!("[PARENT-CHILD] Zone entity {:?} (ID: {}):", zone_entity, zone.id.get());
-        info!("[PARENT-CHILD]   Zone ViewVisibility: {}", zone_view_vis.get());
-        info!("[PARENT-CHILD]   Zone InheritedVisibility: {}", zone_inherited_vis.get());
+        // info!("[PARENT-CHILD] Zone entity {:?} (ID: {}):", zone_entity, zone.id.get());
+        // info!("[PARENT-CHILD]   Zone ViewVisibility: {}", zone_view_vis.get());
+        // info!("[PARENT-CHILD]   Zone InheritedVisibility: {}", zone_inherited_vis.get());
 
         // Count children
         let mut child_count = 0;
@@ -1298,30 +1298,30 @@ pub fn parent_child_visibility_diagnostics(
                     let child_has_computed_visibility = world.get::<bevy::render::view::ViewVisibility>(child_entity).is_some();
                     let child_inherited_vis_comp = world.get::<InheritedVisibility>(child_entity);
 
-                    info!("[PARENT-CHILD]   Child {:?} (Mesh: {}):", child_entity, mesh_handle.is_some());
-                    info!("[PARENT-CHILD]     Has ViewVisibility component: {}", child_has_computed_visibility);
-                    info!("[PARENT-CHILD]     Visibility component: {}", visibility_str);
-                    info!("[PARENT-CHILD]     InheritedVisibility component: {:?}", child_inherited_vis_comp.map(|v| v.get()));
-                    info!("[PARENT-CHILD]     ViewVisibility: {}", child_view_vis.get());
-                    info!("[PARENT-CHILD]     RenderLayers: {:?}", child_render_layers);
-                    info!("[PARENT-CHILD]     Has Aabb: {}, NoFrustumCulling: {}", child_has_aabb, child_has_no_frustum_culling);
+                    // info!("[PARENT-CHILD]   Child {:?} (Mesh: {}):", child_entity, mesh_handle.is_some());
+                    // info!("[PARENT-CHILD]     Has ViewVisibility component: {}", child_has_computed_visibility);
+                    // info!("[PARENT-CHILD]     Visibility component: {}", visibility_str);
+                    // info!("[PARENT-CHILD]     InheritedVisibility component: {:?}", child_inherited_vis_comp.map(|v| v.get()));
+                    // info!("[PARENT-CHILD]     ViewVisibility: {}", child_view_vis.get());
+                    // info!("[PARENT-CHILD]     RenderLayers: {:?}", child_render_layers);
+                    // info!("[PARENT-CHILD]     Has Aabb: {}, NoFrustumCulling: {}", child_has_aabb, child_has_no_frustum_culling);
 
                     if !child_view_vis.get() && *child_visibility == Visibility::Visible {
-                        warn!("[PARENT-CHILD]     Child has Visibility::Visible but ViewVisibility=false!");
-                        warn!("[PARENT-CHILD]     This indicates parent visibility issue or propagation failure!");
+                        // warn!("[PARENT-CHILD]     Child has Visibility::Visible but ViewVisibility=false!");
+                        // warn!("[PARENT-CHILD]     This indicates parent visibility issue or propagation failure!");
                     }
                 }
             }
         }
 
-        info!("[PARENT-CHILD]   Total children: {}", child_count);
-        info!("[PARENT-CHILD]   Visible children: {}", visible_children);
-        info!("[PARENT-CHILD]   Invisible children: {}", invisible_children);
+        // info!("[PARENT-CHILD]   Total children: {}", child_count);
+        // info!("[PARENT-CHILD]   Visible children: {}", visible_children);
+        // info!("[PARENT-CHILD]   Invisible children: {}", invisible_children);
 
         if invisible_children > 0 && !zone_inherited_vis.get() {
-            error!("[PARENT-CHILD]   DIAGNOSIS: Zone entity InheritedVisibility is false, causing {} children to be invisible!",
-                invisible_children);
-            error!("[PARENT-CHILD]   FIX: Make zone entity visible or check its parent!");
+            // error!("[PARENT-CHILD]   DIAGNOSIS: Zone entity InheritedVisibility is false, causing {} children to be invisible!",
+            //     invisible_children);
+            // error!("[PARENT-CHILD]   FIX: Make zone entity visible or check its parent!");
         }
     }
 
@@ -1409,26 +1409,26 @@ pub fn zone_component_lifecycle_diagnostics(
 /// Tracks how many entities have been extracted from Main World to Render World
 /// This is CRITICAL because Main World visibility does NOT guarantee Render World extraction
 pub fn diagnose_render_world_extraction(
-    render_entities: Query<(&ViewUniformOffset, &GlobalTransform), With<Handle<Mesh>>>,
+    render_entities: Query<(&ViewUniformOffset, &GlobalTransform), With<Mesh3d>>,
     mut diagnostics: ResMut<RenderExtractionDiagnostics>,
 ) {
     let extracted_count = render_entities.iter().count();
     diagnostics.last_extracted_count = extracted_count;
     
-    info!(
-        "[RENDER WORLD] {} entities extracted to render world",
-        extracted_count
-    );
+    // info!(
+    //     "[RENDER WORLD] {} entities extracted to render world",
+    //     extracted_count
+    // );
     
     // Log details for first few extracted entities
     let mut logged = 0;
     for (_view_offset, transform) in render_entities.iter() {
         if logged < 3 {
             let position = transform.translation();
-            info!(
-                "[RENDER WORLD]   Extracted entity at position: ({:.1}, {:.1}, {:.1})",
-                position.x, position.y, position.z
-            );
+            // info!(
+            //     "[RENDER WORLD]   Extracted entity at position: ({:.1}, {:.1}, {:.1})",
+            //     position.x, position.y, position.z
+            // );
             logged += 1;
         }
     }
@@ -1479,7 +1479,7 @@ pub fn diagnose_render_phase(
 /// Helps identify entities that are "visible" but outside camera frustum
 pub fn diagnose_camera_entity_distances(
     cameras: Query<(&GlobalTransform, &Camera)>,
-    visible_entities: Query<(Entity, &GlobalTransform, &ViewVisibility), With<Handle<Mesh>>>,
+    visible_entities: Query<(Entity, &GlobalTransform, &ViewVisibility), With<Mesh3d>>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;

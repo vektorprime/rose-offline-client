@@ -11,7 +11,6 @@ use bevy::{
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        texture::ImageSampler,
         view::{ViewVisibility, InheritedVisibility, NoFrustumCulling},
     },
     utils::HashMap,
@@ -176,7 +175,7 @@ fn create_pending_nametag(
         .map(|x| x.format.color)
         .map(|x| {
             let [r, g, b, _] = x.to_array().map(|c| c as f32 / 255.0);
-            Color::linear_rgb(r, g, b)
+            Color::srgb(r, g, b)
         })
         .collect();
     let galley = egui_context
@@ -662,6 +661,7 @@ pub fn name_tag_system(
                     GlobalTransform::default(),
                     Visibility::Hidden,
                     InheritedVisibility::default(),
+                    ViewVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -676,6 +676,7 @@ pub fn name_tag_system(
                     GlobalTransform::default(),
                     Visibility::Hidden,
                     InheritedVisibility::default(),
+                    ViewVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -694,6 +695,7 @@ pub fn name_tag_system(
                     GlobalTransform::default(),
                     Visibility::Hidden,
                     InheritedVisibility::default(),
+                    ViewVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);

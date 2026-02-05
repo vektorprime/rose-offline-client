@@ -42,6 +42,6 @@ impl Default for RoseObjectExtension {
 
 impl MaterialExtension for RoseObjectExtension {
     fn fragment_shader() -> ShaderRef {
-        "shaders/rose_object_extension.wgsl".into()
+        crate::render::extension_material_plugin::ROSE_OBJECT_EXTENSION_SHADER_HANDLE.into()
     }
 }

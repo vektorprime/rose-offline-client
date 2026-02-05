@@ -65,6 +65,6 @@ impl Default for RoseTerrainExtension {
 
 impl MaterialExtension for RoseTerrainExtension {
     fn fragment_shader() -> ShaderRef {
-        "shaders/rose_terrain_extension.wgsl".into()
+        crate::render::extension_material_plugin::ROSE_TERRAIN_EXTENSION_SHADER_HANDLE.into()
     }
 }

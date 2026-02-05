@@ -19,9 +19,9 @@ var<storage, read> sizes: SizeBuffer;
 var<storage, read> colors: ColorBuffer;
 @group(3) @binding(3)
 var<storage, read> textures: TextureBuffer;
-@group(2) @binding(0)
+@group(3) @binding(4)
 var base_color_texture: texture_2d<f32>;
-@group(2) @binding(1)
+@group(3) @binding(5)
 var base_color_sampler: sampler;
 
 struct VertexInput {
@@ -50,13 +50,13 @@ fn vertex(model: VertexInput) -> VertexOutput {
 
 #ifdef PARTICLE_BILLBOARD_Y_AXIS
   let camera_right =
-    normalize(vec3<f32>(view.world_from_view[0].x, 0.0, view.world_from_view[0].z));
+    normalize(vec3<f32>(view.view_from_world[0].x, 0.0, view.view_from_world[0].z));
   let camera_up = vec3<f32>(0.0, 1.0, 0.0);
 #else
 
 #ifdef PARTICLE_BILLBOARD_FULL
-  let camera_right = view.world_from_view[0].xyz;
-  let camera_up = view.world_from_view[1].xyz;
+  let camera_right = view.view_from_world[0].xyz;
+  let camera_up = view.view_from_world[1].xyz;
 #else
 
   let camera_right = vec3<f32>(1.0, 0.0, 0.0);
@@ -84,7 +84,7 @@ fn vertex(model: VertexInput) -> VertexOutput {
     (camera_up * vertex_position.y * size.y);
 
   var out: VertexOutput;
-  out.position = view.clip_from_world * vec4<f32>(world_space, 1.0);
+  out.position = view.clip_from_view * vec4<f32>(world_space, 1.0);
   out.color = colors.data[particle_idx];
 
   let texture = textures.data[particle_idx];

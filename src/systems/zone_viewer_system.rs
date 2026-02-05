@@ -17,9 +17,9 @@ pub fn zone_viewer_enter_system(
 ) {
     // Reset camera to optimal zone viewing position
     // Zone center is approximately (5200.0, 0.0, -5200.0)
-    let camera_position = Vec3::new(5000.0, 150.0, -5000.0);
+    let camera_position = Vec3::new(5120.0, 50.0, -5120.0);
     let camera_yaw: f32 = -45.0;
-    let camera_pitch: f32 = -30.0;  // Slightly steeper angle to see terrain
+    let camera_pitch: f32 = -20.0;
 
     info!("[CAMERA FIX] Initializing zone viewer camera for Bevy 0.14");
     info!("[CAMERA FIX] Camera position: {:?}", camera_position);

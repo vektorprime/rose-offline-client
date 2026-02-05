@@ -95,7 +95,7 @@ fn ui_add_store_item_slot(
             ),
             modal: false,
             ok: Some(Box::new(move |commands| {
-                commands.add(move |world: &mut World| {
+                commands.queue(move |world: &mut World| {
                     if let Some(mut personal_store_events) =
                         world.get_resource_mut::<Events<PersonalStoreEvent>>()
                     {

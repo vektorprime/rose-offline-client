@@ -37,7 +37,7 @@ fn vertex(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     
     // Transform world position to clip space
-    let clip_pos = view.clip_from_world * vec4<f32>(in.world_position, 1.0);
+    let clip_pos = view.clip_from_view * vec4<f32>(in.world_position, 1.0);
     
     // Convert to screen space and apply offset
     let screen_pos = (clip_pos.xy / clip_pos.w) + (in.screen_position / view.viewport.zw) * 2.0;

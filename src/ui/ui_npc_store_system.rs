@@ -154,7 +154,7 @@ fn ui_add_store_item_slot(
                     max_value: Some(999),
                     modal: false,
                     ok: Some(Box::new(move |commands, quantity| {
-                        commands.add(move |world: &mut World| {
+                        commands.queue(move |world: &mut World| {
                             let mut npc_store_events =
                                 world.resource_mut::<Events<NpcStoreEvent>>();
                             let _ = npc_store_events.send(NpcStoreEvent::AddToBuyList {

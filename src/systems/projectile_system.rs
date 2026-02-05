@@ -51,7 +51,7 @@ pub fn projectile_system(
             EffectBulletMoveType::Linear => {
                 let distance = transform.translation.distance(target_translation);
                 let direction = target_translation - transform.translation;
-                let move_distance = projectile.move_speed * time.delta_seconds();
+                let move_distance = projectile.move_speed * time.delta_secs();
 
                 (
                     move_distance + 0.1 >= distance,
@@ -79,13 +79,13 @@ pub fn projectile_system(
                     }
                 });
 
-                parabola.velocity_y -= 98.0 * time.delta_seconds();
+                parabola.velocity_y -= 98.0 * time.delta_secs();
                 parabola.move_vec.y = parabola.velocity_y;
-                parabola.current_time += time.delta_seconds();
+                parabola.current_time += time.delta_secs();
 
-                let mut move_vec = parabola.move_vec * time.delta_seconds();
+                let mut move_vec = parabola.move_vec * time.delta_secs();
                 move_vec.y += ((parabola.end_y - parabola.start_y) / parabola.total_time)
-                    * time.delta_seconds();
+                    * time.delta_secs();
 
                 (parabola.current_time >= parabola.total_time, move_vec)
             }

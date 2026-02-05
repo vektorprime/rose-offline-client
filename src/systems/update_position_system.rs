@@ -26,7 +26,7 @@ pub fn update_position_system(
             facing_direction.set_desired_vector(destination - position.position);
 
             // Move to position
-            let move_vector = direction.normalize() * move_speed.speed * time.delta_seconds();
+            let move_vector = direction.normalize() * move_speed.speed * time.delta_secs();
             if move_vector.length_squared() >= distance_squared {
                 position.position = destination;
             } else {

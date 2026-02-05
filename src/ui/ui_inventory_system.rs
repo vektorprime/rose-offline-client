@@ -657,7 +657,7 @@ pub fn ui_inventory_system(
             max_value: Some(player.1.money.0 as usize),
             modal: false,
             ok: Some(Box::new(move |commands, amount| {
-                commands.add(move |world: &mut World| {
+                commands.queue(move |world: &mut World| {
                     if let Some(mut player_command_events) =
                         world.get_resource_mut::<Events<PlayerCommandEvent>>()
                     {

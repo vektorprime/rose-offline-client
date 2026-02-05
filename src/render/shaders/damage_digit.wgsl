@@ -16,9 +16,9 @@ var<storage, read> positions: PositionBuffer;
 var<storage, read> sizes: SizeBuffer;
 @group(3) @binding(2)
 var<storage, read> uvs: UvBuffer;
-@group(2) @binding(0)
+@group(3) @binding(3)
 var base_color_texture: texture_2d<f32>;
-@group(2) @binding(1)
+@group(3) @binding(4)
 var base_color_sampler: sampler;
 
 struct VertexInput {
@@ -44,8 +44,8 @@ fn vertex(model: VertexInput) -> VertexOutput {
   let vert_idx = model.vertex_idx % 6u;
   let digit_idx = model.vertex_idx / 6u;
 
-  let camera_right = view.world_from_view[0].xyz;
-  let camera_up = view.world_from_view[1].xyz;
+  let camera_right = view.view_from_world[0].xyz;
+  let camera_up = view.view_from_world[1].xyz;
 
   let particle_position = positions.data[digit_idx].xyz;
   let x_offset = positions.data[digit_idx].w;
@@ -59,7 +59,7 @@ fn vertex(model: VertexInput) -> VertexOutput {
     (camera_up * vertex_position.y * size.y);
 
   var out: VertexOutput;
-  out.position = view.clip_from_world * vec4<f32>(world_space, 1.0);
+  out.position = view.clip_from_view * vec4<f32>(world_space, 1.0);
 
   let texture = uvs.data[digit_idx];
   if (vertex_positions[vert_idx].x < 0.0) {

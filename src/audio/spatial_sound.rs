@@ -149,7 +149,7 @@ pub fn spatial_sound_system(
             let relative_velocity = sound_velocity - listener_velocity;
 
             // Velocity is in metres per second
-            relative_velocity / time.delta_seconds()
+            relative_velocity / time.delta_secs()
         };
 
         // Adjust spatial position to be in direction of camera, but distance from player

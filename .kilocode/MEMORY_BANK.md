@@ -978,6 +978,8 @@ Major changes include:
 
 ### Diagnostic Systems
 
+Note all of these systems are disabled until needed.
+
 The project includes extensive diagnostic systems for debugging:
 
 **Render Diagnostics:**

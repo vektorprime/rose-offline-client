@@ -31,6 +31,6 @@ impl Default for RoseEffectExtension {
 
 impl MaterialExtension for RoseEffectExtension {
     fn fragment_shader() -> ShaderRef {
-        "shaders/rose_effect_extension.wgsl".into()
+        crate::render::extension_material_plugin::ROSE_EFFECT_EXTENSION_SHADER_HANDLE.into()
     }
 }

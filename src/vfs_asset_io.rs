@@ -1,10 +1,11 @@
 use bevy::asset::{
-    io::{AssetReader, AssetReaderError, AsyncReadAndSeek, AssetSource, AssetSourceId},
+    io::{AssetReader, AssetReaderError, AsyncSeekForward, AssetSource, AssetSourceId, Reader, VecReader},
     AssetApp, AssetServer,
 };
 use bevy::app::App;
 use bevy::prelude::{Plugin, Res, Resource};
 use std::{
+    future::Future,
     io::{Cursor, Seek},
     path::{Path, PathBuf},
     pin::Pin,
@@ -83,6 +84,8 @@ struct CursorWrapper {
     position: u64,
 }
 
+impl Unpin for CursorWrapper {}
+
 impl CursorWrapper {
     fn new(data: Vec<u8>) -> Self {
         Self { data, position: 0 }
@@ -115,24 +118,26 @@ impl bevy::tasks::futures_lite::AsyncSeek for CursorWrapper {
         pos: std::io::SeekFrom,
     ) -> Poll<std::io::Result<u64>> {
         use std::io::SeekFrom;
-        
+
         let new_pos = match pos {
             SeekFrom::Start(offset) => offset as i64,
             SeekFrom::End(offset) => self.data.len() as i64 + offset,
             SeekFrom::Current(offset) => self.position as i64 + offset,
         };
-        
+
         if new_pos < 0 {
             return Poll::Ready(Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "invalid seek to a negative position",
             )));
         }
-        
+
         self.position = new_pos as u64;
         Poll::Ready(Ok(self.position))
     }
 }
+
+
 
 impl std::io::Read for CursorWrapper {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
@@ -208,7 +213,7 @@ impl AssetReader for VfsAssetIo {
     fn read<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl bevy::utils::ConditionalSendFuture<Output = Result<Box<dyn AsyncReadAndSeek + Send + Sync + Unpin + 'a>, AssetReaderError>> {
+    ) -> impl Future<Output = Result<impl Reader + 'a, AssetReaderError>> + Send {
         async move {
             // Log ALL read calls to see what's happening
             let path_str = path.to_str().unwrap_or("");
@@ -237,7 +242,7 @@ impl AssetReader for VfsAssetIo {
                 // log::info!("[VFS DIAGNOSTIC] Returning zone_loader data for zone_id: {}", zone_id);
                 // log::info!("[VFS DIAGNOSTIC] Data length: {} bytes", data.len());
                 // log::info!("[VFS DIAGNOSTIC] ===========================================");
-                return Ok(Box::new(CursorWrapper::new(data)) as Box<dyn AsyncReadAndSeek + Send + Sync + Unpin + 'a>);
+                return Ok(VecReader::new(data));
             }
 
             // HACK: Exclude shaders from VFS to allow load_internal_asset! to work
@@ -246,7 +251,7 @@ impl AssetReader for VfsAssetIo {
                 log::info!("[VFS DEBUG] Path contains 'shaders/', bypassing VFS for: \"{}\"", path_str);
                 if let Ok(data) = std::fs::read(path) {
                     log::info!("[VFS DEBUG] Successfully read shader from local filesystem: \"{}\"", path_str);
-                    return Ok(Box::new(CursorWrapper::new(data)) as Box<dyn AsyncReadAndSeek + Send + Sync + Unpin + 'a>);
+                    return Ok(VecReader::new(data));
                 }
                 log::warn!("[VFS DEBUG] Failed to read shader from local filesystem: \"{}\"", path_str);
             }
@@ -265,7 +270,7 @@ impl AssetReader for VfsAssetIo {
                                 stats.log_file_read(path_str, size);
                             }
                             
-                            Ok(Box::new(CursorWrapper::new(buffer)) as Box<dyn AsyncReadAndSeek + Send + Sync + Unpin + 'a>)
+                            Ok(VecReader::new(buffer))
                         }
                         VfsFile::View(view) => {
                             let size = view.len();
@@ -277,7 +282,7 @@ impl AssetReader for VfsAssetIo {
                                 stats.log_file_read(path_str, size);
                             }
                             
-                            Ok(Box::new(CursorWrapper::new(data)) as Box<dyn AsyncReadAndSeek + Send + Sync + Unpin + 'a>)
+                            Ok(VecReader::new(data))
                         }
                     }
                 }
@@ -285,7 +290,7 @@ impl AssetReader for VfsAssetIo {
                     // Fallback to local filesystem if not found in VFS
                     if let Ok(data) = std::fs::read(path) {
                         log::info!("[VFS DEBUG] File not in VFS, but found on local filesystem: \"{}\"", path_str);
-                        return Ok(Box::new(CursorWrapper::new(data)) as Box<dyn AsyncReadAndSeek + Send + Sync + Unpin + 'a>);
+                        return Ok(VecReader::new(data));
                     }
 
                     log::warn!("[VFS DIAGNOSTIC] VFS file not found for path: {}", path_str);
@@ -300,18 +305,19 @@ impl AssetReader for VfsAssetIo {
     fn read_meta<'a>(
         &'a self,
         _path: &'a Path,
-    ) -> impl bevy::utils::ConditionalSendFuture<Output = Result<Box<dyn AsyncReadAndSeek + Send + Sync + Unpin + 'a>, AssetReaderError>> {
+    ) -> impl Future<Output = Result<impl Reader + 'a, AssetReaderError>> + Send {
         async move {
             // Return NotFound for metadata - this is correct behavior since VFS files
             // don't have .meta files. Bevy will use default metadata.
-            Err(AssetReaderError::NotFound(_path.into()))
+            use bevy::asset::io::Reader;
+            Err::<Box<dyn Reader + 'a>, AssetReaderError>(AssetReaderError::NotFound(_path.into()))
         }
     }
 
     fn read_directory<'a>(
         &'a self,
         _path: &'a Path,
-    ) -> impl bevy::utils::ConditionalSendFuture<Output = Result<Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>, AssetReaderError>> {
+    ) -> impl Future<Output = Result<Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>, AssetReaderError>> + Send {
         async move {
             // ============================================================================
             // CRITICAL FIX - DO NOT REMOVE - DO NOT MODIFY
@@ -348,7 +354,7 @@ impl AssetReader for VfsAssetIo {
     fn is_directory<'a>(
         &'a self,
         path: &'a Path,
-    ) -> impl bevy::utils::ConditionalSendFuture<Output = Result<bool, AssetReaderError>> {
+    ) -> impl Future<Output = Result<bool, AssetReaderError>> + Send {
         async move {
             log::info!("[VFS DIAGNOSTIC] is_directory called for path: {:?}", path);
             let path_str = path.to_str().unwrap_or("");

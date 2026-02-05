@@ -25,7 +25,11 @@ impl FreeCamera {
         yaw_pitch.rotate_yaw_pitch(yaw_degrees, pitch_degrees);
         Self {
             rig: CameraRig::builder()
-                .with(Position::new(position))
+                .with(Position::new(mint::Point3 {
+                    x: position.x,
+                    y: position.y,
+                    z: position.z,
+                }))
                 .with(yaw_pitch)
                 .with(Smooth::new_position_rotation(1.0, 1.0))
                 .build(),
@@ -53,7 +57,7 @@ pub fn free_camera_system(
     mut egui_ctx: EguiContexts,
 ) {
     // Log camera system execution once per second to avoid spam
-    if time.elapsed_seconds() % 1.0 < time.delta_seconds() {
+    if time.elapsed().as_secs_f32() % 1.0 < time.delta().as_secs_f32() {
         log::info!("[CAMERA] Free camera system running");
     }
     let Ok(mut window) = query_window.get_single_mut() else {
@@ -69,8 +73,8 @@ pub fn free_camera_system(
                 window.set_cursor_position(Some(saved_cursor_position));
             }
 
-            window.cursor.grab_mode = CursorGrabMode::None;
-            window.cursor.visible = true;
+            window.cursor_options.grab_mode = CursorGrabMode::None;
+            window.cursor_options.visible = true;
             control_state.is_dragging = false;
         }
 
@@ -137,21 +141,31 @@ pub fn free_camera_system(
         let rot_x = yaw_rot * Vec3::X;
         let rot_z = yaw_rot * Vec3::Z;
 
-        free_camera.rig.driver_mut::<Position>().translate(
-            -(drag_vec.x * rot_x + (drag_vec.z * rot_z) - Vec3::new(0.0, drag_vec.y, 0.0))
-                * time.delta_seconds()
-                * speed_boost_multiplier
-                * drag_speed,
-        );
+        let move_delta: Vec3 = -(drag_vec.x * rot_x + (drag_vec.z * rot_z) - Vec3::new(0.0, drag_vec.y, 0.0))
+            * time.delta().as_secs_f32()
+            * speed_boost_multiplier
+            * drag_speed;
+        
+        let translation: mint::Vector3<f32> = mint::Vector3 {
+            x: move_delta.x,
+            y: move_delta.y,
+            z: move_delta.z,
+        };
+        free_camera.rig.driver_mut::<Position>().translate(translation);
     }
 
     if move_vec.length_squared() > 0.0 || translate_vec.length_squared() > 0.0 {
-        free_camera.rig.driver_mut::<Position>().translate(
-            (camera_transform.rotation.mul_vec3(move_vec) + translate_vec)
-                * time.delta_seconds()
-                * speed_boost_multiplier
-                * move_speed,
-        );
+        let move_delta: Vec3 = (camera_transform.rotation.mul_vec3(move_vec) + translate_vec)
+            * time.delta().as_secs_f32()
+            * speed_boost_multiplier
+            * move_speed;
+        
+        let translation: mint::Vector3<f32> = mint::Vector3 {
+            x: move_delta.x,
+            y: move_delta.y,
+            z: move_delta.z,
+        };
+        free_camera.rig.driver_mut::<Position>().translate(translation);
     }
 
     if right_pressed && !left_pressed && !middle_pressed {
@@ -162,8 +176,8 @@ pub fn free_camera_system(
             .rotate_yaw_pitch(-sensitivity * cursor_delta.x, -sensitivity * cursor_delta.y);
 
         if !control_state.is_dragging {
-            window.cursor.grab_mode = CursorGrabMode::Locked;
-            window.cursor.visible = false;
+            window.cursor_options.grab_mode = CursorGrabMode::Locked;
+            window.cursor_options.visible = false;
             control_state.saved_cursor_position = window.cursor_position();
             control_state.is_dragging = true;
         }
@@ -172,17 +186,26 @@ pub fn free_camera_system(
             window.set_cursor_position(Some(saved_cursor_position));
         }
 
-        window.cursor.grab_mode = CursorGrabMode::None;
-        window.cursor.visible = true;
+        window.cursor_options.grab_mode = CursorGrabMode::None;
+        window.cursor_options.visible = true;
         control_state.is_dragging = false;
     }
 
-    let calculated_transform = free_camera.rig.update(time.delta_seconds());
-    camera_transform.translation = calculated_transform.position.into();
-    camera_transform.rotation = calculated_transform.rotation.into();
+    let calculated_transform = free_camera.rig.update(time.delta().as_secs_f32());
+    camera_transform.translation = Vec3::new(
+        calculated_transform.position.x,
+        calculated_transform.position.y,
+        calculated_transform.position.z,
+    );
+    camera_transform.rotation = Quat::from_xyzw(
+        calculated_transform.rotation.v.x,
+        calculated_transform.rotation.v.y,
+        calculated_transform.rotation.v.z,
+        calculated_transform.rotation.s,
+    );
 
     // Log camera position and direction periodically
-    if time.elapsed_seconds() % 5.0 < time.delta_seconds() {
+    if time.elapsed().as_secs_f32() % 5.0 < time.delta().as_secs_f32() {
         let yaw_pitch = free_camera.rig.driver::<YawPitch>();
         log::info!("[CAMERA] Free camera position: ({:.1}, {:.1}, {:.1})",
             camera_transform.translation.x,

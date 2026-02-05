@@ -2,7 +2,7 @@ use bevy::{
     ecs::query::QueryEntityError,
     math::{Vec3, Vec3A},
     prelude::{
-        BuildChildren, Commands, Entity, GlobalTransform, Handle, Mesh, Query, Transform, With,
+        BuildChildren, Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Transform, With,
         Without,
     },
     render::primitives::Aabb,
@@ -21,7 +21,7 @@ pub fn personal_store_model_add_collider_system(
         (Entity, &PersonalStoreModel, Option<&PlayerCharacter>),
         Without<ColliderEntity>,
     >,
-    query_aabb: Query<Option<&Aabb>, With<Handle<Mesh>>>,
+    query_aabb: Query<Option<&Aabb>, With<Mesh3d>>,
 ) {
     for (entity, personal_store_model, player_character) in query_models.iter() {
         let mut min: Option<Vec3A> = None;

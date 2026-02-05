@@ -8,6 +8,7 @@ use bevy::{
     render::{
         alpha::AlphaMode,
         mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
+        storage::ShaderStorageBuffer,
     },
 };
 
@@ -42,6 +43,7 @@ pub fn vehicle_model_system(
     mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
     mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
+    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
 ) {
     // Vehicle entity, where entity becomes a child of it.
     for (entity, equipment, move_mode, skinned_mesh, vehicle) in query.iter_mut() {
@@ -65,7 +67,7 @@ pub fn vehicle_model_system(
 
             // Move driver SkeletalAnimation, SkinnedMesh, DummyBoneOffset to root entity
             let driver_model_entity = vehicle_model.driver_model_entity;
-            commands.add(move |world: &mut World| {
+            commands.queue(move |world: &mut World| {
                 let mut driver_model_entity_mut = world.entity_mut(driver_model_entity);
                 let character_skeletal_animation =
                     driver_model_entity_mut.take::<SkeletalAnimation>();
@@ -138,6 +140,7 @@ pub fn vehicle_model_system(
                     &mut particle_materials,
                     &mut effect_mesh_materials,
                     &mut meshes,
+                    &mut storage_buffers,
                     vehicle_model_entity,
                     driver_model_entity,
                     equipment,
@@ -160,7 +163,7 @@ pub fn vehicle_model_system(
                 .entity(vehicle_model.driver_dummy_entity)
                 .add_child(vehicle_model.driver_model_entity);
 
-            commands.add(move |world: &mut World| {
+            commands.queue(move |world: &mut World| {
                 // Move character ActiveMotion, DummyBoneOffset, SkinnedMesh to character model
                 let mut root_entity_mut = world.entity_mut(entity);
                 let character_skeletal_animation = root_entity_mut.take::<SkeletalAnimation>();

@@ -299,7 +299,7 @@ pub fn particle_sequence_system(
     )>,
 ) {
     let mut rng = rand::thread_rng();
-    let delta_time = time.delta_seconds();
+    let delta_time = time.delta_secs();
 
     for (global_transform, mut particle_sequence, mut particle_render_data) in query.iter_mut() {
         if particle_sequence.start_delay > 0.0 {

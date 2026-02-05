@@ -367,6 +367,7 @@ pub fn ui_character_create_system(
                 GlobalTransform::default(),
                 Visibility::default(),
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
             ))
             .id();
         ui_state.entity = Some(create_character_entity);

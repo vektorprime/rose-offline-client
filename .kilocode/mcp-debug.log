@@ -1,0 +1,28 @@
+2026-02-03 11:54:46,058 - MCP server starting...
+2026-02-03 11:54:46,058 - Config - QDRANT_URL: http://127.0.0.1:6333
+2026-02-03 11:54:46,058 - Config - COLLECTION: bevy-0-14-2
+2026-02-03 11:54:46,058 - Config - EMBEDDING_MODEL: text-embedding-embeddinggemma-300m@bf16
+2026-02-03 11:54:46,058 - Config - LM_STUDIO_URL: http://127.0.0.1:1234/v1
+2026-02-03 11:54:46,619 - connect_tcp.started host='127.0.0.1' port=6333 local_address=None timeout=5.0 socket_options=None
+2026-02-03 11:54:46,621 - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x0000023701CAF770>
+2026-02-03 11:54:46,621 - send_request_headers.started request=<Request [b'GET']>
+2026-02-03 11:54:46,621 - send_request_headers.complete
+2026-02-03 11:54:46,621 - send_request_body.started request=<Request [b'GET']>
+2026-02-03 11:54:46,622 - send_request_body.complete
+2026-02-03 11:54:46,622 - receive_response_headers.started request=<Request [b'GET']>
+2026-02-03 11:54:46,624 - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'transfer-encoding', b'chunked'), (b'content-encoding', b'gzip'), (b'vary', b'accept-encoding, Origin, Access-Control-Request-Method, Access-Control-Request-Headers'), (b'content-type', b'application/json'), (b'date', b'Tue, 03 Feb 2026 17:54:46 GMT')])
+2026-02-03 11:54:46,624 - HTTP Request: GET http://127.0.0.1:6333 "HTTP/1.1 200 OK"
+2026-02-03 11:54:46,624 - receive_response_body.started request=<Request [b'GET']>
+2026-02-03 11:54:46,625 - receive_response_body.complete
+2026-02-03 11:54:46,625 - response_closed.started
+2026-02-03 11:54:46,625 - response_closed.complete
+2026-02-03 11:54:46,625 - close.started
+2026-02-03 11:54:46,625 - close.complete
+2026-02-03 11:54:46,633 - Clients initialized successfully
+2026-02-03 11:54:46,633 - Starting MCP server main
+2026-02-03 11:54:46,633 - Entering MCP loop
+2026-02-03 11:54:46,633 - Received line: {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+2026-02-03 11:54:46,633 - Request ID: 1, Method: initialize
+2026-02-03 11:54:46,633 - Handling initialize request
+2026-02-03 11:54:46,633 - Sending response: {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": "query-qdrant", "version": "1.0.0"}}}
+2026-02-03 11:54:46,634 - EOF received, exiting

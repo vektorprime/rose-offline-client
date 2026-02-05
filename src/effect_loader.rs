@@ -1,14 +1,15 @@
 use bevy::{
-    hierarchy::BuildChildren,
+    asset::RenderAssetUsages,
     math::{Quat, Vec3},
-    pbr::{ExtendedMaterial, StandardMaterial},
+    pbr::{ExtendedMaterial, MeshMaterial3d, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Commands, Entity, GlobalTransform, Transform, Visibility,
+        AssetServer, Assets, BuildChildren, ChildBuild, Commands, Entity, GlobalTransform, Mesh3d, Transform, Visibility,
     },
     render::{
         alpha::AlphaMode,
         primitives::Aabb,
         render_resource::{BlendFactor, BlendOperation},
+        storage::ShaderStorageBuffer,
         view::{ViewVisibility, InheritedVisibility, NoFrustumCulling},
     },
 };
@@ -32,6 +33,7 @@ pub fn spawn_effect(
     particle_materials: &mut Assets<ParticleMaterial>,
     effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
     meshes: &mut Assets<bevy::prelude::Mesh>,
+    storage_buffers: &mut Assets<ShaderStorageBuffer>,
     effect_path: VfsPath,
     manual_despawn: bool,
     effect_entity: Option<Entity>,
@@ -47,6 +49,7 @@ pub fn spawn_effect(
             asset_server,
             particle_materials,
             meshes,
+            storage_buffers,
             &eft_particle,
         ) {
             child_entities.push(particle_entity);
@@ -69,7 +72,7 @@ pub fn spawn_effect(
         commands
             .entity(effect_entity)
             .insert(Effect::new(manual_despawn))
-            .push_children(&child_entities);
+            .add_children(&child_entities);
         Some(effect_entity)
     } else {
         let root_entity = commands
@@ -81,7 +84,7 @@ pub fn spawn_effect(
                 InheritedVisibility::default(),
                 ViewVisibility::default(),
             ))
-            .push_children(&child_entities)
+            .add_children(&child_entities)
             .id();
 
         Some(root_entity)
@@ -147,36 +150,36 @@ fn spawn_mesh(
                     eft_mesh.mesh_file.path(),
                 );
                 let mesh: bevy::prelude::Handle<bevy::prelude::Mesh> = asset_server.load(mesh_path);
+                let material = effect_mesh_materials.add(ExtendedMaterial {
+                    base: StandardMaterial {
+                        base_color_texture: Some(asset_server.load(eft_mesh.mesh_texture_file.path().to_string_lossy().into_owned())),
+                        alpha_mode: if eft_mesh.alpha_test_enabled {
+                            AlphaMode::Mask(0.5)
+                        } else {
+                            AlphaMode::Opaque
+                        },
+                        double_sided: eft_mesh.two_sided,
+                        ..Default::default()
+                    },
+                    extension: RoseEffectExtension {
+                        animation_texture: eft_mesh.mesh_animation_file.as_ref().map(|path| {
+                            asset_server.load(ZmoTextureAssetLoader::convert_path_texture(
+                                path.path().to_str().unwrap(),
+                            ))
+                        }),
+                    },
+                });
+
                 let mut entity_comands = child_builder.spawn((
                     EffectMesh {},
-                    mesh,
-                    effect_mesh_materials.add(ExtendedMaterial {
-                        base: StandardMaterial {
-                            base_color_texture: Some(asset_server.load(eft_mesh.mesh_texture_file.path().to_string_lossy().into_owned())),
-                            alpha_mode: if eft_mesh.alpha_enabled || !eft_mesh.depth_write_enabled {
-                                AlphaMode::Blend
-                            } else if eft_mesh.alpha_test_enabled {
-                                AlphaMode::Mask(0.5)
-                            } else {
-                                AlphaMode::Opaque
-                            },
-                            double_sided: eft_mesh.two_sided,
-                            ..Default::default()
-                        },
-                        extension: RoseEffectExtension {
-                            animation_texture: eft_mesh.mesh_animation_file.as_ref().map(|path| {
-                                asset_server.load(ZmoTextureAssetLoader::convert_path_texture(
-                                    path.path().to_str().unwrap(),
-                                ))
-                            }),
-                        },
-                    }),
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material),
                     Visibility::default(),
                     InheritedVisibility::default(),
                     ViewVisibility::default(),
                     Transform::default(),
-                    GlobalTransform::default(),
                 ));
+                entity_comands.insert(GlobalTransform::default());
 
                 // TODO: eft_mesh.is_linked
 
@@ -220,6 +223,7 @@ fn spawn_particle(
     asset_server: &AssetServer,
     particle_materials: &mut Assets<ParticleMaterial>,
     meshes: &mut Assets<bevy::prelude::Mesh>,
+    storage_buffers: &mut Assets<ShaderStorageBuffer>,
     eft_particle: &EftParticle,
 ) -> Option<Entity> {
     let ptl_file = vfs
@@ -250,24 +254,34 @@ fn spawn_particle(
             ))
             .with_children(|child_builder| {
                 for sequence in ptl_file.sequences {
+                    let particle_render_data = ParticleRenderData::new(
+                        sequence.num_particles as usize,
+                        sequence.blend_op as u8,
+                        sequence.src_blend_mode as u8,
+                        sequence.dst_blend_mode as u8,
+                        match sequence.align_type {
+                            0 => ParticleRenderBillboardType::Full,
+                            1 => ParticleRenderBillboardType::None,
+                            2 => ParticleRenderBillboardType::YAxis,
+                            _ => ParticleRenderBillboardType::Full,
+                        },
+                    );
+
+                    let particle_material = particle_materials.add(ParticleMaterial {
+                        texture: asset_server.load(sequence.texture_path.path().to_string_lossy().into_owned()),
+                        positions: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),
+                        sizes: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),
+                        colors: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),
+                        textures: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),
+                    });
+
+                    let particle_mesh = meshes.add(bevy::prelude::Mesh::from(bevy::prelude::Rectangle::new(1.0, 1.0)));
+
                     let mut entity_comands = child_builder.spawn((
                         EffectParticle {},
-                        ParticleRenderData::new(
-                            sequence.num_particles as usize,
-                            sequence.blend_op as u8,
-                            sequence.src_blend_mode as u8,
-                            sequence.dst_blend_mode as u8,
-                            match sequence.align_type {
-                                0 => ParticleRenderBillboardType::Full,
-                                1 => ParticleRenderBillboardType::None,
-                                2 => ParticleRenderBillboardType::YAxis,
-                                _ => ParticleRenderBillboardType::Full,
-                            },
-                        ),
-                        particle_materials.add(ParticleMaterial {
-                            texture: asset_server.load(sequence.texture_path.path().to_string_lossy().into_owned()),
-                        }),
-                        meshes.add(bevy::prelude::Mesh::from(bevy::prelude::Rectangle::new(1.0, 1.0))),
+                        particle_render_data,
+                        MeshMaterial3d(particle_material),
+                        Mesh3d(particle_mesh),
                         ParticleSequence::from(sequence)
                             .with_start_delay(eft_particle.start_delay as f32 / 1000.0),
                         Transform::default(),
@@ -275,8 +289,8 @@ fn spawn_particle(
                         Visibility::default(),
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
-                        NoFrustumCulling, // AABB culling is broken for particles
                     ));
+                    entity_comands.insert(NoFrustumCulling); // AABB culling is broken for particles
 
                     if let Some(transform_animation_path) = &eft_particle.animation_file {
                         let motion = asset_server.load(transform_animation_path.path().to_string_lossy().into_owned());

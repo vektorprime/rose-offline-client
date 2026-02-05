@@ -11,7 +11,7 @@ use bevy::{
     window::{CursorGrabMode, PrimaryWindow, Window},
 };
 use bevy_egui::{egui, EguiContexts};
-use bevy_rapier3d::prelude::{CollisionGroups, QueryFilter, RapierContext};
+use bevy_rapier3d::prelude::{CollisionGroups, QueryFilter, ReadDefaultRapierContext};
 
 use rose_data::{CharacterMotionAction, ZoneId};
 use rose_game_common::messages::{client::ClientMessage, server::CreateCharacterError};
@@ -49,8 +49,8 @@ pub fn character_select_enter_system(
     game_data: Res<GameData>,
 ) {
     if let Ok(mut window) = query_window.get_single_mut() {
-        window.cursor.grab_mode = CursorGrabMode::None;
-        window.cursor.visible = true;
+        window.cursor_options.grab_mode = CursorGrabMode::None;
+        window.cursor_options.visible = true;
     }
 
     // Reset camera
@@ -77,6 +77,7 @@ pub fn character_select_enter_system(
                 GlobalTransform::default(),
                 Visibility::default(),
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
             ))
             .id();
         models.push((None, entity));
@@ -383,7 +384,7 @@ pub fn character_select_input_system(
     mut character_select_state: ResMut<CharacterSelectState>,
     mut egui_ctx: EguiContexts,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
-    rapier_context: Res<RapierContext>,
+    rapier_context: ReadDefaultRapierContext,
     mut last_selected_time: Local<Option<Instant>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     query_collider_parent: Query<&ColliderParent>,
@@ -415,7 +416,7 @@ pub fn character_select_input_system(
 
     if mouse_button_input.just_pressed(MouseButton::Left) {
         for (camera, camera_transform) in query_camera.iter() {
-            if let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+            if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
                 if let Some((collider_entity, _)) = rapier_context.cast_ray(
                     ray.origin,
                     *ray.direction,

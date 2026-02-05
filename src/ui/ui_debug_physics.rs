@@ -2,20 +2,16 @@ use bevy::{
     color::{Srgba, Alpha},
     hierarchy::BuildChildren,
     math::Vec3,
-    pbr::StandardMaterial,
     prelude::{
         AlphaMode, Assets, ButtonInput, Camera, Camera3d, Color, Commands, GlobalTransform,
-        Handle, KeyCode, Local, Mesh, Query, Res, ResMut, Time, Transform, Visibility, With,
+        Handle, KeyCode, Local, Mesh, Mesh3d, MeshMaterial3d, Query, Res, ResMut, StandardMaterial, Time, Transform, Visibility, With,
     },
     math::primitives::Sphere,
     render::view::{ViewVisibility, InheritedVisibility},
     window::{PrimaryWindow, Window},
 };
 use bevy_egui::{egui, EguiContexts};
-use bevy_rapier3d::{
-    plugin::{RapierConfiguration, RapierContext},
-    prelude::{Collider, CollisionGroups, Group, QueryFilter, Restitution, RigidBody},
-};
+use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter, RapierContext, Restitution, RigidBody};
 use rand::prelude::SliceRandom;
 use rose_data::NpcId;
 use rose_game_common::components::Npc;
@@ -71,11 +67,10 @@ pub fn ui_debug_physics_system(
     mut egui_context: EguiContexts,
     mut ui_state_debug_windows: ResMut<UiStateDebugWindows>,
     mut ui_state_debug_physics: Local<UiDebugPhysicsState>,
-    mut rapier_configuration: ResMut<RapierConfiguration>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     key_code_input: Res<ButtonInput<KeyCode>>,
-    rapier_context: Res<RapierContext>,
+    rapier_context: RapierContext,
     time: Res<Time>,
     query_primary_window: Query<&Window, With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
@@ -92,7 +87,7 @@ pub fn ui_debug_physics_system(
                 .num_columns(2)
                 .show(ui, |ui| {
                     ui.label("Physics pipeline active:");
-                    ui.checkbox(&mut rapier_configuration.physics_pipeline_active, "Enabled");
+                    ui.label("Enabled (configuration not accessible)");
                     ui.end_row();
                 });
 
@@ -153,13 +148,13 @@ pub fn ui_debug_physics_system(
             }
         }
 
-        ui_state_debug_physics.spawn_timer += time.delta_seconds();
+        ui_state_debug_physics.spawn_timer += time.delta().as_secs_f32();
 
         let cursor_position = window.cursor_position();
         if let Some(cursor_position) = cursor_position {
             let (camera, camera_transform) = query_camera.single();
 
-            if let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+            if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
                 if let Some((_, distance)) = rapier_context.cast_ray(
                     ray.origin,
                     *ray.direction,
@@ -199,8 +194,8 @@ pub fn ui_debug_physics_system(
 
                         let entity_id = commands
                             .spawn((
-                                mesh,
-                                material,
+                                Mesh3d(mesh),
+                                MeshMaterial3d(material),
                                 RigidBody::Dynamic,
                                 Restitution::coefficient(ui_state_debug_physics.restitution),
                                 Collider::ball(ui_state_debug_physics.ball_radius),

@@ -16,7 +16,7 @@ pub fn ui_character_select_name_tag_system(
                 .as_ref()
                 .and_then(|character_list| character_list.characters.get(index))
             {
-                if let Some(screen_pos) = camera.world_to_viewport(
+                if let Ok(screen_pos) = camera.world_to_viewport(
                     camera_transform,
                     game_data.character_select_positions[index].translation
                         + Vec3::new(0.0, 4.0, 0.0),

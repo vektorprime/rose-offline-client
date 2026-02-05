@@ -5,6 +5,8 @@
 
 use bevy::prelude::*;
 use bevy::render::{mesh::Mesh, primitives::Aabb, view::Visibility};
+use bevy::render::mesh::Mesh3d;
+use bevy::pbr::MeshMaterial3d;
 
 use crate::components::{Zone, ZoneObject};
 use crate::resources::zone_debug_diagnostics::ZoneDebugDiagnostics;
@@ -73,7 +75,7 @@ pub fn zone_render_validation_system(
     // Combined query for Zone entities
     zone_query: Query<(Entity, Option<&Children>), With<Zone>>,
     // Combined query for ZoneObject entities with all render components - using StandardMaterial
-    zone_object_query: Query<(Entity, Option<&Children>, Option<&Handle<Mesh>>, Option<&Visibility>, Option<&Transform>, Option<&GlobalTransform>, Option<&Handle<StandardMaterial>>), With<ZoneObject>>,
+    zone_object_query: Query<(Entity, Option<&Children>, Option<&Mesh3d>, Option<&Visibility>, Option<&Transform>, Option<&GlobalTransform>, Option<&MeshMaterial3d<StandardMaterial>>), With<ZoneObject>>,
 ) {
     // Only run validation every 60 frames (approx 1 second at 60fps)
     static mut FRAME_COUNTER: usize = 0;
@@ -151,8 +153,8 @@ pub fn zone_render_validation_system(
             for &child in children.iter() {
                 // Check if child has mesh/material by querying it
                 if let Ok((_, _, child_mesh, _, _, _, child_material)) = zone_object_query.get(child) {
-                    let child_mesh: Option<&Handle<Mesh>> = child_mesh;
-                    let child_material: Option<&Handle<StandardMaterial>> = child_material;
+                    let child_mesh: Option<&Mesh3d> = child_mesh;
+                    let child_material: Option<&MeshMaterial3d<StandardMaterial>> = child_material;
                     if child_mesh.is_some() {
                         zone_objects_with_mesh.insert(entity);
                     }
@@ -183,7 +185,7 @@ pub fn asset_loading_validation_system(
     asset_server: Res<AssetServer>,
     meshes: Res<Assets<Mesh>>,
     images: Res<Assets<Image>>,
-    material_meshes: Query<(Entity, &Handle<Mesh>), With<ZoneObject>>,
+    material_meshes: Query<(Entity, &Mesh3d), With<ZoneObject>>,
 ) {
     use bevy::asset::LoadState;
 
@@ -201,7 +203,7 @@ pub fn asset_loading_validation_system(
 
     // Check mesh load states
     for (entity, mesh_handle) in material_meshes.iter() {
-        if let Some(state) = asset_server.get_load_state(mesh_handle) {
+        if let Some(state) = asset_server.get_load_state(&**mesh_handle) {
             match state {
                 LoadState::NotLoaded => {
                     not_loaded_meshes += 1;
@@ -275,7 +277,7 @@ pub fn camera_validation_system(
 /// This checks vertex counts, indices, and required attributes
 pub fn mesh_inspection_system(
     meshes: Res<Assets<Mesh>>,
-    mesh_query: Query<(Entity, &Handle<Mesh>), With<ZoneObject>>,
+    mesh_query: Query<(Entity, &Mesh3d), With<ZoneObject>>,
 ) {
     use bevy::render::mesh::VertexAttributeValues;
     
@@ -353,7 +355,7 @@ pub fn mesh_inspection_system(
 /// Checks StandardMaterial used by zone objects
 pub fn material_validation_system(
     standard_materials: Res<Assets<StandardMaterial>>,
-    standard_mat_query: Query<(Entity, &Handle<StandardMaterial>), With<ZoneObject>>,
+    standard_mat_query: Query<(Entity, &MeshMaterial3d<StandardMaterial>), With<ZoneObject>>,
 ) {
     static mut FRAME_COUNTER: usize = 0;
     unsafe {
@@ -429,7 +431,7 @@ pub fn entity_count_tracing_system(
 /// DIAGNOSTIC: System to check if mesh entities have AABB components
 /// This helps diagnose if missing AABBs are causing frustum culling to mark all meshes as invisible
 pub fn aabb_diagnostic_system(
-    mesh_query: Query<(Entity, &Handle<Mesh>, Option<&Aabb>, Option<&Visibility>), With<ZoneObject>>,
+    mesh_query: Query<(Entity, &Mesh3d, Option<&Aabb>, Option<&Visibility>), With<ZoneObject>>,
 ) {
     static mut FRAME_COUNTER: usize = 0;
     unsafe {

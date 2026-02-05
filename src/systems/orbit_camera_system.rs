@@ -13,8 +13,7 @@ use bevy::{
 use bevy_egui::EguiContexts;
 use bevy_rapier3d::{
     geometry::ShapeCastOptions,
-    plugin::RapierContext,
-    prelude::{Collider, CollisionGroups, QueryFilter},
+    prelude::{Collider, CollisionGroups, QueryFilter, RapierContext, ReadDefaultRapierContext},
 };
 use dolly::prelude::{Arm, CameraRig, LeftHanded, Position, Smooth, YawPitch};
 
@@ -36,12 +35,22 @@ pub struct OrbitCamera {
 
 impl OrbitCamera {
     pub fn new(follow_entity: Entity, follow_offset: Vec3, follow_distance: f32) -> Self {
+        let initial_position: mint::Point3<f32> = mint::Point3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let initial_arm: mint::Vector3<f32> = mint::Vector3 {
+            x: 0.0,
+            y: 0.0,
+            z: 4.0,
+        };
         Self {
             rig: CameraRig::builder()
-                .with(Position::new(Vec3::new(0.0, 0.0, 0.0)))
+                .with(Position::new(initial_position))
                 .with(YawPitch::new().yaw_degrees(45.0).pitch_degrees(-30.0))
                 .with(Smooth::new_position_rotation(1.0, 1.0))
-                .with(Arm::new(Vec3::Z * 4.0))
+                .with(Arm::new(initial_arm))
                 .build(),
             has_initial_position: false,
             follow_entity,
@@ -70,10 +79,10 @@ pub fn orbit_camera_system(
     mut egui_ctx: EguiContexts,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
-    rapier_context: Res<RapierContext>,
+    rapier_context: ReadDefaultRapierContext,
 ) {
     // Log camera system execution once per second to avoid spam
-    if time.elapsed_seconds() % 1.0 < time.delta_seconds() {
+    if time.elapsed().as_secs_f32() % 1.0 < time.delta().as_secs_f32() {
         log::info!("[CAMERA] Orbit camera system running");
     }
     let Ok(mut window) = query_window.get_single_mut() else {
@@ -89,8 +98,8 @@ pub fn orbit_camera_system(
                 window.set_cursor_position(Some(saved_cursor_position));
             }
 
-            window.cursor.grab_mode = CursorGrabMode::None;
-            window.cursor.visible = true;
+            window.cursor_options.grab_mode = CursorGrabMode::None;
+            window.cursor_options.visible = true;
             control_state.is_dragging = false;
         }
 
@@ -100,11 +109,22 @@ pub fn orbit_camera_system(
     // If the camera has not had its initial position yet, move straight to entity
     if !orbit_camera.has_initial_position {
         if let Ok(follow_transform) = query_global_transform.get(orbit_camera.follow_entity) {
+            let translation = follow_transform.translation();
+            let initial_position: mint::Point3<f32> = mint::Point3 {
+                x: translation.x,
+                y: translation.y,
+                z: translation.z,
+            };
+            let initial_arm: mint::Vector3<f32> = mint::Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: orbit_camera.follow_distance,
+            };
             orbit_camera.rig = CameraRig::builder()
-                .with(Position::new(follow_transform.translation()))
+                .with(Position::new(initial_position))
                 .with(YawPitch::new().yaw_degrees(45.0).pitch_degrees(-30.0))
                 .with(Smooth::new_position_rotation(1.0, 1.0))
-                .with(Arm::new(Vec3::Z * orbit_camera.follow_distance))
+                .with(Arm::new(initial_arm))
                 .build();
             orbit_camera.has_initial_position = true;
         }
@@ -124,8 +144,8 @@ pub fn orbit_camera_system(
             }
 
             if !control_state.is_dragging {
-                window.cursor.grab_mode = CursorGrabMode::Locked;
-                window.cursor.visible = false;
+                window.cursor_options.grab_mode = CursorGrabMode::Locked;
+                window.cursor_options.visible = false;
                 control_state.saved_cursor_position = window.cursor_position();
             }
         }
@@ -137,8 +157,8 @@ pub fn orbit_camera_system(
                 window.set_cursor_position(Some(saved_cursor_position));
             }
 
-            window.cursor.grab_mode = CursorGrabMode::None;
-            window.cursor.visible = true;
+            window.cursor_options.grab_mode = CursorGrabMode::None;
+            window.cursor_options.visible = true;
         }
 
         control_state.is_dragging = false;
@@ -158,10 +178,15 @@ pub fn orbit_camera_system(
 
     if let Ok(follow_transform) = query_global_transform.get(orbit_camera.follow_entity) {
         let follow_position = follow_transform.translation() + orbit_camera.follow_offset;
-        orbit_camera.rig.driver_mut::<Position>().position = follow_position.into();
+        let position: mint::Point3<f32> = mint::Point3 {
+            x: follow_position.x,
+            y: follow_position.y,
+            z: follow_position.z,
+        };
+        orbit_camera.rig.driver_mut::<Position>().position = position;
 
         // Log camera position and direction periodically
-        if time.elapsed_seconds() % 5.0 < time.delta_seconds() {
+        if time.elapsed().as_secs_f32() % 5.0 < time.delta().as_secs_f32() {
             let yaw_pitch = orbit_camera.rig.driver::<YawPitch>();
             log::info!("[CAMERA] Orbit Camera - Position: ({:.2}, {:.2}, {:.2}), Yaw: {:.2}°, Pitch: {:.2}°, Distance: {:.2}",
                 camera_transform.translation.x,
@@ -214,7 +239,7 @@ pub fn orbit_camera_system(
         ExpSmoothingParams {
             smoothness: 1.0,
             output_offset_scale: 1.0,
-            delta_time_seconds: time.delta_seconds(),
+            delta_time_seconds: time.delta().as_secs_f32(),
         },
     );
 
@@ -226,9 +251,18 @@ pub fn orbit_camera_system(
     }
 
     // Update camera
-    let calculated_transform = orbit_camera.rig.update(time.delta_seconds());
-    camera_transform.translation = calculated_transform.position.into();
-    camera_transform.rotation = calculated_transform.rotation.into();
+    let calculated_transform = orbit_camera.rig.update(time.delta().as_secs_f32());
+    camera_transform.translation = Vec3::new(
+        calculated_transform.position.x,
+        calculated_transform.position.y,
+        calculated_transform.position.z,
+    );
+    camera_transform.rotation = Quat::from_xyzw(
+        calculated_transform.rotation.v.x,
+        calculated_transform.rotation.v.y,
+        calculated_transform.rotation.v.z,
+        calculated_transform.rotation.s,
+    );
 }
 
 pub trait Interpolate {

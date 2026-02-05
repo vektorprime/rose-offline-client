@@ -1,9 +1,10 @@
 use std::{
+    collections::HashSet,
+    future::Future,
     num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::{Arc, OnceLock, mpsc},
     time::{Duration, Instant},
-    collections::HashSet,
 };
 
 /// Memory monitoring for zone transitions
@@ -286,7 +287,8 @@ use    bevy::{
         pbr::{ExtendedMaterial, NotShadowCaster, NotShadowReceiver, StandardMaterial},
         prelude::{
             AssetServer, Color, Commands, Entity, EventReader, EventWriter, GlobalTransform, Handle,
-            Local, Res, ResMut, Resource, Transform, TransformBundle, UntypedHandle, Visibility, With,
+            Image, Local, Res, ResMut, Resource, Transform, TransformBundle, UntypedHandle, Visibility, With,
+            Mesh3d, MeshMaterial3d,
         },
         reflect::TypePath,
         render::{
@@ -294,7 +296,7 @@ use    bevy::{
             mesh::{Indices, Mesh, PrimitiveTopology},
             primitives::Aabb,
             render_asset::RenderAssetUsages,
-            texture::Image,
+            storage::ShaderStorageBuffer,
             view::{NoFrustumCulling, ViewVisibility, InheritedVisibility, VisibilityBundle, RenderLayers},
         },
         tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
@@ -563,28 +565,30 @@ impl AssetLoader for ZoneLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    async fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader<'_>,
-        _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        log::info!("[ZONE LOADER ASSET LOADER] ===========================================");
-        log::info!("[ZONE LOADER ASSET LOADER] ZoneLoader::load called");
-        log::info!("[ZONE LOADER ASSET LOADER] ===========================================");
+    fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        load_context: &mut LoadContext<'_>,
+    ) -> impl Future<Output = Result<Self::Asset, Self::Error>> + Send {
+        async move {
+            log::info!("[ZONE LOADER ASSET LOADER] ===========================================");
+            log::info!("[ZONE LOADER ASSET LOADER] ZoneLoader::load called");
+            log::info!("[ZONE LOADER ASSET LOADER] ===========================================");
 
-        let mut bytes = Vec::new();
-        log::info!("[ZONE LOADER ASSET LOADER] Reading bytes from reader...");
-        reader.read_to_end(&mut bytes).await?;
-        log::info!("[ZONE LOADER ASSET LOADER] Read {} bytes", bytes.len());
+            let mut bytes = Vec::new();
+            log::info!("[ZONE LOADER ASSET LOADER] Reading bytes from reader...");
+            reader.read_to_end(&mut bytes).await?;
+            log::info!("[ZONE LOADER ASSET LOADER] Read {} bytes", bytes.len());
 
-        let zone_id = ZoneId::new(bytes[0] as u16).unwrap();
-        log::info!("[ZONE LOADER ASSET LOADER] Zone ID parsed: {}", zone_id.get());
+            let zone_id = ZoneId::new(bytes[0] as u16).unwrap();
+            log::info!("[ZONE LOADER ASSET LOADER] Zone ID parsed: {}", zone_id.get());
 
-        log::info!("[ZONE LOADER ASSET LOADER] Calling load_zone...");
-        let result = load_zone(zone_id, load_context).await;
-        log::info!("[ZONE LOADER ASSET LOADER] load_zone completed with result: {:?}", result.is_ok());
-        result
+            log::info!("[ZONE LOADER ASSET LOADER] Calling load_zone...");
+            let result = load_zone(zone_id, load_context).await;
+            log::info!("[ZONE LOADER ASSET LOADER] load_zone completed with result: {:?}", result.is_ok());
+            result
+        }
     }
 
     fn extensions(&self) -> &[&str] {
@@ -1045,6 +1049,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub standard_materials: ResMut<'w, Assets<bevy::pbr::StandardMaterial>>,
     pub effect_mesh_materials: ResMut<'w, Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     pub particle_materials: ResMut<'w, Assets<ParticleMaterial>>,
+    pub storage_buffers: ResMut<'w, Assets<ShaderStorageBuffer>>,
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
 }
@@ -1823,6 +1828,7 @@ pub fn spawn_zone(
         standard_materials,
         effect_mesh_materials,
         particle_materials,
+        storage_buffers,
         zone_loader_assets: _,
         memory_tracking,
     } = params;
@@ -2082,6 +2088,7 @@ pub fn spawn_zone(
                             effect_mesh_materials.as_mut(),
                             particle_materials.as_mut(),
                             meshes,
+                            storage_buffers.as_mut(),
                             effect_object,
                             ifo_object_id,
                         );
@@ -2155,12 +2162,12 @@ fn spawn_skybox(
 
     commands
         .spawn((
-            mesh_handle,
-            standard_materials.add(bevy::pbr::StandardMaterial {
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(standard_materials.add(bevy::pbr::StandardMaterial {
                 base_color_texture: Some(texture_day_handle),
                 unlit: true,
                 ..Default::default()
-            }),
+            })),
             Transform::from_scale(Vec3::splat(SKYBOX_MODEL_SCALE)),
             GlobalTransform::default(),
             ViewVisibility::default(),
@@ -2365,8 +2372,8 @@ fn spawn_terrain(
                 block_x: block_data.block_x as u32,
                 block_y: block_data.block_y as u32,
             }),
-            meshes.add(mesh),
-            material_handle,
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(material_handle),
             Transform::from_xyz(offset_x - 5200.0, 0.0, -offset_y + 5200.0),
             GlobalTransform::default(),
             Visibility::Visible,
@@ -2451,8 +2458,8 @@ fn spawn_water(
     let water_entity = commands
         .spawn((
             ZoneObject::Water,
-            meshes.add(mesh),
-            water_material.clone(),
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(water_material.clone()),
             Transform::default(),
             GlobalTransform::default(),
             Visibility::Visible,
@@ -2534,8 +2541,7 @@ fn spawn_object(
 
     let object_entity = object_entity_commands.id();
 
-    object_entity_commands.with_children(|object_commands| {
-        for (part_index, object_part) in object.parts.iter().enumerate() {
+    for (part_index, object_part) in object.parts.iter().enumerate() {
             let part_transform = Transform::default()
                 .with_translation(
                     Vec3::new(
@@ -2557,14 +2563,14 @@ fn spawn_object(
                 ));
 
             let mesh_id = object_part.mesh_id as usize;
-            
+
             // VALIDATION FIX: Check mesh_id bounds before using
             if mesh_id >= zsc.meshes.len() {
                 // log::warn!("[SPAWN OBJECT] Object {} part {} has invalid mesh_id {} (max: {}), skipping part",
                 //     zsc_object_id, part_index, mesh_id, zsc.meshes.len().saturating_sub(1));
                 continue;
             }
-            
+
             // VALIDATION FIX: Check material_id bounds
             let material_id = object_part.material_id as usize;
             if material_id >= zsc.materials.len() {
@@ -2572,7 +2578,7 @@ fn spawn_object(
                 //     zsc_object_id, part_index, material_id, zsc.materials.len().saturating_sub(1));
                 continue;
             }
-            
+
             let mesh = mesh_cache[mesh_id].clone().unwrap_or_else(|| {
                 let mesh_path = zsc.meshes[mesh_id].path().to_string_lossy().into_owned();
                 let mesh_path_log = mesh_path.clone();
@@ -2616,11 +2622,11 @@ fn spawn_object(
             // NOTE: material_id was already validated at lines 2437-2443 above
             // This second fetch is just for local use
             let material_id = object_part.material_id as usize;
-            
+
             let zsc_material = zsc.materials[material_id].clone();
             let material_path = zsc_material.path.path().to_string_lossy().into_owned();
             let material_path_log = material_path.clone();
-            
+
             //log::info!("[SPAWN OBJECT] Creating material: {}", material_path_log);
             let base_texture_handle = asset_server.load(&material_path);
             //info!("[MEMORY TRACKING] Object material base texture handle created: {}", material_path_log);
@@ -2673,14 +2679,14 @@ fn spawn_object(
             // CRITICAL FIX: Validate material handle before spawning
             let material_id = material.id();
             let is_material_weak = material.is_weak();
-            
+
             // Verify material is strong
             // if material.is_weak() {
             //     log::error!("[SPAWN OBJECT] CRITICAL: Material is weak! Object {} part {} will not render!",
             //         zsc_object_id, part_index);
             // }
-            
-            let mut part_commands = object_commands.spawn((
+
+            let part_entity = commands.spawn((
                 part_object_type(ZoneObjectPart {
                     ifo_object_id,
                     zsc_object_id,
@@ -2700,8 +2706,8 @@ fn spawn_object(
                         .collision_flags
                         .contains(ZscCollisionFlags::NOT_CAMERA_COLLISION),
                 }),
-                mesh.clone(),
-                material,
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material),
                 part_transform,
                 GlobalTransform::default(),
             Visibility::Visible,
@@ -2712,20 +2718,20 @@ fn spawn_object(
                 RenderLayers::layer(0),
                 NotShadowCaster,
                 ColliderParent::new(object_entity),
-                AsyncCollider(ComputedColliderShape::TriMesh),
+                AsyncCollider(ComputedColliderShape::TriMesh(bevy_rapier3d::prelude::TriMeshFlags::FIX_INTERNAL_EDGES)),
                 CollisionGroups::new(collision_group, collision_filter),
-            ));
+            )).id();
 
             let active_motion = object_part.animation_path.as_ref().map(|animation_path| {
                 TransformAnimation::repeat(asset_server.load(animation_path.path().to_string_lossy().into_owned()), None)
             });
             if let Some(active_motion) = active_motion {
-                part_commands.insert(active_motion);
+                commands.entity(part_entity).insert(active_motion);
             }
 
-            part_entities.push(part_commands.id());
+            commands.entity(object_entity).add_child(part_entity);
+            part_entities.push(part_entity);
         }
-    });
 
     // log::info!("[SPAWN OBJECT] Object entity created: {:?} with {} parts",
     //     object_entity, part_entities.len());
@@ -2856,9 +2862,7 @@ fn spawn_animated_object(
     let material = effect_mesh_materials.add(ExtendedMaterial {
         base: StandardMaterial {
             base_color_texture: Some(texture_handle),
-            alpha_mode: if alpha_enabled || !z_write_enabled {
-                AlphaMode::Blend
-            } else if alpha_test_enabled {
+            alpha_mode: if alpha_test_enabled {
                 AlphaMode::Mask(0.5)
             } else {
                 AlphaMode::Opaque
@@ -2880,8 +2884,8 @@ fn spawn_animated_object(
                 motion_path: motion_path.to_string(),
                 texture_path: texture_path.to_string(),
             }),
-            mesh,
-            material,
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
             MeshAnimation::repeat(motion_handle, None),
             object_transform,
             GlobalTransform::default(),
@@ -2894,7 +2898,7 @@ fn spawn_animated_object(
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
             NotShadowCaster,
-            AsyncCollider(ComputedColliderShape::TriMesh),
+            AsyncCollider(ComputedColliderShape::TriMesh(bevy_rapier3d::prelude::TriMeshFlags::empty())),
             CollisionGroups::new(COLLISION_GROUP_ZONE_OBJECT, COLLISION_FILTER_INSPECTABLE),
         ))
         .id();
@@ -2910,6 +2914,7 @@ fn spawn_effect_object(
     effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
     particle_materials: &mut Assets<ParticleMaterial>,
     meshes: &mut Assets<bevy::prelude::Mesh>,
+    storage_buffers: &mut Assets<ShaderStorageBuffer>,
     effect_object: &IfoEffectObject,
     ifo_object_id: usize,
 ) -> Entity {
@@ -2958,6 +2963,7 @@ fn spawn_effect_object(
         particle_materials,
         effect_mesh_materials,
         meshes,
+        storage_buffers,
         (&effect_object.effect_path).into(),
         false,
         Some(effect_object_entity),

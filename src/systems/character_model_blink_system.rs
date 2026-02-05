@@ -13,7 +13,7 @@ pub fn character_model_blink_system(
         let mut changed = false;
 
         if dead.is_none() {
-            blink_timer.timer += time.delta_seconds();
+            blink_timer.timer += time.delta().as_secs_f32();
 
             if blink_timer.is_open {
                 if blink_timer.timer >= blink_timer.open_duration {

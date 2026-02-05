@@ -136,13 +136,14 @@ impl AssetLoader for ZmoAssetLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    async fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader<'_>,
-        _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let asset_path = load_context.path().to_string_lossy();
+    fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        load_context: &mut LoadContext<'_>,
+    ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
+        async move {
+            let asset_path = load_context.path().to_string_lossy();
         //info!("[ASSET LIFECYCLE] Loading ZMO animation asset: {}", asset_path);
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
@@ -212,6 +213,7 @@ impl AssetLoader for ZmoAssetLoader {
             }
             Err(error) => Err(error),
         }
+        }
     }
 
     fn extensions(&self) -> &[&str] {
@@ -240,13 +242,14 @@ impl AssetLoader for ZmoTextureAssetLoader {
         &["zmo_texture"]
     }
 
-    async fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader<'_>,
-        _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let asset_path = load_context.path().to_string_lossy();
+    fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        load_context: &mut LoadContext<'_>,
+    ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
+        async move {
+            let asset_path = load_context.path().to_string_lossy();
         //info!("[ASSET LIFECYCLE] Loading ZMO texture asset: {}", asset_path);
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
@@ -365,6 +368,7 @@ impl AssetLoader for ZmoTextureAssetLoader {
                 Ok(asset)
             }
             Err(error) => Err(error),
+        }
         }
     }
 }

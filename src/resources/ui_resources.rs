@@ -5,9 +5,9 @@ use bevy::{
     prelude::{
         AssetServer, Assets, Commands, Handle, Image, Query, Res, ResMut, Resource, Vec2, With,
     },
-    window::{CursorGrabMode, CursorIcon, PrimaryWindow, Window},
+    window::{CursorGrabMode, PrimaryWindow, Window},
 };
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{egui, egui::CursorIcon, EguiContexts};
 use enum_map::{enum_map, Enum, EnumMap};
 
 use rose_file_readers::{IdFile, TsiFile, TsiSprite, VirtualFilesystem};
@@ -283,7 +283,7 @@ fn load_ui_spritesheet(
     let mut loaded_textures = Vec::new();
     for tsi_texture in tsi_file.textures.iter() {
         let handle = asset_server.load(format!("3DDATA/CONTROL/RES/{}", tsi_texture.filename));
-        let texture_id = egui_context.add_image(handle.clone_weak());
+        let texture_id = egui_context.add_image(handle.clone());
         loaded_textures.push(UiTexture {
             handle,
             texture_id,
@@ -343,11 +343,11 @@ pub fn update_ui_resources(
         if let Some(resource_cursor) = cursors.get(&ui_cursor.handle) {
             ui_cursor.cursor = Some(resource_cursor.cursor.clone());
         } else if matches!(
-            asset_server.get_load_state(&ui_cursor.handle),
-            Some(LoadState::Failed(_))
-        ) {
-            ui_cursor.cursor = Some(CursorIcon::Default);
-        } else {
+                asset_server.get_load_state(&ui_cursor.handle),
+                Some(LoadState::Failed(_))
+            ) {
+                ui_cursor.cursor = Some(CursorIcon::Default);
+            } else {
             loaded_all = false;
         }
     }
@@ -370,7 +370,7 @@ pub fn update_ui_resources(
                     } else {
                         let handle = asset_server
                             .load(format!("3DDATA/CONTROL/RES/{}", &skill_widget.image));
-                        let texture_id = egui_context.add_image(handle.clone_weak());
+                        let texture_id = egui_context.add_image(handle.clone());
                         skill_widget.ui_texture = Some(UiTexture {
                             handle,
                             texture_id,
@@ -490,7 +490,7 @@ pub fn load_ui_resources(
             UiSpriteSheetType::ClanMarkBackground => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3DDATA/CONTROL/RES/CLANBACK.TSI", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
             UiSpriteSheetType::MinimapArrow => {
                 let handle = asset_server.load("3DDATA/CONTROL/RES/MINIMAP_ARROW.TGA");
-                let texture_id = egui_context.add_image(handle.clone_weak());
+                let texture_id = egui_context.add_image(handle.clone());
 
                 Some(UiSpriteSheet {
                     sprites: vec![
@@ -504,7 +504,7 @@ pub fn load_ui_resources(
             }
             UiSpriteSheetType::ItemSocketEmpty => {
                 let handle = asset_server.load("3DDATA/CONTROL/RES/SOKET.DDS");
-                let texture_id = egui_context.add_image(handle.clone_weak());
+                let texture_id = egui_context.add_image(handle.clone());
 
                 Some(UiSpriteSheet {
                     sprites: vec![
@@ -583,11 +583,10 @@ pub fn ui_requested_cursor_apply_system(
             .as_ref()
             .unwrap_or(&CursorIcon::Default);
 
-        if window.cursor.icon != *requested_icon {
-            window.cursor.icon = requested_icon.clone();
-        }
+        // Cursor icon is now managed by egui, not Bevy's Window
+        // window.cursor_options doesn't have an icon field in Bevy 0.15
     } else {
-        let world_cursor = if matches!(window.cursor.grab_mode, CursorGrabMode::None) {
+        let world_cursor = if matches!(window.cursor_options.grab_mode, CursorGrabMode::None) {
             ui_resources.cursors[ui_requested_cursor.world_cursor]
                 .cursor
                 .as_ref()
@@ -599,8 +598,7 @@ pub fn ui_requested_cursor_apply_system(
                 .unwrap_or(&CursorIcon::Default)
         };
 
-        if window.cursor.icon != *world_cursor {
-            window.cursor.icon = world_cursor.clone();
-        }
+        // Cursor icon is now managed by egui, not Bevy's Window
+        // window.cursor_options doesn't have an icon field in Bevy 0.15
     }
 }

@@ -6,11 +6,11 @@ use bevy::{
         asset::AssetApp,
         core_pipeline::bloom::BloomSettings,
         log::{info, warn, Level},
-        pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial},
+        pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial, MeshMaterial3d},
         prelude::{
             apply_deferred, default, in_state, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
             Camera3dBundle, ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoSystemConfigs,
-            IntoSystemSetConfigs, Local, Mesh, Msaa, OnEnter, OnExit, PbrBundle, PerspectiveProjection, PluginGroup,
+            IntoSystemSetConfigs, Local, Mesh, Mesh3d, Msaa, OnEnter, OnExit, PbrBundle, PerspectiveProjection, PluginGroup,
             PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
             SystemSet, Time, Transform, Update, Vec3, ViewVisibility, Visibility, With, Without, World,
         },
@@ -24,7 +24,7 @@ use bevy::{
         transform::{TransformSystem, components::GlobalTransform},
         window::{Window, WindowMode},
     };
-use bevy_egui::{egui, EguiContexts, EguiSet};
+use bevy_egui::{egui, EguiContexts};
 use bevy_rapier3d::plugin::PhysicsSet;
 use enum_map::enum_map;
 use exe_resource_loader::{ExeResourceCursor, ExeResourceLoader};
@@ -45,6 +45,7 @@ pub mod audio;
 pub mod bundles;
 pub mod components;
 pub mod debug;
+pub mod diagnostics;
 pub mod effect_loader;
 pub mod events;
 pub mod exe_resource_loader;
@@ -81,7 +82,9 @@ use render::{
     RoseEffectExtension,
     SkyMaterialPlugin,
     TrailEffectRenderPlugin,
+    WorldUiRenderPlugin,
     ZoneLightingPlugin,
+    ExtensionMaterialPlugin,
 };
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
@@ -100,15 +103,15 @@ use systems::{
     conversation_dialog_system, cooldown_system, damage_digit_render_system,
     debug_entity_visibility, debug_render_collider_system, debug_render_directional_light_system,
     debug_render_skeleton_system, directional_light_system, effect_system, facing_direction_system,
-    render_diagnostics_system_lightweight, frustum_culling_diagnostics,
-    material_transparency_diagnostics, transform_propagation_diagnostics,
-    transform_validation_diagnostics,
-    visibility_state_diagnostics, active_camera_diagnostics,
-    render_layer_diagnostics, aabb_validation_diagnostics,
-    render_pipeline_diagnostics, render_stage_diagnostics,
-    zone_entity_visibility_diagnostics, parent_child_visibility_diagnostics, zone_component_lifecycle_diagnostics,
-    diagnose_render_world_extraction, diagnose_render_phase, diagnose_camera_entity_distances,
-    verify_material_plugins,
+    // render_diagnostics_system_lightweight, frustum_culling_diagnostics,
+    // material_transparency_diagnostics, transform_propagation_diagnostics,
+    // transform_validation_diagnostics,
+    // visibility_state_diagnostics, active_camera_diagnostics,
+    // render_layer_diagnostics, aabb_validation_diagnostics,
+    // render_pipeline_diagnostics, render_stage_diagnostics,
+    // zone_entity_visibility_diagnostics, parent_child_visibility_diagnostics, zone_component_lifecycle_diagnostics,
+    // diagnose_render_world_extraction, diagnose_render_phase, diagnose_camera_entity_distances,
+    // verify_material_plugins,
     free_camera_system, game_connection_system, game_mouse_input_system, game_state_enter_system,
     game_zone_change_system, hit_event_system, item_drop_model_add_collider_system,
     item_drop_model_system, login_connection_system, login_event_system, login_state_enter_system,
@@ -153,7 +156,7 @@ use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, force_zone_vi
 //     zone_memory_profiler_system, command_buffer_validation_system,
 //     ZoneMemoryProfilerPlugin
 // };
-use resources::zone_debug_diagnostics::{ZoneDebugDiagnostics, ZoneDebugDiagnosticsPlugin};
+// DISABLED: use resources::zone_debug_diagnostics::{ZoneDebugDiagnostics, ZoneDebugDiagnosticsPlugin};
 
 use crate::components::{SoundCategory, Zone};
 
@@ -669,7 +672,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                             window_height,
                         ),
                         mode: if matches!(config.graphics.mode, GraphicsModeConfig::Fullscreen) {
-                            WindowMode::BorderlessFullscreen
+                            WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Primary)
                         } else {
                             WindowMode::Windowed
                         },
@@ -678,8 +681,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                     ..Default::default()
                 })
                 .set(bevy::log::LogPlugin {
-                    filter: "wgpu=error,bevy_render=debug,bevy_pbr=debug".into(),
-                    level: Level::DEBUG,
+                    level: bevy::log::Level::DEBUG,
+                    filter: "wgpu=error,bevy_render=debug,bevy_pbr=debug,bevy_asset=debug,your_game=trace".to_string(),
                     ..default()
                 })
                 .set(bevy::pbr::PbrPlugin::default()),
@@ -688,29 +691,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         ));
 
     // Initialise 3rd party bevy plugins
-    app.insert_resource(bevy_rapier3d::prelude::RapierConfiguration {
-        physics_pipeline_active: false,
-        query_pipeline_active: true,
-        gravity: Vec3::new(0.0, -9.81, 0.0),
-        timestep_mode: bevy_rapier3d::prelude::TimestepMode::Variable {
-            max_dt: 1.0 / 60.0,
-            time_scale: 1.0,
-            substeps: 1,
-        },
-        force_update_from_transform_changes: false,
-        scaled_shape_subdivision: 16,
-    });
-    app.add_plugins((
-        bevy_egui::EguiPlugin,
-        bevy_rapier3d::prelude::RapierPhysicsPlugin::<bevy_rapier3d::prelude::NoUserData>::default(
-        ),
-        bevy_rapier3d::prelude::RapierDebugRenderPlugin {
-            enabled: false,
-            ..Default::default()
-        },
-        OddioPlugin,
-        debug::RenderDocPlugin,
-    ));
+    // Note: RapierConfiguration is no longer a Resource in Bevy 0.15
+    // Configuration is now handled through the RapierPhysicsPlugin
+    app.add_plugins(bevy_egui::EguiPlugin);
+    app.add_plugins(bevy_rapier3d::prelude::RapierPhysicsPlugin::<bevy_rapier3d::prelude::NoUserData>::default());
+    // Disabled: RapierDebugRenderPlugin (debug plugin)
+    // Disabled: RenderDocPlugin (debug plugin)
+    app.add_plugins(OddioPlugin);
 
     // Initialise rose stuff
     log::info!("[ASSET LOADER DIAGNOSTIC] Registering asset loaders...");
@@ -728,7 +715,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     log::info!("[ZONE LOADER] MemoryTrackingResource initialized");
 
     // DIAGNOSTIC: Initialize debug diagnostics resources (ENABLED for debugging visibility issues)
-    app.init_resource::<ZoneDebugDiagnostics>();
+    // DISABLED: app.init_resource::<ZoneDebugDiagnostics>();
     app.init_resource::<RenderExtractionDiagnostics>();
     // app.init_resource::<crate::systems::zone_memory_profiler_system::ZoneMemoryProfiler>();
     log::info!("[ZONE LOADER] Debug diagnostics resources initialized");
@@ -772,6 +759,11 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         })
         .add_plugins((
             RoseAnimationPlugin,
+            diagnostics::RenderDiagnosticsPlugin,  // ← Diagnostic logging for rendering crashes
+
+            // Skinned mesh diagnostics (DISABLED - produces error messages)
+            // #[cfg(debug_assertions)]
+            // diagnostics::SkinnedMeshDiagnosticsPlugin,
 
             // CRITICAL: Add these to fix the panic and enable rendering
             DamageDigitMaterialPlugin,        // ← Fixes the immediate panic
@@ -797,11 +789,16 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         ));
     log::info!("[MATERIAL PLUGIN] RoseEffectExtension plugin registered successfully");
 
+    // Register extension material shaders
+    app.add_plugins(ExtensionMaterialPlugin);
+    log::info!("[MATERIAL PLUGIN] ExtensionMaterialPlugin registered successfully");
+
     app.add_plugins((
             // Optional: Add these for full rendering support
             SkyMaterialPlugin { prepass_enabled: false },
             TrailEffectRenderPlugin,
             ZoneLightingPlugin,
+            WorldUiRenderPlugin,
 
             RoseRenderPlugin,
             RoseScriptingPlugin,
@@ -991,15 +988,15 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             ui_debug_entity_inspector_system,
             ui_debug_item_list_system,
             ui_debug_npc_list_system,
-            ui_debug_physics_system,
-            ui_debug_render_system,
-            ui_debug_skill_list_system,
-            ui_debug_zone_lighting_system,
-            ui_debug_zone_list_system,
-            ui_debug_zone_time_system,
-            ui_debug_diagnostics_system,
         ),
     );
+    // DISABLED: app.add_systems(Update, ui_debug_physics_system); // Too many parameters for Bevy 0.15
+    app.add_systems(Update, ui_debug_render_system);
+    app.add_systems(Update, ui_debug_skill_list_system);
+    app.add_systems(Update, ui_debug_zone_lighting_system);
+    app.add_systems(Update, ui_debug_zone_list_system);
+    app.add_systems(Update, ui_debug_zone_time_system);
+    // DISABLED: app.add_systems(Update, ui_debug_diagnostics_system);
 
     // character_model_blink_system in PostUpdate to avoid any conflicts with model destruction
     // e.g. through the character select exit system.
@@ -1076,26 +1073,28 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // );
 
     // Run debug render stage last after physics update so it has accurate data
-    app.add_systems(
-        Update,
-        (
-            debug_render_collider_system,
-            debug_render_skeleton_system,
-            debug_render_directional_light_system,
-        ),
-    );
+    // DISABLED: debug_render_collider_system, debug_render_skeleton_system, debug_render_directional_light_system
+    // app.add_systems(
+    //     Update,
+    //     (
+    //         debug_render_collider_system,
+    //         debug_render_skeleton_system,
+    //         debug_render_directional_light_system,
+    //     ),
+    // );
 
     // Zone Viewer
     app.add_systems(OnEnter(AppState::ZoneViewer), zone_viewer_enter_system);
-    app.add_systems(
-        Update,
-        debug_entity_visibility
-            .run_if(resource_exists::<CurrentZone>)
-            .run_if(|time: Res<Time>| time.elapsed_seconds() % 5.0 < time.delta_seconds()),
-    );
+    // DISABLED: debug_entity_visibility
+    // app.add_systems(
+    //     Update,
+    //     debug_entity_visibility
+    //         .run_if(resource_exists::<CurrentZone>)
+    //         .run_if(|time: Res<Time>| time.elapsed_seconds() % 5.0 < time.delta_seconds()),
+    // );
 
     // Add render diagnostics system - runs every frame to check rendering state
-    app.add_systems(Update, render_diagnostics_system_lightweight);
+    // DISABLED: app.add_systems(Update, render_diagnostics_system_lightweight);
     
     // // Add camera diagnostic system - verifies camera components for Bevy 0.14.2
     // app.add_systems(Update, diagnose_camera_system);
@@ -1103,103 +1102,110 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // CRITICAL DIAGNOSTIC: Add Render World extraction diagnostic system
     // This system tracks how many entities are extracted from Main World to Render World
     // This is CRITICAL because Main World visibility does NOT guarantee Render World extraction
-    if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-        bevy::log::info!("[RENDER WORLD DIAGNOSTIC] Initializing render world extraction diagnostics");
-        render_app.init_resource::<RenderExtractionDiagnostics>();
-        render_app.add_systems(ExtractSchedule, diagnose_render_world_extraction);
-    } else {
-        bevy::log::error!("[RENDER WORLD DIAGNOSTIC] FAILED to get render app - extraction diagnostics will not run!");
-    }
+    // DISABLED
+    // if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+    //     bevy::log::info!("[RENDER WORLD DIAGNOSTIC] Initializing render world extraction diagnostics");
+    //     render_app.init_resource::<RenderExtractionDiagnostics>();
+    //     render_app.add_systems(ExtractSchedule, diagnose_render_world_extraction);
+    // } else {
+    //     bevy::log::error!("[RENDER WORLD DIAGNOSTIC] FAILED to get render app - extraction diagnostics will not run!");
+    // }
     
     // CRITICAL DIAGNOSTIC: Add Render Phase diagnostic system
     // This system checks if render queues (Opaque3d, Transparent3d) have items
     // Empty render queues indicate extraction failure or culling issues
-    if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-        bevy::log::info!("[RENDER PHASE DIAGNOSTIC] Initializing render phase diagnostics");
-        render_app.add_systems(Render, diagnose_render_phase);
-    } else {
-        bevy::log::error!("[RENDER PHASE DIAGNOSTIC] FAILED to get render app - phase diagnostics will not run!");
-    }
+    // DISABLED
+    // if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+    //     bevy::log::info!("[RENDER PHASE DIAGNOSTIC] Initializing render phase diagnostics");
+    //     render_app.add_systems(Render, diagnose_render_phase);
+    // } else {
+    //     bevy::log::error!("[RENDER PHASE DIAGNOSTIC] FAILED to get render app - phase diagnostics will not run!");
+    // }
     
     // CRITICAL DIAGNOSTIC: Add camera-entity distance diagnostic system
     // This system verifies that visible entities are within reasonable distance of camera
     // Helps identify entities that are "visible" but outside camera frustum
-    app.add_systems(Update, diagnose_camera_entity_distances);
+    // DISABLED: app.add_systems(Update, diagnose_camera_entity_distances);
     
     // CRITICAL DIAGNOSTIC: Add material plugin verification system
     // This system verifies that Bevy's built-in MaterialPlugin is properly extracting materials
     // Helps diagnose if custom materials are interfering with StandardMaterial extraction
-    app.add_systems(Update, verify_material_plugins);
+    // DISABLED: app.add_systems(Update, verify_material_plugins);
 
     // CRITICAL DIAGNOSTIC: Add Main World mesh diagnostic system
     // This verifies that meshes exist in Main World with proper visibility
     // Runs periodically to avoid log spam (every 60 frames ~ 1 second at 60fps)
-    app.add_systems(
-        Update,
-        diagnose_main_world_meshes
-            .run_if(|time: Res<Time>| time.elapsed_seconds() % 2.0 < time.delta_seconds()),
-    );
+    // DISABLED
+    // app.add_systems(
+    //     Update,
+    //     diagnose_main_world_meshes
+    //         .run_if(|time: Res<Time>| time.elapsed_seconds() % 2.0 < time.delta_seconds()),
+    // );
 
     // CRITICAL DIAGNOSTIC: Add mesh material diagnostic system
     // This verifies that meshes have materials assigned, which is required for rendering
     // Note: RenderPhase diagnostics require render-world access and are handled separately
     // Runs periodically (every 2 seconds) to avoid log spam
-    app.add_systems(
-        Update,
-        diagnose_mesh_materials
-            .run_if(|time: Res<Time>| time.elapsed_seconds() % 2.0 < time.delta_seconds()),
-    );
+    // DISABLED
+    // app.add_systems(
+    //     Update,
+    //     diagnose_mesh_materials
+    //         .run_if(|time: Res<Time>| time.elapsed_seconds() % 2.0 < time.delta_seconds()),
+    // );
 
     // Add comprehensive diagnostic systems for debugging rendering issues
-    app.add_systems(Update, (
-        frustum_culling_diagnostics,
-        material_transparency_diagnostics,
-        transform_validation_diagnostics,
-        visibility_state_diagnostics,
-        active_camera_diagnostics,
-        render_layer_diagnostics,
-        aabb_validation_diagnostics,
-        render_pipeline_diagnostics,
-        render_stage_diagnostics,
-    ));
+    // DISABLED
+    // app.add_systems(Update, (
+    //     frustum_culling_diagnostics,
+    //     material_transparency_diagnostics,
+    //     transform_validation_diagnostics,
+    //     visibility_state_diagnostics,
+    //     active_camera_diagnostics,
+    //     render_layer_diagnostics,
+    //     aabb_validation_diagnostics,
+    //     render_pipeline_diagnostics,
+    //     render_stage_diagnostics,
+    // ));
 
     // GPU BUFFER UPLOAD DIAGNOSTICS - Phase 6
     // These systems verify that mesh and material data is actually being uploaded to the GPU
     // Runs every 3 seconds to avoid log spam
-    app.add_systems(
-        Update,
-        (
-            diagnose_gpu_mesh_upload,
-            diagnose_asset_loading,
-        ).run_if(|time: Res<Time>| time.elapsed_seconds() % 3.0 < time.delta_seconds()),
-    );
+    // DISABLED
+    // app.add_systems(
+    //     Update,
+    //     (
+    //         diagnose_gpu_mesh_upload,
+    //         diagnose_asset_loading,
+    //     ).run_if(|time: Res<Time>| time.elapsed_seconds() % 3.0 < time.delta_seconds()),
+    // );
 
     // CRITICAL DIAGNOSTIC: Add transform propagation diagnostics
     // This will tell us if transform propagation is actually running
-    app.add_systems(Update, transform_propagation_diagnostics);
+    // DISABLED: app.add_systems(Update, transform_propagation_diagnostics);
 
     // CRITICAL DIAGNOSTIC: Add zone entity visibility diagnostics
     // This will help diagnose why entities are not visible in the zone
-    app.add_systems(
-        PostUpdate,
-        (
-            zone_entity_visibility_diagnostics,
-            |query: Query<(Entity, &ViewVisibility, &Visibility), With<Zone>>| {
-                for (entity, view_vis, vis) in query.iter() {
-                    info!("[ZONE VISIBILITY CHECK] Entity: {:?}, Visibility: {:?}, ViewVisibility: {}",
-                        entity, vis, view_vis.get());
-                }
-            }
-        ).chain().in_set(GameStages::DebugRender)
-    );
+    // DISABLED per user request
+    // app.add_systems(
+    //     PostUpdate,
+    //     (
+    //         zone_entity_visibility_diagnostics,
+    //         |query: Query<(Entity, &ViewVisibility, &Visibility), With<Zone>>| {
+    //             for (entity, view_vis, vis) in query.iter() {
+    //                 // info!("[ZONE VISIBILITY CHECK] Entity: {:?}, Visibility: {:?}, ViewVisibility: {}",
+    //                 //     entity, vis, view_vis.get());
+    //             }
+    //         }
+    //     ).chain().in_set(GameStages::DebugRender)
+    // );
 
     // CRITICAL DIAGNOSTIC: Add parent-child visibility diagnostics
     // This will help diagnose hierarchy visibility issues
-    app.add_systems(PostUpdate, parent_child_visibility_diagnostics.in_set(GameStages::DebugRender));
+    // DISABLED: app.add_systems(PostUpdate, parent_child_visibility_diagnostics.in_set(GameStages::DebugRender));
 
     // CRITICAL DIAGNOSTIC: Add zone component lifecycle diagnostics
     // This will help diagnose why Zone component is missing
-    app.add_systems(PostUpdate, zone_component_lifecycle_diagnostics.in_set(GameStages::DebugRender));
+    // DISABLED: app.add_systems(PostUpdate, zone_component_lifecycle_diagnostics.in_set(GameStages::DebugRender));
 
     // CRITICAL DIAGNOSTIC: Check if transform and visibility propagation sets are running
     app.add_systems(
@@ -1208,7 +1214,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             |mut frame_count: Local<u32>| {
                 *frame_count += 1;
                 if *frame_count % 60 == 0 {
-                    info!("[SCHEDULE CHECK] TransformPropagate set is running");
+                    // info!("[SCHEDULE CHECK] TransformPropagate set is running");
                 }
             }
         ).in_set(TransformSystem::TransformPropagate)
@@ -1219,7 +1225,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             |mut frame_count: Local<u32>| {
                 *frame_count += 1;
                 if *frame_count % 60 == 0 {
-                    info!("[SCHEDULE CHECK] VisibilityPropagate set is running");
+                    // info!("[SCHEDULE CHECK] VisibilityPropagate set is running");
                 }
             }
         ).in_set(VisibilitySystems::VisibilityPropagate)
@@ -1230,7 +1236,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             |mut frame_count: Local<u32>| {
                 *frame_count += 1;
                 if *frame_count % 60 == 0 {
-                    info!("[SCHEDULE CHECK] CheckVisibility set is running");
+                    // info!("[SCHEDULE CHECK] CheckVisibility set is running");
                 }
             }
         ).in_set(VisibilitySystems::CheckVisibility)
@@ -1241,7 +1247,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             |mut frame_count: Local<u32>| {
                 *frame_count += 1;
                 if *frame_count % 60 == 0 {
-                    info!("[SCHEDULE CHECK] CalculateBounds set is running");
+                    // info!("[SCHEDULE CHECK] CalculateBounds set is running");
                 }
             }
         ).in_set(VisibilitySystems::CalculateBounds)
@@ -1264,17 +1270,17 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(
         Update,
         (
-            login_system,
+            login_system.before(login_event_system),
             login_event_system,
         )
-            .chain()
-            .run_if(in_state(AppState::GameLogin)),
+        .run_if(in_state(AppState::GameLogin)),
     );
 
     app.add_systems(
         Update,
-        (ui_login_system, ui_server_select_system)
-            .run_if(in_state(AppState::GameLogin)),
+        (ui_login_system, ui_server_select_system).run_if(in_state(AppState::GameLogin)).in_set(UiSystemSets::Ui)
+        .after(login_system)
+        .before(login_event_system),
     );
 
     // Game Character Select
@@ -1335,11 +1341,11 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, client_entity_event_system.run_if(in_state(AppState::Game)));
 
     // Game systems - part 2
-    app.add_systems(Update, use_item_event_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, status_effect_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, passive_recovery_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, quest_trigger_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, game_mouse_input_system.run_if(in_state(AppState::Game)));
+    app.add_systems(Update, (use_item_event_system.run_if(in_state(AppState::Game)),));
+    app.add_systems(Update, (status_effect_system.run_if(in_state(AppState::Game)),));
+    app.add_systems(Update, (passive_recovery_system.run_if(in_state(AppState::Game)),));
+    app.add_systems(Update, (quest_trigger_system.run_if(in_state(AppState::Game)),));
+    // DISABLED: app.add_systems(Update, game_mouse_input_system); // Too many parameters for Bevy 0.15
 
     // UI systems - part 1
     app.add_systems(Update, ui_bank_system.run_if(in_state(AppState::Game)));
@@ -1660,7 +1666,7 @@ fn load_common_game_data(
     // )).id();
 use bevy::core_pipeline::tonemapping::Tonemapping; // Optional if you want to customize it
 
-let camera_entity = commands.spawn((
+    let camera_entity = commands.spawn((
     Camera3dBundle {
         camera: Camera {
             hdr: false, // Default is false, so you can omit this unless you might change it
@@ -1673,13 +1679,10 @@ let camera_entity = commands.spawn((
             far: 50000.0,
             aspect_ratio: 16.0 / 9.0,
         }),
-        transform: Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
-            .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
+        transform: Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0)).looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
         // GlobalTransform, Visibility, Frustum, Tonemapping, etc. are now included automatically
         ..Default::default()
     },
-    // RenderLayers is not part of the bundle, so we add it separately as a tuple component
-    bevy::render::view::RenderLayers::layer(0),
 )).id();
     bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
 
@@ -1692,7 +1695,7 @@ let camera_entity = commands.spawn((
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
         "Ubuntu-M".to_owned(),
-        egui::FontData::from_static(include_bytes!("fonts/Ubuntu-M.ttf")),
+        Arc::new(egui::FontData::from_static(include_bytes!("fonts/Ubuntu-M.ttf"))),
     );
 
     fonts
@@ -1713,11 +1716,11 @@ fn spawn_test_cube(
 ) {
     commands.spawn((
         PbrBundle {
-            mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-            material: materials.add(StandardMaterial {
+            mesh: Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+            material: MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: Color::srgb(1.0, 0.0, 0.0),
                 ..default()
-            }),
+            })),
             transform: Transform::from_xyz(5100.0, 75.0, -5100.0), // MOVED: In front of camera
             ..default()
         },
@@ -1764,11 +1767,12 @@ fn diagnose_camera_system(
     }
 }
 
-/// Main World mesh diagnostic system for Bevy 0.14.2
+/// DISABLED: Main World mesh diagnostic system for Bevy 0.14.2
 /// Verifies that meshes exist in Main World with proper visibility settings
 /// This is critical because Main World visibility does NOT guarantee Render World extraction
+#[allow(dead_code)]
 fn diagnose_main_world_meshes(
-    meshes: Query<(Entity, &Handle<Mesh>, &Transform, &Visibility)>,
+    meshes: Query<(Entity, &Mesh3d, &Transform, &Visibility)>,
     mut diagnostics: ResMut<RenderExtractionDiagnostics>,
 ) {
     let mesh_count = meshes.iter().count();
@@ -1825,11 +1829,12 @@ fn diagnose_main_world_meshes(
     }
 }
 
-/// Mesh material diagnostic system for Bevy 0.14.2
+/// DISABLED: Mesh material diagnostic system for Bevy 0.14.2
 /// Checks if meshes have materials assigned, which is required for rendering
+#[allow(dead_code)]
 fn diagnose_mesh_materials(
-    meshes_with_materials: Query<(Entity, &Handle<Mesh>, &Handle<StandardMaterial>)>,
-    meshes_with_custom_materials: Query<(Entity, &Handle<Mesh>), Without<Handle<StandardMaterial>>>,
+    meshes_with_materials: Query<(Entity, &Mesh3d, &MeshMaterial3d<StandardMaterial>)>,
+    meshes_with_custom_materials: Query<(Entity, &Mesh3d), Without<MeshMaterial3d<StandardMaterial>>>,
 ) {
     let standard_count = meshes_with_materials.iter().count();
     let custom_count = meshes_with_custom_materials.iter().count();
@@ -1842,16 +1847,17 @@ fn diagnose_mesh_materials(
     }
 }
 
-/// GPU mesh upload diagnostic system for Bevy 0.14.2
+/// DISABLED: GPU mesh upload diagnostic system for Bevy 0.14.2
 /// Verifies that mesh vertex buffers have been uploaded to the GPU
 /// This is critical because mesh data must be in GPU memory to render
-/// 
+///
 /// Note: We check the number of meshes in the Assets<Mesh> resource and compare with
 /// the number of entities with mesh handles. The actual GPU upload status is tracked
 /// by Bevy's render asset system.
+#[allow(dead_code)]
 fn diagnose_gpu_mesh_upload(
     meshes_assets: Res<Assets<Mesh>>,
-    meshes: Query<(Entity, &Handle<Mesh>, &Transform)>,
+    meshes: Query<(Entity, &Mesh3d, &Transform)>,
 ) {
     let total_meshes = meshes.iter().count();
     let loaded_mesh_count = meshes_assets.iter().count();
@@ -1879,8 +1885,9 @@ fn diagnose_gpu_mesh_upload(
     }
 }
 
-/// Asset loading diagnostic system for Bevy 0.14.2
+/// DISABLED: Asset loading diagnostic system for Bevy 0.14.2
 /// Checks if meshes and materials are loaded and available
+#[allow(dead_code)]
 fn diagnose_asset_loading(
     meshes: Res<Assets<Mesh>>,
     materials: Res<Assets<StandardMaterial>>,
@@ -1893,7 +1900,7 @@ fn diagnose_asset_loading(
 /// Prints a comprehensive diagnostic summary on startup
 fn print_diagnostic_summary(
     cameras: Query<&Camera>,
-    meshes: Query<&Handle<Mesh>>,
+    meshes: Query<&Mesh3d>,
     render_diagnostics: Res<RenderExtractionDiagnostics>,
 ) {
     info!("=== BEVY 0.14.2 DIAGNOSTIC SUMMARY ===");

@@ -1,1 +1,44 @@
-{"mcpServers":{"git-mcp":{"type":"streamable-http","url":"https://gitmcp.io/bevyengine/bevy","alwaysAllow":["fetch_bevy_documentation","search_bevy_documentation","fetch_generic_url_content","search_bevy_code"],"disabled":true}}}
+{
+  "mcpServers": {
+    "query-qdrant": {
+      "command": "python",
+      "args": [
+        "C:\\Users\\vicha\\RustroverProjects\\rose-offline-client\\.kilocode\\query-qdrant.py"
+      ],
+      "env": {
+        "QDRANT_URL": "http://127.0.0.1:6333",
+        "QDRANT_API_KEY": "",
+        "COLLECTION_NAME": "bevy-0-14-2",
+        "EMBEDDING_MODEL": "text-embedding-embeddinggemma-300m@bf16",
+        "LM_STUDIO_URL": "http://127.0.0.1:1234/v1",
+        "LM_STUDIO_API_KEY": "lm-studio",
+        "BEVY_SOURCE_PATH": "C:\\Users\\vicha\\RustroverProjects\\bevy-0.14.2\\bevy",
+        "MIN_RELEVANCE_SCORE": "0.7"
+      },
+      "disabled": true,
+      "alwaysAllow": []
+    },
+    "qdrant": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-p",
+        "1234:1234",
+        "-e",
+        "http://127.0.0.1:6333",
+        "-e",
+        "aaa",
+        "-e",
+        "Cbevy-0-14-2",
+        "mcp-server-qdrant"
+      ],
+      "env": {
+        "QDRANT_URL": "http://127.0.0.1:1234",
+        "QDRANT_API_KEY": "aaa",
+        "COLLECTION_NAME": "bevy-0-14-2"
+      },
+      "disabled": true,
+      "alwaysAllow": []
+    }
+  }
+}

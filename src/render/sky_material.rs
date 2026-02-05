@@ -1,6 +1,6 @@
 use bevy::{
     asset::{Asset, Handle, load_internal_asset},
-    pbr::{MaterialPipeline, MeshPipelineKey},
+    pbr::{MaterialPipeline, MeshPipelineKey, MeshMaterial3d},
     prelude::{App, Image, Material, MaterialPlugin, Mesh, Plugin, Assets, Res, ResMut, Query},
     reflect::TypePath,
     render::{
@@ -115,7 +115,7 @@ impl Material for SkyMaterial {
 pub fn sky_material_system(
     zone_time: Res<ZoneTime>,
     mut sky_materials: ResMut<Assets<SkyMaterial>>,
-    query: Query<&Handle<SkyMaterial>>,
+    query: Query<&MeshMaterial3d<SkyMaterial>>,
 ) {
     let day_weight = match zone_time.state {
         ZoneTimeState::Morning => zone_time.state_percent_complete,
@@ -125,7 +125,7 @@ pub fn sky_material_system(
     };
 
     for handle in query.iter() {
-        if let Some(material) = sky_materials.get_mut(handle) {
+        if let Some(material) = sky_materials.get_mut(&handle.0) {
             if (material.day_weight - day_weight).abs() > 0.001 {
                 material.day_weight = day_weight;
             }

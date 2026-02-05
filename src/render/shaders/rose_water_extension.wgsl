@@ -1,41 +1,32 @@
-#import bevy_pbr::mesh_view_bindings
-#import bevy_pbr::pbr_types
-#import bevy_pbr::pbr_functions
+#import bevy_pbr::pbr_fragment::pbr_input_from_standard_material
+#import bevy_pbr::pbr_functions::alpha_discard
 
-// Custom extension bindings for water (Group 1, Bindings 100+)
-@group(1) @binding(100) var<uniform> uv_animation_params: vec4<f32>;
-@group(1) @binding(101) var water_texture: texture_2d<f32>;
-@group(1) @binding(102) var water_sampler: sampler;
-
-#import bevy_pbr::pbr_fragment
+#ifdef PREPASS_PIPELINE
+#import bevy_pbr::prepass_io::{VertexOutput, FragmentOutput}
+#import bevy_pbr::pbr_deferred_functions::deferred_output
+#else
+#import bevy_pbr::forward_io::{VertexOutput, FragmentOutput}
+#import bevy_pbr::pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing}
+#endif
 
 @fragment
 fn fragment(
-    in: FragmentInput,
+    in: VertexOutput,
     @builtin(front_facing) is_front: bool,
-) -> @location(0) vec4<f32> {
-    // 1. Let Bevy generate the standard PBR input
+) -> FragmentOutput {
+    // Generate PBR input from standard material
     var pbr_input = pbr_input_from_standard_material(in, is_front);
-
-    // 2. Apply UV animation for wave movement
-    // uv_animation_params: x = time, y = speed_x, z = speed_y, w = scale
-    let animated_uv = in.uv * uv_animation_params.w +
-                      vec2<f32>(
-                          uv_animation_params.x * uv_animation_params.y,
-                          uv_animation_params.x * uv_animation_params.z
-                      );
-
-    // 3. Sample water texture with animated UVs
-    let water_color = textureSample(water_texture, water_sampler, animated_uv);
-
-    // 4. Apply water color to the material
-    pbr_input.material.base_color *= water_color;
-
-    // 5. Let Bevy handle lighting
-    var out = apply_pbr_lighting(pbr_input);
-
-    // 6. Apply post-processing
-    out = main_pass_post_lighting_processing(pbr_input, out);
-
+    
+#ifdef PREPASS_PIPELINE
+    // Deferred rendering - just pass through
+    let out = deferred_output(in, pbr_input);
+#else
+    var out: FragmentOutput;
+    // Apply standard PBR lighting
+    out.color = apply_pbr_lighting(pbr_input);
+    // Apply post-processing
+    out.color = main_pass_post_lighting_processing(pbr_input, out.color);
+#endif
+    
     return out;
 }

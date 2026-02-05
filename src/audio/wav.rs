@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::future::Future;
 
 use bevy::asset::{AssetLoader, io::Reader, LoadContext};
 use bevy::tasks::futures_lite::AsyncReadExt;
@@ -16,13 +17,14 @@ impl AssetLoader for WavLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    async fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader<'_>,
-        _settings: &'a Self::Settings,
-        _load_context: &'a mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let mut bytes = Vec::new();
+    fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        _load_context: &mut LoadContext<'_>,
+    ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
+        async move {
+            let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
 
         let mut reader = WavReader::new(std::io::Cursor::new(bytes))?;
@@ -55,6 +57,7 @@ impl AssetLoader for WavLoader {
             })),
             create_streaming_source_fn: |_| Err(anyhow::anyhow!("Unsupported")),
         })
+        }
     }
 
     fn extensions(&self) -> &[&str] {

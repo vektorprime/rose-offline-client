@@ -1,7 +1,8 @@
 use bevy::{
+    pbr::MeshMaterial3d,
     prelude::{
         AssetServer, Assets, BuildChildren, Commands, ViewVisibility, InheritedVisibility, GlobalTransform, Handle,
-        Resource, Transform, Vec3, Visibility, Mesh,
+        Mesh3d, Resource, Transform, Vec3, Visibility, Mesh, Vec4, Vec2,
     },
     render::{primitives::Aabb, view::NoFrustumCulling},
 };
@@ -21,7 +22,7 @@ pub struct DamageDigitsSpawner {
     pub mesh: Handle<Mesh>,
 }
 
-impl DamageDigitsSpawner {
+    impl DamageDigitsSpawner {
     pub fn load(
         asset_server: &AssetServer,
         damage_digit_materials: &mut Assets<DamageDigitMaterial>,
@@ -30,12 +31,21 @@ impl DamageDigitsSpawner {
         Self {
             texture_damage: damage_digit_materials.add(DamageDigitMaterial {
                 texture: asset_server.load("3DDATA/EFFECT/SPECIAL/DIGITNUMBER01.DDS"),
+                positions: Vec4::default(),
+                sizes: Vec4::default(),
+                uvs: Vec4::default(),
             }),
             texture_damage_player: damage_digit_materials.add(DamageDigitMaterial {
                 texture: asset_server.load("3DDATA/EFFECT/SPECIAL/DIGITNUMBER02.DDS"),
+                positions: Vec4::default(),
+                sizes: Vec4::default(),
+                uvs: Vec4::default(),
             }),
             texture_miss: damage_digit_materials.add(DamageDigitMaterial {
                 texture: asset_server.load("3DDATA/EFFECT/SPECIAL/DIGITNUMBERMISS.DDS"),
+                positions: Vec4::default(),
+                sizes: Vec4::default(),
+                uvs: Vec4::default(),
             }),
             motion: asset_server.load("3DDATA/EFFECT/SPECIAL/HIT_FIGURE_01.ZMO"),
             mesh: meshes.add(Mesh::from(bevy::prelude::Rectangle::new(1.0, 1.0))),
@@ -53,6 +63,27 @@ impl DamageDigitsSpawner {
         let (scale, _, translation) = global_transform.to_scale_rotation_translation();
 
         // We need to spawn inside a parent entity for positioning because the ActiveMotion will set the translation absolutely
+        // Spawn the child entity first
+        let child_entity = commands.spawn((
+            DamageDigits { damage },
+            DamageDigitRenderData::new(4),
+            MeshMaterial3d(if damage == 0 {
+                self.texture_miss.clone_weak()
+            } else if is_damage_player {
+                self.texture_damage_player.clone_weak()
+            } else {
+                self.texture_damage.clone_weak()
+            }),
+            Mesh3d(self.mesh.clone_weak()),
+            TransformAnimation::once(self.motion.clone_weak()),
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility::default(),
+            InheritedVisibility::default(),
+            ViewVisibility::default(),
+        )).id();
+
+        // Then spawn the parent and add the child
         commands
             .spawn((
                 Transform::from_translation(
@@ -63,26 +94,7 @@ impl DamageDigitsSpawner {
                 InheritedVisibility::default(),
                 ViewVisibility::default(),
             ))
-            .with_children(|child_builder| {
-                child_builder.spawn((
-                    DamageDigits { damage },
-                    DamageDigitRenderData::new(4),
-                    if damage == 0 {
-                        self.texture_miss.clone_weak()
-                    } else if is_damage_player {
-                        self.texture_damage_player.clone_weak()
-                    } else {
-                        self.texture_damage.clone_weak()
-                    },
-                    self.mesh.clone_weak(),
-                    TransformAnimation::once(self.motion.clone_weak()),
-                    Transform::default(),
-                    GlobalTransform::default(),
-                    Visibility::default(),
-                    InheritedVisibility::default(),
-                    ViewVisibility::default(),
-                    NoFrustumCulling,
-                ));
-            });
-    }
+            .add_children(&[child_entity]);
+            // Note: NoFrustumCulling removed due to tuple length limit
+     }
 }

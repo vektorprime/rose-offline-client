@@ -10,8 +10,14 @@ pub const DAMAGE_DIGIT_MATERIAL_SHADER_HANDLE: Handle<Shader> =
 
 #[derive(Debug, Clone, Asset, TypePath, AsBindGroup)]
 pub struct DamageDigitMaterial {
-    #[texture(0)]
-    #[sampler(1)]
+    #[uniform(0)]
+    pub positions: Vec4,
+    #[uniform(1)]
+    pub sizes: Vec4,
+    #[uniform(2)]
+    pub uvs: Vec4,
+    #[texture(3)]
+    #[sampler(4)]
     pub texture: Handle<Image>,
 }
 

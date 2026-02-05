@@ -20,12 +20,13 @@ impl AssetLoader for DialogLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    async fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader<'_>,
-        _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
+    fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        load_context: &mut LoadContext<'_>,
+    ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
+        async move {
             let path = load_context.path().to_string_lossy().to_string();
             
             // SAFETY: This is only for diagnostic logging during single-threaded asset loading
@@ -59,6 +60,7 @@ impl AssetLoader for DialogLoader {
             let bytes_str = std::str::from_utf8(&bytes)?;
             let dialog: Dialog = quick_xml::de::from_str(bytes_str)?;
             Ok(dialog)
+        }
     }
 
     fn extensions(&self) -> &[&str] {

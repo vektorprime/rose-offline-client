@@ -6,7 +6,7 @@ use bevy::{
     window::{PrimaryWindow, Window},
 };
 use bevy_egui::EguiContexts;
-use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter, RapierContext};
+use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter, ReadDefaultRapierContext};
 
 use rose_game_common::{components::*, messages::ClientEntityId};
 
@@ -93,7 +93,7 @@ fn debug_inspector_picking_system(
     mut debug_inspector_state: ResMut<DebugInspector>,
     mut egui_ctx: EguiContexts,
     key_code_input: Res<ButtonInput<KeyCode>>,
-    rapier_context: Res<RapierContext>,
+    rapier_context: ReadDefaultRapierContext,
     query_window: Query<&Window, With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
 ) {
@@ -115,7 +115,7 @@ fn debug_inspector_picking_system(
 
     if key_code_input.just_pressed(KeyCode::KeyP) {
         for (camera, camera_transform) in query_camera.iter() {
-            if let Some(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+            if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
                 if let Some((collider_entity, _distance)) = rapier_context.cast_ray(
                     ray.origin,
                     *ray.direction,

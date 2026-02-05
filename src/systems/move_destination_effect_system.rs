@@ -4,7 +4,10 @@ use bevy::{
         AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, DespawnRecursiveExt, Entity, EventReader,
         GlobalTransform, Local, Res, ResMut, Transform, Visibility, Mesh,
     },
-    render::alpha::AlphaMode,
+    render::{
+        alpha::AlphaMode,
+        storage::ShaderStorageBuffer,
+    },
 };
 use rose_data::EffectFileId;
 
@@ -30,6 +33,7 @@ pub fn move_destination_effect_system(
     mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
 ) {
     for event in events.read() {
         match event {
@@ -49,6 +53,8 @@ pub fn move_destination_effect_system(
                             GlobalTransform::default(),
                             Visibility::default(),
                             InheritedVisibility::default(),
+                            Visibility::default(),
+                            ViewVisibility::default(),
                         ))
                         .id();
                     state.last_effect_entity = Some(effect_entity);
@@ -60,6 +66,7 @@ pub fn move_destination_effect_system(
                         &mut particle_materials,
                         &mut effect_mesh_materials,
                         &mut meshes,
+                        &mut storage_buffers,
                         effect_file_path,
                         true,
                         Some(effect_entity),

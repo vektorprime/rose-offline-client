@@ -8,6 +8,7 @@ use bevy::{
     render::{
         alpha::AlphaMode,
         mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
+        storage::ShaderStorageBuffer,
     },
 };
 
@@ -44,6 +45,7 @@ pub fn npc_model_update_system(
     mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
     mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
+    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
     game_data: Res<GameData>,
 ) {
     for (
@@ -91,23 +93,61 @@ pub fn npc_model_update_system(
                     &mut particle_materials,
                     &mut effect_mesh_materials,
                     &mut meshes,
+                    &mut storage_buffers,
                     entity,
                     npc.id,
                 )
             {
                 (npc_model, skinned_mesh, dummy_bone_offset)
             } else {
+                // CRITICAL FIX: NPC model data not found - do NOT add SkinnedMesh component
+                // This prevents bind group mismatch errors when NPC has no skeleton
+                log::warn!(
+                    "[SKINNED_MESH_FIX] NPC {} model data not found, spawning as non-skinned entity to prevent bind group mismatch",
+                    npc.id.get()
+                );
                 // Insert empty model so we do not retry every frame.
-                (
-                    NpcModel {
-                        npc_id: npc.id,
-                        model_parts: Vec::new(),
-                        action_motions: EnumMap::default(),
-                        root_bone_position: Vec3::ZERO,
-                    },
-                    SkinnedMesh::default(),
-                    DummyBoneOffset { index: 0 },
-                )
+                // Note: We do NOT insert SkinnedMesh here, only NpcModel
+                let empty_npc_model = NpcModel {
+                    npc_id: npc.id,
+                    model_parts: Vec::new(),
+                    action_motions: EnumMap::default(),
+                    root_bone_position: Vec3::ZERO,
+                };
+
+                let mut entity_commands = commands.entity(entity);
+
+                // Update scale
+                if let Some(npc_data) = game_data.npcs.get_npc(npc.id) {
+                    entity_commands.insert(transform.with_scale(Vec3::new(
+                        npc_data.scale,
+                        npc_data.scale,
+                        npc_data.scale,
+                    )));
+                }
+
+                // Update ClientEntityName
+                entity_commands.insert(ClientEntityName::new(
+                    game_data
+                        .npcs
+                        .get_npc(npc.id)
+                        .map(|npc_data| npc_data.name.to_string())
+                        .unwrap_or_else(|| format!("??? [{}]", npc.id.get())),
+                ));
+
+                // Update model without SkinnedMesh
+                if let Some(mut current_npc_model) = current_npc_model {
+                    *current_npc_model = empty_npc_model;
+                } else {
+                    entity_commands.insert(empty_npc_model);
+                }
+
+                // Remove any existing SkinnedMesh and DummyBoneOffset components
+                entity_commands
+                    .remove::<SkinnedMesh>()
+                    .remove::<DummyBoneOffset>();
+
+                continue;
             };
 
         let mut entity_commands = commands.entity(entity);

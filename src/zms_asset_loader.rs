@@ -1,10 +1,12 @@
 use std::{
     ffi::OsString,
+    future::Future,
     path::{Path, PathBuf},
 };
 
 use bevy::{
     asset::{io::Reader, Asset, AssetLoader, LoadContext},
+    ecs::component::Component,
     prelude::Mesh,
     reflect::TypePath,
     render::{
@@ -25,6 +27,9 @@ pub struct ZmsMaterialNumFaces {
     pub material_num_faces: Vec<u16>,
 }
 
+#[derive(Component, Clone)]
+pub struct ZmsMaterialNumFacesHandle(pub bevy::prelude::Handle<ZmsMaterialNumFaces>);
+
 #[derive(Default)]
 pub struct ZmsAssetLoader;
 
@@ -36,15 +41,16 @@ impl AssetLoader for ZmsAssetLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    async fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader<'_>,
-        _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let mut bytes = Vec::new();
-        use bevy::tasks::futures_lite::AsyncReadExt;
-        reader.read_to_end(&mut bytes).await?;
+    fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        load_context: &mut LoadContext<'_>,
+    ) -> impl Future<Output = Result<Self::Asset, Self::Error>> + Send {
+        async move {
+            let mut bytes = Vec::new();
+            use bevy::tasks::futures_lite::AsyncReadExt;
+            reader.read_to_end(&mut bytes).await?;
             
             let asset_path = load_context.path().to_string_lossy();
             //info!("[ASSET LIFECYCLE] Loading ZMS mesh asset: {}", asset_path);
@@ -134,6 +140,7 @@ impl AssetLoader for ZmsAssetLoader {
                 }
                 Err(error) => Err(error),
             }
+        }
     }
 
     fn extensions(&self) -> &[&str] {
@@ -154,15 +161,16 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
     type Settings = ();
     type Error = anyhow::Error;
 
-    async fn load<'a>(
-        &'a self,
-        reader: &'a mut Reader<'_>,
-        _settings: &'a Self::Settings,
-        load_context: &'a mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let mut bytes = Vec::new();
-        use bevy::tasks::futures_lite::AsyncReadExt;
-        reader.read_to_end(&mut bytes).await?;
+    fn load(
+        &self,
+        reader: &mut dyn Reader,
+        _settings: &Self::Settings,
+        load_context: &mut LoadContext<'_>,
+    ) -> impl Future<Output = Result<Self::Asset, Self::Error>> + Send {
+        async move {
+            let mut bytes = Vec::new();
+            use bevy::tasks::futures_lite::AsyncReadExt;
+            reader.read_to_end(&mut bytes).await?;
 
             match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(mut zms) => {
@@ -208,16 +216,10 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
                         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, zms.color);
                     }
 
-                    if !zms.bone_weights.is_empty() {
-                        mesh.insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, zms.bone_weights);
-                    }
-
-                    if !zms.bone_indices.is_empty() {
-                        mesh.insert_attribute(
-                            Mesh::ATTRIBUTE_JOINT_INDEX,
-                            VertexAttributeValues::Uint16x4(zms.bone_indices),
-                        );
-                    }
+                    // NOTE: ZmsNoSkinAssetLoader intentionally does NOT load joint data
+                    // This is critical for preventing bind group layout mismatches with effect meshes
+                    // Effect meshes should use the non-skinned pipeline (model_only_mesh_bind_group)
+                    // not the skinned pipeline (skinned_mesh_layout)
 
                     if !zms.uv1.is_empty() {
                         mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, zms.uv1);
@@ -248,6 +250,7 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
                 }
                 Err(error) => Err(error),
             }
+        }
     }
 
     fn extensions(&self) -> &[&str] {

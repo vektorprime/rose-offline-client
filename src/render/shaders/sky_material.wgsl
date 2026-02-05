@@ -18,9 +18,9 @@ struct VertexOutput {
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     // RESTORED: Proper sky rendering without translation (sky stays at camera position)
-    let untranslated_inv_view =  mat4x4<f32>(view.world_from_view[0].xyzw,
-                                             view.world_from_view[1].xyzw,
-                                             view.world_from_view[2].xyzw,
+    let untranslated_inv_view =  mat4x4<f32>(view.view_from_world[0].xyzw,
+                                             view.view_from_world[1].xyzw,
+                                             view.view_from_world[2].xyzw,
                                              vec4<f32>(0.0, 0.0, 0.0, 1.0));
     let untranslated_proj = view.clip_from_view * untranslated_inv_view;
     let untranslated_model = mat4x4<f32>(mesh.world_from_local[0].xyzw,
