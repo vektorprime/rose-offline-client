@@ -111,41 +111,46 @@ pub fn load_dialog_sprites_system(
 ) {
     let mut loaded_count = 0;
     let mut modified_count = 0;
-    
+
     for ev in ev_asset.read() {
         match ev {
             AssetEvent::LoadedWithDependencies { id } => {
-                //log::debug!("[DIALOG SYSTEM] Dialog loaded: {:?}", id);
+                log::debug!("[DIALOG SYSTEM] Dialog loaded: {:?}", id);
                 load_state.pending_dialogs.push(*id);
                 loaded_count += 1;
             }
             AssetEvent::Modified { id } => {
-                //log::warn!("[DIALOG SYSTEM] Dialog MODIFIED event received: {:?} - this may indicate repeated reloads!", id);
+                log::warn!("[DIALOG SYSTEM] Dialog MODIFIED event received: {:?} - this may indicate repeated reloads!", id);
                 load_state.pending_dialogs.push(*id);
                 modified_count += 1;
             }
             AssetEvent::Removed { id } => {
-                //log::debug!("[DIALOG SYSTEM] Dialog removed: {:?}", id);
+                log::debug!("[DIALOG SYSTEM] Dialog removed: {:?}", id);
             }
             AssetEvent::Added { id } => {
-                //log::debug!("[DIALOG SYSTEM] Dialog added: {:?}", id);
+                log::debug!("[DIALOG SYSTEM] Dialog added: {:?}", id);
             }
             _ => {
                 // Other unused events
             }
         }
     }
-    
+
     if loaded_count > 0 || modified_count > 0 {
-        //log::info!("[DIALOG SYSTEM] Processing {} Loaded and {} Modified dialog events", loaded_count, modified_count);
+        log::info!("[DIALOG SYSTEM] Processing {} Loaded and {} Modified dialog events", loaded_count, modified_count);
     }
 
-    if ui_resources.loaded_all_textures {
+    if ui_resources.loaded_required_textures {
+        log::debug!("[DIALOG SYSTEM] loaded_required_textures=true, processing {} pending dialogs", load_state.pending_dialogs.len());
         for handle in load_state.pending_dialogs.drain(..) {
             if let Some(dialog) = assets.get_mut(handle) {
+                log::debug!("[DIALOG SYSTEM] Loading widgets for dialog with {} widgets", dialog.widgets.len());
                 dialog.widgets.load_widget(&ui_resources);
                 dialog.loaded = true;
+                log::debug!("[DIALOG SYSTEM] Dialog loaded and marked as loaded: {:?}", handle);
             }
         }
+    } else {
+        log::debug!("[DIALOG SYSTEM] loaded_required_textures=false, deferring widget loading for {} pending dialogs", load_state.pending_dialogs.len());
     }
 }

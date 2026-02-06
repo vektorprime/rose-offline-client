@@ -7,7 +7,7 @@ use crate::{
     components::{Clan, ClanMembership, PlayerCharacter},
     resources::{GameData, UiResources},
     ui::{
-        widgets::{DataBindings, Dialog, DrawText},
+        widgets::{DataBindings, Dialog, DrawTextTrait},
         UiSoundEvent, UiStateWindows,
     },
 };

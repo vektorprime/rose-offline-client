@@ -29,6 +29,10 @@ pub struct UiSprite {
 impl UiSprite {
     pub fn draw(&self, ui: &mut egui::Ui, pos: egui::Pos2) {
         let rect = egui::Rect::from_min_size(pos, egui::vec2(self.width, self.height));
+        log::trace!("[UI SPRITE] Drawing sprite: texture_id={:?}, pos=({:.1},{:.1}), size=({:.1}x{:.1}), uv=({:.2},{:.2})-({:.2},{:.2})",
+            self.texture_id, pos.x, pos.y, self.width, self.height,
+            self.uv.min.x, self.uv.min.y, self.uv.max.x, self.uv.max.y);
+
         let mut mesh = egui::epaint::Mesh::with_texture(self.texture_id);
         mesh.add_rect_with_uv(rect, self.uv, egui::Color32::WHITE);
         ui.painter().add(egui::epaint::Shape::mesh(mesh));
@@ -104,6 +108,7 @@ impl UiCursor {
 #[derive(Resource)]
 pub struct UiResources {
     pub loaded_all_textures: bool,
+    pub loaded_required_textures: bool,
     pub sprite_sheets: EnumMap<UiSpriteSheetType, Option<UiSpriteSheet>>,
 
     pub dialog_files: HashMap<String, Handle<Dialog>>,
@@ -306,11 +311,12 @@ pub fn update_ui_resources(
     mut dialog_assets: ResMut<Assets<Dialog>>,
     mut egui_context: EguiContexts,
 ) {
-    if ui_resources.loaded_all_textures {
+    if ui_resources.loaded_all_textures && ui_resources.loaded_required_textures {
         return;
     }
 
     let mut loaded_all = true;
+    let mut loaded_required = true;
 
     for spritesheet in ui_resources
         .sprite_sheets
@@ -324,13 +330,19 @@ pub fn update_ui_resources(
 
             if let Some(image) = images.get(&texture.handle) {
                 texture.size = Some(image.size().as_vec2());
-            } else if matches!(
-                asset_server.get_load_state(&texture.handle),
-                Some(LoadState::Failed(_))
-            ) {
-                texture.size = Some(Vec2::ZERO);
+                log::debug!("[UI RESOURCES] Texture loaded: {:?}", texture.handle);
             } else {
-                loaded_all = false;
+                // Treat any non-successful load state as failed to allow UI to render
+                let load_state = asset_server.get_load_state(&texture.handle);
+                if matches!(load_state, Some(LoadState::Failed(_))) {
+                    texture.size = Some(Vec2::ZERO);
+                    log::warn!("[UI RESOURCES] Texture failed to load: {:?}", texture.handle);
+                } else {
+                    // Loading, NotLoaded, or None - treat as failed load to allow UI to render
+                    texture.size = Some(Vec2::ZERO);
+                    loaded_all = false;
+                    log::warn!("[UI RESOURCES] Texture missing or failed to load (load state: {:?}): {:?}", load_state, texture.handle);
+                }
             }
         }
     }
@@ -340,48 +352,69 @@ pub fn update_ui_resources(
             continue;
         }
 
+        let load_state = asset_server.get_load_state(&ui_cursor.handle);
         if let Some(resource_cursor) = cursors.get(&ui_cursor.handle) {
             ui_cursor.cursor = Some(resource_cursor.cursor.clone());
-        } else if matches!(
-                asset_server.get_load_state(&ui_cursor.handle),
-                Some(LoadState::Failed(_))
-            ) {
+            log::debug!("[UI RESOURCES] Cursor loaded: {:?}", ui_cursor.handle);
+        } else {
+            // Treat any non-successful load state as failed to allow UI to render
+            if matches!(load_state, Some(LoadState::Failed(_))) {
                 ui_cursor.cursor = Some(CursorIcon::Default);
+                log::warn!("[UI RESOURCES] Cursor failed to load: {:?}", ui_cursor.handle);
             } else {
-            loaded_all = false;
+                // Loading, NotLoaded, or None - treat as failed load to allow UI to render
+                ui_cursor.cursor = Some(CursorIcon::Default);
+                loaded_all = false;
+                log::warn!("[UI RESOURCES] Cursor missing or failed to load (load state: {:?}): {:?}", load_state, ui_cursor.handle);
+            }
         }
     }
 
     let mut load_skill_tree = |skill_tree: &Handle<Dialog>| {
+        let load_state = asset_server.get_load_state(skill_tree);
         if let Some(skill_tree) = dialog_assets.get_mut(skill_tree) {
             for widget in skill_tree.widgets.iter_mut() {
                 if let Widget::Skill(skill_widget) = widget {
                     if let Some(texture) = skill_widget.ui_texture.as_mut() {
+                        let texture_load_state = asset_server.get_load_state(&texture.handle);
                         if let Some(image) = images.get(&texture.handle) {
                             texture.size = Some(image.size().as_vec2());
-                        } else if matches!(
-                            asset_server.get_load_state(&texture.handle),
-                            Some(LoadState::Failed(_))
-                        ) {
+                            log::debug!("[UI RESOURCES] Skill tree texture loaded: {:?}", texture.handle);
+                        } else if matches!(texture_load_state, Some(LoadState::Failed(_))) {
                             texture.size = Some(Vec2::ZERO);
+                            log::warn!("[UI RESOURCES] Skill tree texture failed to load: {:?}", texture.handle);
+                        } else if matches!(texture_load_state, Some(LoadState::Loading) | Some(LoadState::NotLoaded)) {
+                            loaded_all = false;
+                            // Note: Skill tree textures are optional, so they don't affect loaded_required
+                            log::debug!("[UI RESOURCES] Skill tree texture still loading: {:?}", texture.handle);
                         } else {
                             loaded_all = false;
+                            // Note: Skill tree textures are optional, so they don't affect loaded_required
+                            log::warn!("[UI RESOURCES] Skill tree texture load state unknown (None): {:?}", texture.handle);
                         }
                     } else {
                         let handle = asset_server
                             .load(format!("3DDATA/CONTROL/RES/{}", &skill_widget.image));
                         let texture_id = egui_context.add_image(handle.clone());
                         skill_widget.ui_texture = Some(UiTexture {
-                            handle,
+                            handle: handle.clone(),
                             texture_id,
                             size: None,
                         });
                         loaded_all = false;
+                        // Note: Skill tree textures are optional, so they don't affect loaded_required
+                        log::debug!("[UI RESOURCES] Loading skill tree texture: {} (handle: {:?})", skill_widget.image, handle);
                     }
                 }
             }
-        } else if !matches!(asset_server.get_load_state(skill_tree), Some(LoadState::Failed(_))) {
+        } else if matches!(load_state, Some(LoadState::Failed(_))) {
+            log::warn!("[UI RESOURCES] Skill tree dialog failed to load: {:?}", skill_tree);
+        } else if matches!(load_state, Some(LoadState::Loading) | Some(LoadState::NotLoaded)) {
             loaded_all = false;
+            log::debug!("[UI RESOURCES] Skill tree dialog still loading: {:?}", skill_tree);
+        } else {
+            loaded_all = false;
+            log::warn!("[UI RESOURCES] Skill tree dialog load state unknown (None): {:?}", skill_tree);
         }
     };
 
@@ -390,7 +423,20 @@ pub fn update_ui_resources(
     load_skill_tree(&ui_resources.skill_tree_hawker);
     load_skill_tree(&ui_resources.skill_tree_dealer);
 
+    if loaded_all {
+        log::info!("[UI RESOURCES] All textures loaded successfully, setting loaded_all_textures = true");
+    } else {
+        log::debug!("[UI RESOURCES] Not all textures loaded yet, loaded_all_textures remains false");
+    }
+
+    if loaded_required {
+        log::info!("[UI RESOURCES] All required textures (sprite sheets and cursors) loaded successfully, setting loaded_required_textures = true");
+    } else {
+        log::debug!("[UI RESOURCES] Not all required textures loaded yet, loaded_required_textures remains false");
+    }
+
     ui_resources.loaded_all_textures = loaded_all;
+    ui_resources.loaded_required_textures = loaded_required;
 }
 
 pub fn load_ui_resources(
@@ -478,6 +524,7 @@ pub fn load_ui_resources(
     commands.init_resource::<UiRequestedCursor>();
     commands.insert_resource(UiResources {
         loaded_all_textures: false,
+        loaded_required_textures: false,
         sprite_sheets: enum_map! {
             UiSpriteSheetType::Ui => load_ui_spritesheet(vfs, &asset_server, &mut egui_context, "3DDATA/CONTROL/RES/UI.TSI", "3DDATA/CONTROL/XML/UI_STRID.ID").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
             UiSpriteSheetType::ExUi => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3DDATA/CONTROL/RES/EXUI.TSI", "3DDATA/CONTROL/XML/EXUI_STRID.ID").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),

@@ -682,7 +682,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                 })
                 .set(bevy::log::LogPlugin {
                     level: bevy::log::Level::DEBUG,
-                    filter: "wgpu=error,bevy_render=debug,bevy_pbr=debug,bevy_asset=debug,your_game=trace".to_string(),
+                    filter: "wgpu=error,naga=error,bevy_render=debug,bevy_pbr=debug,bevy_asset=debug,your_game=trace".to_string(),
                     ..default()
                 })
                 .set(bevy::pbr::PbrPlugin::default()),
@@ -759,12 +759,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         })
         .add_plugins((
             RoseAnimationPlugin,
-            diagnostics::RenderDiagnosticsPlugin,  // ← Diagnostic logging for rendering crashes
-
-            // Skinned mesh diagnostics (DISABLED - produces error messages)
-            // #[cfg(debug_assertions)]
-            // diagnostics::SkinnedMeshDiagnosticsPlugin,
-
             // CRITICAL: Add these to fix the panic and enable rendering
             DamageDigitMaterialPlugin,        // ← Fixes the immediate panic
             ParticleMaterialPlugin,
@@ -1664,26 +1658,18 @@ fn load_common_game_data(
     //     ViewVisibility::default(),
     //     bevy::render::view::RenderLayers::layer(0),
     // )).id();
-use bevy::core_pipeline::tonemapping::Tonemapping; // Optional if you want to customize it
-
-    let camera_entity = commands.spawn((
-    Camera3dBundle {
-        camera: Camera {
-            hdr: false, // Default is false, so you can omit this unless you might change it
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.70, 0.90, 1.0)),
-            ..Default::default()
-        },
-        projection: Projection::Perspective(PerspectiveProjection {
-            fov: std::f32::consts::PI / 4.0,
-            near: 0.1,
-            far: 50000.0,
-            aspect_ratio: 16.0 / 9.0,
-        }),
-        transform: Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0)).looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
-        // GlobalTransform, Visibility, Frustum, Tonemapping, etc. are now included automatically
-        ..Default::default()
-    },
-)).id();
+    let mut cam = Camera3dBundle::default();
+    cam.camera.hdr = false;
+    cam.camera.clear_color = ClearColorConfig::Custom(Color::srgb(0.70, 0.90, 1.0));
+    cam.projection = Projection::Perspective(PerspectiveProjection {
+        fov: std::f32::consts::PI / 4.0,
+        near: 0.1,
+        far: 50000.0,
+        aspect_ratio: 16.0 / 9.0,
+    });
+    cam.transform = Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
+        .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y);
+    let camera_entity = commands.spawn(cam).id();
     bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
 
     commands.insert_resource(DamageDigitsSpawner::load(

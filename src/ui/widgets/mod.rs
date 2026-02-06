@@ -23,6 +23,7 @@ mod checkbox;
 mod data_bindings;
 mod dialog;
 mod draw;
+mod draw_text;
 mod editbox;
 mod gauge;
 mod image;
@@ -45,7 +46,8 @@ pub use caption::Caption;
 pub use checkbox::Checkbox;
 pub use data_bindings::DataBindings;
 pub use dialog::Dialog;
-pub use draw::DrawText;
+pub use draw::DrawText as DrawTextTrait;
+pub use draw_text::DrawText;
 pub use editbox::Editbox;
 pub use gauge::Gauge;
 pub use listbox::Listbox;
@@ -99,6 +101,8 @@ pub enum Widget {
     RadioButton(RadioButton),
     #[serde(rename = "SCROLLBAR")]
     Scrollbar(Scrollbar),
+    #[serde(rename = "SCROLLBOX")]
+    Scrollbox(Scrollbox),
     #[serde(rename = "SKILL")]
     Skill(Skill),
     #[serde(rename = "IMAGE")]
@@ -114,6 +118,8 @@ pub enum Widget {
     TabbedPane(TabbedPane),
     #[serde(rename = "ZLISTBOX")]
     ZListbox(ZListbox),
+    #[serde(rename = "DRAWTEXT")]
+    DrawText(DrawText),
     #[serde(other)]
     Unknown,
 }
@@ -131,12 +137,14 @@ impl Widget {
             Widget::RadioBox(x) => x.id,
             Widget::RadioButton(x) => x.id,
             Widget::Scrollbar(x) => x.id,
+            Widget::Scrollbox(x) => x.id,
             Widget::Skill(x) => (x.id + x.level) as i32,
             Widget::Image(x) => x.id,
             Widget::Table(x) => x.id,
             Widget::TabButton(x) => x.id,
             Widget::TabbedPane(x) => x.id,
             Widget::ZListbox(x) => x.id,
+            Widget::DrawText(x) => x.id,
             Widget::Unknown => panic!("Use of unknown widget"),
         }
     }
@@ -144,6 +152,8 @@ impl Widget {
 
 impl DrawWidget for Widget {
     fn draw_widget(&self, ui: &mut egui::Ui, bindings: &mut DataBindings) {
+        log::trace!("[WIDGET DRAW] Drawing widget: type={:?}, id={}",
+            std::mem::discriminant(self), self.id());
         match self {
             Widget::Button(this) => this.draw_widget(ui, bindings),
             Widget::Caption(this) => this.draw_widget(ui, bindings),
@@ -155,19 +165,25 @@ impl DrawWidget for Widget {
             Widget::RadioBox(this) => this.draw_widget(ui, bindings),
             Widget::RadioButton(this) => this.draw_widget(ui, bindings),
             Widget::Scrollbar(this) => this.draw_widget(ui, bindings),
+            Widget::Scrollbox(this) => this.draw_widget(ui, bindings),
             Widget::Skill(this) => this.draw_widget(ui, bindings),
             Widget::Image(this) => this.draw_widget(ui, bindings),
             Widget::Table(this) => this.draw_widget(ui, bindings),
             Widget::TabButton(this) => this.draw_widget(ui, bindings),
             Widget::TabbedPane(this) => this.draw_widget(ui, bindings),
             Widget::ZListbox(this) => this.draw_widget(ui, bindings),
-            Widget::Unknown => {}
+            Widget::DrawText(this) => this.draw_widget(ui, bindings),
+            Widget::Unknown => {
+                log::warn!("[WIDGET DRAW] Unknown widget type encountered");
+            }
         }
     }
 }
 
 impl LoadWidget for Widget {
     fn load_widget(&mut self, ui_resources: &UiResources) {
+        log::trace!("[WIDGET LOAD] Loading widget: type={:?}, id={}",
+            std::mem::discriminant(self), self.id());
         match self {
             Widget::Button(this) => this.load_widget(ui_resources),
             Widget::Caption(this) => this.load_widget(ui_resources),
@@ -179,30 +195,43 @@ impl LoadWidget for Widget {
             Widget::RadioBox(this) => this.load_widget(ui_resources),
             Widget::RadioButton(this) => this.load_widget(ui_resources),
             Widget::Scrollbar(this) => this.load_widget(ui_resources),
+            Widget::Scrollbox(this) => this.load_widget(ui_resources),
             Widget::Skill(this) => this.load_widget(ui_resources),
             Widget::Image(this) => this.load_widget(ui_resources),
             Widget::Table(this) => this.load_widget(ui_resources),
             Widget::TabButton(this) => this.load_widget(ui_resources),
             Widget::TabbedPane(this) => this.load_widget(ui_resources),
             Widget::ZListbox(this) => this.load_widget(ui_resources),
-            Widget::Unknown => {}
+            Widget::DrawText(this) => this.load_widget(ui_resources),
+            Widget::Unknown => {
+                log::warn!("[WIDGET LOAD] Unknown widget type encountered");
+            }
         }
     }
 }
 
 impl DrawWidget for Vec<Widget> {
     fn draw_widget(&self, ui: &mut egui::Ui, bindings: &mut DataBindings) {
-        for widget in self.iter() {
+        log::debug!("[WIDGETS DRAW] Drawing {} widgets", self.len());
+        for (index, widget) in self.iter().enumerate() {
+            log::debug!("[WIDGETS DRAW] Drawing widget {}/{}: type={:?}, id={}",
+                index + 1, self.len(), std::mem::discriminant(widget), widget.id());
             widget.draw_widget(ui, bindings);
         }
+        log::debug!("[WIDGETS DRAW] Completed drawing {} widgets", self.len());
     }
 }
 
 impl LoadWidget for Vec<Widget> {
     fn load_widget(&mut self, ui_resources: &UiResources) {
-        for widget in self.iter_mut() {
+        let widget_count = self.len();
+        log::debug!("[WIDGETS LOAD] Loading {} widgets", widget_count);
+        for (index, widget) in self.iter_mut().enumerate() {
+            log::debug!("[WIDGETS LOAD] Loading widget {}/{}: type={:?}, id={}",
+                index + 1, widget_count, std::mem::discriminant(widget), widget.id());
             widget.load_widget(ui_resources);
         }
+        log::debug!("[WIDGETS LOAD] Completed loading {} widgets", widget_count);
     }
 }
 
@@ -243,7 +272,9 @@ impl GetWidget for Vec<Widget> {
                 | Widget::Table(_)
                 | Widget::TabButton(_)
                 | Widget::ZListbox(_)
-                | Widget::Scrollbar(_) => {
+                | Widget::Scrollbar(_)
+                | Widget::Scrollbox(_)
+                | Widget::DrawText(_) => {
                     continue;
                 }
                 Widget::Unknown => panic!("Use of unknown widget"),
@@ -289,7 +320,9 @@ impl GetWidget for Vec<Widget> {
                 | Widget::Table(_)
                 | Widget::TabButton(_)
                 | Widget::ZListbox(_)
-                | Widget::Scrollbar(_) => {
+                | Widget::Scrollbar(_)
+                | Widget::Scrollbox(_)
+                | Widget::DrawText(_) => {
                     continue;
                 }
                 Widget::Unknown => panic!("Use of unknown widget"),

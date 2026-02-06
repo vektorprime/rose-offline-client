@@ -37,11 +37,11 @@ use std::any::TypeId;
 use bytemuck::{Pod, Zeroable};
 
 use crate::render::zone_lighting::{SetZoneLightingBindGroup, ZoneLightingUniformMeta, ZoneLightingUniformData};
-use crate::diagnostics::render_diagnostics::{
-    log_pipeline_cache_access,
-    log_pipeline_creation,
-    PipelineType,
-};
+// use crate::diagnostics::render_diagnostics::{
+//     log_pipeline_cache_access,
+//     log_pipeline_creation,
+//     PipelineType,
+// };
 
 pub const WORLD_UI_SHADER_HANDLE: UntypedHandle =
     UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0xd5cdda11c713e3a7) });
@@ -355,14 +355,14 @@ impl FromWorld for WorldUiPipeline {
             }
         };
 
-        // DIAGNOSTIC: Log pipeline creation (after layouts are created)
-        let mut diagnostics_state = world.resource_mut::<crate::diagnostics::render_diagnostics::RenderDiagnosticsState>();
-        log_pipeline_creation(
-            &mut diagnostics_state,
-            "world_ui_pipeline",
-            PipelineType::Render,
-            3, // Number of bind groups (view, material, zone_lighting)
-        );
+        // // DIAGNOSTIC: Log pipeline creation (after layouts are created)
+        // let mut diagnostics_state = world.resource_mut::<crate::diagnostics::render_diagnostics::RenderDiagnosticsState>();
+        // log_pipeline_creation(
+        //     &mut diagnostics_state,
+        //     "world_ui_pipeline",
+        //     PipelineType::Render,
+        //     3, // Number of bind groups (view, material, zone_lighting)
+        // );
 
         WorldUiPipeline {
             view_layout,
@@ -489,19 +489,19 @@ pub fn queue_world_ui_meshes(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     view_uniforms: Res<ViewUniforms>,
-    mut diagnostics_state: ResMut<crate::diagnostics::render_diagnostics::RenderDiagnosticsState>,
+    // mut diagnostics_state: ResMut<crate::diagnostics::render_diagnostics::RenderDiagnosticsState>,
 ) {
     if view_uniforms.uniforms.is_empty() {
         return;
     }
 
     // DIAGNOSTIC: Log pipeline cache access before using it
-    log_pipeline_cache_access(
-        &mut diagnostics_state,
-        None,
-        PipelineType::Render,
-        0, // Cache size not directly accessible, will be logged on access
-    );
+    // log_pipeline_cache_access(
+    //     &mut diagnostics_state,
+    //     None,
+    //     PipelineType::Render,
+    //     0, // Cache size not directly accessible, will be logged on access
+    // );
 
     let draw_alpha_mask = transparent_draw_functions
         .read()
@@ -532,12 +532,12 @@ pub fn queue_world_ui_meshes(
             | MeshPipelineKey::from_hdr(view.hdr);
         
         // DIAGNOSTIC: Log pipeline cache access before specialization
-        log_pipeline_cache_access(
-            &mut diagnostics_state,
-            None,
-            PipelineType::Render,
-            0, // Cache size not directly accessible
-        );
+        // log_pipeline_cache_access(
+        //     &mut diagnostics_state,
+        //     None,
+        //     PipelineType::Render,
+        //     0, // Cache size not directly accessible
+        // );
         
         let pipeline = pipelines.specialize(&pipeline_cache, &world_ui_pipeline, view_key);
         let view_matrix = view.world_from_view.compute_matrix();

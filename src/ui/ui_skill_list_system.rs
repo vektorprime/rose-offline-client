@@ -13,7 +13,7 @@ use crate::{
     ui::{
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem, SkillTooltipType},
         ui_add_skill_tooltip,
-        widgets::{DataBindings, Dialog, DrawText, Widget},
+        widgets::{DataBindings, Dialog, DrawTextTrait, Widget},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop, UiStateWindows,
     },
 };

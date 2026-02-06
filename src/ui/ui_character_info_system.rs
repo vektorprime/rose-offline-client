@@ -17,7 +17,7 @@ use crate::{
     components::PlayerCharacter,
     resources::{GameConnection, GameData, UiResources},
     ui::{
-        widgets::{DataBindings, Dialog, DrawText},
+        widgets::{DataBindings, Dialog, DrawTextTrait},
         UiSoundEvent, UiStateWindows,
     },
 };

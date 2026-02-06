@@ -18,7 +18,7 @@ use crate::{
     animation::CameraAnimation,
     resources::{CharacterSelectState, UiResources, WorldConnection},
     ui::{
-        widgets::{DataBindings, Dialog, DrawText},
+        widgets::{DataBindings, Dialog, DrawTextTrait},
         UiSoundEvent,
     },
 };

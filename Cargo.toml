@@ -72,8 +72,8 @@ features = [
     "x11",
     "bevy_gizmos",
     # Profiling features - uncomment the ones you need:
-     "trace_tracy",        # Enable Tracy profiler integration for CPU profiling
-     "trace_tracy_memory", # Enable memory allocation tracking (high overhead)
+    # "trace_tracy",        # Enable Tracy profiler integration for CPU profiling
+    # "trace_tracy_memory", # Enable memory allocation tracking (high overhead)
     # "trace_chrome",       # Export to Chrome tracing format (alternative to Tracy)
 ] 
 

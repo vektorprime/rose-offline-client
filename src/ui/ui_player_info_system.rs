@@ -11,7 +11,7 @@ use crate::{
     ui::{
         tooltips::PlayerTooltipQuery,
         ui_add_item_tooltip,
-        widgets::{DataBindings, Dialog, DrawText},
+        widgets::{DataBindings, Dialog, DrawTextTrait},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateWindows,
     },
 };

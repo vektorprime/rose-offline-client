@@ -19,7 +19,7 @@ use crate::{
 };
 
 use super::{
-    widgets::{DrawText, DrawWidget, LoadWidget},
+    widgets::{DrawTextTrait, DrawWidget, LoadWidget},
     DataBindings, UiStateWindows,
 };
 

@@ -33,7 +33,7 @@ use crate::{
         CharacterModel, CharacterModelPart, CharacterModelPartIndex, DummyBoneOffset,
         ItemDropModel, NpcModel, PersonalStoreModel, VehicleModel,
     },
-    diagnostics::render_diagnostics::{log_alpha_blend_mesh_setup_simple},
+    // diagnostics::render_diagnostics::{log_alpha_blend_mesh_setup_simple},
     effect_loader::spawn_effect,
     render::{
         ParticleMaterial, TrailEffect, RoseEffectExtension,
@@ -1333,16 +1333,16 @@ fn spawn_skeleton(
         let alpha_blended = zsc_material.alpha_enabled && !zsc_material.z_write_enabled;
 
         // Log alpha-blended mesh setup for diagnostic purposes (Crash #2)
-        if alpha_blended {
-            log_alpha_blend_mesh_setup_simple(
-                model_id,
-                material_id,
-                zsc_material.alpha_enabled,
-                zsc_material.z_write_enabled,
-                zsc_material.two_sided,
-                zsc_material.is_skin,
-            );
-        }
+        // DISABLED: if alpha_blended {
+        //     log_alpha_blend_mesh_setup_simple(
+        //         model_id,
+        //         material_id,
+        //         zsc_material.alpha_enabled,
+        //         zsc_material.z_write_enabled,
+        //         zsc_material.two_sided,
+        //         zsc_material.is_skin,
+        //     );
+        // }
 
         // Create material using ExtendedMaterial<StandardMaterial, RoseObjectExtension>
         let texture_handle = asset_server.load(zsc_material.path.path().to_string_lossy().into_owned());

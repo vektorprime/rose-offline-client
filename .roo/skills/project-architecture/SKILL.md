@@ -1,3 +1,13 @@
+---
+name: project-architecture
+description: Before working on a new task, review the project-architecture to get a better understanding of the task.
+---
+
+# Project Architecture
+
+## Instructions
+Review the relevant components in this architecture document.
+
 # Rose Offline Client - High-Level Memory Bank
 
 ## Table of Contents
@@ -79,7 +89,7 @@ The client supports three main modes:
 ### Core Dependencies
 
 #### Game Engine
-- **Bevy** (v0.15.4) - Primary game engine with ECS architecture
+- **Bevy** (v0.14.2) - Primary game engine with ECS architecture
   - bevy_asset - Asset management
   - bevy_winit - Window management
   - bevy_core_pipeline - Rendering pipeline
@@ -89,10 +99,10 @@ The client supports three main modes:
   - Multi-threaded execution enabled
 
 #### Third-Party Libraries
-- **bevy_egui** (v0.32.0) - Immediate mode GUI for debug tools
-- **bevy-inspector-egui** (v0.29.1) - Entity inspector for debugging
-- **bevy_rapier3d** (v0.28.0) - Physics engine for collision detection
-- **egui** (v0.30.0) - UI framework
+- **bevy_egui** (v0.28) - Immediate mode GUI for debug tools
+- **bevy-inspector-egui** (v0.25) - Entity inspector for debugging
+- **bevy_rapier3d** (v0.27) - Physics engine for collision detection
+- **egui** (v0.28) - UI framework
 - **tokio** (v1.17) - Async runtime for networking
 
 #### Asset Loading
@@ -123,7 +133,7 @@ The client supports three main modes:
 - **lru** (v0.12) - LRU cache
 
 #### Data Structures
-- **glam** (v0.29.3) - Vector math
+- **glam** (v0.27) - Vector math
 - **enum-map** (v2.0) - Enum-based maps
 - **arrayvec** (v0.7) - Stack-allocated vectors
 - **bitflags** (v2.3) - Bit flag enums
@@ -974,69 +984,6 @@ Major changes include:
 
 ---
 
-## Package Upgrade History
-
-### Recent Package Upgrades (Bevy 0.14.2 → 0.15.4)
-
-The following packages were upgraded as part of the migration to Bevy 0.15.4:
-
-#### Core Engine
-- **Bevy**: v0.14.2 → v0.15.4
-  - Major version upgrade with significant API changes
-  - Updated rendering pipeline
-  - Enhanced ECS performance
-  - New WGSL shader features
-
-#### Bevy Ecosystem
-- **bevy_egui**: v0.28 → v0.32.0
-  - Updated to work with Bevy 0.15
-  - Improved egui integration
-  - Enhanced debug UI capabilities
-
-- **bevy-inspector-egui**: v0.25 → v0.29.1
-  - Updated inspector for Bevy 0.15
-  - Improved entity inspection
-  - Better component visualization
-
-- **bevy_rapier3d**: v0.27 → v0.28.0
-  - Updated physics engine
-  - Improved collision detection
-  - Better performance
-
-#### UI Framework
-- **egui**: v0.28 → v0.30.0
-  - Updated UI framework
-  - Improved rendering
-  - Better widget support
-
-#### Math Library
-- **glam**: v0.27 → v0.29.3
-  - Updated vector math library
-  - Improved performance
-  - Better SIMD support
-
-#### Unchanged Dependencies
-The following packages remain at their current versions:
-- tokio: v1.17 (async runtime)
-- image: v0.24 (image processing)
-- oddio: v0.6 (audio playback)
-- cpal: v0.15 (audio device abstraction)
-- lewton: v0.10 (OGG audio decoding)
-- hound: v3.4 (WAV audio decoding)
-- anyhow: v1.0.4 (error handling)
-- serde: v1.0 (serialization)
-- toml: v0.7.2 (configuration parsing)
-- regex: v1 (pattern matching)
-- md5: v0.7.0 (hashing)
-- uuid: v1 (UUID generation)
-- dashmap: v5.5 (concurrent hash map)
-- lru: v0.12 (LRU cache)
-- enum-map: v2.0 (enum-based maps)
-- arrayvec: v0.7 (stack-allocated vectors)
-- bitflags: v2.3 (bit flag enums)
-
----
-
 ## Debugging and Diagnostics
 
 ### Diagnostic Systems
@@ -1184,6 +1131,3 @@ The project demonstrates best practices in game development with Rust, including
 
 ---
 
-*Document Version: 1.0*  
-*Last Updated: Based on project analysis*  
-*Project Location: c:/Users/vicha/RustroverProjects/rose-offline-client*

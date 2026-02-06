@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-use super::widgets::DrawText;
+use super::widgets::DrawTextTrait;
 
 const IID_BTN_CLOSE: i32 = 20;
 const IID_RADIOBOX: i32 = 30;

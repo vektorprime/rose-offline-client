@@ -8,7 +8,7 @@ use crate::{
     components::{PartyInfo, PartyOwner, PlayerCharacter},
     resources::{GameConnection, UiResources},
     ui::{
-        widgets::{DataBindings, Dialog, DrawText},
+        widgets::{DataBindings, Dialog, DrawTextTrait},
         UiSoundEvent, UiStateWindows,
     },
 };
