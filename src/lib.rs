@@ -1363,8 +1363,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, (status_effect_system.run_if(in_state(AppState::Game)),));
     app.add_systems(Update, (passive_recovery_system.run_if(in_state(AppState::Game)),));
     app.add_systems(Update, (quest_trigger_system.run_if(in_state(AppState::Game)),));
-    // app.add_systems(Update, game_mouse_input_system); // Too many parameters for Bevy 0.15
-    // need to review if the game_mouse_input_system was added another way
+    app.add_systems(Update, game_mouse_input_system);
     // UI systems - part 1
     app.add_systems(Update, ui_bank_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, ui_chatbox_system.run_if(in_state(AppState::Game)));

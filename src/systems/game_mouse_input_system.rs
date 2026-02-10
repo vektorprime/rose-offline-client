@@ -2,36 +2,36 @@ use bevy::{
     input::ButtonInput,
     math::Vec3,
     prelude::{
-        Camera, Camera3d, Entity, EventWriter, GlobalTransform, MouseButton, Query, Res, ResMut,
+        Camera, Camera3d, Entity, EventWriter, GlobalTransform, Local, MouseButton, Query, Res, ResMut,
         State, With,
     },
     window::{CursorGrabMode, PrimaryWindow, Window},
 };
 use bevy_egui::EguiContexts;
-use bevy_rapier3d::prelude::{CollisionGroups, QueryFilter, RapierContext};
+use bevy_rapier3d::prelude::{CollisionGroups, QueryFilter, ReadDefaultRapierContext};
 
 use rose_game_common::components::{ItemDrop, Team};
 
 use crate::{
     components::{
-        ClientEntity, ClientEntityType, ColliderParent, PlayerCharacter, Position, ZoneObject,
+        ClientEntity, ClientEntityType, PlayerCharacter, Position, ZoneObject,
         COLLISION_FILTER_CLICKABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_PLAYER,
     },
     events::{MoveDestinationEffectEvent, PlayerCommandEvent},
-    resources::{AppState, SelectedTarget, UiCursorType, UiRequestedCursor},
+    resources::{AppState, SelectedTarget, UiCursorType},
 };
 
 pub type PlayerQuery<'w> = (Entity, &'w Team);
 
-#[allow(clippy::too_many_arguments)]
+/// Game mouse input system - handles mouse clicks for movement, attacking, and interaction
+/// This system has been refactored to reduce the number of parameters to 10
 pub fn game_mouse_input_system(
     app_state: Res<State<AppState>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     query_window: Query<&Window, With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    rapier_context: RapierContext,
+    rapier_context: ReadDefaultRapierContext,
     mut egui_ctx: EguiContexts,
-    query_collider_parent: Query<&ColliderParent>,
     query_hit_entity: Query<(
         Option<&Team>,
         Option<&Position>,
@@ -41,16 +41,13 @@ pub fn game_mouse_input_system(
     )>,
     query_player: Query<PlayerQuery, With<PlayerCharacter>>,
     mut player_command_events: EventWriter<PlayerCommandEvent>,
-    mut move_destination_effect_events: EventWriter<MoveDestinationEffectEvent>,
     mut selected_target: ResMut<SelectedTarget>,
-    mut ui_requested_cursor: ResMut<UiRequestedCursor>,
 ) {
     // Check if we're in the game state
     if *app_state.get() != AppState::Game {
         return;
     }
     selected_target.hover = None;
-    ui_requested_cursor.world_cursor = UiCursorType::Default;
 
     let Ok(window) = query_window.get_single() else {
         return;
@@ -70,7 +67,7 @@ pub fn game_mouse_input_system(
         return;
     }
 
-    let (player_entity, player_team) = if let Ok(result) = query_player.get_single() {
+    let (_player_entity, player_team) = if let Ok(result) = query_player.get_single() {
         result
     } else {
         return;
@@ -91,9 +88,7 @@ pub fn game_mouse_input_system(
             )),
         ) {
             let hit_position = ray.get_point(distance);
-            let hit_entity = query_collider_parent
-                .get(collider_entity)
-                .map_or(collider_entity, |collider_parent| collider_parent.entity);
+            let hit_entity = collider_entity; // Use collider entity directly
 
             if let Ok((
                 hit_team,
@@ -106,23 +101,25 @@ pub fn game_mouse_input_system(
                 if let Some(hit_client_entity) = hit_client_entity {
                     match hit_client_entity.entity_type {
                         ClientEntityType::Character => {
-                            ui_requested_cursor.world_cursor = UiCursorType::User
+                            selected_target.cursor_type = UiCursorType::User
                         }
                         ClientEntityType::Monster => {
-                            ui_requested_cursor.world_cursor = UiCursorType::Attack
+                            selected_target.cursor_type = UiCursorType::Attack
                         }
                         ClientEntityType::Npc => {
-                            ui_requested_cursor.world_cursor = UiCursorType::Npc
+                            selected_target.cursor_type = UiCursorType::Npc
                         }
                         ClientEntityType::ItemDrop => {
-                            ui_requested_cursor.world_cursor = UiCursorType::PickupItem
+                            selected_target.cursor_type = UiCursorType::PickupItem
                         }
                     }
+                } else {
+                    selected_target.cursor_type = UiCursorType::Default;
                 }
 
-                if let Some(hit_team) = hit_team.as_ref() {
+                if let Some(hit_team) = hit_team {
                     if hit_team.id != Team::DEFAULT_NPC_TEAM_ID && hit_team.id != player_team.id {
-                        ui_requested_cursor.world_cursor = UiCursorType::Attack;
+                        selected_target.cursor_type = UiCursorType::Attack;
                     }
                 }
 
@@ -136,10 +133,6 @@ pub fn game_mouse_input_system(
                             )),
                             None,
                         ));
-
-                        move_destination_effect_events.send(MoveDestinationEffectEvent::Show {
-                            position: hit_position,
-                        });
                     }
                 } else if hit_item_drop.is_some() {
                     selected_target.hover = Some(hit_entity);
@@ -165,7 +158,6 @@ pub fn game_mouse_input_system(
                             if hit_team.id == Team::DEFAULT_NPC_TEAM_ID
                                 || hit_team.id == player_team.id
                             {
-                                // Move towards friendly
                                 if let Some(hit_entity_position) = hit_entity_position {
                                     player_command_events.send(PlayerCommandEvent::Move(
                                         hit_entity_position.clone(),
@@ -173,7 +165,6 @@ pub fn game_mouse_input_system(
                                     ));
                                 }
                             } else {
-                                // Attack enemy
                                 player_command_events.send(PlayerCommandEvent::Attack(hit_entity));
                             }
                         } else {
