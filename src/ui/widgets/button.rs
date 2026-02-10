@@ -131,7 +131,7 @@ impl DrawWidget for Button {
                     //self.id, sprite.texture_id, sprite.uv.min.x, sprite.uv.min.y, sprite.uv.max.x, sprite.uv.max.y, sprite.width, sprite.height);
                 sprite.draw(ui, rect.min);
             } else {
-                log::warn!("[BUTTON DRAW] Button id={} has no sprite to draw!", self.id);
+                //log::warn!("[BUTTON DRAW] Button id={} has no sprite to draw!", self.id);
             }
 
             if response.clicked() {

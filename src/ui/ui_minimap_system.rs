@@ -113,16 +113,10 @@ pub fn ui_minimap_system(
     }
     let current_zone = current_zone.unwrap();
 
-    // Log diagnostic info to diagnose the panic
-    eprintln!("[ui_minimap_system] Attempting to get zone loader asset for zone_id: {:?}", current_zone.id);
-    eprintln!("[ui_minimap_system] Zone handle: {:?}", current_zone.handle);
+    // Return early if the zone loader asset hasn't loaded yet
     let current_zone_data = match zone_loader_assets.get(&current_zone.handle) {
         Some(data) => data,
-        None => {
-            eprintln!("[ui_minimap_system] ERROR: ZoneLoaderAsset not found! Asset may still be loading.");
-            eprintln!("[ui_minimap_system] Returning early to avoid panic.");
-            return;
-        }
+        None => return,
     };
 
     let camera_forward_2d = query_camera.single().forward().xz().normalize_or_zero();

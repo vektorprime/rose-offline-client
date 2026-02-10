@@ -36,55 +36,55 @@ impl AssetLoader for DdsImageLoader {
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
 
-           info!("[DDS LOADER] Loading DDS texture: {}", asset_path);
-           info!("[DDS LOADER] File size: {} bytes", bytes.len());
+           // info!("[DDS LOADER] Loading DDS texture: {}", asset_path);
+           // info!("[DDS LOADER] File size: {} bytes", bytes.len());
 
             // Parse the DDS header to determine format
             let dds_info = parse_dds_header(&bytes)?;
-           info!("[DDS LOADER] DDS format: {:?}, {}x{}, mips: {}",
-                dds_info.format, dds_info.width, dds_info.height, dds_info.mip_count);
+           // info!("[DDS LOADER] DDS format: {:?}, {}x{}, mips: {}",
+                //dds_info.format, dds_info.width, dds_info.height, dds_info.mip_count);
 
             // Handle based on format - ALL paths convert to R8G8B8A8
             // This avoids Bevy 0.13.2 panics with compressed texture pixel_size
             match dds_info.format {
                 DdsFormat::R8G8B8 => {
-                   info!("[DDS LOADER] Converting R8G8B8 to R8G8B8A8");
+                   // info!("[DDS LOADER] Converting R8G8B8 to R8G8B8A8");
                     convert_rgb_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::R8G8B8A8 | DdsFormat::B8G8R8A8 => {
-                   info!("[DDS LOADER] Loading RGBA data directly");
+                   // info!("[DDS LOADER] Loading RGBA data directly");
                     load_rgba_direct(&bytes, &dds_info)
                 }
                 DdsFormat::B8G8R8 => {
-                   info!("[DDS LOADER] Converting B8G8R8 to R8G8B8A8");
+                   // info!("[DDS LOADER] Converting B8G8R8 to R8G8B8A8");
                     convert_bgr_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::A1R5G5B5 => {
-                    info!("[DDS LOADER] Converting A1R5G5B5 to R8G8B8A8");
+                    // info!("[DDS LOADER] Converting A1R5G5B5 to R8G8B8A8");
                     convert_a1r5g5b5_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::R5G6B5 => {
-                    info!("[DDS LOADER] Converting R5G6B5 to R8G8B8A8");
+                    // info!("[DDS LOADER] Converting R5G6B5 to R8G8B8A8");
                     convert_r5g6b5_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::A4R4G4B4 => {
-                    info!("[DDS LOADER] Converting A4R4G4B4 to R8G8B8A8");
+                    // info!("[DDS LOADER] Converting A4R4G4B4 to R8G8B8A8");
                     convert_a4r4g4b4_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::B5G6R5 => {
-                   info!("[DDS LOADER] Converting B5G6R5 to R8G8B8A8");
+                   // info!("[DDS LOADER] Converting B5G6R5 to R8G8B8A8");
                     convert_b5g6r5_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::Bc1Dxt1 => {
-                   info!("[DDS LOADER] Decompressing BC1/DXT1 to R8G8B8A8");
+                   // info!("[DDS LOADER] Decompressing BC1/DXT1 to R8G8B8A8");
                     decompress_bc1_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::Bc2Dxt3 => {
-                   info!("[DDS LOADER] Decompressing BC2/DXT3 to R8G8B8A8");
+                   // info!("[DDS LOADER] Decompressing BC2/DXT3 to R8G8B8A8");
                     decompress_bc2_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::Bc3Dxt5 => {
-                   info!("[DDS LOADER] Decompressing BC3/DXT5 to R8G8B8A8");
+                   // info!("[DDS LOADER] Decompressing BC3/DXT5 to R8G8B8A8");
                     decompress_bc3_to_rgba(&bytes, &dds_info)
                 }
                 _ => {

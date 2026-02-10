@@ -151,14 +151,14 @@ pub fn log_render_state_extraction(
 ) {
     if state.frame_count % 300 == 0 {
         // Log summary every ~5 seconds at 60fps
-        log::info!(
-            "[RENDER DIAGNOSTICS] Frame {} - Pipeline cache accesses: {}, Pipeline creations: {}, Alpha blend events: {}, Shader binding configs: {}",
-            state.frame_count,
-            state.pipeline_cache_accesses.len(),
-            state.pipeline_creations.len(),
-            state.alpha_blend_mesh_events.len(),
-            state.shader_binding_configs.len(),
-        );
+        // log::info!(
+        //     "[RENDER DIAGNOSTICS] Frame {} - Pipeline cache accesses: {}, Pipeline creations: {}, Alpha blend events: {}, Shader binding configs: {}",
+        //     state.frame_count,
+        //     state.pipeline_cache_accesses.len(),
+        //     state.pipeline_creations.len(),
+        //     state.alpha_blend_mesh_events.len(),
+        //     state.shader_binding_configs.len(),
+        // );
     }
 }
 

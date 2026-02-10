@@ -159,7 +159,7 @@ use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, force_zone_vi
 // };
 // DISABLED: use resources::zone_debug_diagnostics::{ZoneDebugDiagnostics, ZoneDebugDiagnosticsPlugin};
 
-use crate::components::{SoundCategory, Zone};
+use crate::components::{CollisionPlayer, SoundCategory, Zone};
 
 #[derive(Default, Deserialize)]
 #[serde(default)]
@@ -683,7 +683,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                 })
                 .set(bevy::log::LogPlugin {
                     level: bevy::log::Level::DEBUG,
-                    filter: "wgpu=error,naga=error,bevy_render=debug,bevy_pbr=debug,bevy_asset=debug,rose_offline_client=trace".to_string(),
+                    filter: "wgpu=error,naga=error,bevy_render=debug,bevy_pbr=debug,bevy_asset=debug,rose_offline_client=trace,offset_allocator=warn".to_string(),
                     ..default()
                 })
                 .set(bevy::pbr::PbrPlugin::default()),
@@ -955,24 +955,30 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     app.add_systems(
         Update,
-        ui_item_drop_name_system,
+        ui_item_drop_name_system
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
 
     app.add_systems(
         Update,
-        (ui_message_box_system, ui_number_input_dialog_system),
+        (ui_message_box_system, ui_number_input_dialog_system)
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
     app.add_systems(
         Update,
         (
             ui_window_sound_system,
             ui_sound_event_system,
-        ),
+        )
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
+
     app.add_systems(
         Update,
-        ui_debug_menu_system,
+        ui_debug_menu_system
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
+
 
     app.add_systems(
         Update,
@@ -985,14 +991,21 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             ui_debug_entity_inspector_system,
             ui_debug_item_list_system,
             ui_debug_npc_list_system,
-        ),
+        )
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
+
     // DISABLED: app.add_systems(Update, ui_debug_physics_system); // Too many parameters for Bevy 0.15
-    app.add_systems(Update, ui_debug_render_system);
-    app.add_systems(Update, ui_debug_skill_list_system);
-    app.add_systems(Update, ui_debug_zone_lighting_system);
-    app.add_systems(Update, ui_debug_zone_list_system);
-    app.add_systems(Update, ui_debug_zone_time_system);
+    app.add_systems(Update, ui_debug_render_system
+        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_debug_skill_list_system
+        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_debug_zone_lighting_system
+        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_debug_zone_list_system
+        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_debug_zone_time_system
+        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
     // DISABLED: app.add_systems(Update, ui_debug_diagnostics_system);
 
     // character_model_blink_system in PostUpdate to avoid any conflicts with model destruction
@@ -1308,7 +1321,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             ui_character_select_system,
             ui_character_select_name_tag_system,
         )
-            .run_if(in_state(AppState::GameCharacterSelect)),
+            .run_if(in_state(AppState::GameCharacterSelect))
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
 
     // Game
@@ -1331,9 +1345,16 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, command_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, facing_direction_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, update_position_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, collision_player_system_join_zoin.run_if(in_state(AppState::Game)));
+    // app.add_systems(Update, collision_player_system_join_zoin.run_if(in_state(AppState::Game))
+    //     .before(collision_player_system));
     app.add_systems(Update, collision_height_only_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, collision_player_system.run_if(in_state(AppState::Game)));
+    app.add_systems(
+        Update,
+        collision_player_system_join_zoin
+            .run_if(in_state(AppState::Game))
+            .after(collision_player_system),
+    );
     app.add_systems(Update, cooldown_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, client_entity_event_system.run_if(in_state(AppState::Game)));
 
@@ -1342,8 +1363,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, (status_effect_system.run_if(in_state(AppState::Game)),));
     app.add_systems(Update, (passive_recovery_system.run_if(in_state(AppState::Game)),));
     app.add_systems(Update, (quest_trigger_system.run_if(in_state(AppState::Game)),));
-    // DISABLED: app.add_systems(Update, game_mouse_input_system); // Too many parameters for Bevy 0.15
-
+    // app.add_systems(Update, game_mouse_input_system); // Too many parameters for Bevy 0.15
+    // need to review if the game_mouse_input_system was added another way
     // UI systems - part 1
     app.add_systems(Update, ui_bank_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, ui_chatbox_system.run_if(in_state(AppState::Game)));
@@ -1368,7 +1389,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, ui_skill_tree_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, ui_settings_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, ui_status_effects_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, conversation_dialog_system.run_if(in_state(AppState::Game)));
+    app.add_systems(Update, conversation_dialog_system.run_if(in_state(AppState::Game))
+        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
 
     if !systems_config.disable_player_command_system {
         app.add_systems(
@@ -1395,7 +1417,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         ),
     );
 
-    app.add_systems(PostStartup, load_common_game_data);
+    app.add_systems(PostStartup, load_common_game_data
+        .after(bevy_egui::EguiStartupSet::InitContexts));
     
     // TEST: Add StandardMaterial cube for rendering isolation test
     app.add_systems(PostStartup, spawn_test_cube);
@@ -1417,7 +1440,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     match config.game.ui_version.as_str() {
         "irose" => {
-            app.add_systems(Startup, load_ui_resources);
+            app.add_systems(Startup, load_ui_resources
+                .after(bevy_egui::EguiStartupSet::InitContexts));
         }
         "custom" => {}
         unknown => panic!("Unknown game ui version {}", unknown),
@@ -1475,7 +1499,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.configure_sets(
         Update,
         (UiSystemSets::UiDebugMenu, UiSystemSets::UiFirst, UiSystemSets::Ui, UiSystemSets::UiLast, UiSystemSets::UiDebug)
-            .in_set(GameSystemSets::Ui),
+            .in_set(GameSystemSets::Ui)
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
 
     app.configure_sets(

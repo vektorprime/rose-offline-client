@@ -165,56 +165,72 @@ pub fn game_connection_system(
                 let move_mode = MoveMode::Run;
                 let move_speed = MoveSpeed::new(ability_values.get_move_speed(&move_mode));
 
-                // Spawn character
-                client_entity_list.player_entity = Some(
-                    commands
-                        .spawn(((
-                            PlayerCharacter {},
-                            ClientEntityName::new(character_data.character_info.name.clone()),
-                            character_data.character_info,
-                            character_data.basic_stats,
-                            character_data.level,
-                            character_data.equipment,
-                            character_data.experience_points,
-                            character_data.skill_list,
-                            character_data.hotbar,
-                            character_data.health_points,
-                            character_data.mana_points,
-                            character_data.stat_points,
-                            character_data.skill_points,
-                            character_data.union_membership,
-                            character_data.stamina,
-                        ),
-                        (
-                            Command::with_stop(),
-                            NextCommand::with_stop(),
-                            FacingDirection::default(),
-                            ability_values,
-                            status_effects,
-                            StatusEffectsRegen::new(),
-                            move_mode,
-                            move_speed,
-                            Cooldowns::default(),
-                            PassiveRecoveryTime::default(),
-                            PendingSkillTargetList::default(),
-                            PendingDamageList::default(),
-                            PendingSkillEffectList::default(),
-                            Position::new(character_data.position),
-                            VisibleStatusEffects::default(),
-                        ),
-                        (
-                            Transform::from_xyz(
-                                character_data.position.x / 100.0,
-                                character_data.position.z / 100.0 + 100.0,
-                                -character_data.position.y / 100.0,
-                            ),
-                            GlobalTransform::default(),
-                            Visibility::default(),
-                            InheritedVisibility::default(),
-                            ViewVisibility::default(),
-                        )))
-                        .id()
-                );
+                // DIAGNOSTIC: Log player spawn position
+                log::info!("[PLAYER SPAWN DIAGNOSTIC] Spawning player character:");
+                log::info!("[PLAYER SPAWN DIAGNOSTIC]   Server position: x={:.2}, y={:.2}, z={:.2}",
+                    character_data.position.x, character_data.position.y, character_data.position.z);
+                log::info!("[PLAYER SPAWN DIAGNOSTIC]   Bevy Transform: x={:.2}, y={:.2}, z={:.2}",
+                    character_data.position.x / 100.0, character_data.position.z / 100.0 + 100.0, -character_data.position.y / 100.0);
+                log::info!("[PLAYER SPAWN DIAGNOSTIC]   Y offset applied: +100.0 (FIXED: using CollisionPlayer for player character)");
+
+                // Spawn character - split into multiple spawns to avoid Bundle limit
+                let player_entity = commands
+                    .spawn((
+                        PlayerCharacter {},
+                        ClientEntityName::new(character_data.character_info.name.clone()),
+                        character_data.character_info,
+                        character_data.basic_stats,
+                        character_data.level,
+                        character_data.equipment,
+                        character_data.experience_points,
+                        character_data.skill_list,
+                        character_data.hotbar,
+                        character_data.health_points,
+                        character_data.mana_points,
+                        character_data.stat_points,
+                        character_data.skill_points,
+                        character_data.union_membership,
+                        character_data.stamina,
+                    ))
+                    .id();
+
+                // Add command and movement components
+                commands.entity(player_entity).insert((
+                    Command::with_stop(),
+                    NextCommand::with_stop(),
+                    FacingDirection::default(),
+                    ability_values,
+                    status_effects,
+                    StatusEffectsRegen::new(),
+                    move_mode,
+                    move_speed,
+                ));
+
+                // Add combat and status components
+                commands.entity(player_entity).insert((
+                    Cooldowns::default(),
+                    PassiveRecoveryTime::default(),
+                    PendingSkillTargetList::default(),
+                    PendingDamageList::default(),
+                    PendingSkillEffectList::default(),
+                    Position::new(character_data.position),
+                    VisibleStatusEffects::default(),
+                ));
+
+                // Add transform components (CollisionPlayer added during JoinZone, matching Bevy 0.11 behavior)
+                commands.entity(player_entity).insert((
+                    Transform::from_xyz(
+                        character_data.position.x / 100.0,
+                        character_data.position.z / 100.0 + 100.0,
+                        -character_data.position.y / 100.0,
+                    ),
+                    GlobalTransform::default(),
+                    Visibility::default(),
+                    InheritedVisibility::default(),
+                    ViewVisibility::default(),
+                ));
+
+                client_entity_list.player_entity = Some(player_entity);
 
                 // Emit connected event, character select system will be responsible for
                 // starting the load of the next zone once its animations have completed
@@ -234,6 +250,11 @@ pub fn game_connection_system(
                 }
             }
             Ok(ServerMessage::JoinZone { entity_id, experience_points, team, health_points, mana_points, world_ticks, craft_rate, world_price_rate, item_price_rate, town_price_rate }) => {
+                // DIAGNOSTIC: Log when JoinZone message is received
+                log::info!("[DIAG_JOIN_ZONE] JoinZone message received");
+                log::info!("[DIAG_JOIN_ZONE]   entity_id: {:?}", entity_id);
+                log::info!("[DIAG_JOIN_ZONE]   player_entity: {:?}", client_entity_list.player_entity);
+
                 if let Some(player_entity) = client_entity_list.player_entity {
                     let mut entity_commands = commands.entity(player_entity);
                     entity_commands.insert((
@@ -247,6 +268,9 @@ pub fn game_connection_system(
                         health_points,
                         mana_points,
                     ));
+
+                    // DIAGNOSTIC: Log when CollisionPlayer component is being added
+                    log::info!("[DIAG_JOIN_ZONE] CollisionPlayer component added to player_entity: {:?}", player_entity);
 
                     if health_points.hp > 0 {
                         entity_commands.remove::<Dead>();
@@ -268,6 +292,8 @@ pub fn game_connection_system(
 
                     // Transition to in game state if we are not already
                     if !matches!(app_state_current.get(), AppState::Game) {
+                        // DIAGNOSTIC: Log when NextState<AppState::Game> is being set
+                        log::info!("[DIAG_JOIN_ZONE] Setting NextState<AppState::Game>, current state: {:?}", app_state_current.get());
                         app_state_next.set(AppState::Game);
                     }
                 }
