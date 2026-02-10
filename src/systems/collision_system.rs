@@ -107,10 +107,10 @@ pub fn collision_player_system_join_zoin(
     app_state_current: Res<State<AppState>>,
 ) {
     // DIAGNOSTIC: Log at the very start of the function (before any queries)
-    log::info!("[DIAG_COLLISION_PLAYER_JOIN_ZOIN] collision_player_system_join_zoin called");
+   //  log::info!("[DIAG_COLLISION_PLAYER_JOIN_ZOIN] collision_player_system_join_zoin called");
 
     // DIAGNOSTIC: Log the current AppState
-    log::info!("[DIAG_COLLISION_PLAYER_JOIN_ZOIN] Current AppState: {:?}", app_state_current.get());
+   //  log::info!("[DIAG_COLLISION_PLAYER_JOIN_ZOIN] Current AppState: {:?}", app_state_current.get());
 
     let current_zone: Option<&CurrentZone> = current_zone.as_deref();
     
@@ -132,18 +132,18 @@ pub fn collision_player_system_join_zoin(
 
     // DIAGNOSTIC: Log whether the query for CollisionPlayer is empty
     let is_empty = query_collision_entity.is_empty();
-    log::info!("[DIAG_COLLISION_PLAYER_JOIN_ZOIN] CollisionPlayer query is_empty: {}", is_empty);
+   //  log::info!("[DIAG_COLLISION_PLAYER_JOIN_ZOIN] CollisionPlayer query is_empty: {}", is_empty);
 
     // DIAGNOSTIC: Log when collision_player_system_join_zoin runs
-    log::info!("[COLLISION_PLAYER_JOIN_ZOIN] Running collision_player_system_join_zoin");
+    // log::info!("[COLLISION_PLAYER_JOIN_ZOIN] Running collision_player_system_join_zoin");
     let mut iteration_count = 0;
     for (mut position, mut transform) in query_collision_entity.iter_mut() {
         iteration_count += 1;
         // DIAGNOSTIC: Log each entity found in the query
-        log::info!("[DIAG_COLLISION_PLAYER_JOIN_ZOIN] Processing entity #{}", iteration_count);
-        log::info!("[COLLISION_PLAYER_JOIN_ZOIN] Processing entity iteration #{}", iteration_count);
-        log::info!("[COLLISION_PLAYER_JOIN_ZOIN]   Position before: x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
-        log::info!("[COLLISION_PLAYER_JOIN_ZOIN]   Transform before: x={:.2}, y={:.2}, z={:.2}", transform.translation.x, transform.translation.y, transform.translation.z);
+       //  log::info!("[DIAG_COLLISION_PLAYER_JOIN_ZOIN] Processing entity #{}", iteration_count);
+        // log::info!("[COLLISION_PLAYER_JOIN_ZOIN] Processing entity iteration #{}", iteration_count);
+        // log::info!("[COLLISION_PLAYER_JOIN_ZOIN]   Position before: x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
+        // log::info!("[COLLISION_PLAYER_JOIN_ZOIN]   Transform before: x={:.2}, y={:.2}, z={:.2}", transform.translation.x, transform.translation.y, transform.translation.z);
         
         let ray_origin = Vec3::new(position.x / 100.0, 100000.0, -position.y / 100.0);
         let ray_direction = Vec3::new(0.0, -1.0, 0.0);
@@ -172,7 +172,7 @@ pub fn collision_player_system_join_zoin(
             0.0
         };
 
-        log::info!("[COLLISION_PLAYER_JOIN_ZOIN]   Raycast from Y=100000.0, collision_height={:?}, terrain_height={:.2}", collision_height, terrain_height);
+        // log::info!("[COLLISION_PLAYER_JOIN_ZOIN]   Raycast from Y=100000.0, collision_height={:?}, terrain_height={:.2}", collision_height, terrain_height);
 
         // Update entity translation and position
         transform.translation.x = position.x / 100.0;
@@ -184,14 +184,14 @@ pub fn collision_player_system_join_zoin(
         };
         position.z = transform.translation.y * 100.0;
 
-        log::info!("[COLLISION_PLAYER_JOIN_ZOIN]   Transform after: x={:.2}, y={:.2}, z={:.2}", transform.translation.x, transform.translation.y, transform.translation.z);
-        log::info!("[COLLISION_PLAYER_JOIN_ZOIN]   Position after: x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
+        // log::info!("[COLLISION_PLAYER_JOIN_ZOIN]   Transform after: x={:.2}, y={:.2}, z={:.2}", transform.translation.x, transform.translation.y, transform.translation.z);
+        // log::info!("[COLLISION_PLAYER_JOIN_ZOIN]   Position after: x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
     }
     
     if iteration_count == 0 {
         log::warn!("[COLLISION_PLAYER_JOIN_ZOIN] No entities processed! Query filter might not be matching.");
     } else {
-        log::info!("[COLLISION_PLAYER_JOIN_ZOIN] Processed {} entities with CollisionPlayer", iteration_count);
+        // log::info!("[COLLISION_PLAYER_JOIN_ZOIN] Processed {} entities with CollisionPlayer", iteration_count);
     }
 }
 
@@ -225,12 +225,12 @@ pub fn collision_player_system(
         };
 
     // DIAGNOSTIC: Log when collision_player_system runs
-    log::info!("[COLLISION_PLAYER] Running collision_player_system");
+    // log::info!("[COLLISION_PLAYER] Running collision_player_system");
     
     for (entity, mut position, mut transform) in query_collision_entity.iter_mut() {
-        log::info!("[COLLISION_PLAYER] Processing entity: {:?}", entity);
-        log::info!("[COLLISION_PLAYER]   Position before: x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
-        log::info!("[COLLISION_PLAYER]   Transform before: x={:.2}, y={:.2}, z={:.2}", transform.translation.x, transform.translation.y, transform.translation.z);
+        // log::info!("[COLLISION_PLAYER] Processing entity: {:?}", entity);
+        // log::info!("[COLLISION_PLAYER]   Position before: x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
+        // log::info!("[COLLISION_PLAYER]   Transform before: x={:.2}, y={:.2}, z={:.2}", transform.translation.x, transform.translation.y, transform.translation.z);
         
         // Cast ray forward to collide with walls
         let new_translation = Vec3::new(

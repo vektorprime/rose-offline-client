@@ -11,16 +11,8 @@ use rose_file_readers::{PtlKeyframeData, PtlUpdateCoords};
 
 use crate::{
     components::{ActiveParticle, ParticleSequence},
+    render::ParticleRenderData,
 };
-
-// ParticleRenderData temporarily removed - using Bevy StandardMaterial
-#[derive(Component, Default)]
-pub struct ParticleRenderData;
-
-impl ParticleRenderData {
-    pub fn clear(&mut self) {}
-    pub fn add(&mut self, _position: Vec3, _rotation: f32, _size: Vec2, _color: Vec4, _uv: Vec4) {}
-}
 
 fn rng_gen_range<R: Rng>(rng: &mut R, range: &RangeInclusive<f32>) -> f32 {
     // This function is intentionally written this way to match the

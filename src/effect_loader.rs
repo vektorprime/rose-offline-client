@@ -13,6 +13,7 @@ use bevy::{
         view::{ViewVisibility, InheritedVisibility, NoFrustumCulling},
     },
 };
+use bytemuck::{Pod, Zeroable};
 use rose_file_readers::{EftFile, EftMesh, EftParticle, PtlFile, VfsPath, VirtualFilesystem};
 
 use crate::{
@@ -286,12 +287,19 @@ fn spawn_particle(
                         asset_server.load::<bevy::prelude::Image>(&particle_texture_path)
                     };
                     
+                    // Initialize storage buffers with placeholder data to avoid zero-size buffer error
+                    let num_particles = sequence.num_particles as usize;
+                    let positions_buffer: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ZERO; num_particles];
+                    let sizes_buffer: Vec<bevy::math::Vec2> = vec![bevy::math::Vec2::ZERO; num_particles];
+                    let colors_buffer: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ONE; num_particles];
+                    let textures_buffer: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ZERO; num_particles];
+
                     let particle_material = particle_materials.add(ParticleMaterial {
                         texture: particle_texture_handle,
-                        positions: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),
-                        sizes: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),
-                        colors: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),
-                        textures: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),
+                        positions: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&positions_buffer), RenderAssetUsages::default())),
+                        sizes: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&sizes_buffer), RenderAssetUsages::default())),
+                        colors: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&colors_buffer), RenderAssetUsages::default())),
+                        textures: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&textures_buffer), RenderAssetUsages::default())),
                     });
 
                     let particle_mesh = meshes.add(bevy::prelude::Mesh::from(bevy::prelude::Rectangle::new(1.0, 1.0)));

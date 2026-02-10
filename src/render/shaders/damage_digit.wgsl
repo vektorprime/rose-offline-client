@@ -10,15 +10,15 @@ struct PositionBuffer { data: array<vec4<f32>>, };
 struct SizeBuffer { data: array<vec2<f32>>, };
 struct UvBuffer { data: array<vec4<f32>>, };
 
-@group(3) @binding(0)
+@group(2) @binding(0)
 var<storage, read> positions: PositionBuffer;
-@group(3) @binding(1)
+@group(2) @binding(1)
 var<storage, read> sizes: SizeBuffer;
-@group(3) @binding(2)
+@group(2) @binding(2)
 var<storage, read> uvs: UvBuffer;
-@group(3) @binding(3)
+@group(2) @binding(3)
 var base_color_texture: texture_2d<f32>;
-@group(3) @binding(4)
+@group(2) @binding(4)
 var base_color_sampler: sampler;
 
 struct VertexInput {
