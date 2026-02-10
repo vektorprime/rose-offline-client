@@ -150,9 +150,19 @@ fn spawn_mesh(
                     eft_mesh.mesh_file.path(),
                 );
                 let mesh: bevy::prelude::Handle<bevy::prelude::Mesh> = asset_server.load(mesh_path);
+                
+                // Handle NULL texture paths for effect meshes
+                let texture_path = eft_mesh.mesh_texture_file.path().to_string_lossy().into_owned();
+                let texture_handle = if texture_path.is_empty() || texture_path == "NULL" {
+                    log::warn!("[EFFECT LOADER] NULL or empty mesh texture path, using fallback");
+                    asset_server.load::<bevy::prelude::Image>("ETC/SPECULAR_SPHEREMAP.DDS")
+                } else {
+                    asset_server.load::<bevy::prelude::Image>(&texture_path)
+                };
+                
                 let material = effect_mesh_materials.add(ExtendedMaterial {
                     base: StandardMaterial {
-                        base_color_texture: Some(asset_server.load(eft_mesh.mesh_texture_file.path().to_string_lossy().into_owned())),
+                        base_color_texture: Some(texture_handle),
                         alpha_mode: if eft_mesh.alpha_test_enabled {
                             AlphaMode::Mask(0.5)
                         } else {
@@ -267,8 +277,17 @@ fn spawn_particle(
                         },
                     );
 
+                    // Handle NULL texture paths for particles
+                    let particle_texture_path = sequence.texture_path.path().to_string_lossy().into_owned();
+                    let particle_texture_handle = if particle_texture_path.is_empty() || particle_texture_path == "NULL" {
+                        log::warn!("[EFFECT LOADER] NULL or empty particle texture path, using fallback");
+                        asset_server.load::<bevy::prelude::Image>("ETC/SPECULAR_SPHEREMAP.DDS")
+                    } else {
+                        asset_server.load::<bevy::prelude::Image>(&particle_texture_path)
+                    };
+                    
                     let particle_material = particle_materials.add(ParticleMaterial {
-                        texture: asset_server.load(sequence.texture_path.path().to_string_lossy().into_owned()),
+                        texture: particle_texture_handle,
                         positions: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),
                         sizes: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),
                         colors: storage_buffers.add(ShaderStorageBuffer::new(&[], RenderAssetUsages::default())),

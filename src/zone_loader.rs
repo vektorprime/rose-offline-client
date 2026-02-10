@@ -785,7 +785,7 @@ async fn load_zone_direct(zone_id: ZoneId, vfs: &VirtualFilesystem) -> Result<Zo
                     if skipped_blocks.len() < 50 {
                         skipped_blocks.push((block_x, block_y, e.to_string()));
                     }
-                    log::trace!("[ZONE LOADER DIRECT] Block {}_{} skipped: {}", block_x, block_y, e);
+                    //log::trace!("[ZONE LOADER DIRECT] Block {}_{} skipped: {}", block_x, block_y, e);
                 }
             }
 
@@ -937,23 +937,23 @@ async fn load_block_files_direct(
     let him_path_buf = zone_path.join(format!("{}_{}.HIM", block_x, block_y));
     let him_path_str = him_path_buf.to_string_lossy().replace('\\', "/");
     let him_path = VfsPath::from(PathBuf::from(&him_path_str));
-    log::trace!("[ZONE LOADER DEBUG] Constructed HIM path: \"{}\"", him_path_str);
-    log::trace!("[LOAD BLOCK DIRECT] Loading block {}_{} from: {:?}", block_x, block_y, him_path);
+    //log::trace!("[ZONE LOADER DEBUG] Constructed HIM path: \"{}\"", him_path_str);
+   //  log::trace!("[LOAD BLOCK DIRECT] Loading block {}_{} from: {:?}", block_x, block_y, him_path);
 
     // Check if HIM file exists before attempting to load it
     match vfs.open_file(&him_path) {
         Ok(_) => {
-            log::trace!("[LOAD BLOCK DIRECT] HIM file exists for block {}_{}", block_x, block_y);
+           //  log::trace!("[LOAD BLOCK DIRECT] HIM file exists for block {}_{}", block_x, block_y);
         }
         Err(_) => {
-            log::trace!("[LOAD BLOCK DIRECT] HIM file does not exist for block {}_{} - skipping this block", block_x, block_y);
+           //  log::trace!("[LOAD BLOCK DIRECT] HIM file does not exist for block {}_{} - skipping this block", block_x, block_y);
             return Err(anyhow::anyhow!("HIM file not found for block {}_{}", block_x, block_y));
         }
     }
 
     let him = match vfs.read_file(&him_path) {
         Ok(data) => {
-            log::trace!("[LOAD BLOCK DIRECT] Successfully loaded HIM file for block {}_{}", block_x, block_y);
+           //  log::trace!("[LOAD BLOCK DIRECT] Successfully loaded HIM file for block {}_{}", block_x, block_y);
             data
         }
         Err(e) => {
@@ -966,11 +966,11 @@ async fn load_block_files_direct(
     let til_path = VfsPath::from(PathBuf::from(&til_path_str));
     let til = match vfs.read_file(&til_path) {
         Ok(data) => {
-            log::trace!("[LOAD BLOCK DIRECT] Successfully loaded TIL file for block {}_{}", block_x, block_y);
+           //  log::trace!("[LOAD BLOCK DIRECT] Successfully loaded TIL file for block {}_{}", block_x, block_y);
             Some(data)
         }
         Err(e) => {
-            log::trace!("[LOAD BLOCK DIRECT] TIL file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
+           //  log::trace!("[LOAD BLOCK DIRECT] TIL file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
             None
         }
     };
@@ -978,11 +978,11 @@ async fn load_block_files_direct(
     let ifo_path = VfsPath::from(zone_path.join(format!("{}_{}.IFO", block_x, block_y)));
     let ifo = match vfs.read_file(&ifo_path) {
         Ok(data) => {
-            log::trace!("[LOAD BLOCK DIRECT] Successfully loaded IFO file for block {}_{}", block_x, block_y);
+           //  log::trace!("[LOAD BLOCK DIRECT] Successfully loaded IFO file for block {}_{}", block_x, block_y);
             Some(data)
         }
         Err(e) => {
-            log::trace!("[LOAD BLOCK DIRECT] IFO file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
+           //  log::trace!("[LOAD BLOCK DIRECT] IFO file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
             None
         }
     };
@@ -994,11 +994,11 @@ async fn load_block_files_direct(
     let lit_cnst_path = VfsPath::from(PathBuf::from(&lit_cnst_path_str));
     let lit_cnst = match vfs.read_file(&lit_cnst_path) {
         Ok(data) => {
-            log::trace!("[LOAD BLOCK DIRECT] Successfully loaded LIT constant file for block {}_{}", block_x, block_y);
+           //  log::trace!("[LOAD BLOCK DIRECT] Successfully loaded LIT constant file for block {}_{}", block_x, block_y);
             Some(data)
         }
         Err(e) => {
-            log::trace!("[LOAD BLOCK DIRECT] LIT constant file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
+           //  log::trace!("[LOAD BLOCK DIRECT] LIT constant file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
             None
         }
     };
@@ -1010,11 +1010,11 @@ async fn load_block_files_direct(
     let lit_deco_path = VfsPath::from(PathBuf::from(&lit_deco_path_str));
     let lit_deco = match vfs.read_file(&lit_deco_path) {
         Ok(data) => {
-            log::trace!("[LOAD BLOCK DIRECT] Successfully loaded LIT deco file for block {}_{}", block_x, block_y);
+           //  log::trace!("[LOAD BLOCK DIRECT] Successfully loaded LIT deco file for block {}_{}", block_x, block_y);
             Some(data)
         }
         Err(e) => {
-            log::trace!("[LOAD BLOCK DIRECT] LIT deco file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
+           //  log::trace!("[LOAD BLOCK DIRECT] LIT deco file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
             None
         }
     };
@@ -2152,9 +2152,21 @@ fn spawn_skybox(
     let texture_day_path = skybox_data.texture_day.path().to_string_lossy().into_owned();
     let texture_night_path = skybox_data.texture_night.path().to_string_lossy().into_owned();
 
+    // Skip loading NULL textures for skybox - use fallback instead of None
+    let texture_day_handle = if texture_day_path.is_empty() || texture_day_path == "NULL" {
+        log::warn!("[SPAWN SKYBOX] NULL or empty day texture path, using fallback");
+        asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS")
+    } else {
+        asset_server.load::<Image>(&texture_day_path)
+    };
+    let texture_night_handle = if texture_night_path.is_empty() || texture_night_path == "NULL" {
+        log::warn!("[SPAWN SKYBOX] NULL or empty night texture path, using fallback");
+        asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS")
+    } else {
+        asset_server.load::<Image>(&texture_night_path)
+    };
+
     let mesh_handle = asset_server.load::<Mesh>(&mesh_path);
-    let texture_day_handle = asset_server.load::<Image>(&texture_day_path);
-    let texture_night_handle = asset_server.load::<Image>(&texture_night_path);
 
     //info!("[MEMORY TRACKING] Skybox mesh handle created: {}", mesh_path);
     //info!("[MEMORY TRACKING] Skybox texture day handle created: {}", texture_day_path);
@@ -2636,8 +2648,8 @@ fn spawn_object(
             // Simplified material using Bevy's StandardMaterial
             // FIX: Use unlit: true to ensure objects are visible without requiring lights
             let material = standard_materials.add(bevy::pbr::StandardMaterial {
-                base_color_texture: if material_path.is_empty() || material_path == "" {
-                    log::warn!("[SPAWN OBJECT DEBUG] Empty texture path for mesh_id {}, using fallback", mesh_id);
+                base_color_texture: if material_path.is_empty() || material_path == "" || material_path == "NULL" {
+                    log::warn!("[SPAWN OBJECT DEBUG] Empty or NULL texture path for mesh_id {}, using fallback", mesh_id);
                     Some(asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS"))
                 } else {
                     Some(base_texture_handle.clone())
@@ -2846,7 +2858,15 @@ fn spawn_animated_object(
     let motion_path_str = motion_path.clone();
 
     let mesh: Handle<Mesh> = asset_server.load(&mesh_path);
-    let texture_handle = asset_server.load(&texture_path);
+    
+    // Handle NULL texture paths for animated objects
+    let texture_handle = if texture_path.is_empty() || texture_path == "NULL" {
+        log::warn!("[SPAWN ANIMATED OBJECT] NULL or empty texture path, using fallback");
+        asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS")
+    } else {
+        asset_server.load::<Image>(&texture_path)
+    };
+    
     let motion_path_buf = ZmoTextureAssetLoader::convert_path(&motion_path);
     let motion_texture_handle = asset_server.load(ZmoTextureAssetLoader::convert_path_texture(&motion_path));
     let motion_handle = asset_server.load(motion_path_buf.to_string_lossy().into_owned());
@@ -2993,6 +3013,28 @@ fn spawn_sound_object(
 
     let sound_path_str = sound_object.sound_path.path().to_string_lossy().to_string();
    // info!("[ASSET LIFECYCLE] Spawning sound object: {}", sound_path_str);
+   
+   // Handle NULL sound paths - skip loading if path is NULL or empty
+   if sound_path_str.is_empty() || sound_path_str == "NULL" {
+       log::warn!("[SPAWN SOUND OBJECT] NULL or empty sound path, skipping sound loading");
+       let effect_object_entity = commands
+           .spawn((
+               ZoneObject::SoundObject {
+                   ifo_object_id,
+                   sound_path: sound_path_str.clone(),
+               },
+               object_transform,
+               GlobalTransform::from(object_transform),
+               Visibility::Visible,
+               InheritedVisibility::default(),
+               ViewVisibility::default(),
+               NoFrustumCulling,
+               Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+               RenderLayers::layer(0),
+           ))
+           .id();
+       return effect_object_entity;
+   }
 
     let effect_object_entity = commands
         .spawn((

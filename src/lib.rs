@@ -63,6 +63,7 @@ pub mod zms_asset_loader;
 pub mod zone_loader;
 
 use audio::OddioPlugin;
+use diagnostics::RenderDiagnosticsPlugin;
 use events::{
     BankEvent, CharacterSelectEvent, ChatboxEvent, ClanDialogEvent, ClientEntityEvent,
     ConversationDialogEvent, GameConnectionEvent, HitEvent, LoadZoneEvent, LoginEvent,
@@ -796,6 +797,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             RoseRenderPlugin,
             RoseScriptingPlugin,
             DebugInspectorPlugin,
+
+            // Diagnostic plugins for debugging rendering crashes during zone loading
+            RenderDiagnosticsPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -1482,7 +1486,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // DIAGNOSTIC: Check if EguiContext exists on window entity
     app.add_systems(Update, |windows: Query<&EguiContext, With<Window>>| {
         if let Ok(_context) = windows.get_single() {
-            log::info!("[EGUI DIAGNOSTIC] EguiContext found on window entity");
+            //log::info!("[EGUI DIAGNOSTIC] EguiContext found on window entity");
         } else {
             log::warn!("[EGUI DIAGNOSTIC] EguiContext NOT found on window entity");
         }
@@ -1491,7 +1495,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // DIAGNOSTIC: Check if EguiRenderOutput exists on window entity
     app.add_systems(Update, |windows: Query<(&EguiContext, &EguiRenderOutput), With<Window>>| {
         if let Ok((_context, render_output)) = windows.get_single() {
-            log::info!("[EGUI DIAGNOSTIC] EguiRenderOutput found, paint_jobs count: {}", render_output.paint_jobs.len());
+            //log::info!("[EGUI DIAGNOSTIC] EguiRenderOutput found, paint_jobs count: {}", render_output.paint_jobs.len());
         } else {
             log::warn!("[EGUI DIAGNOSTIC] EguiRenderOutput NOT found on window entity");
         }
@@ -1690,6 +1694,7 @@ fn load_common_game_data(
         }),
         Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
             .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
+        bevy::ui::IsDefaultUiCamera,
     )).id();
     bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
 

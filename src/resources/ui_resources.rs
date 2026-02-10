@@ -29,9 +29,9 @@ pub struct UiSprite {
 impl UiSprite {
     pub fn draw(&self, ui: &mut egui::Ui, pos: egui::Pos2) {
         let rect = egui::Rect::from_min_size(pos, egui::vec2(self.width, self.height));
-        log::trace!("[UI SPRITE] Drawing sprite: texture_id={:?}, pos=({:.1},{:.1}), size=({:.1}x{:.1}), uv=({:.2},{:.2})-({:.2},{:.2})",
-            self.texture_id, pos.x, pos.y, self.width, self.height,
-            self.uv.min.x, self.uv.min.y, self.uv.max.x, self.uv.max.y);
+        // log::trace!("[UI SPRITE] Drawing sprite: texture_id={:?}, pos=({:.1},{:.1}), size=({:.1}x{:.1}), uv=({:.2},{:.2})-({:.2},{:.2})",
+        //     self.texture_id, pos.x, pos.y, self.width, self.height,
+        //     self.uv.min.x, self.uv.min.y, self.uv.max.x, self.uv.max.y);
 
         let mut mesh = egui::epaint::Mesh::with_texture(self.texture_id);
         mesh.add_rect_with_uv(rect, self.uv, egui::Color32::WHITE);
@@ -621,7 +621,6 @@ pub fn load_ui_resources(
 pub fn ui_requested_cursor_apply_system(
     mut query_window: Query<&mut Window, With<PrimaryWindow>>,
     ui_requested_cursor: Res<UiRequestedCursor>,
-    egui_requested_cursor: Res<UiRequestedCursor>,
     ui_resources: Res<UiResources>,
     mut egui_ctx: EguiContexts,
 ) {

@@ -83,7 +83,7 @@ pub fn orbit_camera_system(
 ) {
     // Log camera system execution once per second to avoid spam
     if time.elapsed().as_secs_f32() % 1.0 < time.delta().as_secs_f32() {
-        log::info!("[CAMERA] Orbit camera system running");
+        //log::info!("[CAMERA] Orbit camera system running");
     }
     let Ok(mut window) = query_window.get_single_mut() else {
         return;

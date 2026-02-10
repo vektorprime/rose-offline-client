@@ -127,8 +127,8 @@ impl DrawWidget for Button {
             .or(self.normal_sprite.as_ref());
 
             if let Some(sprite) = sprite {
-                log::debug!("[BUTTON DRAW] Button id={} drawing sprite: texture_id={:?}, uv=({:.2},{:.2})-({:.2},{:.2}), size=({:.1}x{:.1})",
-                    self.id, sprite.texture_id, sprite.uv.min.x, sprite.uv.min.y, sprite.uv.max.x, sprite.uv.max.y, sprite.width, sprite.height);
+                //log::debug!("[BUTTON DRAW] Button id={} drawing sprite: texture_id={:?}, uv=({:.2},{:.2})-({:.2},{:.2}), size=({:.1}x{:.1})",
+                    //self.id, sprite.texture_id, sprite.uv.min.x, sprite.uv.min.y, sprite.uv.max.x, sprite.uv.max.y, sprite.width, sprite.height);
                 sprite.draw(ui, rect.min);
             } else {
                 log::warn!("[BUTTON DRAW] Button id={} has no sprite to draw!", self.id);

@@ -1345,7 +1345,14 @@ fn spawn_skeleton(
         // }
 
         // Create material using ExtendedMaterial<StandardMaterial, RoseObjectExtension>
-        let texture_handle = asset_server.load(zsc_material.path.path().to_string_lossy().into_owned());
+        // Handle NULL texture paths for models
+        let texture_path = zsc_material.path.path().to_string_lossy().into_owned();
+        let texture_handle = if texture_path.is_empty() || texture_path == "NULL" {
+            log::warn!("[SPAWN MODEL] NULL or empty texture path, using fallback");
+            asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS")
+        } else {
+            asset_server.load::<Image>(&texture_path)
+        };
         let material = create_rose_object_material(
             object_materials,
             texture_handle,
@@ -1366,7 +1373,6 @@ fn spawn_skeleton(
             InheritedVisibility::default(),
             ViewVisibility::default(),
         ));
-        entity_commands.insert(Aabb::default());
 
         // DIAGNOSTIC LOG: Log mesh spawning details
         log::info!(

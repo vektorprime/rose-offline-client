@@ -120,7 +120,7 @@ pub fn load_dialog_sprites_system(
                 loaded_count += 1;
             }
             AssetEvent::Modified { id } => {
-                log::warn!("[DIALOG SYSTEM] Dialog MODIFIED event received: {:?} - this may indicate repeated reloads!", id);
+                //log::warn!("[DIALOG SYSTEM] Dialog MODIFIED event received: {:?} - this may indicate repeated reloads!", id);
                 load_state.pending_dialogs.push(*id);
                 modified_count += 1;
             }

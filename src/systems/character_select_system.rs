@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+use log::info;
+
 use bevy::{
     input::ButtonInput,
     prelude::{
@@ -392,7 +394,10 @@ pub fn character_select_input_system(
     query_window: Query<&Window, With<PrimaryWindow>>,
     mut character_select_events: EventWriter<CharacterSelectEvent>,
 ) {
-    if egui_ctx.ctx_mut().wants_pointer_input() {
+    let egui_wants_pointer = egui_ctx.ctx_mut().wants_pointer_input();
+    //info!("Character select input: egui wants_pointer_input: {}", egui_wants_pointer);
+
+    if egui_wants_pointer {
         // Mouse is over UI
         return;
     }
@@ -415,8 +420,12 @@ pub fn character_select_input_system(
     };
 
     if mouse_button_input.just_pressed(MouseButton::Left) {
+        info!("Character select input: Mouse button pressed at {:?}", cursor_position);
+
         for (camera, camera_transform) in query_camera.iter() {
             if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
+                info!("Raycast origin: {:?}, direction: {:?}", ray.origin, ray.direction);
+
                 if let Some((collider_entity, _)) = rapier_context.cast_ray(
                     ray.origin,
                     *ray.direction,
@@ -427,16 +436,19 @@ pub fn character_select_input_system(
                         COLLISION_GROUP_CHARACTER | COLLISION_GROUP_PLAYER,
                     )),
                 ) {
+                    info!("Raycast hit collider entity: {:?}", collider_entity);
                     let hit_entity = query_collider_parent
                         .get(collider_entity)
                         .map_or(collider_entity, |collider_parent| collider_parent.entity);
 
                     if let Ok(select_character) = query_select_character.get(hit_entity) {
+                        info!("Character select input: Successfully selected character at index {}", select_character.index);
                         let now = Instant::now();
 
                         if *selected_character_index == Some(select_character.index) {
                             if let Some(last_selected_time) = *last_selected_time {
                                 if now - last_selected_time < Duration::from_millis(250) {
+                                    info!("Character select input: Double-click detected, sending PlaySelected event");
                                     character_select_events
                                         .send(CharacterSelectEvent::PlaySelected);
                                 }
@@ -445,7 +457,11 @@ pub fn character_select_input_system(
 
                         *selected_character_index = Some(select_character.index);
                         *last_selected_time = Some(now);
+                    } else {
+                        info!("Character select input: Hit entity is not a CharacterSelectCharacter");
                     }
+                } else {
+                    info!("Character select input: Raycast did not hit any collider");
                 }
             }
         }

@@ -157,8 +157,8 @@ impl Widget {
 
 impl DrawWidget for Widget {
     fn draw_widget(&self, ui: &mut egui::Ui, bindings: &mut DataBindings) {
-        log::trace!("[WIDGET DRAW] Drawing widget: type={:?}, id={}",
-            std::mem::discriminant(self), self.id());
+        //log::trace!("[WIDGET DRAW] Drawing widget: type={:?}, id={}",
+            //std::mem::discriminant(self), self.id());
         match self {
             Widget::Button(this) => this.draw_widget(ui, bindings),
             Widget::Caption(this) => this.draw_widget(ui, bindings),
@@ -227,20 +227,20 @@ impl LoadWidget for Widget {
 
 impl DrawWidget for Vec<Widget> {
     fn draw_widget(&self, ui: &mut egui::Ui, bindings: &mut DataBindings) {
-        log::debug!("[WIDGETS DRAW] Drawing {} widgets", self.len());
+        // log::debug!("[WIDGETS DRAW] Drawing {} widgets", self.len());
         for (index, widget) in self.iter().enumerate() {
-            log::debug!("[WIDGETS DRAW] Drawing widget {}/{}: type={:?}, id={}",
-                index + 1, self.len(), std::mem::discriminant(widget), widget.id());
+            // log::debug!("[WIDGETS DRAW] Drawing widget {}/{}: type={:?}, id={}",
+                //index + 1, self.len(), std::mem::discriminant(widget), widget.id());
             widget.draw_widget(ui, bindings);
         }
-        log::debug!("[WIDGETS DRAW] Completed drawing {} widgets", self.len());
+        // log::debug!("[WIDGETS DRAW] Completed drawing {} widgets", self.len());
     }
 }
 
 impl LoadWidget for Vec<Widget> {
     fn load_widget(&mut self, ui_resources: &UiResources) {
         let widget_count = self.len();
-        // log::debug!("[WIDGETS LOAD] Loading {} widgets", widget_count);
+        // // log::debug!("[WIDGETS LOAD] Loading {} widgets", widget_count);
         for (index, widget) in self.iter_mut().enumerate() {
             let discriminant = std::mem::discriminant(widget);
             
@@ -253,11 +253,11 @@ impl LoadWidget for Vec<Widget> {
                 continue;
             }
             
-            // log::debug!("[WIDGETS LOAD] Loading widget {}/{}: type={:?}, id={}",
+            // // log::debug!("[WIDGETS LOAD] Loading widget {}/{}: type={:?}, id={}",
                 //index + 1, widget_count, discriminant, widget.id());
             widget.load_widget(ui_resources);
         }
-        // log::debug!("[WIDGETS LOAD] Completed loading {} widgets", widget_count);
+        // // log::debug!("[WIDGETS LOAD] Completed loading {} widgets", widget_count);
     }
 }
 

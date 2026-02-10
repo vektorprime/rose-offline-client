@@ -11,6 +11,7 @@ use bevy::{
     },
 };
 use bevy_rapier3d::prelude::{Collider, CollisionGroups};
+use log::info;
 
 use crate::components::{
     CharacterModel, CharacterModelPart, ColliderEntity, ColliderParent, ModelHeight, PersonalStore,
@@ -29,14 +30,17 @@ pub fn character_model_add_collider_system(
         ),
         (Without<ColliderEntity>, Without<PersonalStore>),
     >,
-    query_aabb: Query<Option<&Aabb>, With<Mesh3d>>,
+    query_aabb: Query<Option<&Aabb>, With<SkinnedMesh>>,
     inverse_bindposes: Res<Assets<SkinnedMeshInverseBindposes>>,
 ) {
     // Add colliders to character models without one
     for (entity, character_model, skinned_mesh, player_character) in query_add_collider.iter() {
+        info!("Found CharacterModel entity without collider: {:?}", entity);
         let mut min: Option<Vec3A> = None;
         let mut max: Option<Vec3A> = None;
         let mut all_parts_loaded = true;
+        let mut parts_found = 0;
+        let mut aabb_data_count = 0;
 
         // Collect the AABB of Body, Hands, Feet
         for part_entity in character_model.model_parts[CharacterModelPart::Body]
@@ -53,21 +57,28 @@ pub fn character_model_add_collider_system(
                     .iter(),
             )
         {
+            parts_found += 1;
             match query_aabb.get(*part_entity) {
                 Ok(Some(aabb)) => {
+                    aabb_data_count += 1;
                     min = Some(min.map_or_else(|| aabb.min(), |min| min.min(aabb.min())));
                     max = Some(max.map_or_else(|| aabb.max(), |max| max.max(aabb.max())));
                 }
                 Ok(None) | Err(QueryEntityError::NoSuchEntity(_)) => {
                     all_parts_loaded = false;
+                    info!("AABB query failed for part entity {:?}: no AABB or no such entity", part_entity);
                     break;
                 }
                 _ => {}
             }
         }
 
+        info!("Collected {} AABB data points from {} model parts for entity {:?}", aabb_data_count, parts_found, entity);
+
         let inverse_bindpose = inverse_bindposes.get(&skinned_mesh.inverse_bindposes);
         if min.is_none() || max.is_none() || !all_parts_loaded || inverse_bindpose.is_none() {
+            info!("Skipping collider creation for entity {:?}: min={:?}, max={:?}, all_parts_loaded={}, inverse_bindpose={:?}",
+                entity, min, max, all_parts_loaded, inverse_bindpose.is_some());
             // Try again next frame
             continue;
         }
@@ -107,5 +118,8 @@ pub fn character_model_add_collider_system(
             ColliderEntity::new(collider_entity),
             ModelHeight::new(0.65 + half_extents.y * 2.0),
         ));
+
+        info!("Created collider for entity {:?}: half_extents=({:.2}, {:.2}, {:.2}), root_bone_offset=({:.2}, {:.2}, {:.2})",
+            entity, half_extents.x, half_extents.y, half_extents.z, root_bone_offset.x, root_bone_offset.y, root_bone_offset.z);
     }
 }
