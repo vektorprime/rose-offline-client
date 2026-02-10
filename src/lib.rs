@@ -9,7 +9,7 @@ use bevy::{
         pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial, MeshMaterial3d},
         prelude::{
             apply_deferred, default, in_state, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
-            Camera3dBundle, ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoSystemConfigs,
+            ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoSystemConfigs,
             IntoSystemSetConfigs, Local, Mesh, Mesh3d, Msaa, OnEnter, OnExit, PbrBundle, PerspectiveProjection, PluginGroup,
             PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
             SystemSet, Time, Transform, Update, Vec3, ViewVisibility, Visibility, With, Without, World,
@@ -24,7 +24,7 @@ use bevy::{
         transform::{TransformSystem, components::GlobalTransform},
         window::{Window, WindowMode},
     };
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{egui, EguiContext, EguiContexts, EguiRenderOutput};
 use bevy_rapier3d::plugin::PhysicsSet;
 use enum_map::enum_map;
 use exe_resource_loader::{ExeResourceCursor, ExeResourceLoader};
@@ -682,7 +682,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                 })
                 .set(bevy::log::LogPlugin {
                     level: bevy::log::Level::DEBUG,
-                    filter: "wgpu=error,naga=error,bevy_render=debug,bevy_pbr=debug,bevy_asset=debug,your_game=trace".to_string(),
+                    filter: "wgpu=error,naga=error,bevy_render=debug,bevy_pbr=debug,bevy_asset=debug,rose_offline_client=trace".to_string(),
                     ..default()
                 })
                 .set(bevy::pbr::PbrPlugin::default()),
@@ -701,15 +701,14 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // Initialise rose stuff
     log::info!("[ASSET LOADER DIAGNOSTIC] Registering asset loaders...");
-    log::info!("[ASSET LOADER DIAGNOSTIC] Registering DdsImageLoader");
     log::info!("[ASSET LOADER DIAGNOSTIC] Registering ZmsAssetLoader");
-    
+
     // Create channel for async zone loading
     let (tx, rx) = mpsc::channel();
     app.insert_resource(ZoneLoadChannelSender(tx));
     app.insert_resource(ZoneLoadChannelReceiver(std::sync::Mutex::new(rx)));
     log::info!("[ZONE LOADER] Channel for async zone loading created and registered");
-    
+
     // Initialize memory tracking resource for zone loading
     app.init_resource::<MemoryTrackingResource>();
     log::info!("[ZONE LOADER] MemoryTrackingResource initialized");
@@ -719,11 +718,11 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.init_resource::<RenderExtractionDiagnostics>();
     // app.init_resource::<crate::systems::zone_memory_profiler_system::ZoneMemoryProfiler>();
     log::info!("[ZONE LOADER] Debug diagnostics resources initialized");
-    
-    app.register_asset_loader(DdsImageLoader)
-        .register_asset_loader(ZmsAssetLoader)
+
+    app.register_asset_loader(ZmsAssetLoader)
         .init_asset::<ZmsMaterialNumFaces>()
         .register_asset_loader(ZmsNoSkinAssetLoader)
+        .register_asset_loader(DdsImageLoader)
         .register_asset_loader(ExeResourceLoader)
         .init_asset::<ExeResourceCursor>()
         .register_asset_loader(DialogLoader)
@@ -1480,6 +1479,24 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         (GameSystemSets::UpdateCamera, GameSystemSets::Ui),
     );
 
+    // DIAGNOSTIC: Check if EguiContext exists on window entity
+    app.add_systems(Update, |windows: Query<&EguiContext, With<Window>>| {
+        if let Ok(_context) = windows.get_single() {
+            log::info!("[EGUI DIAGNOSTIC] EguiContext found on window entity");
+        } else {
+            log::warn!("[EGUI DIAGNOSTIC] EguiContext NOT found on window entity");
+        }
+    });
+
+    // DIAGNOSTIC: Check if EguiRenderOutput exists on window entity
+    app.add_systems(Update, |windows: Query<(&EguiContext, &EguiRenderOutput), With<Window>>| {
+        if let Ok((_context, render_output)) = windows.get_single() {
+            log::info!("[EGUI DIAGNOSTIC] EguiRenderOutput found, paint_jobs count: {}", render_output.paint_jobs.len());
+        } else {
+            log::warn!("[EGUI DIAGNOSTIC] EguiRenderOutput NOT found on window entity");
+        }
+    });
+
     app.run();
 
     network_thread_tx.send(NetworkThreadMessage::Exit).ok();
@@ -1658,18 +1675,22 @@ fn load_common_game_data(
     //     ViewVisibility::default(),
     //     bevy::render::view::RenderLayers::layer(0),
     // )).id();
-    let mut cam = Camera3dBundle::default();
-    cam.camera.hdr = false;
-    cam.camera.clear_color = ClearColorConfig::Custom(Color::srgb(0.70, 0.90, 1.0));
-    cam.projection = Projection::Perspective(PerspectiveProjection {
-        fov: std::f32::consts::PI / 4.0,
-        near: 0.1,
-        far: 50000.0,
-        aspect_ratio: 16.0 / 9.0,
-    });
-    cam.transform = Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
-        .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y);
-    let camera_entity = commands.spawn(cam).id();
+    let camera_entity = commands.spawn((
+        Camera3d::default(),
+        Camera {
+            hdr: false,
+            clear_color: ClearColorConfig::Custom(Color::srgb(0.70, 0.90, 1.0)),
+            ..default()
+        },
+        Projection::Perspective(PerspectiveProjection {
+            fov: std::f32::consts::PI / 4.0,
+            near: 0.1,
+            far: 50000.0,
+            aspect_ratio: 16.0 / 9.0,
+        }),
+        Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
+            .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
+    )).id();
     bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
 
     commands.insert_resource(DamageDigitsSpawner::load(
@@ -1696,20 +1717,17 @@ fn load_common_game_data(
 /// Test cube spawn system for Bevy 0.14.2 rendering isolation test
 /// This creates a simple red cube using StandardMaterial to verify core rendering works
 fn spawn_test_cube(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut __commands__: Commands,
+    mut __meshes__: ResMut<Assets<Mesh>>,
+    mut __materials__: ResMut<Assets<StandardMaterial>>,
 ) {
-    commands.spawn((
-        PbrBundle {
-            mesh: Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-            material: MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: Color::srgb(1.0, 0.0, 0.0),
-                ..default()
-            })),
-            transform: Transform::from_xyz(5100.0, 75.0, -5100.0), // MOVED: In front of camera
+    __commands__.spawn((
+        Mesh3d(__meshes__.add(Cuboid::new(1.0, 1.0, 1.0))),
+        MeshMaterial3d(__materials__.add(StandardMaterial {
+            base_color: Color::srgb(1.0, 0.0, 0.0),
             ..default()
-        },
+        })),
+        Transform::from_xyz(5100.0, 75.0, -5100.0),
     ));
 }
 

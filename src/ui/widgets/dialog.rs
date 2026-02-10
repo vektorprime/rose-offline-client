@@ -85,22 +85,22 @@ impl Dialog {
         mut bindings: DataBindings,
         add_contents: impl FnOnce(&mut egui::Ui, &mut DataBindings) -> R,
     ) {
-        log::debug!("[DIALOG DRAW] Drawing dialog with {} widgets, size: {}x{}, position: ({}, {})",
-            self.widgets.len(),
-            self.width,
-            self.height,
-            self.x,
-            self.y
-        );
+        // log::debug!("[DIALOG DRAW] Drawing dialog with {} widgets, size: {}x{}, position: ({}, {})",
+        //     self.widgets.len(),
+        //     self.width,
+        //     self.height,
+        //     self.x,
+        //     self.y
+        // );
 
         let style = ui.style_mut();
         style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::WHITE;
         style.spacing.item_spacing = egui::Vec2::ZERO;
         style.spacing.window_margin = egui::Margin::same(0.0);
 
-        log::debug!("[DIALOG DRAW] Starting widget rendering");
+        // log::debug!("[DIALOG DRAW] Starting widget rendering");
         self.widgets.draw_widget(ui, &mut bindings);
-        log::debug!("[DIALOG DRAW] Widget rendering completed");
+        // log::debug!("[DIALOG DRAW] Widget rendering completed");
 
         add_contents(ui, &mut bindings);
     }

@@ -286,7 +286,8 @@ fn load_ui_spritesheet(
     };
 
     let mut loaded_textures = Vec::new();
-    for tsi_texture in tsi_file.textures.iter() {
+    for (tsi_texture_index, tsi_texture) in tsi_file.textures.iter().enumerate() {
+        log::info!("[UI RESOURCES] Loading texture index {}: filename = {}", tsi_texture_index, tsi_texture.filename);
         let handle = asset_server.load(format!("3DDATA/CONTROL/RES/{}", tsi_texture.filename));
         let texture_id = egui_context.add_image(handle.clone());
         loaded_textures.push(UiTexture {
@@ -323,9 +324,14 @@ pub fn update_ui_resources(
         .iter_mut()
         .filter_map(|(_, spritesheet)| spritesheet.as_mut())
     {
-        for texture in spritesheet.loaded_textures.iter_mut() {
+        for (texture_index, texture) in spritesheet.loaded_textures.iter_mut().enumerate() {
             if texture.size.is_some() {
                 continue;
+            }
+
+            // Log detailed information for texture 25 specifically
+            if matches!(texture.texture_id, egui::TextureId::User(25)) {
+                log::warn!("[UI RESOURCES] Texture 25 (index {}) detected: texture_id={:?}, handle={:?}", texture_index, texture.texture_id, texture.handle);
             }
 
             if let Some(image) = images.get(&texture.handle) {
@@ -336,12 +342,12 @@ pub fn update_ui_resources(
                 let load_state = asset_server.get_load_state(&texture.handle);
                 if matches!(load_state, Some(LoadState::Failed(_))) {
                     texture.size = Some(Vec2::ZERO);
-                    log::warn!("[UI RESOURCES] Texture failed to load: {:?}", texture.handle);
+                    log::warn!("[UI RESOURCES] Texture FAILED to load: texture_id={:?}, handle={:?}, load_state={:?}", texture.texture_id, texture.handle, load_state);
                 } else {
                     // Loading, NotLoaded, or None - treat as failed load to allow UI to render
                     texture.size = Some(Vec2::ZERO);
                     loaded_all = false;
-                    log::warn!("[UI RESOURCES] Texture missing or failed to load (load state: {:?}): {:?}", load_state, texture.handle);
+                    log::warn!("[UI RESOURCES] Texture MISSING or FAILED to load: texture_id={:?}, handle={:?}, load_state={:?}", texture.texture_id, texture.handle, load_state);
                 }
             }
         }
@@ -499,7 +505,7 @@ pub fn load_ui_resources(
         "DLGUPGRADE.XML",
         "MSGBOX.XML",
         "SKILLTREE_DEALER.XML",
-        "SKILLTREE_HOWKER.XML",
+        "SKILLTREE_HAWKER.XML",
         "SKILLTREE_MUSE.XML",
         "SKILLTREE_SOLDIER.XML",
     ];
@@ -590,7 +596,7 @@ pub fn load_ui_resources(
         dialog_skill_list: dialog_files["DLGSKILL.XML"].clone(),
         dialog_skill_tree: dialog_files["DLGSKILLTREE.XML"].clone(),
         skill_tree_dealer: dialog_files["SKILLTREE_DEALER.XML"].clone(),
-        skill_tree_hawker: dialog_files["SKILLTREE_HOWKER.XML"].clone(),
+        skill_tree_hawker: dialog_files["SKILLTREE_HAWKER.XML"].clone(),
         skill_tree_muse: dialog_files["SKILLTREE_MUSE.XML"].clone(),
         skill_tree_soldier: dialog_files["SKILLTREE_SOLDIER.XML"].clone(),
         dialog_files,

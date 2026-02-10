@@ -23,6 +23,8 @@ pub fn login_state_enter_system(
     query_cameras: Query<Entity, With<Camera3d>>,
     asset_server: Res<AssetServer>,
 ) {
+    log::info!("[LOGIN SYSTEM] login_state_enter_system running");
+    
     // Ensure cursor is not locked
     if let Ok(mut window) = query_window.get_single_mut() {
         window.cursor_options.grab_mode = CursorGrabMode::None;
@@ -43,8 +45,10 @@ pub fn login_state_enter_system(
 
     commands.remove_resource::<Account>();
     commands.insert_resource(LoginState::Input);
+    log::info!("[LOGIN SYSTEM] LoginState::Input inserted");
 
     loaded_zone.send(LoadZoneEvent::new(ZoneId::new(4).unwrap()));
+    log::info!("[LOGIN SYSTEM] LoadZoneEvent sent for zone 4");
 }
 
 pub fn login_state_exit_system(mut commands: Commands) {
@@ -58,18 +62,23 @@ pub fn login_system(
     mut login_state: ResMut<LoginState>,
     server_list: Option<Res<ServerList>>,
 ) {
+    log::info!("[LOGIN SYSTEM] login_system running, state: {:?}, login_connection: {}", *login_state, login_connection.is_some());
+
     if !matches!(*login_state, LoginState::Input) && login_connection.is_none() {
         // When we lose login server connection, return to login
+        log::info!("[LOGIN SYSTEM] Setting LoginState::Input (connection lost)");
         *login_state = LoginState::Input;
     }
 
     if matches!(*login_state, LoginState::WaitServerList) && server_list.is_some() {
         // We have server list, transition to select
+        log::info!("[LOGIN SYSTEM] Setting LoginState::ServerSelect (server list received)");
         *login_state = LoginState::ServerSelect;
     }
 
     match *login_state {
         LoginState::WaitServerList => {
+            log::info!("[LOGIN SYSTEM] Rendering WaitServerList UI");
             egui::Window::new("Connecting...")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .collapsible(false)
@@ -78,6 +87,7 @@ pub fn login_system(
                 });
         }
         LoginState::JoiningServer => {
+            log::info!("[LOGIN SYSTEM] Rendering JoiningServer UI");
             egui::Window::new("Connecting...")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .collapsible(false)
@@ -85,7 +95,9 @@ pub fn login_system(
                     ui.label("Connecting to channel");
                 });
         }
-        _ => {}
+        _ => {
+            log::trace!("[LOGIN SYSTEM] No UI to render for state: {:?}", *login_state);
+        }
     }
 }
 

@@ -31,49 +31,65 @@ impl AssetLoader for DdsImageLoader {
     ) -> impl Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
         let asset_path = load_context.path().to_string_lossy().to_string();
-        
+
         // Read all bytes from the reader
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
-            
-           // info!("[DDS LOADER] Loading DDS texture: {}", asset_path);
-           // info!("[DDS LOADER] File size: {} bytes", bytes.len());
-            
+
+           info!("[DDS LOADER] Loading DDS texture: {}", asset_path);
+           info!("[DDS LOADER] File size: {} bytes", bytes.len());
+
             // Parse the DDS header to determine format
             let dds_info = parse_dds_header(&bytes)?;
-           // info!("[DDS LOADER] DDS format: {:?}, {}x{}, mips: {}", 
-                //dds_info.format, dds_info.width, dds_info.height, dds_info.mip_count);
-            
+           info!("[DDS LOADER] DDS format: {:?}, {}x{}, mips: {}",
+                dds_info.format, dds_info.width, dds_info.height, dds_info.mip_count);
+
             // Handle based on format - ALL paths convert to R8G8B8A8
             // This avoids Bevy 0.13.2 panics with compressed texture pixel_size
             match dds_info.format {
                 DdsFormat::R8G8B8 => {
-                   // info!("[DDS LOADER] Converting R8G8B8 to R8G8B8A8");
+                   info!("[DDS LOADER] Converting R8G8B8 to R8G8B8A8");
                     convert_rgb_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::R8G8B8A8 | DdsFormat::B8G8R8A8 => {
-                   // info!("[DDS LOADER] Loading RGBA data directly");
+                   info!("[DDS LOADER] Loading RGBA data directly");
                     load_rgba_direct(&bytes, &dds_info)
                 }
                 DdsFormat::B8G8R8 => {
-                   // info!("[DDS LOADER] Converting B8G8R8 to R8G8B8A8");
+                   info!("[DDS LOADER] Converting B8G8R8 to R8G8B8A8");
                     convert_bgr_to_rgba(&bytes, &dds_info)
                 }
+                DdsFormat::A1R5G5B5 => {
+                    info!("[DDS LOADER] Converting A1R5G5B5 to R8G8B8A8");
+                    convert_a1r5g5b5_to_rgba(&bytes, &dds_info)
+                }
+                DdsFormat::R5G6B5 => {
+                    info!("[DDS LOADER] Converting R5G6B5 to R8G8B8A8");
+                    convert_r5g6b5_to_rgba(&bytes, &dds_info)
+                }
+                DdsFormat::A4R4G4B4 => {
+                    info!("[DDS LOADER] Converting A4R4G4B4 to R8G8B8A8");
+                    convert_a4r4g4b4_to_rgba(&bytes, &dds_info)
+                }
+                DdsFormat::B5G6R5 => {
+                   info!("[DDS LOADER] Converting B5G6R5 to R8G8B8A8");
+                    convert_b5g6r5_to_rgba(&bytes, &dds_info)
+                }
                 DdsFormat::Bc1Dxt1 => {
-                   // info!("[DDS LOADER] Decompressing BC1/DXT1 to R8G8B8A8");
+                   info!("[DDS LOADER] Decompressing BC1/DXT1 to R8G8B8A8");
                     decompress_bc1_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::Bc2Dxt3 => {
-                   // info!("[DDS LOADER] Decompressing BC2/DXT3 to R8G8B8A8");
+                   info!("[DDS LOADER] Decompressing BC2/DXT3 to R8G8B8A8");
                     decompress_bc2_to_rgba(&bytes, &dds_info)
                 }
                 DdsFormat::Bc3Dxt5 => {
-                   // info!("[DDS LOADER] Decompressing BC3/DXT5 to R8G8B8A8");
+                   info!("[DDS LOADER] Decompressing BC3/DXT5 to R8G8B8A8");
                     decompress_bc3_to_rgba(&bytes, &dds_info)
                 }
                 _ => {
                     // Try image crate as fallback - it will also convert to RGBA8
-                    //warn!("[DDS LOADER] Format {:?}, trying image crate", dds_info.format);
+                    warn!("[DDS LOADER] Format {:?}, trying image crate", dds_info.format);
                     try_image_crate(&bytes, &asset_path)
                 }
             }
@@ -92,9 +108,12 @@ enum DdsFormat {
     R8G8B8A8,     // 32-bit RGBA
     B8G8R8,       // 24-bit BGR
     B8G8R8A8,     // 32-bit BGRA
+    R5G6B5,       // 16-bit RGB (Rose Online format)
     B5G6R5,       // 16-bit RGB
     B5G5R5A1,     // 16-bit RGBA
     B4G4R4A4,     // 16-bit RGBA
+    A4R4G4B4,     // 16-bit RGBA (Rose Online format)
+    A1R5G5B5,     // 16-bit RGBA (Rose Online format)
     L8,           // 8-bit luminance
     A8,           // 8-bit alpha
     L8A8,         // 16-bit luminance + alpha
@@ -161,7 +180,7 @@ fn parse_dds_header(bytes: &[u8]) -> anyhow::Result<DdsInfo> {
     let pf_r_bit_mask = read_u32(&header, 88);
     let pf_g_bit_mask = read_u32(&header, 92);
     let pf_b_bit_mask = read_u32(&header, 96);
-    let _pf_a_bit_mask = read_u32(&header, 100);
+    let pf_a_bit_mask = read_u32(&header, 100);
     
     // Caps at offset 104
     let _caps = read_u32(&header, 104);
@@ -181,7 +200,7 @@ fn parse_dds_header(bytes: &[u8]) -> anyhow::Result<DdsInfo> {
                 return parse_dx10_header(bytes, width, height, depth, mip_map_count);
             }
             _ => {
-                //warn!("[DDS LOADER] Unknown FourCC: {:?}", std::str::from_utf8(&pf_four_cc));
+                warn!("[DDS LOADER] Unknown FourCC: {:?}", std::str::from_utf8(&pf_four_cc));
                 DdsFormat::Unknown
             }
         }
@@ -199,7 +218,13 @@ fn parse_dds_header(bytes: &[u8]) -> anyhow::Result<DdsInfo> {
                 DdsFormat::R8G8B8A8
             }
         } else if pf_rgb_bit_count == 16 {
-            if pf_r_bit_mask == 0xF800 && pf_g_bit_mask == 0x07E0 && pf_b_bit_mask == 0x001F {
+            if pf_r_bit_mask == 0x7C00 && pf_g_bit_mask == 0x03E0 && pf_b_bit_mask == 0x001F && pf_a_bit_mask == 0x8000 {
+                DdsFormat::A1R5G5B5
+            } else if pf_r_bit_mask == 0xF800 && pf_g_bit_mask == 0x07E0 && pf_b_bit_mask == 0x001F {
+                DdsFormat::R5G6B5
+            } else if pf_r_bit_mask == 0x0F00 && pf_g_bit_mask == 0x00F0 && pf_b_bit_mask == 0x000F && pf_a_bit_mask == 0xF000 {
+                DdsFormat::A4R4G4B4
+            } else if pf_r_bit_mask == 0x001F && pf_g_bit_mask == 0x07E0 && pf_b_bit_mask == 0xF800 {
                 DdsFormat::B5G6R5
             } else {
                 DdsFormat::Unknown
@@ -271,7 +296,7 @@ fn parse_dx10_header(
         98 => DdsFormat::Bc7,          // DXGI_FORMAT_BC7_UNORM
         99 => DdsFormat::Bc7,          // DXGI_FORMAT_BC7_UNORM_SRGB
         _ => {
-            //warn!("[DDS LOADER] Unknown DX10 DXGI format: {}", dxgi_format);
+            warn!("[DDS LOADER] Unknown DX10 DXGI format: {}", dxgi_format);
             DdsFormat::Unknown
         }
     };
@@ -366,6 +391,155 @@ fn load_rgba_direct(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
     }
     
     let rgba_data = bytes[data_start..data_start + expected_size].to_vec();
+    Ok(create_rgba_image(info.width, info.height, rgba_data))
+}
+
+fn convert_a1r5g5b5_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+    let data_start = info.data_offset;
+    let num_pixels = (info.width * info.height) as usize;
+    let expected_size = num_pixels * 2; // 16 bits per pixel
+    
+    if bytes.len() < data_start + expected_size {
+        anyhow::bail!("Not enough data for A1R5G5B5 conversion");
+    }
+    
+    let src_data = &bytes[data_start..data_start + expected_size];
+    let mut rgba_data = Vec::with_capacity(num_pixels * 4);
+    
+    for i in 0..num_pixels {
+        let pixel = u16::from_le_bytes([src_data[i * 2], src_data[i * 2 + 1]]);
+        
+        // Extract components from A1R5G5B5 format
+        // Bit layout: A1R5G5B5
+        // Alpha: 1 bit (bit 15)
+        // Red: 5 bits (bits 10-14)
+        // Green: 5 bits (bits 5-9)
+        // Blue: 5 bits (bits 0-4)
+        
+        let a = if (pixel & 0x8000) != 0 { 255 } else { 0 };
+        let r = ((pixel >> 10) & 0x1F) as u8;
+        let g = ((pixel >> 5) & 0x1F) as u8;
+        let b = (pixel & 0x1F) as u8;
+        
+        // Expand 5-bit to 8-bit
+        rgba_data.push((r << 3) | (r >> 2));
+        rgba_data.push((g << 3) | (g >> 2));
+        rgba_data.push((b << 3) | (b >> 2));
+        rgba_data.push(a);
+    }
+    
+    Ok(create_rgba_image(info.width, info.height, rgba_data))
+}
+
+fn convert_b5g6r5_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+    let data_start = info.data_offset;
+    let num_pixels = (info.width * info.height) as usize;
+    let expected_size = num_pixels * 2; // 16 bits per pixel
+
+    if bytes.len() < data_start + expected_size {
+        anyhow::bail!("Not enough data for B5G6R5 conversion");
+    }
+
+    let src_data = &bytes[data_start..data_start + expected_size];
+    let mut rgba_data = Vec::with_capacity(num_pixels * 4);
+
+    for i in 0..num_pixels {
+        let pixel = u16::from_le_bytes([src_data[i * 2], src_data[i * 2 + 1]]);
+
+        // Extract components from B5G6R5 format
+        // Bit layout: B5G6R5
+        // Red: 5 bits (bits 11-15)
+        // Green: 6 bits (bits 5-10)
+        // Blue: 5 bits (bits 0-4)
+
+        let r = ((pixel >> 11) & 0x1F) as u8;
+        let g = ((pixel >> 5) & 0x3F) as u8;
+        let b = (pixel & 0x1F) as u8;
+
+        // Expand to 8-bit
+        // For 5-bit: (value << 3) | (value >> 2)
+        // For 6-bit: (value << 2) | (value >> 4)
+        rgba_data.push((r << 3) | (r >> 2));
+        rgba_data.push((g << 2) | (g >> 4));
+        rgba_data.push((b << 3) | (b >> 2));
+        rgba_data.push(255); // A (fully opaque - no alpha channel)
+    }
+
+    Ok(create_rgba_image(info.width, info.height, rgba_data))
+}
+
+fn convert_r5g6b5_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+    let data_start = info.data_offset;
+    let num_pixels = (info.width * info.height) as usize;
+    let expected_size = num_pixels * 2; // 16 bits per pixel
+
+    if bytes.len() < data_start + expected_size {
+        anyhow::bail!("Not enough data for R5G6B5 conversion");
+    }
+
+    let src_data = &bytes[data_start..data_start + expected_size];
+    let mut rgba_data = Vec::with_capacity(num_pixels * 4);
+
+    for i in 0..num_pixels {
+        let pixel = u16::from_le_bytes([src_data[i * 2], src_data[i * 2 + 1]]);
+
+        // Extract components from R5G6B5 format
+        // Bit layout: R5G6B5
+        // Red: 5 bits (bits 11-15)
+        // Green: 6 bits (bits 5-10)
+        // Blue: 5 bits (bits 0-4)
+        // No alpha channel (set to 255)
+
+        let r = ((pixel >> 11) & 0x1F) as u8;
+        let g = ((pixel >> 5) & 0x3F) as u8;
+        let b = (pixel & 0x1F) as u8;
+
+        // Expand to 8-bit
+        // For 5-bit: (value << 3) | (value >> 2)
+        // For 6-bit: (value << 2) | (value >> 4)
+        rgba_data.push((r << 3) | (r >> 2));
+        rgba_data.push((g << 2) | (g >> 4));
+        rgba_data.push((b << 3) | (b >> 2));
+        rgba_data.push(255); // A (fully opaque - no alpha channel)
+    }
+
+    Ok(create_rgba_image(info.width, info.height, rgba_data))
+}
+
+fn convert_a4r4g4b4_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+    let data_start = info.data_offset;
+    let num_pixels = (info.width * info.height) as usize;
+    let expected_size = num_pixels * 2; // 16 bits per pixel
+
+    if bytes.len() < data_start + expected_size {
+        anyhow::bail!("Not enough data for A4R4G4B4 conversion");
+    }
+
+    let src_data = &bytes[data_start..data_start + expected_size];
+    let mut rgba_data = Vec::with_capacity(num_pixels * 4);
+
+    for i in 0..num_pixels {
+        let pixel = u16::from_le_bytes([src_data[i * 2], src_data[i * 2 + 1]]);
+
+        // Extract components from A4R4G4B4 format
+        // Bit layout: A4R4G4B4
+        // Alpha: 4 bits (bits 12-15)
+        // Red: 4 bits (bits 8-11)
+        // Green: 4 bits (bits 4-7)
+        // Blue: 4 bits (bits 0-3)
+
+        let a = ((pixel >> 12) & 0x0F) as u8;
+        let r = ((pixel >> 8) & 0x0F) as u8;
+        let g = ((pixel >> 4) & 0x0F) as u8;
+        let b = (pixel & 0x0F) as u8;
+
+        // Expand 4-bit to 8-bit
+        rgba_data.push((r << 4) | r);
+        rgba_data.push((g << 4) | g);
+        rgba_data.push((b << 4) | b);
+        rgba_data.push((a << 4) | a);
+    }
+
     Ok(create_rgba_image(info.width, info.height, rgba_data))
 }
 

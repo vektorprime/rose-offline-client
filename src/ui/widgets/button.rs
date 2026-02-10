@@ -64,28 +64,28 @@ widget_to_rect! { Button }
 
 impl LoadWidget for Button {
     fn load_widget(&mut self, ui_resources: &UiResources) {
-        log::debug!("[BUTTON LOAD] Loading button widget id={}, name='{}', module_id={}",
-            self.id, self.name, self.module_id);
+        // log::debug!("[BUTTON LOAD] Loading button widget id={}, name='{}', module_id={}",
+        //     self.id, self.name, self.module_id);
 
         self.normal_sprite = ui_resources.get_sprite(self.module_id, &self.normal_sprite_name);
-        log::debug!("[BUTTON LOAD] Button {}: normal_sprite '{}' loaded: {}",
-            self.id, self.normal_sprite_name, self.normal_sprite.is_some());
+        //log::debug!("[BUTTON LOAD] Button {}: normal_sprite '{}' loaded: {}",
+            //self.id, self.normal_sprite_name, self.normal_sprite.is_some());
 
         self.over_sprite = ui_resources.get_sprite(self.module_id, &self.over_sprite_name);
-        log::debug!("[BUTTON LOAD] Button {}: over_sprite '{}' loaded: {}",
-            self.id, self.over_sprite_name, self.over_sprite.is_some());
+        //log::debug!("[BUTTON LOAD] Button {}: over_sprite '{}' loaded: {}",
+           // self.id, self.over_sprite_name, self.over_sprite.is_some());
 
         self.blink_sprite = ui_resources.get_sprite(self.module_id, &self.blink_sprite_name);
-        log::debug!("[BUTTON LOAD] Button {}: blink_sprite '{}' loaded: {}",
-            self.id, self.blink_sprite_name, self.blink_sprite.is_some());
+        //log::debug!("[BUTTON LOAD] Button {}: blink_sprite '{}' loaded: {}",
+           // self.id, self.blink_sprite_name, self.blink_sprite.is_some());
 
         self.down_sprite = ui_resources.get_sprite(self.module_id, &self.down_sprite_name);
-        log::debug!("[BUTTON LOAD] Button {}: down_sprite '{}' loaded: {}",
-            self.id, self.down_sprite_name, self.down_sprite.is_some());
+        //log::debug!("[BUTTON LOAD] Button {}: down_sprite '{}' loaded: {}",
+            //self.id, self.down_sprite_name, self.down_sprite.is_some());
 
         self.disable_sprite = ui_resources.get_sprite(self.module_id, &self.disable_sprite_name);
-        log::debug!("[BUTTON LOAD] Button {}: disable_sprite '{}' loaded: {}",
-            self.id, self.disable_sprite_name, self.disable_sprite.is_some());
+        //log::debug!("[BUTTON LOAD] Button {}: disable_sprite '{}' loaded: {}",
+            //self.id, self.disable_sprite_name, self.disable_sprite.is_some());
     }
 }
 
@@ -93,15 +93,15 @@ impl DrawWidget for Button {
     fn draw_widget(&self, ui: &mut egui::Ui, bindings: &mut DataBindings) {
         let visible = bindings.get_visible(self.id);
         if !visible {
-            log::debug!("[BUTTON DRAW] Button id={} name='{}' is not visible, skipping draw",
-                self.id, self.name);
+            //log::debug!("[BUTTON DRAW] Button id={} name='{}' is not visible, skipping draw",
+               // self.id, self.name);
             return;
         }
 
         let rect = self.widget_rect(ui.min_rect().min);
         let enabled = bindings.get_enabled(self.id);
-        log::debug!("[BUTTON DRAW] Button id={} name='{}' visible={}, enabled={}, rect=({:.1},{:.1}) size=({:.1}x{:.1})",
-            self.id, self.name, visible, enabled, rect.min.x, rect.min.y, rect.width(), rect.height());
+       // log::debug!("[BUTTON DRAW] Button id={} name='{}' visible={}, enabled={}, rect=({:.1},{:.1}) size=({:.1}x{:.1})",
+           // self.id, self.name, visible, enabled, rect.min.x, rect.min.y, rect.width(), rect.height());
 
         let mut response = ui.allocate_rect(
             rect,
@@ -113,7 +113,7 @@ impl DrawWidget for Button {
         );
 
         if ui.is_rect_visible(rect) {
-            log::debug!("[BUTTON DRAW] Button id={} rect is visible on screen", self.id);
+            //log::debug!("[BUTTON DRAW] Button id={} rect is visible on screen", self.id);
 
             let sprite = if !response.sense.interactive() {
                 self.disable_sprite.as_ref()

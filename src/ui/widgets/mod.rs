@@ -1,5 +1,5 @@
 use bevy_egui::egui;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de::IgnoredAny};
 
 use crate::resources::UiResources;
 
@@ -24,6 +24,7 @@ mod data_bindings;
 mod dialog;
 mod draw;
 mod draw_text;
+mod draw_widget;
 mod editbox;
 mod gauge;
 mod image;
@@ -48,6 +49,7 @@ pub use data_bindings::DataBindings;
 pub use dialog::Dialog;
 pub use draw::DrawText as DrawTextTrait;
 pub use draw_text::DrawText;
+pub use draw_widget::Draw;
 pub use editbox::Editbox;
 pub use gauge::Gauge;
 pub use listbox::Listbox;
@@ -120,6 +122,8 @@ pub enum Widget {
     ZListbox(ZListbox),
     #[serde(rename = "DRAWTEXT")]
     DrawText(DrawText),
+    #[serde(rename = "DRAW")]
+    Draw(Draw),
     #[serde(other)]
     Unknown,
 }
@@ -145,6 +149,7 @@ impl Widget {
             Widget::TabbedPane(x) => x.id,
             Widget::ZListbox(x) => x.id,
             Widget::DrawText(x) => x.id,
+            Widget::Draw(x) => x.id,
             Widget::Unknown => panic!("Use of unknown widget"),
         }
     }
@@ -173,6 +178,7 @@ impl DrawWidget for Widget {
             Widget::TabbedPane(this) => this.draw_widget(ui, bindings),
             Widget::ZListbox(this) => this.draw_widget(ui, bindings),
             Widget::DrawText(this) => this.draw_widget(ui, bindings),
+            Widget::Draw(this) => this.draw_widget(ui, bindings),
             Widget::Unknown => {
                 log::warn!("[WIDGET DRAW] Unknown widget type encountered");
             }
@@ -182,8 +188,16 @@ impl DrawWidget for Widget {
 
 impl LoadWidget for Widget {
     fn load_widget(&mut self, ui_resources: &UiResources) {
-        log::trace!("[WIDGET LOAD] Loading widget: type={:?}, id={}",
-            std::mem::discriminant(self), self.id());
+        let discriminant = std::mem::discriminant(self);
+        //log::trace!("[WIDGET LOAD] Loading widget: type={:?}, id={}",
+            //discriminant, self.id());
+        
+        // Log if this is an Unknown widget
+        if matches!(self, Widget::Unknown) {
+           // log::error!("[WIDGET LOAD] CRITICAL: Attempting to load Unknown widget! Discriminant: {:?}", discriminant);
+            //log::error!("[WIDGET LOAD] This indicates a widget type in the XML that doesn't match any known variant");
+        }
+        
         match self {
             Widget::Button(this) => this.load_widget(ui_resources),
             Widget::Caption(this) => this.load_widget(ui_resources),
@@ -203,6 +217,7 @@ impl LoadWidget for Widget {
             Widget::TabbedPane(this) => this.load_widget(ui_resources),
             Widget::ZListbox(this) => this.load_widget(ui_resources),
             Widget::DrawText(this) => this.load_widget(ui_resources),
+            Widget::Draw(this) => this.load_widget(ui_resources),
             Widget::Unknown => {
                 log::warn!("[WIDGET LOAD] Unknown widget type encountered");
             }
@@ -225,13 +240,24 @@ impl DrawWidget for Vec<Widget> {
 impl LoadWidget for Vec<Widget> {
     fn load_widget(&mut self, ui_resources: &UiResources) {
         let widget_count = self.len();
-        log::debug!("[WIDGETS LOAD] Loading {} widgets", widget_count);
+        // log::debug!("[WIDGETS LOAD] Loading {} widgets", widget_count);
         for (index, widget) in self.iter_mut().enumerate() {
-            log::debug!("[WIDGETS LOAD] Loading widget {}/{}: type={:?}, id={}",
-                index + 1, widget_count, std::mem::discriminant(widget), widget.id());
+            let discriminant = std::mem::discriminant(widget);
+            
+            // Check if widget is Unknown before trying to get its id
+            if matches!(widget, Widget::Unknown) {
+                //log::error!("[WIDGETS LOAD] CRITICAL at index {}/{}: Found Unknown widget! Discriminant: {:?}",
+                    //index + 1, widget_count, discriminant);
+               // log::error!("[WIDGETS LOAD] This widget will cause a panic when trying to get its id");
+                // Don't try to get id for Unknown widgets as it will panic
+                continue;
+            }
+            
+            // log::debug!("[WIDGETS LOAD] Loading widget {}/{}: type={:?}, id={}",
+                //index + 1, widget_count, discriminant, widget.id());
             widget.load_widget(ui_resources);
         }
-        log::debug!("[WIDGETS LOAD] Completed loading {} widgets", widget_count);
+        // log::debug!("[WIDGETS LOAD] Completed loading {} widgets", widget_count);
     }
 }
 
@@ -274,7 +300,8 @@ impl GetWidget for Vec<Widget> {
                 | Widget::ZListbox(_)
                 | Widget::Scrollbar(_)
                 | Widget::Scrollbox(_)
-                | Widget::DrawText(_) => {
+                | Widget::DrawText(_)
+                | Widget::Draw(_) => {
                     continue;
                 }
                 Widget::Unknown => panic!("Use of unknown widget"),
@@ -322,7 +349,8 @@ impl GetWidget for Vec<Widget> {
                 | Widget::ZListbox(_)
                 | Widget::Scrollbar(_)
                 | Widget::Scrollbox(_)
-                | Widget::DrawText(_) => {
+                | Widget::DrawText(_)
+                | Widget::Draw(_) => {
                     continue;
                 }
                 Widget::Unknown => panic!("Use of unknown widget"),

@@ -1,6 +1,6 @@
 {
-  "mcpServers": {
-    "qdrant-code-search": {
+	"mcpServers": {
+		"qdrant-code-search": {
 			"command": "python",
 			"args": [
 				"E:\\python\\qdrant\\qdrant-query.py"
@@ -20,5 +20,5 @@
 			],
 			"disabledTools": []
 		}
-  }
+	}
 }
