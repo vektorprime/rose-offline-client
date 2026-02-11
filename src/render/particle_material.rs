@@ -2,6 +2,7 @@ use bevy::{
     prelude::*,
     render::{
         alpha::AlphaMode,
+        mesh::MeshVertexBufferLayoutRef,
         render_resource::*,
     },
     asset::{load_internal_asset, Handle},
@@ -25,6 +26,22 @@ pub struct ParticleMaterial {
     #[texture(4)]
     #[sampler(5)]
     pub texture: Handle<Image>,
+    /// Blend operation to use for rendering
+    /// Stored as u32 for shader compatibility (0=Add, 1=Subtract, 2=ReverseSubtract, 3=Min, 4=Max)
+    #[uniform(6)]
+    pub blend_op: u32,
+    /// Source blend factor
+    /// Stored as u32 for shader compatibility (mapped from BlendFactor)
+    #[uniform(7)]
+    pub src_blend_factor: u32,
+    /// Destination blend factor
+    /// Stored as u32 for shader compatibility (mapped from BlendFactor)
+    #[uniform(8)]
+    pub dst_blend_factor: u32,
+    /// Billboard type for particle rotation
+    /// Stored as u32 for shader compatibility (0=None, 1=YAxis, 2=Full)
+    #[uniform(9)]
+    pub billboard_type: u32,
 }
 
 impl Material for ParticleMaterial {
@@ -37,7 +54,26 @@ impl Material for ParticleMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
+        // Map blend configuration to AlphaMode
+        // Since AlphaMode doesn't support custom blend operations/factors directly,
+        // we use Blend mode and configure custom blend state in specialize()
         AlphaMode::Blend
+    }
+
+    fn specialize(
+        _pipeline: &bevy::pbr::MaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: bevy::pbr::MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // Note: We cannot access the material's blend configuration or billboard type in this static method
+        // because key.bind_group_data is () (unit type) from AsBindGroup derive.
+        //
+        // The blend configuration and billboard type are stored as uniforms in the material and will be
+        // accessible in the shader. For now, we use the default blend state from AlphaMode::Blend.
+        //
+        // The shader uses the billboard_type uniform to determine billboard behavior dynamically.
+        Ok(())
     }
 }
 

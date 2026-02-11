@@ -100,7 +100,7 @@ use systems::{
     character_model_update_system, character_select_enter_system, character_select_event_system,
     character_select_exit_system, character_select_input_system, character_select_models_system,
     character_select_system, clan_system, client_entity_event_system, collision_height_only_system,
-    collision_player_system, collision_player_system_join_zoin, command_system,
+    collision_player_system, collision_player_system_join_zone, command_system,
     conversation_dialog_system, cooldown_system, damage_digit_render_system,
     debug_entity_visibility, debug_render_collider_system, debug_render_directional_light_system,
     debug_render_skeleton_system, directional_light_system, effect_system, facing_direction_system,
@@ -121,6 +121,7 @@ use systems::{
     name_tag_update_color_system, name_tag_update_healthbar_system, name_tag_visibility_system,
     network_thread_system, npc_idle_sound_system, npc_model_add_collider_system,
     npc_model_update_system, orbit_camera_system, particle_sequence_system,
+    particle_storage_buffer_update_system,
     passive_recovery_system, pending_damage_system, pending_skill_effect_system,
     personal_store_model_add_collider_system, personal_store_model_system, player_command_system,
     projectile_system, quest_trigger_system, spawn_effect_system, spawn_projectile_system,
@@ -903,6 +904,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             auto_login_system,
             background_music_system,
             particle_sequence_system,
+            particle_storage_buffer_update_system.after(particle_sequence_system),
             effect_system,
             animation_sound_system,
             npc_idle_sound_system,
@@ -1345,13 +1347,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, command_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, facing_direction_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, update_position_system.run_if(in_state(AppState::Game)));
-    // app.add_systems(Update, collision_player_system_join_zoin.run_if(in_state(AppState::Game))
+    // app.add_systems(Update, collision_player_system_join_zone.run_if(in_state(AppState::Game))
     //     .before(collision_player_system));
     app.add_systems(Update, collision_height_only_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, collision_player_system.run_if(in_state(AppState::Game)));
     app.add_systems(
         Update,
-        collision_player_system_join_zoin
+        collision_player_system_join_zone
             .run_if(in_state(AppState::Game))
             .after(collision_player_system),
     );
@@ -1412,7 +1414,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         (
             login_connection_system,
             world_connection_system,
-            game_connection_system,
+            game_connection_system.run_if(resource_exists::<CurrentZone>),
         ),
     );
 

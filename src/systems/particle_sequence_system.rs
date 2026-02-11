@@ -1,9 +1,12 @@
 use std::ops::RangeInclusive;
 
 use bevy::{
+    asset::Assets,
     math::{Quat, Vec2, Vec3, Vec4},
-    prelude::{GlobalTransform, Query, Res, Time, Transform},
+    prelude::{GlobalTransform, Query, Res, ResMut, Time, Transform},
     ecs::component::Component,
+    pbr::MeshMaterial3d,
+    render::storage::ShaderStorageBuffer,
 };
 use rand::Rng;
 
@@ -11,7 +14,7 @@ use rose_file_readers::{PtlKeyframeData, PtlUpdateCoords};
 
 use crate::{
     components::{ActiveParticle, ParticleSequence},
-    render::ParticleRenderData,
+    render::{ParticleMaterial, ParticleRenderData},
 };
 
 fn rng_gen_range<R: Rng>(rng: &mut R, range: &RangeInclusive<f32>) -> f32 {
@@ -437,6 +440,43 @@ pub fn particle_sequence_system(
 
         if particle_sequence.finished && particle_sequence.particles.is_empty() {
             // TODO: Despawn self ?
+        }
+    }
+}
+
+/// Updates GPU storage buffers with particle render data.
+/// This system copies the CPU-side particle data from ParticleRenderData
+/// to the GPU-side storage buffers in ParticleMaterial.
+///
+/// This is CRITICAL for particle rendering - without this, the storage buffers
+/// would contain only the placeholder data (zeros/ones) from initialization.
+pub fn particle_storage_buffer_update_system(
+    mut materials: ResMut<Assets<ParticleMaterial>>,
+    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    query: Query<(&ParticleRenderData, &MeshMaterial3d<ParticleMaterial>)>,
+) {
+    for (render_data, material_handle) in query.iter() {
+        // Get the material from the assets
+        if let Some(material) = materials.get_mut(&material_handle.0) {
+            // Update positions buffer
+            if let Some(positions_buffer) = storage_buffers.get_mut(&material.positions) {
+                positions_buffer.set_data(render_data.positions.as_slice());
+            }
+
+            // Update sizes buffer
+            if let Some(sizes_buffer) = storage_buffers.get_mut(&material.sizes) {
+                sizes_buffer.set_data(render_data.sizes.as_slice());
+            }
+
+            // Update colors buffer
+            if let Some(colors_buffer) = storage_buffers.get_mut(&material.colors) {
+                colors_buffer.set_data(render_data.colors.as_slice());
+            }
+
+            // Update textures buffer
+            if let Some(textures_buffer) = storage_buffers.get_mut(&material.textures) {
+                textures_buffer.set_data(render_data.textures.as_slice());
+            }
         }
     }
 }

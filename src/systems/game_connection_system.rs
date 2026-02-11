@@ -45,7 +45,7 @@ use crate::{
         BankEvent, ChatboxEvent, ClientEntityEvent, GameConnectionEvent, LoadZoneEvent,
         MessageBoxEvent, PartyEvent, PersonalStoreEvent, QuestTriggerEvent, UseItemEvent,
     },
-    resources::{AppState, ClientEntityList, GameConnection, GameData, WorldRates, WorldTime},
+    resources::{AppState, ClientEntityList, CurrentZone, GameConnection, GameData, WorldRates, WorldTime},
 };
 
 fn to_next_command(
@@ -139,7 +139,10 @@ pub fn game_connection_system(
     mut personal_store_events: EventWriter<PersonalStoreEvent>,
     mut quest_trigger_events: EventWriter<QuestTriggerEvent>,
     mut message_box_events: EventWriter<MessageBoxEvent>,
+    current_zone: Option<Res<CurrentZone>>,
 ) {
+    // DIAGNOSTIC: Log whether CurrentZone resource exists at system entry
+    log::info!("[DIAG_RUN_CONDITION] game_connection_system entry - CurrentZone resource exists: {}", current_zone.is_some());
     let Some(game_connection) = game_connection else {
         return;
     };
@@ -385,6 +388,14 @@ pub fn game_connection_system(
                 move_mode,
                 status_effects,
             }) => {
+                // DIAGNOSTIC: Log NPC spawning information
+                log::info!("[DIAG_NPC_SPAWN] Spawning NPC:");
+                log::info!("[DIAG_NPC_SPAWN]   entity_id: {:?}", entity_id);
+                log::info!("[DIAG_NPC_SPAWN]   npc_id: {:?}", npc.id);
+                log::info!("[DIAG_NPC_SPAWN]   initial position (server): x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
+                log::info!("[DIAG_NPC_SPAWN]   initial transform (bevy): x={:.2}, y={:.2}, z={:.2}", position.x / 100.0, position.z / 100.0 + 10000.0, -position.y / 100.0);
+                log::info!("[DIAG_NPC_SPAWN]   CurrentZone resource available: {}", current_zone.is_some());
+
                 let status_effects = StatusEffects {
                     active: status_effects,
                     ..Default::default()
@@ -439,6 +450,14 @@ pub fn game_connection_system(
                 client_entity_list.add(entity_id, entity);
             }
             Ok(ServerMessage::SpawnEntityMonster { entity_id, npc, position, team, health, spawn_command_state, move_mode, status_effects }) => {
+                // DIAGNOSTIC: Log monster spawning information
+                log::info!("[DIAG_MONSTER_SPAWN] Spawning monster:");
+                log::info!("[DIAG_MONSTER_SPAWN]   entity_id: {:?}", entity_id);
+                log::info!("[DIAG_MONSTER_SPAWN]   npc_id: {:?}", npc.id);
+                log::info!("[DIAG_MONSTER_SPAWN]   initial position (server): x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
+                log::info!("[DIAG_MONSTER_SPAWN]   initial transform (bevy): x={:.2}, y={:.2}, z={:.2}", position.x / 100.0, position.z / 100.0 + 10000.0, -position.y / 100.0);
+                log::info!("[DIAG_MONSTER_SPAWN]   CurrentZone resource available: {}", current_zone.is_some());
+
                 let status_effects = StatusEffects {
                     active: status_effects,
                     ..Default::default()

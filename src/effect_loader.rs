@@ -120,6 +120,40 @@ pub fn decode_blend_factor(value: u32) -> BlendFactor {
     }
 }
 
+/// Convert BlendOperation to u32 for storage in material
+pub fn encode_blend_op(op: BlendOperation) -> u32 {
+    match op {
+        BlendOperation::Add => 0,
+        BlendOperation::Subtract => 1,
+        BlendOperation::ReverseSubtract => 2,
+        BlendOperation::Min => 3,
+        BlendOperation::Max => 4,
+    }
+}
+
+/// Convert BlendFactor to u32 for storage in material
+pub fn encode_blend_factor(factor: BlendFactor) -> u32 {
+    match factor {
+        BlendFactor::Zero => 1,
+        BlendFactor::One => 2,
+        BlendFactor::Src => 3,
+        BlendFactor::OneMinusSrc => 4,
+        BlendFactor::SrcAlpha => 5,
+        BlendFactor::OneMinusSrcAlpha => 6,
+        BlendFactor::DstAlpha => 7,
+        BlendFactor::OneMinusDstAlpha => 8,
+        BlendFactor::Dst => 9,
+        BlendFactor::OneMinusDst => 10,
+        BlendFactor::SrcAlphaSaturated => 11,
+        BlendFactor::Constant => 12,
+        BlendFactor::OneMinusConstant => 13,
+        BlendFactor::Src1 => 14,
+        BlendFactor::OneMinusSrc1 => 15,
+        BlendFactor::Src1Alpha => 16,
+        BlendFactor::OneMinusSrc1Alpha => 17,
+    }
+}
+
 fn spawn_mesh(
     commands: &mut Commands,
     asset_server: &AssetServer,
@@ -300,9 +334,26 @@ fn spawn_particle(
                         sizes: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&sizes_buffer), RenderAssetUsages::default())),
                         colors: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&colors_buffer), RenderAssetUsages::default())),
                         textures: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&textures_buffer), RenderAssetUsages::default())),
+                        blend_op: encode_blend_op(decode_blend_op(sequence.blend_op as u32)),
+                        src_blend_factor: encode_blend_factor(decode_blend_factor(sequence.src_blend_mode as u32)),
+                        dst_blend_factor: encode_blend_factor(decode_blend_factor(sequence.dst_blend_mode as u32)),
+                        billboard_type: match sequence.align_type {
+                            0 => 2, // Full billboard
+                            1 => 0, // No billboard
+                            2 => 1, // Y-axis billboard
+                            _ => 2, // Default to Full billboard
+                        },
                     });
 
-                    let particle_mesh = meshes.add(bevy::prelude::Mesh::from(bevy::prelude::Rectangle::new(1.0, 1.0)));
+                    // Create a custom mesh with num_particles * 6 vertices to match shader expectations
+                    // The shader uses vertex_index to calculate particle_idx = vertex_index / 6u and vert_idx = vertex_index % 6u
+                    // This means we need 6 vertices per particle (2 triangles forming a quad)
+                    let particle_vertex_count = num_particles * 6;
+                    let particle_positions: Vec<[f32; 3]> = vec![[0.0, 0.0, 0.0]; particle_vertex_count];
+                    let particle_mesh = meshes.add(
+                        bevy::prelude::Mesh::new(bevy::render::mesh::PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+                            .with_inserted_attribute(bevy::prelude::Mesh::ATTRIBUTE_POSITION, particle_positions)
+                    );
 
                     let mut entity_comands = child_builder.spawn((
                         EffectParticle {},

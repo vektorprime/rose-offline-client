@@ -23,6 +23,14 @@ var<storage, read> textures: TextureBuffer;
 var base_color_texture: texture_2d<f32>;
 @group(2) @binding(5)
 var base_color_sampler: sampler;
+@group(2) @binding(6)
+var<uniform> blend_op: u32;
+@group(2) @binding(7)
+var<uniform> src_blend_factor: u32;
+@group(2) @binding(8)
+var<uniform> dst_blend_factor: u32;
+@group(2) @binding(9)
+var<uniform> billboard_type: u32;
 
 struct VertexInput {
   @builtin(vertex_index) vertex_idx: u32,
@@ -48,23 +56,23 @@ fn vertex(model: VertexInput) -> VertexOutput {
   let vert_idx = model.vertex_idx % 6u;
   let particle_idx = model.vertex_idx / 6u;
 
-#ifdef PARTICLE_BILLBOARD_Y_AXIS
-  let camera_right =
-    normalize(vec3<f32>(view.view_from_world[0].x, 0.0, view.view_from_world[0].z));
-  let camera_up = vec3<f32>(0.0, 1.0, 0.0);
-#else
+  // Get billboard type from material uniform (0=None, 1=YAxis, 2=Full)
+  var camera_right: vec3<f32>;
+  var camera_up: vec3<f32>;
 
-#ifdef PARTICLE_BILLBOARD_FULL
-  let camera_right = view.view_from_world[0].xyz;
-  let camera_up = view.view_from_world[1].xyz;
-#else
-
-  let camera_right = vec3<f32>(1.0, 0.0, 0.0);
-  let camera_up = vec3<f32>(0.0, 0.0, 1.0);
-
-#endif
-
-#endif
+  if (billboard_type == 1u) {
+    // Y-axis billboard: rotate only around Y-axis
+    camera_right = normalize(vec3<f32>(view.view_from_world[0].x, 0.0, view.view_from_world[0].z));
+    camera_up = vec3<f32>(0.0, 1.0, 0.0);
+  } else if (billboard_type == 2u) {
+    // Full billboard: rotate on all axes
+    camera_right = view.view_from_world[0].xyz;
+    camera_up = view.view_from_world[1].xyz;
+  } else {
+    // No billboard (default behavior)
+    camera_right = vec3<f32>(1.0, 0.0, 0.0);
+    camera_up = vec3<f32>(0.0, 0.0, 1.0);
+  }
 
   let particle_position = positions.data[particle_idx].xyz;
   let theta = positions.data[particle_idx].w;

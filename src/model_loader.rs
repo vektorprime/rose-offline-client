@@ -1277,7 +1277,7 @@ fn spawn_skeleton(
     // VERIFY: Asset was actually added (critical for preventing bind group mismatch)
     if skinned_mesh_inverse_bindposes_assets.get(&handle).is_none() {
         log::error!(
-            "[SKINNED_MESH_FIX] CRITICAL: Failed to add inverse bind poses asset to assets collection! This will cause a bind group mismatch!"
+           "[SKINNED_MESH_FIX] CRITICAL: Failed to add inverse bind poses asset to assets collection! This will cause a bind group mismatch!"
         );
         panic!("Failed to add inverse bind poses asset");
     }
@@ -1287,12 +1287,12 @@ fn spawn_skeleton(
         "Failed to add inverse bind poses asset"
     );
 
-    log::info!(
-        "[SKINNED_MESH_FIX] Created skeleton with {} bones ({} real, {} dummy), inverse_bindposes asset loaded successfully",
-        bone_entities.len(),
-        skeleton.bones.len(),
-        skeleton.dummy_bones.len()
-    );
+    // log::info!(
+    //     "[SKINNED_MESH_FIX] Created skeleton with {} bones ({} real, {} dummy), inverse_bindposes asset loaded successfully",
+    //     bone_entities.len(),
+    //     skeleton.bones.len(),
+    //     skeleton.dummy_bones.len()
+    // );
 
     SkinnedMesh {
         inverse_bindposes: handle,
@@ -1404,12 +1404,12 @@ fn spawn_skeleton(
                     // Do NOT insert SkinnedMesh to prevent crash
                 } else {
                     // DIAGNOSTIC LOG: SkinnedMesh component inserted on mesh entity
-                    log::info!(
-                        "[SKINNED_MESH_FIX] Inserting SkinnedMesh component on mesh entity - model_id: {}, mesh_id: {}, joints_count: {}",
-                        model_id,
-                        mesh_id,
-                        skinned_mesh.joints.len()
-                    );
+                    // log::info!(
+                    //     "[SKINNED_MESH_FIX] Inserting SkinnedMesh component on mesh entity - model_id: {}, mesh_id: {}, joints_count: {}",
+                    //     model_id,
+                    //     mesh_id,
+                    //     skinned_mesh.joints.len()
+                    // );
                     entity_commands.insert(skinned_mesh.clone());
                 }
             } else {

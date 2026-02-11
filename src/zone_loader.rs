@@ -2912,7 +2912,7 @@ fn spawn_animated_object(
             VisibilityBundle {
                 visibility: Visibility::Visible,
                 inherited_visibility: InheritedVisibility::default(),
-                view_visibility: ViewVisibility::default(),
+                view_visibility: bevy::render::view::ViewVisibility::default(),
             },
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
