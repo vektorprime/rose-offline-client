@@ -1,9 +1,10 @@
 use bevy::prelude::Resource;
 use std::collections::HashMap;
 
-use rose_game_common::components::CharacterGender;
+use rose_game_common::{components::CharacterGender, messages::ClientEntityId};
 
 use crate::{
+    events::{BankEvent, ClanDialogEvent, NpcStoreEvent},
     scripting::{
         lua4::Lua4Value,
         lua_game_constants::{
@@ -140,32 +141,37 @@ fn GF_getVariable(
 #[allow(non_snake_case)]
 fn GF_openBank(
     _resources: &ScriptFunctionResources,
-    _context: &mut ScriptFunctionContext,
-    _parameters: Vec<Lua4Value>,
+    context: &mut ScriptFunctionContext,
+    parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
-    // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
-    // Need to find alternative approach for sending events from script functions
+    (|| -> Option<()> {
+        let npc_client_entity_id = ClientEntityId(parameters.get(0)?.to_usize().ok()?);
+        context.bank_events.send(BankEvent::OpenBankFromClientEntity { client_entity_id: npc_client_entity_id });
+        Some(())
+    })();
     vec![]
 }
 
 #[allow(non_snake_case)]
 fn GF_openStore(
     _resources: &ScriptFunctionResources,
-    _context: &mut ScriptFunctionContext,
-    _parameters: Vec<Lua4Value>,
+    context: &mut ScriptFunctionContext,
+    parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
-    // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
-    // Need to find alternative approach for sending events from script functions
+    (|| -> Option<()> {
+        let npc_client_entity_id = ClientEntityId(parameters.get(0)?.to_usize().ok()?);
+        context.npc_store_events.send(NpcStoreEvent::OpenClientEntityStore(npc_client_entity_id));
+        Some(())
+    })();
     vec![]
 }
 
 #[allow(non_snake_case)]
 fn GF_organizeClan(
     _resources: &ScriptFunctionResources,
-    _context: &mut ScriptFunctionContext,
+    context: &mut ScriptFunctionContext,
     _parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
-    // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
-    // Need to find alternative approach for sending events from script functions
+    context.clan_dialog_events.send(ClanDialogEvent::Open);
     vec![]
 }

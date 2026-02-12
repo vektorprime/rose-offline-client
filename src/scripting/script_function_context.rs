@@ -1,6 +1,6 @@
 use bevy::{
     ecs::system::SystemParam,
-    prelude::{Query, With},
+    prelude::{EventWriter, Query, With},
 };
 
 use rose_game_common::components::{
@@ -11,10 +11,10 @@ use rose_game_common::components::{
 
 use crate::{
     components::{ClanMembership, ClientEntity, PlayerCharacter},
+    events::{BankEvent, ChatboxEvent, ClanDialogEvent, NpcStoreEvent, SystemFuncEvent},
 };
 
-// NOTE: ScriptFunctionContext contains all of the queries needed by script functions.
-// Event writers are handled separately due to lifetime constraints in Bevy 0.13.
+// NOTE: ScriptFunctionContext contains all of the queries and event writers needed by script functions.
 
 #[derive(SystemParam)]
 pub struct ScriptFunctionContext<'w, 's> {
@@ -42,6 +42,10 @@ pub struct ScriptFunctionContext<'w, 's> {
     pub query_player_clan: Query<'w, 's, &'static ClanMembership, With<PlayerCharacter>>,
     pub query_npc: Query<'w, 's, &'static Npc>,
 
-    #[system_param(ignore)]
-    pub phantom: std::marker::PhantomData<()>,
+    // Event writers for script functions
+    pub bank_events: EventWriter<'w, BankEvent>,
+    pub chatbox_events: EventWriter<'w, ChatboxEvent>,
+    pub clan_dialog_events: EventWriter<'w, ClanDialogEvent>,
+    pub npc_store_events: EventWriter<'w, NpcStoreEvent>,
+    pub script_system_events: EventWriter<'w, SystemFuncEvent>,
 }
