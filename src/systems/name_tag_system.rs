@@ -3,6 +3,7 @@ use std::{num::NonZeroU16, sync::Arc};
 use arrayvec::ArrayVec;
 use bevy::{
     ecs::query::QueryData,
+    log::info,
     prelude::{
         Assets, BuildChildren, Changed, Color, Commands, DespawnRecursiveExt, Entity, EventReader,
         GlobalTransform, Handle, Image, Local, Query, Res, ResMut, Transform, Vec2, Vec3,
@@ -398,9 +399,18 @@ pub fn name_tag_system(
     name_tag_settings: Res<NameTagSettings>,
     mut load_zone_events: EventReader<LoadZoneEvent>,
 ) {
+    // [NAME_TAG_DEBUG] Log system start and entity counts
+    let entities_to_add_count = query_add.iter().count();
+    let changed_count = query_changed.iter().count();
+    info!(
+        "[NAME_TAG_DEBUG] name_tag_system running: {} entities without NameTagEntity, {} with changed name",
+        entities_to_add_count, changed_count
+    );
+
     let player = query_player.get_single().ok();
     let pixels_per_point = egui_context.ctx_mut().pixels_per_point();
     let Ok(window_entity) = query_window.get_single() else {
+        info!("[NAME_TAG_DEBUG] Early return: no primary window");
         return;
     };
 
@@ -485,14 +495,22 @@ pub fn name_tag_system(
         };
 
         // Spawn name tag entities
+        let visibility = if name_tag_settings.show_all[name_tag_type] {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        
+        // [NAME_TAG_DEBUG] Log name tag spawn details
+        info!(
+            "[NAME_TAG_DEBUG] Spawning name tag: entity={:?}, name='{}', type={:?}, visibility={:?}, model_height={}",
+            object.entity, object.name.name, name_tag_type, visibility, object.model_height.height
+        );
+        
         let name_tag_entity = commands
             .spawn((
                 NameTag { name_tag_type },
-                if name_tag_settings.show_all[name_tag_type] {
-                    Visibility::Inherited
-                } else {
-                    Visibility::Hidden
-                },
+                visibility,
                 InheritedVisibility::default(),
                 Transform::from_translation(Vec3::new(0.0, object.model_height.height, 0.0)),
                 GlobalTransform::default(),
@@ -647,6 +665,7 @@ pub fn name_tag_system(
                     GlobalTransform::default(),
                     Visibility::default(),
                     InheritedVisibility::default(),
+                    ViewVisibility::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -705,5 +724,11 @@ pub fn name_tag_system(
             .entity(object.entity)
             .insert(NameTagEntity(name_tag_entity))
             .add_child(name_tag_entity);
+
+        // [NAME_TAG_DEBUG] Log completion of name tag setup
+        info!(
+            "[NAME_TAG_DEBUG] Name tag setup complete: parent_entity={:?}, name_tag_entity={:?}, name='{}'",
+            object.entity, name_tag_entity, object.name.name
+        );
     }
 }

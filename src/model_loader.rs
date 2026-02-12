@@ -1361,7 +1361,15 @@ fn spawn_skeleton(
             Some(specular_image.clone()), // specular_texture
             Vec2::new(0.0, 0.0), // lightmap_offset
             1.0, // lightmap_scale
-            AlphaMode::Opaque, // alpha_mode
+            if zsc_material.alpha_enabled {
+                if let Some(threshold) = zsc_material.alpha_test {
+                    AlphaMode::Mask(threshold)
+                } else {
+                    AlphaMode::Blend
+                }
+            } else {
+                AlphaMode::Opaque
+            }, // alpha_mode
             zsc_material.two_sided, // two_sided
         );
 

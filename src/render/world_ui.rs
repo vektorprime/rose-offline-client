@@ -27,7 +27,7 @@ use bevy::{
             BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferBindingType, BufferUsages, RawBufferVec, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, FragmentState, FrontFace, MultisampleState, PipelineCache, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipelineDescriptor, SamplerBindingType, Shader, ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode
         },
         renderer::{RenderDevice, RenderQueue},
-        view::{ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms}
+        view::{prepare_view_uniforms, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms}
     },
     utils::HashMap,
     color::ColorToComponents,
@@ -69,7 +69,10 @@ impl Plugin for WorldUiRenderPlugin {
                 .add_render_command::<Transparent3d, DrawWorldUi>()
                 .init_resource::<SpecializedRenderPipelines<WorldUiPipeline>>()
                 .add_systems(ExtractSchedule, extract_world_ui_rects)
-                .add_systems(Render, (queue_world_ui_meshes).in_set(RenderSet::Queue));
+                .add_systems(Render, (queue_world_ui_meshes).in_set(RenderSet::Queue))
+                .add_systems(Render, diagnose_prepare_view_uniforms
+                    .in_set(RenderSet::PrepareResources)
+                    .after(prepare_view_uniforms));
         }
     }
 
@@ -120,17 +123,24 @@ impl Default for ExtractedWorldUi {
 fn extract_world_ui_rects(
     mut extracted_world_ui: ResMut<ExtractedWorldUi>,
     images: Extract<Res<Assets<Image>>>,
-    query: Extract<Query<(&ViewVisibility, &InheritedVisibility, &GlobalTransform, &WorldUiRect)>>,
+    query: Extract<Query<(&InheritedVisibility, &GlobalTransform, &WorldUiRect)>>,
 ) {
+    // [NAME_TAG_DEBUG] Log extraction start
+    let total_count = query.iter().count();
+    log::info!("[NAME_TAG_DEBUG] extract_world_ui_rects: {} total WorldUiRect entities in query", total_count);
+    
     extracted_world_ui.rects.clear();
     let mut visible_count = 0;
+    let mut image_missing_count = 0;
     let mut extracted_count = 0;
-    for (visible, _inherited_visibility, global_transform, rect) in query.iter() {
-        if !visible.get() {
+    for (inherited_visibility, global_transform, rect) in query.iter() {
+        if !inherited_visibility.get() {
             continue;
         }
+        visible_count += 1;
 
         if !images.contains(rect.image.id()) {
+            image_missing_count += 1;
             continue;
         }
 
@@ -144,13 +154,14 @@ fn extract_world_ui_rects(
             color: rect.color,
             order: rect.order,
         });
-        visible_count += 1;
         extracted_count += 1;
     }
 
-    if extracted_count > 0 {
-        log::info!("[RENDER] Extracted {} world UI rects ({} visible)", extracted_count, visible_count);
-    }
+    // [NAME_TAG_DEBUG] Log extraction summary
+    log::info!(
+        "[NAME_TAG_DEBUG] Extraction summary: {} total, {} passed visibility, {} image_missing, {} extracted",
+        total_count, visible_count, image_missing_count, extracted_count
+    );
 }
 
 #[repr(C)]
@@ -473,6 +484,22 @@ pub struct ImageBindGroups {
     pub values: HashMap<AssetId<Image>, BindGroup>,
 }
 
+/// Diagnostic system to verify ExtractedView count and ViewUniforms state before prepare_view_uniforms
+#[allow(clippy::too_many_arguments)]
+pub fn diagnose_prepare_view_uniforms(
+    view_uniforms: Res<ViewUniforms>,
+    views: Query<&ExtractedView>,
+) {
+    let view_count = views.iter().len();
+    let has_buffer = view_uniforms.uniforms.buffer().is_some();
+    
+    log::warn!(
+        "[NAME_TAG_DEBUG] AFTER_PREPARE: ExtractedView count={}, GPU buffer exists={}",
+        view_count,
+        has_buffer
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn queue_world_ui_meshes(
     transparent_draw_functions: Res<DrawFunctions<Transparent3d>>,
@@ -491,7 +518,13 @@ pub fn queue_world_ui_meshes(
     view_uniforms: Res<ViewUniforms>,
     // mut diagnostics_state: ResMut<crate::diagnostics::render_diagnostics::RenderDiagnosticsState>,
 ) {
-    if view_uniforms.uniforms.is_empty() {
+    // [NAME_TAG_DEBUG] Log queue function start
+    let view_count = views.iter().count();
+    log::info!("[NAME_TAG_DEBUG] queue_world_ui_meshes: {} rects, {} views, GPU buffer exists: {}",
+        extracted_world_ui.rects.len(), view_count, view_uniforms.uniforms.buffer().is_some());
+    
+    if view_uniforms.uniforms.buffer().is_none() {
+        log::warn!("[NAME_TAG_DEBUG] Early return: ViewUniforms GPU buffer does not exist");
         return;
     }
 
@@ -522,8 +555,20 @@ pub fn queue_world_ui_meshes(
     }
 
     // Query for views and look up their phases from the resource
+    log::info!("[NAME_TAG_DEBUG] Processing {} views", view_count);
+    
     for (view_entity, view, msaa) in views.iter() {
+        // [NAME_TAG_DEBUG] Log ExtractedView details
+        log::info!(
+            "[NAME_TAG_DEBUG] ExtractedView entity {:?}: viewport={:?}, hdr={}, world_from_view translation={:?}",
+            view_entity,
+            view.viewport,
+            view.hdr,
+            view.world_from_view.translation()
+        );
+        
         let Some(transparent_phase) = transparent_render_phases.get_mut(&view_entity) else {
+            log::warn!("[NAME_TAG_DEBUG] No transparent_phase for view {:?}", view_entity);
             continue;
         };
 
@@ -543,9 +588,12 @@ pub fn queue_world_ui_meshes(
         let view_matrix = view.world_from_view.compute_matrix();
         let inverse_view_transform = view_matrix.inverse();
         let inverse_view_row_2 = inverse_view_transform.row(2);
-        let view_proj = view.clip_from_world.unwrap_or(Mat4::IDENTITY);
+        let view_proj = view.clip_from_world.unwrap_or_else(|| view.clip_from_view * inverse_view_transform);
         let view_width = view.viewport.z as f32;
         let view_height = view.viewport.w as f32;
+        
+        log::info!("[NAME_TAG_DEBUG] View {:?}: viewport=({}, {}), hdr={}",
+            view_entity, view_width, view_height, view.hdr);
 
         extracted_world_ui.rects.sort_unstable_by(|a, b| {
             match view_proj
@@ -563,18 +611,25 @@ pub fn queue_world_ui_meshes(
             .vertices
             .reserve(extracted_world_ui.rects.len() * 6, &render_device);
 
+        let mut gpu_image_missing_count = 0;
+        let mut frustum_culled_count = 0;
+        let mut screen_culled_count = 0;
+        let mut queued_count = 0;
+        
         for rect in extracted_world_ui.rects.iter() {
             let gpu_image =
                 if let Some(gpu_image) = render_images.get(rect.image_handle_id) {
                     gpu_image
                 } else {
                     // Image not ready yet, ignore
+                    gpu_image_missing_count += 1;
                     continue;
                 };
 
             let clip_pos = view_proj.project_point3(rect.world_position);
             if clip_pos.z < 0.0 || clip_pos.z > 1.0 {
                 // Outside frustum depth, ignore
+                frustum_culled_count += 1;
                 continue;
             }
             let screen_pos =
@@ -588,8 +643,10 @@ pub fn queue_world_ui_meshes(
                 || min_screen_pos.y >= view_height
             {
                 // Not visible on screen
+                screen_culled_count += 1;
                 continue;
             }
+            queued_count += 1;
 
             let positions = [
                 [rect.screen_offset.x, rect.screen_offset.y],
@@ -663,5 +720,8 @@ pub fn queue_world_ui_meshes(
                 extra_index: bevy::render::render_phase::PhaseItemExtraIndex(0),
             });
         }
+        
+        log::info!("[NAME_TAG_DEBUG] View {:?} summary: queued={}, gpu_missing={}, frustum_culled={}, screen_culled={}",
+            view_entity, queued_count, gpu_image_missing_count, frustum_culled_count, screen_culled_count);
     }
 }

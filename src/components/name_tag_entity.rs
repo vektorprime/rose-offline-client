@@ -4,7 +4,7 @@ use bevy::{
 };
 use enum_map::Enum;
 
-#[derive(Copy, Clone, Enum)]
+#[derive(Copy, Clone, Enum, Debug)]
 pub enum NameTagType {
     Character,
     Monster,

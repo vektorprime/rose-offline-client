@@ -118,7 +118,7 @@ pub use ui_quest_list_system::ui_quest_list_system;
 pub use ui_respawn_system::ui_respawn_system;
 pub use ui_selected_target_system::ui_selected_target_system;
 pub use ui_server_select_system::ui_server_select_system;
-pub use ui_settings_system::ui_settings_system;
+pub use ui_settings_system::{ui_settings_system, DepthOfFieldSettings};
 pub use ui_skill_list_system::ui_skill_list_system;
 pub use ui_skill_tree_system::ui_skill_tree_system;
 pub use ui_sound_event_system::{ui_sound_event_system, UiSoundEvent};

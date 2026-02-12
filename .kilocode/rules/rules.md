@@ -17,5 +17,10 @@ Before you begin troubleshooting, make note of the features that are involved in
 C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.15.4
 
 
-** What To Do When Stuck **
+**What To Do When Stuck**
+***Old Working Version Of The Game***
+An older, working version of the game that uses Bevy 0.11 is here for reference
+C:\Users\vicha\RustroverProjects\exjam-rose-offline-client\rose-offline-client
+
+***Web Search***
 Use your web search tools if you're stuck and the source code review is not helping

@@ -38,14 +38,14 @@ pub fn collision_height_only_system(
         //log::info!("[DIAG_COLLISION_HEIGHT_ONLY] CurrentZone resource is available");
         current_zone
     } else {
-        log::warn!("[DIAG_COLLISION_HEIGHT_ONLY] CurrentZone resource is NOT available - early return");
+        //log::warn!("[DIAG_COLLISION_HEIGHT_ONLY] CurrentZone resource is NOT available - early return");
         return;
     };
     let current_zone_data = zone_loader_assets.get(&current_zone.handle);
 
     // DIAGNOSTIC: Check if zone data is loaded
     if current_zone_data.is_none() {
-        log::warn!("[DIAG_COLLISION_HEIGHT_ONLY] CurrentZone data is NOT available - using fallback terrain height of 0.0");
+        //log::warn!("[DIAG_COLLISION_HEIGHT_ONLY] CurrentZone data is NOT available - using fallback terrain height of 0.0");
     }
 
     // DIAGNOSTIC: Log when collision_height_only_system runs
@@ -125,9 +125,9 @@ pub fn collision_player_system_join_zone(
     let current_zone: Option<&CurrentZone> = current_zone.as_deref();
     
     // DIAGNOSTIC: Log if current_zone is None (was line 118 early return)
-    if current_zone.is_none() {
-        log::warn!("[DIAG_COLLISION_PLAYER_JOIN_ZONE] Early return at line 118: current_zone is None - zone not yet loaded");
-    }
+    // if current_zone.is_none() {
+    //     log::warn!("[DIAG_COLLISION_PLAYER_JOIN_ZONE] Early return at line 118: current_zone is None - zone not yet loaded");
+    // }
     
     let current_zone_data = if let Some(current_zone) = current_zone {
         zone_loader_assets.get(&current_zone.handle)
@@ -136,9 +136,9 @@ pub fn collision_player_system_join_zone(
     };
     
     // DIAGNOSTIC: Log if current_zone_data is None (was line 124 early return)
-    if current_zone_data.is_none() {
-        log::warn!("[DIAG_COLLISION_PLAYER_JOIN_ZONE] Early return at line 124: current_zone_data is None - zone data not yet loaded");
-    }
+    // if current_zone_data.is_none() {
+    //     log::warn!("[DIAG_COLLISION_PLAYER_JOIN_ZONE] Early return at line 124: current_zone_data is None - zone data not yet loaded");
+    // }
 
     // DIAGNOSTIC: Log whether the query for CollisionPlayer is empty
     let is_empty = query_collision_entity.is_empty();

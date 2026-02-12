@@ -151,7 +151,7 @@ use ui::{
     ui_party_system, ui_personal_store_system, ui_player_info_system, ui_quest_list_system,
     ui_respawn_system, ui_selected_target_system, ui_server_select_system, ui_settings_system,
     ui_skill_list_system, ui_skill_tree_system, ui_sound_event_system, ui_status_effects_system,
-    ui_window_sound_system, widgets::Dialog, DialogLoader, UiSoundEvent, UiStateDebugWindows,
+    ui_window_sound_system, widgets::Dialog, DepthOfFieldSettings, DialogLoader, UiSoundEvent, UiStateDebugWindows,
     UiStateDragAndDrop, UiStateWindows,
 };
 use dds_image_loader::DdsImageLoader;
@@ -1121,6 +1121,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // // Add camera diagnostic system - verifies camera components for Bevy 0.14.2
     // app.add_systems(Update, diagnose_camera_system);
     
+    // [NAME_TAG_DEBUG] Camera extraction diagnostic system - runs in PostUpdate to check camera state
+    app.add_systems(PostUpdate, diagnose_camera_extraction_state);
+    
     // CRITICAL DIAGNOSTIC: Add Render World extraction diagnostic system
     // This system tracks how many entities are extracted from Main World to Render World
     // This is CRITICAL because Main World visibility does NOT guarantee Render World extraction
@@ -1346,9 +1349,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<WorldTime>()
         .init_resource::<ZoneTime>()
         .init_resource::<SelectedTarget>()
-        .init_resource::<NameTagSettings>();
+        .init_resource::<NameTagSettings>()
+        .init_resource::<DepthOfFieldSettings>();
 
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
+
+    // System to apply depth of field settings from the resource to the camera
+    app.add_systems(Update, apply_depth_of_field_settings);
 
     // Register systems individually to avoid Bevy 0.13's IntoSystemConfigs trait bound issues
     // Game systems - part 1
@@ -1741,15 +1748,20 @@ fn load_common_game_data(
         }),
         Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
             .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
+        GlobalTransform::default(),
         bevy::ui::IsDefaultUiCamera,
+        // Add Tonemapping - REQUIRED for HDR to work properly with depth of field
+        bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
+        // Add Bloom - enhances the depth of field effect visibility
+        bevy::core_pipeline::bloom::Bloom::NATURAL,
         // Add Depth of Field effect
         DepthOfField {
             mode: DepthOfFieldMode::Bokeh,
-            focal_distance: 15.0,      // Focus 15 meters away
-            aperture_f_stops: 2.8,     // f/2.8 for noticeable blur effect
+            focal_distance: 10.0,      // Focus 10 meters away
+            aperture_f_stops: 3.3,     // f/3.3 aperture
             sensor_height: 0.01866,    // Super 35 format (default)
             max_circle_of_confusion_diameter: 64.0,
-            max_depth: f32::INFINITY,
+            max_depth: 2000.0,         // Max depth range
         },
     )).id();
     bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
@@ -1827,6 +1839,73 @@ fn diagnose_camera_system(
                     info!("  - orthographic projection");
                 }
             }
+        }
+    }
+}
+
+/// Camera extraction diagnostic system for Bevy 0.15.4
+/// Logs camera state to verify extraction conditions are met
+fn diagnose_camera_extraction_state(
+    query: Query<(Entity, &Camera, &GlobalTransform, Option<&Camera3d>), With<Camera3d>>,
+    mut frame_count: Local<u32>,
+) {
+    *frame_count += 1;
+    // Log every 60 frames (~1 second at 60fps)
+    if *frame_count % 60 != 0 {
+        return;
+    }
+    
+    let camera_count = query.iter().count();
+    if camera_count == 0 {
+        log::info!("[NAME_TAG_DEBUG] No Camera3d entities found for extraction diagnosis");
+        return;
+    }
+    
+    for (entity, camera, global_transform, camera3d) in query.iter() {
+        let physical_viewport = camera.physical_viewport_rect();
+        let physical_viewport_size = camera.physical_viewport_size();
+        let physical_target_size = camera.physical_target_size();
+        
+        let has_valid_transform = global_transform.affine().translation.length() > 0.0
+            || global_transform.affine().matrix3 != bevy::math::Mat3A::IDENTITY;
+        
+        log::info!(
+            "[NAME_TAG_DEBUG] Camera entity {:?}: is_active={}, viewport={:?}, viewport_size={:?}, target_size={:?}, has_global_transform={}, has_camera3d={}",
+            entity,
+            camera.is_active,
+            physical_viewport,
+            physical_viewport_size,
+            physical_target_size,
+            has_valid_transform,
+            camera3d.is_some()
+        );
+        
+        // Log target info
+        log::info!(
+            "[NAME_TAG_DEBUG] Camera {:?} target: {:?}",
+            entity,
+            camera.target
+        );
+        
+        // Check extraction conditions
+        let viewport_ok = physical_viewport.is_some();
+        let viewport_size_ok = physical_viewport_size.is_some();
+        let target_size_ok = physical_target_size.is_some();
+        let target_size_nonzero = physical_target_size.map(|s| s.x > 0 && s.y > 0).unwrap_or(false);
+        
+        log::info!(
+            "[NAME_TAG_DEBUG] Camera {:?} extraction conditions: viewport_ok={}, viewport_size_ok={}, target_size_ok={}, target_size_nonzero={}",
+            entity,
+            viewport_ok,
+            viewport_size_ok,
+            target_size_ok,
+            target_size_nonzero
+        );
+        
+        if camera.is_active && viewport_ok && viewport_size_ok && target_size_ok && target_size_nonzero {
+            log::info!("[NAME_TAG_DEBUG] Camera {:?} SHOULD be extracted successfully", entity);
+        } else {
+            log::warn!("[NAME_TAG_DEBUG] Camera {:?} may FAIL extraction - check conditions above", entity);
         }
     }
 }
@@ -1973,4 +2052,30 @@ fn print_diagnostic_summary(
     info!("Main world meshes tracked: {}", render_diagnostics.main_world_mesh_count);
     info!("=======================================");
     info!("See docs/diagnostic-summary.md for interpretation guide");
+}
+
+/// System to apply depth of field settings from the resource to the camera
+/// This allows live adjustment of DoF parameters via the Settings UI
+fn apply_depth_of_field_settings(
+    dof_settings: Res<DepthOfFieldSettings>,
+    mut query: Query<&mut DepthOfField>,
+) {
+    use bevy::ecs::change_detection::DetectChanges;
+    
+    // Only update if settings have changed
+    if dof_settings.is_changed() {
+        for mut dof in query.iter_mut() {
+            if dof_settings.enabled {
+                dof.mode = dof_settings.mode;
+                dof.focal_distance = dof_settings.focal_distance;
+                dof.aperture_f_stops = dof_settings.aperture_f_stops;
+                dof.sensor_height = dof_settings.sensor_height;
+                dof.max_circle_of_confusion_diameter = dof_settings.max_circle_of_confusion_diameter;
+                dof.max_depth = dof_settings.max_depth;
+            } else {
+                // When disabled, use Gaussian mode with minimal effect (effectively off)
+                dof.mode = DepthOfFieldMode::Gaussian;
+            }
+        }
+    }
 }

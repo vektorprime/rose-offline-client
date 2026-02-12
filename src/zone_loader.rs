@@ -2655,6 +2655,15 @@ fn spawn_object(
                 },
                 unlit: false,  // Enable PBR lighting for objects/decorations
                 double_sided: zsc_material.two_sided,
+                alpha_mode: if zsc_material.alpha_enabled {
+                    if let Some(threshold) = zsc_material.alpha_test {
+                        AlphaMode::Mask(threshold)
+                    } else {
+                        AlphaMode::Blend
+                    }
+                } else {
+                    AlphaMode::Opaque
+                },
                 ..Default::default()
             });
 
