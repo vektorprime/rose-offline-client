@@ -6,6 +6,7 @@ use animation::RoseAnimationPlugin;
 use bevy::{
         asset::AssetApp,
         core_pipeline::bloom::BloomSettings,
+        core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
         log::{info, warn, Level},
         pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial, MeshMaterial3d},
         prelude::{
@@ -1728,7 +1729,7 @@ fn load_common_game_data(
     let camera_entity = commands.spawn((
         Camera3d::default(),
         Camera {
-            hdr: false,
+            hdr: true,  // Enable HDR for better depth of field
             clear_color: ClearColorConfig::Custom(Color::srgb(0.70, 0.90, 1.0)),
             ..default()
         },
@@ -1741,6 +1742,15 @@ fn load_common_game_data(
         Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
             .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
         bevy::ui::IsDefaultUiCamera,
+        // Add Depth of Field effect
+        DepthOfField {
+            mode: DepthOfFieldMode::Bokeh,
+            focal_distance: 15.0,      // Focus 15 meters away
+            aperture_f_stops: 2.8,     // f/2.8 for noticeable blur effect
+            sensor_height: 0.01866,    // Super 35 format (default)
+            max_circle_of_confusion_diameter: 64.0,
+            max_depth: f32::INFINITY,
+        },
     )).id();
     bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
 

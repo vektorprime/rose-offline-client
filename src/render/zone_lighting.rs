@@ -92,7 +92,7 @@ fn spawn_lights(mut commands: Commands) {
     // Bevy 0.14: Use individual components instead of DirectionalLightBundle
     let light_entity = commands.spawn((
         DirectionalLight {
-            illuminance: 50000.0,  // Increased for Bevy 0.14 (was 10000.0 in 0.13)
+            illuminance: 15000.0,  // Reduced for balanced PBR lighting (was 50000.0 too bright)
             shadows_enabled: true,
             ..Default::default()
         },
@@ -105,13 +105,13 @@ fn spawn_lights(mut commands: Commands) {
         RenderLayers::default(),
     )).id();
 
-    //bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=50000.0", light_entity);
+    //bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=15000.0", light_entity);
 
     // Bevy 0.14: AmbientLight is now a component that can be spawned as an entity
     // or kept as a resource. Using as resource for global ambient light.
     commands.insert_resource(AmbientLight {
         color: Color::srgb(1.0, 1.0, 1.0),
-        brightness: 1.0,  // Bevy 0.14 uses normalized values (0.0-1.0 range)
+        brightness: 0.3,  // Reduced for balanced PBR lighting (was 1.0 too bright)
     });
     
     //bevy::log::info!("[ZONE LIGHTING] Ambient light inserted: brightness=1.0");

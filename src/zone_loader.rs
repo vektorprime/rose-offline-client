@@ -2645,7 +2645,7 @@ fn spawn_object(
             let lightmap_count = lightmap_texture.as_ref().is_some() as usize;
 
             // Simplified material using Bevy's StandardMaterial
-            // FIX: Use unlit: true to ensure objects are visible without requiring lights
+            // FIX: Enable PBR lighting so objects/decorations respond to directional and ambient lights
             let material = standard_materials.add(bevy::pbr::StandardMaterial {
                 base_color_texture: if material_path.is_empty() || material_path == "" || material_path == "NULL" {
                     log::warn!("[SPAWN OBJECT DEBUG] Empty or NULL texture path for mesh_id {}, using fallback", mesh_id);
@@ -2653,7 +2653,7 @@ fn spawn_object(
                 } else {
                     Some(base_texture_handle.clone())
                 },
-                unlit: true,  // CHANGED: Make material unlit so it doesn't require lighting
+                unlit: false,  // Enable PBR lighting for objects/decorations
                 double_sided: zsc_material.two_sided,
                 ..Default::default()
             });
