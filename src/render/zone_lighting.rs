@@ -26,7 +26,12 @@ use bevy::{
     },
 };
 use std::any::TypeId;
+use std::sync::OnceLock;
 use uuid::Uuid;
+
+/// Global storage for the zone lighting bind group layout.
+/// This allows the specialize method to access the layout without needing direct resource access.
+pub static ZONE_LIGHTING_BIND_GROUP_LAYOUT: OnceLock<BindGroupLayout> = OnceLock::new();
 
 pub const ZONE_LIGHTING_SHADER_HANDLE: UntypedHandle =
     UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0x444949d32b35d5d9) });
@@ -236,6 +241,9 @@ impl FromWorld for ZoneLightingUniformMeta {
             }],
         );
         //bevy::log::info!("[ZONE LIGHTING] Bind group created - ZoneLightingUniformMeta ready");
+
+        // Store the bind group layout in the global static for access during pipeline specialization
+        let _ = ZONE_LIGHTING_BIND_GROUP_LAYOUT.set(bind_group_layout.clone());
 
         ZoneLightingUniformMeta {
             buffer,

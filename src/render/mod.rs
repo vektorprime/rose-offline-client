@@ -52,6 +52,7 @@ pub use effect_mesh_extension::*;
 
 pub mod extension_material_plugin;
 pub use extension_material_plugin::ExtensionMaterialPlugin;
+pub use extension_material_plugin::RoseObjectMaterialPlugin;
 
 pub const MESH_ATTRIBUTE_UV_1: MeshVertexAttribute =
     MeshVertexAttribute::new("Vertex_Uv2", 280035324, VertexFormat::Float32x2);

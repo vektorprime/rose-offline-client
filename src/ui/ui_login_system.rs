@@ -39,7 +39,7 @@ pub fn ui_login_system(
     mut exit_events: EventWriter<AppExit>,
     mut login_events: EventWriter<LoginEvent>,
 ) {
-    //log::info!("[UI LOGIN] ui_login_system running");
+    ////log::info!("[UI LOGIN] ui_login_system running");
     
     if !matches!(*login_state, LoginState::Input) {
         ui_state.initial_focus_set = false;
@@ -47,7 +47,7 @@ pub fn ui_login_system(
         return;
     }
 
-    //log::info!("[UI LOGIN] Login state is Input, proceeding with UI rendering");
+    ////log::info!("[UI LOGIN] Login state is Input, proceeding with UI rendering");
     let ui_state = &mut *ui_state;
 
     // Diagnostic: Check dialog asset status
@@ -86,7 +86,7 @@ pub fn ui_login_system(
         .input(|input| input.screen_rect().size());
     let position = egui::pos2(screen_size.x - dialog.width - 100.0, 100.0);
 
-    log::info!("[UI LOGIN] Screen size: {}x{}", screen_size.x, screen_size.y);
+    //log::info!("[UI LOGIN] Screen size: {}x{}", screen_size.x, screen_size.y);
 
     if !ui_state.initial_focus_set {
         if let Some(username) = server_configuration.preset_username.as_ref() {
@@ -106,7 +106,7 @@ pub fn ui_login_system(
     //     dialog.height
     // );
 
-    //log::info!("[UI LOGIN] Calling egui::Window::show");
+    ////log::info!("[UI LOGIN] Calling egui::Window::show");
     egui::Window::new("Login")
         .frame(egui::Frame::none())
         .title_bar(false)
@@ -115,7 +115,7 @@ pub fn ui_login_system(
         .default_height(dialog.height)
         .fixed_pos(position)
         .show(egui_context.ctx_mut(), |ui| {
-            //log::info!("[UI LOGIN] Window opened, starting dialog.draw() with {} widgets", dialog.widgets.len());
+            ////log::info!("[UI LOGIN] Window opened, starting dialog.draw() with {} widgets", dialog.widgets.len());
             dialog.draw(
                 ui,
                 DataBindings {
@@ -140,9 +140,9 @@ pub fn ui_login_system(
                     enter_pressed = ui.input(|input| input.key_pressed(egui::Key::Enter));
                 },
             );
-            //log::info!("[UI LOGIN] Dialog.draw() completed");
+            ////log::info!("[UI LOGIN] Dialog.draw() completed");
         });
-    //log::info!("[UI LOGIN] egui::Window::show completed");
+    ////log::info!("[UI LOGIN] egui::Window::show completed");
 
     if !ui_state.initial_focus_set {
         if let Some(r) = response_username.as_ref() {

@@ -87,6 +87,7 @@ use render::{
     WorldUiRenderPlugin,
     ZoneLightingPlugin,
     ExtensionMaterialPlugin,
+    RoseObjectMaterialPlugin,
     debug_particle_rendering,
     particle_performance_monitor,
 };
@@ -769,7 +770,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             ParticleMaterialPlugin,
 
             // ExtendedMaterial plugins for object, terrain, water, and effect mesh
-            MaterialPlugin::<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>::default(),
+            // Use custom RoseObjectMaterialPlugin which includes zone lighting support
+            RoseObjectMaterialPlugin::default(),
         ));
     log::info!("[MATERIAL PLUGIN] RoseObjectExtension plugin registered successfully");
 
@@ -1407,14 +1409,14 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         );
     }
 
-    // Add debug particle systems (only in debug builds)
-    #[cfg(debug_assertions)]
-    {
-        app.add_systems(Update, (
-            debug_particle_rendering.run_if(in_state(AppState::Game)),
-            particle_performance_monitor.run_if(in_state(AppState::Game)),
-        ));
-    }
+    // DISABLED: Debug particle systems (commented out to reduce log noise)
+    // #[cfg(debug_assertions)]
+    // {
+    //     app.add_systems(Update, (
+    //         debug_particle_rendering.run_if(in_state(AppState::Game)),
+    //         particle_performance_monitor.run_if(in_state(AppState::Game)),
+    //     ));
+    // }
 
     app.add_systems(PostUpdate, ui_drag_and_drop_system);
 

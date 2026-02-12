@@ -1,3 +1,10 @@
+// ROSE Object Material Extension Shader
+// Simple extension that uses Bevy's standard PBR lighting
+//
+// This shader provides a minimal extension point for ROSE object materials.
+// It uses Bevy's built-in PBR lighting without custom zone lighting.
+// Zone lighting can be added back later once basic rendering is confirmed working.
+
 #import bevy_pbr::pbr_fragment::pbr_input_from_standard_material
 #import bevy_pbr::pbr_functions::alpha_discard
 
@@ -22,8 +29,10 @@ fn fragment(
     let out = deferred_output(in, pbr_input);
 #else
     var out: FragmentOutput;
-    // Apply standard PBR lighting
+    
+    // Apply standard Bevy PBR lighting
     out.color = apply_pbr_lighting(pbr_input);
+    
     // Apply post-processing
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
 #endif
