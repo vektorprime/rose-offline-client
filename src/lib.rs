@@ -1,5 +1,6 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
+#![allow(warnings)]
 
 use animation::RoseAnimationPlugin;
 use bevy::{
@@ -86,6 +87,8 @@ use render::{
     WorldUiRenderPlugin,
     ZoneLightingPlugin,
     ExtensionMaterialPlugin,
+    debug_particle_rendering,
+    particle_performance_monitor,
 };
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
@@ -102,6 +105,7 @@ use systems::{
     character_select_system, clan_system, client_entity_event_system, collision_height_only_system,
     collision_player_system, collision_player_system_join_zone, command_system,
     conversation_dialog_system, cooldown_system, damage_digit_render_system,
+    create_damage_digit_material_system,
     debug_entity_visibility, debug_render_collider_system, debug_render_directional_light_system,
     debug_render_skeleton_system, directional_light_system, effect_system, facing_direction_system,
     // render_diagnostics_system_lightweight, frustum_culling_diagnostics,
@@ -121,7 +125,7 @@ use systems::{
     name_tag_update_color_system, name_tag_update_healthbar_system, name_tag_visibility_system,
     network_thread_system, npc_idle_sound_system, npc_model_add_collider_system,
     npc_model_update_system, orbit_camera_system, particle_sequence_system,
-    particle_storage_buffer_update_system,
+    particle_storage_buffer_update_system, create_default_particle_texture,
     passive_recovery_system, pending_damage_system, pending_skill_effect_system,
     personal_store_model_add_collider_system, personal_store_model_system, player_command_system,
     projectile_system, quest_trigger_system, spawn_effect_system, spawn_projectile_system,
@@ -904,7 +908,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             auto_login_system,
             background_music_system,
             particle_sequence_system,
-            particle_storage_buffer_update_system.after(particle_sequence_system),
+            particle_storage_buffer_update_system
+                .after(particle_sequence_system)
+                .run_if(resource_exists::<systems::DefaultParticleTexture>),
             effect_system,
             animation_sound_system,
             npc_idle_sound_system,
@@ -937,6 +943,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             spawn_effect_system,
             visible_status_effects_system,
             move_destination_effect_system,
+            create_damage_digit_material_system.before(damage_digit_render_system),
             damage_digit_render_system,
             name_tag_update_healthbar_system,
             update_ui_resources,
@@ -1400,6 +1407,15 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         );
     }
 
+    // Add debug particle systems (only in debug builds)
+    #[cfg(debug_assertions)]
+    {
+        app.add_systems(Update, (
+            debug_particle_rendering.run_if(in_state(AppState::Game)),
+            particle_performance_monitor.run_if(in_state(AppState::Game)),
+        ));
+    }
+
     app.add_systems(PostUpdate, ui_drag_and_drop_system);
 
     // Setup network
@@ -1420,6 +1436,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     app.add_systems(PostStartup, load_common_game_data
         .after(bevy_egui::EguiStartupSet::InitContexts));
+    
+    // Create default particle texture before particle systems run
+    app.add_systems(PostStartup, create_default_particle_texture);
     
     // TEST: Add StandardMaterial cube for rendering isolation test
     app.add_systems(PostStartup, spawn_test_cube);
@@ -1658,7 +1677,6 @@ fn load_common_game_data(
     game_data: Res<GameData>,
     asset_server: Res<AssetServer>,
     mut egui_context: EguiContexts,
-    mut damage_digit_materials: ResMut<Assets<DamageDigitMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     bevy::log::info!("[load_common_game_data] Starting to load common game data");
@@ -1726,7 +1744,6 @@ fn load_common_game_data(
 
     commands.insert_resource(DamageDigitsSpawner::load(
         &asset_server,
-        &mut damage_digit_materials,
         &mut meshes,
     ));
 

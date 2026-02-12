@@ -32,10 +32,10 @@ pub fn collision_height_only_system(
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
 ) {
     // DIAGNOSTIC: Log when collision_height_only_system runs
-    log::info!("[DIAG_COLLISION_HEIGHT_ONLY] collision_height_only_system started");
+    //log::info!("[DIAG_COLLISION_HEIGHT_ONLY] collision_height_only_system started");
 
     let current_zone = if let Some(current_zone) = current_zone {
-        log::info!("[DIAG_COLLISION_HEIGHT_ONLY] CurrentZone resource is available");
+        //log::info!("[DIAG_COLLISION_HEIGHT_ONLY] CurrentZone resource is available");
         current_zone
     } else {
         log::warn!("[DIAG_COLLISION_HEIGHT_ONLY] CurrentZone resource is NOT available - early return");
@@ -52,9 +52,9 @@ pub fn collision_height_only_system(
     let mut iteration_count = 0;
     for (entity, mut position, mut transform) in query_collision_entity.iter_mut() {
         iteration_count += 1;
-        log::info!("[DIAG_COLLISION_HEIGHT_ONLY] Processing entity #{}: {:?}", iteration_count, entity);
-        log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Position before: x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
-        log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Transform before: x={:.2}, y={:.2}, z={:.2}", transform.translation.x, transform.translation.y, transform.translation.z);
+        //log::info!("[DIAG_COLLISION_HEIGHT_ONLY] Processing entity #{}: {:?}", iteration_count, entity);
+        //log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Position before: x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
+        //log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Transform before: x={:.2}, y={:.2}, z={:.2}", transform.translation.x, transform.translation.y, transform.translation.z);
         
         let ray_origin = Vec3::new(position.x / 100.0, 100000.0, -position.y / 100.0);
         let ray_direction = Vec3::new(0.0, -1.0, 0.0);
@@ -83,26 +83,26 @@ pub fn collision_height_only_system(
             0.0
         };
 
-        log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Raycast from Y=100000.0, collision_height={:?}, terrain_height={:.2}", collision_height, terrain_height);
+        //log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Raycast from Y=100000.0, collision_height={:?}, terrain_height={:.2}", collision_height, terrain_height);
 
         // Update entity translation and position
         transform.translation.x = position.x / 100.0;
         transform.translation.z = -position.y / 100.0;
         let new_y = if let Some(collision_height) = collision_height {
-            log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Using collision_height.max(terrain_height)");
+            //log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Using collision_height.max(terrain_height)");
             collision_height.max(terrain_height)
         } else {
-            log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Using terrain_height only (no collision detected)");
+            //log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Using terrain_height only (no collision detected)");
             terrain_height
         };
         transform.translation.y = new_y;
         position.z = transform.translation.y * 100.0;
 
-        log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Transform after: x={:.2}, y={:.2}, z={:.2}", transform.translation.x, transform.translation.y, transform.translation.z);
-        log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Position after: x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
+        //log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Transform after: x={:.2}, y={:.2}, z={:.2}", transform.translation.x, transform.translation.y, transform.translation.z);
+        //log::info!("[DIAG_COLLISION_HEIGHT_ONLY]   Position after: x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
     }
 
-    log::info!("[DIAG_COLLISION_HEIGHT_ONLY] Processed {} entities with CollisionHeightOnly", iteration_count);
+    //log::info!("[DIAG_COLLISION_HEIGHT_ONLY] Processed {} entities with CollisionHeightOnly", iteration_count);
 }
 
 #[allow(clippy::too_many_arguments)]

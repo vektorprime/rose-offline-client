@@ -33,8 +33,8 @@ pub fn spawn_effect(
     asset_server: &AssetServer,
     particle_materials: &mut Assets<ParticleMaterial>,
     effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
-    meshes: &mut Assets<bevy::prelude::Mesh>,
     storage_buffers: &mut Assets<ShaderStorageBuffer>,
+    meshes: &mut Assets<bevy::prelude::Mesh>,
     effect_path: VfsPath,
     manual_despawn: bool,
     effect_entity: Option<Entity>,
@@ -323,17 +323,22 @@ fn spawn_particle(
                     
                     // Initialize storage buffers with placeholder data to avoid zero-size buffer error
                     let num_particles = sequence.num_particles as usize;
-                    let positions_buffer: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ZERO; num_particles];
-                    let sizes_buffer: Vec<bevy::math::Vec2> = vec![bevy::math::Vec2::ZERO; num_particles];
-                    let colors_buffer: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ONE; num_particles];
-                    let textures_buffer: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ZERO; num_particles];
+                    let positions_data: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ZERO; num_particles];
+                    let sizes_data: Vec<bevy::math::Vec2> = vec![bevy::math::Vec2::ZERO; num_particles];
+                    let colors_data: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ONE; num_particles];
+                    let textures_data: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ZERO; num_particles];
+
+                    let positions_buffer = storage_buffers.add(ShaderStorageBuffer::from(positions_data));
+                    let sizes_buffer = storage_buffers.add(ShaderStorageBuffer::from(sizes_data));
+                    let colors_buffer = storage_buffers.add(ShaderStorageBuffer::from(colors_data));
+                    let textures_buffer = storage_buffers.add(ShaderStorageBuffer::from(textures_data));
 
                     let particle_material = particle_materials.add(ParticleMaterial {
                         texture: particle_texture_handle,
-                        positions: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&positions_buffer), RenderAssetUsages::default())),
-                        sizes: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&sizes_buffer), RenderAssetUsages::default())),
-                        colors: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&colors_buffer), RenderAssetUsages::default())),
-                        textures: storage_buffers.add(ShaderStorageBuffer::new(bytemuck::cast_slice(&textures_buffer), RenderAssetUsages::default())),
+                        positions: positions_buffer,
+                        sizes: sizes_buffer,
+                        colors: colors_buffer,
+                        textures: textures_buffer,
                         blend_op: encode_blend_op(decode_blend_op(sequence.blend_op as u32)),
                         src_blend_factor: encode_blend_factor(decode_blend_factor(sequence.src_blend_mode as u32)),
                         dst_blend_factor: encode_blend_factor(decode_blend_factor(sequence.dst_blend_mode as u32)),

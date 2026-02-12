@@ -8,7 +8,6 @@ use bevy::{
     render::{
         alpha::AlphaMode,
         mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
-        storage::ShaderStorageBuffer,
     },
 };
 
@@ -43,7 +42,7 @@ pub fn vehicle_model_system(
     mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
     mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
 ) {
     // Vehicle entity, where entity becomes a child of it.
     for (entity, equipment, move_mode, skinned_mesh, vehicle) in query.iter_mut() {

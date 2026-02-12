@@ -1,12 +1,16 @@
 use std::ops::RangeInclusive;
 
 use bevy::{
-    asset::Assets,
+    asset::{Assets, AssetServer, Handle, LoadState},
+    log::{debug, error, info, warn},
     math::{Quat, Vec2, Vec3, Vec4},
-    prelude::{GlobalTransform, Query, Res, ResMut, Time, Transform},
-    ecs::component::Component,
-    pbr::MeshMaterial3d,
-    render::storage::ShaderStorageBuffer,
+    prelude::{Commands, Component, Entity, GlobalTransform, Image, Mesh3d, MeshMaterial3d, Query, Res, ResMut, Resource, Time, Transform},
+    render::{
+        mesh::{Indices, Mesh, PrimitiveTopology},
+        render_asset::RenderAssetUsages,
+        render_resource::{Extent3d, TextureDimension, TextureFormat},
+        storage::ShaderStorageBuffer,
+    },
 };
 use rand::Rng;
 
@@ -16,6 +20,38 @@ use crate::{
     components::{ActiveParticle, ParticleSequence},
     render::{ParticleMaterial, ParticleRenderData},
 };
+
+/// Resource holding the default white particle texture
+/// Created once at startup, shared by all particle systems
+#[derive(Resource, Clone)]
+pub struct DefaultParticleTexture {
+    pub handle: Handle<Image>,
+}
+
+/// Creates a simple white texture used as default for all particles
+/// This runs once at startup and prevents crashes from missing texture files
+pub fn create_default_particle_texture(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+) {
+    // Create a 2x2 white texture (small, efficient)
+    let image = Image::new_fill(
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[255, 255, 255, 255], // White RGBA
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    
+    let handle = images.add(image);
+    commands.insert_resource(DefaultParticleTexture { handle });
+    
+    info!("✓ [ParticleSystem] Created default white particle texture");
+}
 
 fn rng_gen_range<R: Rng>(rng: &mut R, range: &RangeInclusive<f32>) -> f32 {
     // This function is intentionally written this way to match the
@@ -451,32 +487,103 @@ pub fn particle_sequence_system(
 /// This is CRITICAL for particle rendering - without this, the storage buffers
 /// would contain only the placeholder data (zeros/ones) from initialization.
 pub fn particle_storage_buffer_update_system(
+    mut commands: Commands,
+    query: Query<(
+        Entity,
+        &ParticleRenderData,
+        Option<&MeshMaterial3d<ParticleMaterial>>,
+    )>,
     mut materials: ResMut<Assets<ParticleMaterial>>,
     mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
-    query: Query<(&ParticleRenderData, &MeshMaterial3d<ParticleMaterial>)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    default_texture: Res<DefaultParticleTexture>,
 ) {
-    for (render_data, material_handle) in query.iter() {
-        // Get the material from the assets
-        if let Some(material) = materials.get_mut(&material_handle.0) {
-            // Update positions buffer
-            if let Some(positions_buffer) = storage_buffers.get_mut(&material.positions) {
-                positions_buffer.set_data(render_data.positions.as_slice());
+    for (entity, render_data, material_handle) in query.iter() {
+        // Skip if no particles to render
+        if render_data.positions.is_empty() {
+            continue;
+        }
+        
+        // VALIDATION: Check data consistency
+        let particle_count = render_data.positions.len();
+        if render_data.sizes.len() != particle_count {
+            error!("⚠ [Particle {:?}] Size mismatch: {} positions but {} sizes", 
+                entity, particle_count, render_data.sizes.len());
+            continue;
+        }
+        
+        if render_data.colors.len() != particle_count {
+            error!("⚠ [Particle {:?}] Color mismatch: {} positions but {} colors", 
+                entity, particle_count, render_data.colors.len());
+            continue;
+        }
+        
+        if render_data.textures.len() != particle_count {
+            error!("⚠ [Particle {:?}] Texture mismatch: {} positions but {} textures", 
+                entity, particle_count, render_data.textures.len());
+            continue;
+        }
+        
+        // Create or update storage buffers
+        let positions_buffer = storage_buffers.add(
+            ShaderStorageBuffer::from(render_data.positions.clone())
+        );
+        
+        let sizes_buffer = storage_buffers.add(
+            ShaderStorageBuffer::from(render_data.sizes.clone())
+        );
+        
+        let colors_buffer = storage_buffers.add(
+            ShaderStorageBuffer::from(render_data.colors.clone())
+        );
+        
+        let textures_buffer = storage_buffers.add(
+            ShaderStorageBuffer::from(render_data.textures.clone())
+        );
+        
+        // Use default white texture (created at startup)
+        let texture = default_texture.handle.clone();
+        
+        // Create material
+        let material = ParticleMaterial {
+            positions: positions_buffer,
+            sizes: sizes_buffer,
+            colors: colors_buffer,
+            textures: textures_buffer,
+            texture,
+            blend_op: render_data.blend_op as u32,
+            src_blend_factor: render_data.src_blend_factor as u32,
+            dst_blend_factor: render_data.dst_blend_factor as u32,
+            billboard_type: render_data.billboard_type as u32,
+        };
+        
+        // Create or update mesh
+        let vertex_count = particle_count * 6; // 6 vertices per quad
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::RENDER_WORLD,
+        );
+        mesh.insert_indices(bevy::render::mesh::Indices::U32(
+            (0..vertex_count as u32).collect()
+        ));
+        
+        // Update or create mesh + material components
+        if let Some(existing_material) = material_handle {
+            // Update existing material
+            if let Some(mat) = materials.get_mut(&existing_material.0) {
+                *mat = material;
             }
-
-            // Update sizes buffer
-            if let Some(sizes_buffer) = storage_buffers.get_mut(&material.sizes) {
-                sizes_buffer.set_data(render_data.sizes.as_slice());
-            }
-
-            // Update colors buffer
-            if let Some(colors_buffer) = storage_buffers.get_mut(&material.colors) {
-                colors_buffer.set_data(render_data.colors.as_slice());
-            }
-
-            // Update textures buffer
-            if let Some(textures_buffer) = storage_buffers.get_mut(&material.textures) {
-                textures_buffer.set_data(render_data.textures.as_slice());
-            }
+        } else {
+            // Add new components
+            let material_handle = materials.add(material);
+            let mesh_handle = meshes.add(mesh);
+            
+            commands.entity(entity).insert((
+                Mesh3d(mesh_handle),
+                MeshMaterial3d(material_handle),
+            ));
+            
+            debug!("✓ [Particle {:?}] Created with {} particles", entity, particle_count);
         }
     }
 }

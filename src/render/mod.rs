@@ -15,6 +15,12 @@ pub use particle_material::*;
 pub mod particle_render_data;
 pub use particle_render_data::*;
 
+pub mod particle_debug;
+pub use particle_debug::{debug_particle_rendering, particle_performance_monitor};
+
+pub mod particle_test;
+pub use particle_test::test_particle_spawn;
+
 pub mod zone_lighting;
 pub use zone_lighting::ZoneLighting;
 pub use zone_lighting::ZoneLightingPlugin;

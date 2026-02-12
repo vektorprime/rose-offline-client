@@ -12,9 +12,10 @@ use bevy::{
         alpha::AlphaMode,
         mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes}, view::InheritedVisibility, view::NoFrustumCulling, view::ViewVisibility, primitives::Aabb,
         render_resource::Face,
+        storage::ShaderStorageBuffer,
     },
 };
-use bevy::render::storage::ShaderStorageBuffer;
+
 use enum_map::{enum_map, EnumMap};
 
 use rose_data::{
@@ -314,8 +315,8 @@ impl ModelLoader {
                         asset_server,
                         particle_materials,
                         effect_mesh_materials,
-                        meshes,
                         storage_buffers,
+                        meshes,
                         effect_path.into(),
                         false,
                         None,
@@ -1053,8 +1054,8 @@ impl ModelLoader {
                         asset_server,
                         particle_materials,
                         effect_mesh_materials,
-                        meshes,
                         storage_buffers,
+                        meshes,
                         effect_path.into(),
                         false,
                         None,

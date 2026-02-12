@@ -1,0 +1,2320 @@
+warning: method `read_u64_xor` is never used
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\irosephvfs.rs:111:8
+    |
+109 | trait IrosePhXorRead {
+    |       -------------- method in this trait
+110 |     fn read_u32_xor(&mut self, xor_key_offset: usize) -> Result<u32, ReadError>;
+111 |     fn read_u64_xor(&mut self, xor_key_offset: usize) -> Result<u64, ReadError>;
+    |        ^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\aruavfs.rs:256:18
+    |
+256 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile, anyhow::Error> {
+    |                  ^^^^^ the lifetime is elided here    ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+256 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\virtual_filesystem.rs:126:18
+    |
+126 |     fn open_file(&self, path: &VfsPath) -> Result<VfsFile, anyhow::Error>;
+    |                  ^^^^^                            ^^^^^^^ the same lifetime is hidden here
+    |                  |
+    |                  the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+126 |     fn open_file(&self, path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error>;
+    |                                                          ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\virtual_filesystem.rs:141:18
+    |
+141 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile, anyhow::Error> {
+    |                  ^^^^^ the lifetime is elided here    ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+141 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\virtual_filesystem.rs:173:26
+    |
+173 |     pub fn open_file<'a>(&self, path: impl Into<VfsPath<'a>>) -> Result<VfsFile, anyhow::Error> {
+    |                          ^^^^^ the lifetime is elided here              ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+173 |     pub fn open_file<'a>(&self, path: impl Into<VfsPath<'a>>) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                                                ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\irosephvfs.rs:189:18
+    |
+189 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile, anyhow::Error> {
+    |                  ^^^^^ the lifetime is elided here    ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+189 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\titanvfs.rs:162:18
+    |
+162 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile, anyhow::Error> {
+    |                  ^^^^^ the lifetime is elided here    ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+162 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-file-readers\src\vfs.rs:100:18
+    |
+100 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile, anyhow::Error> {
+    |                  ^^^^^ the lifetime is elided here    ^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+100 |     fn open_file(&self, vfs_path: &VfsPath) -> Result<VfsFile<'_>, anyhow::Error> {
+    |                                                              ++++
+
+warning: `rose-file-readers` (lib) generated 8 warnings (run `cargo fix --lib -p rose-file-readers` to apply 7 suggestions)
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\item_database.rs:579:21
+    |
+579 |     pub fn get_item(&self, item: ItemReference) -> Option<ItemData> {
+    |                     ^^^^^ the lifetime is elided here     ^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+579 |     pub fn get_item(&self, item: ItemReference) -> Option<ItemData<'_>> {
+    |                                                                   ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:67:21
+   |
+67 |     pub fn get_item(&self, item_type: ItemType, key: &str) -> Option<StlItemEntry> {
+   |                     ^^^^^ the lifetime is elided here                ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+67 |     pub fn get_item(&self, item_type: ItemType, key: &str) -> Option<StlItemEntry<'_>> {
+   |                                                                                  ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:97:20
+   |
+97 |     pub fn get_npc(&self, key: &str) -> Option<StlNormalEntry> {
+   |                    ^^^^^                       ^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |                    |
+   |                    the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+   |
+97 |     pub fn get_npc(&self, key: &str) -> Option<StlNormalEntry<'_>> {
+   |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:102:30
+    |
+102 |     pub fn get_npc_store_tab(&self, key: &str) -> Option<StlNormalEntry> {
+    |                              ^^^^^                       ^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                              |
+    |                              the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+102 |     pub fn get_npc_store_tab(&self, key: &str) -> Option<StlNormalEntry<'_>> {
+    |                                                                        ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:107:22
+    |
+107 |     pub fn get_quest(&self, key: &str) -> Option<StlQuestEntry> {
+    |                      ^^^^^                       ^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                      |
+    |                      the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+107 |     pub fn get_quest(&self, key: &str) -> Option<StlQuestEntry<'_>> {
+    |                                                               ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:112:22
+    |
+112 |     pub fn get_skill(&self, key: &str) -> Option<StlItemEntry> {
+    |                      ^^^^^                       ^^^^^^^^^^^^ the same lifetime is hidden here
+    |                      |
+    |                      the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+112 |     pub fn get_skill(&self, key: &str) -> Option<StlItemEntry<'_>> {
+    |                                                              ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:143:30
+    |
+143 |     pub fn get_status_effect(&self, key: &str) -> Option<StlQuestEntry> {
+    |                              ^^^^^                       ^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                              |
+    |                              the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+143 |     pub fn get_status_effect(&self, key: &str) -> Option<StlQuestEntry<'_>> {
+    |                                                                       ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-data\src\string_database.rs:148:21
+    |
+148 |     pub fn get_zone(&self, key: &str) -> Option<StlItemEntry> {
+    |                     ^^^^^                       ^^^^^^^^^^^^ the same lifetime is hidden here
+    |                     |
+    |                     the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+help: use `'_` for type paths
+    |
+148 |     pub fn get_zone(&self, key: &str) -> Option<StlItemEntry<'_>> {
+    |                                                             ++++
+
+warning: `rose-data` (lib) generated 8 warnings (run `cargo fix --lib -p rose-data` to apply 8 suggestions)
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> C:\Users\vicha\RustroverProjects\rose-offline\rose-network-common\src\packet.rs:176:41
+    |
+176 |     pub fn read_null_terminated_win1252(&mut self) -> Result<Cow<str>, PacketError> {
+    |                                         ^^^^^^^^^            ^^^^^^^^ the same lifetime is hidden here
+    |                                         |
+    |                                         the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+176 |     pub fn read_null_terminated_win1252(&mut self) -> Result<Cow<'_, str>, PacketError> {
+    |                                                                  +++
+
+warning: `rose-network-common` (lib) generated 1 warning (run `cargo fix --lib -p rose-network-common` to apply 1 suggestion)
+   Compiling rose-offline-client v0.1.0 (C:\Users\vicha\RustroverProjects\rose-offline-client)
+error[E0252]: the name `MeshMaterial3d` is defined multiple times
+ --> src\systems\particle_sequence_system.rs:7:5
+  |
+6 |     prelude::{Commands, Component, Entity, GlobalTransform, Mesh3d, MeshMaterial3d, Query, Res, ResMut, Time, Transform},
+  |                                                                     -------------- previous import of the type `MeshMaterial3d` here
+7 |     pbr::MeshMaterial3d,
+  |     ^^^^^^^^^^^^^^^^^^^-
+  |     |
+  |     `MeshMaterial3d` reimported here
+  |     help: remove unnecessary import
+  |
+  = note: `MeshMaterial3d` must be defined only once in the type namespace of this module
+
+error[E0432]: unresolved import `crate::components::particle_sequence::ParticleRenderData`
+ --> src\render\particle_debug.rs:4:5
+  |
+4 | use crate::components::particle_sequence::ParticleRenderData;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ParticleRenderData` in `components::particle_sequence`
+  |
+help: consider importing this struct through its public re-export instead
+  |
+4 - use crate::components::particle_sequence::ParticleRenderData;
+4 + use crate::render::ParticleRenderData;
+  |
+
+error[E0432]: unresolved import `crate::components::particle_sequence::ParticleRenderBillboardType`
+ --> src\render\particle_test.rs:3:5
+  |
+3 | use crate::components::particle_sequence::ParticleRenderBillboardType;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ParticleRenderBillboardType` in `components::particle_sequence`
+  |
+help: consider importing this enum through its public re-export instead
+  |
+3 - use crate::components::particle_sequence::ParticleRenderBillboardType;
+3 + use crate::render::ParticleRenderBillboardType;
+  |
+
+error[E0432]: unresolved import `bevy::render::PrimitiveTopology`
+  --> src\systems\particle_sequence_system.rs:13:9
+   |
+13 |         PrimitiveTopology,
+   |         ^^^^^^^^^^^^^^^^^ no `PrimitiveTopology` in the root
+
+error: cannot find macro `error` in this scope
+   --> src\systems\particle_sequence_system.rs:479:13
+    |
+479 |             error!("⚠ [Particle {:?}] Size mismatch: {} positions but {} sizes", 
+    |             ^^^^^
+    |
+    = note: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+help: consider importing one of these macros
+    |
+  1 + use bevy::prelude::error;
+    |
+  1 + use log::error;
+    |
+
+error: cannot find macro `error` in this scope
+   --> src\systems\particle_sequence_system.rs:485:13
+    |
+485 |             error!("⚠ [Particle {:?}] Color mismatch: {} positions but {} colors", 
+    |             ^^^^^
+    |
+    = note: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+help: consider importing one of these macros
+    |
+  1 + use bevy::prelude::error;
+    |
+  1 + use log::error;
+    |
+
+error: cannot find macro `error` in this scope
+   --> src\systems\particle_sequence_system.rs:491:13
+    |
+491 |             error!("⚠ [Particle {:?}] Texture mismatch: {} positions but {} textures", 
+    |             ^^^^^
+    |
+    = note: `error` is an attribute that can be used by the derive macro `Error`, you might be missing a `derive` attribute
+help: consider importing one of these macros
+    |
+  1 + use bevy::prelude::error;
+    |
+  1 + use log::error;
+    |
+
+error: cannot find macro `warn` in this scope
+   --> src\systems\particle_sequence_system.rs:522:17
+    |
+522 |                 warn!("⚠ [Particle {:?}] Using default white texture (textures/particle.png not found)", entity);
+    |                 ^^^^
+    |
+    = note: `warn` is in scope, but it is an attribute: `#[warn]`
+help: consider importing one of these macros
+    |
+  1 + use crate::warn;
+    |
+  1 + use bevy::prelude::warn;
+    |
+  1 + use log::warn;
+    |
+
+error: cannot find macro `debug` in this scope
+   --> src\systems\particle_sequence_system.rs:573:13
+    |
+573 |             debug!("✓ [Particle {:?}] Created with {} particles", entity, particle_count);
+    |             ^^^^^
+    |
+help: consider importing one of these macros
+    |
+  1 + use bevy::prelude::debug;
+    |
+  1 + use log::debug;
+    |
+
+error[E0425]: cannot find type `ShaderStorageBuffer` in this scope
+  --> src\render\particle_debug.rs:16:33
+   |
+16 |     storage_buffers: Res<Assets<ShaderStorageBuffer>>,
+   |                                 ^^^^^^^^^^^^^^^^^^^ not found in this scope
+   |
+help: you might be missing a type parameter
+   |
+ 7 | pub fn debug_particle_rendering<ShaderStorageBuffer>(
+   |                                +++++++++++++++++++++
+
+error[E0425]: cannot find type `DiagnosticsStore` in this scope
+  --> src\render\particle_debug.rs:43:22
+   |
+43 |     diagnostics: Res<DiagnosticsStore>,
+   |                      ^^^^^^^^^^^^^^^^ not found in this scope
+   |
+help: you might be missing a type parameter
+   |
+40 | pub fn particle_performance_monitor<DiagnosticsStore>(
+   |                                    ++++++++++++++++++
+
+error[E0425]: cannot find type `Mesh` in this scope
+   --> src\systems\particle_sequence_system.rs:467:31
+    |
+467 |     mut meshes: ResMut<Assets<Mesh>>,
+    |                               ^^^^ not found in this scope
+    |
+help: consider importing one of these structs
+    |
+  1 + use crate::Mesh;
+    |
+  1 + use crate::egui::Mesh;
+    |
+  1 + use bevy::prelude::Mesh;
+    |
+  1 + use egui::Mesh;
+    |
+
+error[E0425]: cannot find type `Image` in this scope
+   --> src\systems\particle_sequence_system.rs:514:74
+    |
+514 |         let texture = match asset_server.load_state(&asset_server.load::<Image>("textures/particle.png")) {
+    |                                                                          ^^^^^ not found in this scope
+    |
+help: consider importing one of these structs
+    |
+  1 + use crate::Image;
+    |
+  1 + use crate::egui::Image;
+    |
+  1 + use crate::ui::widgets::Image;
+    |
+  1 + use bevy::prelude::Image;
+    |
+    = and 1 other candidate
+
+error[E0433]: failed to resolve: use of undeclared type `Image`
+   --> src\systems\particle_sequence_system.rs:524:33
+    |
+524 |                 let mut image = Image::default();
+    |                                 ^^^^^ use of undeclared type `Image`
+    |
+help: consider importing one of these structs
+    |
+  1 + use crate::Image;
+    |
+  1 + use crate::egui::Image;
+    |
+  1 + use crate::ui::widgets::Image;
+    |
+  1 + use bevy::prelude::Image;
+    |
+    = and 1 other candidate
+
+error[E0433]: failed to resolve: use of undeclared type `Mesh`
+   --> src\systems\particle_sequence_system.rs:549:24
+    |
+549 |         let mut mesh = Mesh::new(
+    |                        ^^^^ use of undeclared type `Mesh`
+    |
+help: consider importing one of these structs
+    |
+  1 + use crate::Mesh;
+    |
+  1 + use crate::egui::Mesh;
+    |
+  1 + use bevy::prelude::Mesh;
+    |
+  1 + use egui::Mesh;
+    |
+
+error[E0603]: module `particle_sequence` is private
+  --> src\render\particle_debug.rs:4:24
+   |
+ 4 | use crate::components::particle_sequence::ParticleRenderData;
+   |                        ^^^^^^^^^^^^^^^^^ private module
+   |
+note: the module `particle_sequence` is defined here
+  --> src\components\mod.rs:22:1
+   |
+22 | mod particle_sequence;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `particle_sequence` is private
+  --> src\render\particle_test.rs:3:24
+   |
+ 3 | use crate::components::particle_sequence::ParticleRenderBillboardType;
+   |                        ^^^^^^^^^^^^^^^^^ private module
+   |
+note: the module `particle_sequence` is defined here
+  --> src\components\mod.rs:22:1
+   |
+22 | mod particle_sequence;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ExtractSchedule`, `Handle`, `Image`, `Level`, `Msaa`, `PbrBundle`, `RenderApp`, `Render`, `State`, `Time`, `World`, `components::GlobalTransform`, `core_pipeline::bloom::BloomSettings`, `render::camera::Exposure`, and `render_asset::RenderAssets`
+  --> src\lib.rs:7:9
+   |
+ 7 |         core_pipeline::bloom::BloomSettings,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 8 |         log::{info, warn, Level},
+   |                           ^^^^^
+...
+12 |             ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoSystemConfigs,
+   |                                                                ^^^^^^  ^^^^^
+13 |             IntoSystemSetConfigs, Local, Mesh, Mesh3d, Msaa, OnEnter, OnExit, PbrBundle, PerspectiveProjection, PluginGroup,
+   |                                                        ^^^^                   ^^^^^^^^^
+14 |             PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
+   |                                                                                                ^^^^^
+15 |             SystemSet, Time, Transform, Update, Vec3, ViewVisibility, Visibility, With, Without, World,
+   |                        ^^^^                                                                      ^^^^^
+...
+18 |         render::camera::Exposure,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+...
+21 |         render_asset::RenderAssets,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+22 |         ExtractSchedule, Render, RenderApp,
+   |         ^^^^^^^^^^^^^^^  ^^^^^^  ^^^^^^^^^
+23 |     },
+24 |         transform::{TransformSystem, components::GlobalTransform},
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `RoseEffectExtension`
+  --> src\animation\mesh_animation.rs:10:14
+   |
+10 |     render::{RoseEffectExtension},
+   |              ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `log::info`
+ --> src\animation\zmo_asset_loader.rs:9:5
+  |
+9 | use log::info;
+  |     ^^^^^^^^^
+
+warning: unused import: `std::future::Future`
+ --> src\audio\ogg.rs:2:5
+  |
+2 | use std::future::Future;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::future::Future`
+ --> src\audio\wav.rs:2:5
+  |
+2 | use std::future::Future;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused doc comment
+  --> src\debug\renderdoc.rs:77:1
+   |
+77 | /// Thread-local RenderDoc context for use in systems that need repeated access
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ rustdoc does not generate documentation for macro invocations
+   |
+   = help: to document an item produced by a macro, the macro must produce the documentation as part of its expansion
+   = note: `#[warn(unused_doc_comments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `AssetId`, `BindGroupLayoutEntry`, `BindGroupLayout`, `Handle`, `Local`, `RenderApp`, `RenderSet`, `Render`, `TextureSampleType`, `TextureViewDimension`, `component::Component`, and `render_asset::RenderAssets`
+  --> src\diagnostics\render_diagnostics.rs:19:13
+   |
+19 |     asset::{AssetId, Handle},
+   |             ^^^^^^^  ^^^^^^
+20 |     ecs::{
+21 |         component::Component,
+   |         ^^^^^^^^^^^^^^^^^^^^
+22 |         entity::Entity,
+23 |         system::{Local, Res, ResMut, Resource},
+   |                  ^^^^^
+...
+29 |             BindGroupLayout, BindGroupLayoutEntry, BindingType, PipelineCache, ShaderStages,
+   |             ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+30 |             TextureSampleType, TextureViewDimension,
+   |             ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+31 |         },
+32 |         render_asset::RenderAssets,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+33 |         ExtractSchedule, Render, RenderApp, RenderSet,
+   |                          ^^^^^^  ^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `primitives::Aabb`
+  --> src\effect_loader.rs:10:9
+   |
+10 |         primitives::Aabb,
+   |         ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Pod` and `Zeroable`
+  --> src\effect_loader.rs:16:16
+   |
+16 | use bytemuck::{Pod, Zeroable};
+   |                ^^^  ^^^^^^^^
+
+warning: unused import: `std::future::Future`
+ --> src\exe_resource_loader.rs:1:5
+  |
+1 | use std::future::Future;
+  |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `primitives::Aabb` and `view::NoFrustumCulling`
+  --> src\model_loader.rs:13:96
+   |
+13 | ...dposes}, view::InheritedVisibility, view::NoFrustumCulling, view::ViewVisibility, primitives::Aabb,
+   |                                        ^^^^^^^^^^^^^^^^^^^^^^                        ^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::ops::Deref`
+ --> src\render\world_ui.rs:2:5
+  |
+2 | use std::ops::Deref;
+  |     ^^^^^^^^^^^^^^^
+
+warning: unused imports: `BindGroupDescriptor`, `BindGroupLayoutDescriptor`, and `TypePath`
+  --> src\render\zone_lighting.rs:14:24
+   |
+14 |     reflect::{Reflect, TypePath},
+   |                        ^^^^^^^^
+...
+18 |             encase, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
+   |                                ^^^^^^^^^^^^^^^^^^^
+19 |             BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Buffer,
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `StandardMaterial`
+ --> src\render\object_material_extension.rs:7:36
+  |
+7 | use bevy::pbr::{MaterialExtension, StandardMaterial};
+  |                                    ^^^^^^^^^^^^^^^^
+
+warning: unused import: `StandardMaterial`
+ --> src\render\terrain_material_extension.rs:8:36
+  |
+8 | use bevy::pbr::{MaterialExtension, StandardMaterial};
+  |                                    ^^^^^^^^^^^^^^^^
+
+warning: unused import: `StandardMaterial`
+ --> src\render\water_material_extension.rs:7:36
+  |
+7 | use bevy::pbr::{MaterialExtension, StandardMaterial};
+  |                                    ^^^^^^^^^^^^^^^^
+
+warning: unused import: `StandardMaterial`
+ --> src\render\effect_mesh_extension.rs:7:36
+  |
+7 | use bevy::pbr::{MaterialExtension, StandardMaterial};
+  |                                    ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Vec2`, `primitives::Aabb`, and `view::NoFrustumCulling`
+ --> src\resources\damage_digits_spawner.rs:5:68
+  |
+5 |         Mesh3d, Resource, Transform, Vec3, Visibility, Mesh, Vec4, Vec2,
+  |                                                                    ^^^^
+6 |     },
+7 |     render::{primitives::Aabb, view::NoFrustumCulling},
+  |              ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `DiagnosticsStore` and `FrameTimeDiagnosticsPlugin`
+ --> src\resources\zone_debug_diagnostics.rs:8:24
+  |
+8 | use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+  |                        ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::hierarchy::Parent`
+   --> src\resources\zone_debug_diagnostics.rs:253:9
+    |
+253 |     use bevy::hierarchy::Parent;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Handle`, `Mesh3d`, and `Mesh`
+ --> src\systems\character_model_add_collider_system.rs:5:67
+  |
+5 |         Assets, BuildChildren, Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Res,
+  |                                                                   ^^^^^^  ^^^^  ^^^^^^
+
+warning: unused import: `CharacterModelPart`
+ --> src\systems\character_model_blink_system.rs:5:55
+  |
+5 |     components::{CharacterBlinkTimer, CharacterModel, CharacterModelPart, Dead},
+  |                                                       ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `rose_game_common::components::QuestState`
+ --> src\systems\conversation_dialog_system.rs:8:5
+  |
+8 | use rose_game_common::components::QuestState;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `BankEvent`, `ChatboxEvent`, `ClanDialogEvent`, `ClanMembership`, `ClientEntity`, `DataBindings`, `NpcStoreEvent`, and `SystemFuncEvent`
+  --> src\systems\conversation_dialog_system.rs:11:18
+   |
+11 |     components::{ClanMembership, ClientEntity, ClientEntityName, PlayerCharacter, Position},
+   |                  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+12 |     events::{BankEvent, ChatboxEvent, ClanDialogEvent, ConversationDialogEvent, NpcStoreEvent, SystemFuncEvent},
+   |              ^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^                           ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+...
+19 |     ui::{widgets::Dialog, DataBindings, DialogInstance},
+   |                           ^^^^^^^^^^^^
+
+warning: unused imports: `ExtractSchedule`, `Extract`, `RenderApp`, `RenderSet`, and `Render`
+ --> src\systems\debug_rendering_system.rs:4:20
+  |
+4 | use bevy::render::{Extract, ExtractSchedule, Render, RenderApp, RenderSet};
+  |                    ^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^  ^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `Opaque3d`
+ --> src\systems\debug_rendering_system.rs:5:36
+  |
+5 | use bevy::core_pipeline::core_3d::{Opaque3d, Transparent3d};
+  |                                    ^^^^^^^^
+
+warning: unused import: `Local`
+ --> src\systems\game_mouse_input_system.rs:5:65
+  |
+5 |         Camera, Camera3d, Entity, EventWriter, GlobalTransform, Local, MouseButton, Query, Res, ResMut,
+  |                                                                 ^^^^^
+
+warning: unused import: `MoveDestinationEffectEvent`
+  --> src\systems\game_mouse_input_system.rs:20:14
+   |
+20 |     events::{MoveDestinationEffectEvent, PlayerCommandEvent},
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Handle`, `Mesh`, and `alpha::AlphaMode`
+  --> src\systems\item_drop_model_system.rs:6:89
+   |
+ 6 |         AssetServer, Assets, BuildChildren, Changed, Commands, Entity, GlobalTransform, Handle,
+   |                                                                                         ^^^^^^
+ 7 |         Mesh, Mesh3d, Query, Res, ResMut, Transform, With, Without,
+   |         ^^^^
+...
+10 |         alpha::AlphaMode,
+   |         ^^^^^^^^^^^^^^^^
+
+warning: unused import: `alpha::AlphaMode`
+ --> src\systems\move_destination_effect_system.rs:8:9
+  |
+8 |         alpha::AlphaMode,
+  |         ^^^^^^^^^^^^^^^^
+
+warning: unused import: `alpha::AlphaMode`
+ --> src\systems\npc_model_system.rs:9:9
+  |
+9 |         alpha::AlphaMode,
+  |         ^^^^^^^^^^^^^^^^
+
+warning: unused import: `RapierContext`
+  --> src\systems\orbit_camera_system.rs:16:55
+   |
+16 |     prelude::{Collider, CollisionGroups, QueryFilter, RapierContext, ReadDefaultRapierContext},
+   |                                                       ^^^^^^^^^^^^^
+
+warning: unused imports: `Component`, `LoadState`, `Vec2`, `mesh::Indices`, `pbr::MeshMaterial3d`, and `render_resource::Extent3d`
+  --> src\systems\particle_sequence_system.rs:4:34
+   |
+ 4 |     asset::{Assets, AssetServer, LoadState},
+   |                                  ^^^^^^^^^
+ 5 |     math::{Quat, Vec2, Vec3, Vec4},
+   |                  ^^^^
+ 6 |     prelude::{Commands, Component, Entity, GlobalTransform, Mesh3d, MeshMaterial3d, Query, Res, ResMut, Time, Transform},
+   |                         ^^^^^^^^^
+ 7 |     pbr::MeshMaterial3d,
+   |     ^^^^^^^^^^^^^^^^^^^
+ 8 |     render::{
+ 9 |         mesh::Indices,
+   |         ^^^^^^^^^^^^^
+10 |         render_asset::RenderAssetUsages,
+11 |         render_resource::Extent3d,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Handle` and `Mesh`
+ --> src\systems\personal_store_model_add_collider_system.rs:5:59
+  |
+5 |         BuildChildren, Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Transform, With,
+  |                                                           ^^^^^^  ^^^^
+
+warning: unused imports: `ViewVisibility` and `alpha::AlphaMode`
+ --> src\systems\vehicle_model_system.rs:4:64
+  |
+4 |         AssetServer, Assets, BuildChildren, Changed, Commands, ViewVisibility, InheritedVisibility,
+  |                                                                ^^^^^^^^^^^^^^
+...
+9 |         alpha::AlphaMode,
+  |         ^^^^^^^^^^^^^^^^
+
+warning: unused import: `ViewVisibility`
+ --> src\systems\visible_status_effects_system.rs:4:28
+  |
+4 |         Changed, Commands, ViewVisibility, InheritedVisibility, Entity, EventWriter, GlobalTransform, Query, Res,
+  |                            ^^^^^^^^^^^^^^
+
+warning: unused import: `crate::resources::zone_debug_diagnostics::ZoneDebugDiagnostics`
+  --> src\systems\zone_render_validation_system.rs:12:5
+   |
+12 | use crate::resources::zone_debug_diagnostics::ZoneDebugDiagnostics;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::transform::TransformSystem`
+ --> src\systems\transform_propagation_diagnostics.rs:2:5
+  |
+2 | use bevy::transform::TransformSystem;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `asset::Asset`
+ --> src\ui\ui_character_info_system.rs:2:5
+  |
+2 |     asset::Asset,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `bevy::asset::Asset`
+ --> src\ui\ui_character_select_system.rs:1:5
+  |
+1 | use bevy::asset::Asset;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::asset::Asset`
+ --> src\ui\ui_clan_system.rs:1:5
+  |
+1 | use bevy::asset::Asset;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::asset::Asset`
+ --> src\ui\ui_create_clan.rs:3:5
+  |
+3 | use bevy::asset::Asset;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Asset`
+ --> src\ui\ui_debug_dialog_list.rs:2:13
+  |
+2 |     asset::{Asset, AssetId},
+  |             ^^^^^
+
+warning: unused import: `ViewVisibility`
+ --> src\ui\ui_debug_effect_list.rs:7:20
+  |
+7 |     render::view::{ViewVisibility, InheritedVisibility},
+  |                    ^^^^^^^^^^^^^^
+
+warning: unused import: `ViewVisibility`
+  --> src\ui\ui_debug_physics.rs:10:20
+   |
+10 |     render::view::{ViewVisibility, InheritedVisibility},
+   |                    ^^^^^^^^^^^^^^
+
+warning: unused imports: `Assets` and `Handle`
+ --> src\ui\ui_debug_render_system.rs:4:15
+  |
+4 |     prelude::{Assets, Handle, Local, Query, ResMut, With},
+  |               ^^^^^^  ^^^^^^
+
+warning: unused import: `bevy::asset::Asset`
+ --> src\ui\ui_game_menu_system.rs:1:5
+  |
+1 | use bevy::asset::Asset;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::asset::Asset`
+ --> src\ui\ui_message_box_system.rs:1:5
+  |
+1 | use bevy::asset::Asset;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::asset::Asset`
+ --> src\ui\ui_number_input_dialog_system.rs:1:5
+  |
+1 | use bevy::asset::Asset;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::asset::Asset`
+ --> src\ui\ui_party_option_system.rs:1:5
+  |
+1 | use bevy::asset::Asset;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::asset::Asset`
+ --> src\ui\ui_respawn_system.rs:1:5
+  |
+1 | use bevy::asset::Asset;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::asset::Asset`
+ --> src\ui\ui_server_select_system.rs:1:5
+  |
+1 | use bevy::asset::Asset;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::asset::Asset`
+ --> src\ui\ui_window_sound_system.rs:1:5
+  |
+1 | use bevy::asset::Asset;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Deserializer` and `de::IgnoredAny`
+ --> src\ui\widgets\mod.rs:2:26
+  |
+2 | use serde::{Deserialize, Deserializer, de::IgnoredAny};
+  |                          ^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+
+warning: unused import: `info`
+  --> src\dds_image_loader.rs:10:11
+   |
+10 | use log::{info, warn};
+   |           ^^^^
+
+warning: unused import: `AsyncSeekForward`
+ --> src\vfs_asset_io.rs:2:41
+  |
+2 |     io::{AssetReader, AssetReaderError, AsyncSeekForward, AssetSource, AssetSourceId, Reader, VecReader},
+  |                                         ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Cursor` and `Seek`
+ --> src\vfs_asset_io.rs:9:10
+  |
+9 |     io::{Cursor, Seek},
+  |          ^^^^^^  ^^^^
+
+warning: unused import: `log::info`
+  --> src\zms_asset_loader.rs:19:5
+   |
+19 | use log::info;
+   |     ^^^^^^^^^
+
+warning: unused import: `num::NonZeroUsize`
+ --> src\zone_loader.rs:4:5
+  |
+4 |     num::NonZeroUsize,
+  |     ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Duration`
+  --> src\zone_loader.rs:15:30
+   |
+15 |     use std::time::{Instant, Duration};
+   |                              ^^^^^^^^
+
+warning: unused import: `bevy::hierarchy::Children`
+   --> src\zone_loader.rs:276:5
+    |
+276 | use bevy::hierarchy::Children;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Without`
+   --> src\zone_loader.rs:277:21
+    |
+277 | use bevy::prelude::{Without};
+    |                     ^^^^^^^
+
+warning: unused import: `uuid::Uuid`
+   --> src\zone_loader.rs:278:5
+    |
+278 | use uuid::Uuid;
+    |     ^^^^^^^^^^
+
+warning: unused imports: `Color`, `IoTaskPool`, and `TransformBundle`
+   --> src\zone_loader.rs:289:26
+    |
+289 |             AssetServer, Color, Commands, Entity, EventReader, EventWriter, GlobalTransform, Handle,
+    |                          ^^^^^
+290 |             Image, Local, Res, ResMut, Resource, Transform, TransformBundle, UntypedHandle, Visibility, With,
+    |                                                             ^^^^^^^^^^^^^^^
+...
+301 |         tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
+    |                                                                   ^^^^^^^^^^
+
+warning: unused import: `ZscEffectType`
+   --> src\zone_loader.rs:314:24
+    |
+314 |     ZscCollisionFlags, ZscEffectType, ZscFile,
+    |                        ^^^^^^^^^^^^^
+
+warning: unused imports: `NightTimeEffect`, `decode_blend_factor`, and `decode_blend_op`
+   --> src\zone_loader.rs:321:38
+    |
+321 |         ColliderParent, EventObject, NightTimeEffect, WarpObject, Zone, ZoneObject,
+    |                                      ^^^^^^^^^^^^^^^
+...
+328 |     effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect},
+    |                     ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+
+warning: unused imports: `debug_entity_visibility`, `debug_render_collider_system`, `debug_render_directional_light_system`, and `debug_render_skeleton_system`
+   --> src\lib.rs:107:5
+    |
+107 |     debug_entity_visibility, debug_render_collider_system, debug_render_directional_light_system,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+108 |     debug_render_skeleton_system, directional_light_system, effect_system, facing_direction_system,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ui_debug_diagnostics_system` and `ui_debug_physics_system`
+   --> src\lib.rs:140:5
+    |
+140 |     ui_debug_diagnostics_system, ui_debug_dialog_list_system, ui_debug_effect_list_system,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+141 |     ui_debug_entity_inspector_system, ui_debug_item_list_system, ui_debug_menu_system,
+142 |     ui_debug_npc_list_system, ui_debug_physics_system, ui_debug_render_system,
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `VfsAssetIo`
+   --> src\lib.rs:154:20
+    |
+154 | use vfs_asset_io::{VfsAssetIo, VfsAssetReaderPlugin};
+    |                    ^^^^^^^^^^
+
+warning: unused imports: `ZoneLoaderAsset` and `ZoneLoader`
+   --> src\lib.rs:156:98
+    |
+156 | use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, force_zone_visibility_system, ZoneLoader, ZoneLoaderAsset, ZoneLoadCha...
+    |                                                                                                  ^^^^^^^^^^  ^^^^^^^^^^^^^^^
+
+warning: unused imports: `CollisionPlayer` and `Zone`
+   --> src\lib.rs:165:25
+    |
+165 | use crate::components::{CollisionPlayer, SoundCategory, Zone};
+    |                         ^^^^^^^^^^^^^^^                 ^^^^
+
+warning: use of deprecated type alias `bevy::bevy_core_pipeline::bloom::BloomSettings`: Renamed to `Bloom`
+ --> src\lib.rs:7:31
+  |
+7 |         core_pipeline::bloom::BloomSettings,
+  |                               ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated type alias `bevy::prelude::PbrBundle`: Use the `Mesh3d` and `MeshMaterial3d` components instead. Inserting them will now also insert the other components required by them automatically.
+  --> src\lib.rs:13:79
+   |
+13 |             IntoSystemSetConfigs, Local, Mesh, Mesh3d, Msaa, OnEnter, OnExit, PbrBundle, PerspectiveProjection, PluginGroup,
+   |                                                                               ^^^^^^^^^
+
+warning: use of deprecated type alias `bevy::bevy_core_pipeline::bloom::BloomSettings`: Renamed to `Bloom`
+ --> src\ui\ui_debug_zone_lighting_system.rs:2:27
+  |
+2 |     core_pipeline::bloom::BloomSettings,
+  |                           ^^^^^^^^^^^^^
+
+warning: use of deprecated type alias `bevy::bevy_core_pipeline::bloom::BloomSettings`: Renamed to `Bloom`
+  --> src\ui\ui_debug_zone_lighting_system.rs:13:48
+   |
+13 |     mut query_camera: Query<(&mut Camera, &mut BloomSettings)>,
+   |                                                ^^^^^^^^^^^^^
+
+warning: use of deprecated struct `bevy::prelude::TransformBundle`: Use the `Transform` component instead. Inserting `Transform` will now also insert a `GlobalTransform` automatically.
+   --> src\zone_loader.rs:290:61
+    |
+290 |             Image, Local, Res, ResMut, Resource, Transform, TransformBundle, UntypedHandle, Visibility, With,
+    |                                                             ^^^^^^^^^^^^^^^
+
+warning: use of deprecated struct `bevy::prelude::VisibilityBundle`: Use the `Visibility` component instead. Inserting it will now also insert `InheritedVisibility` and `ViewVisibility` automatically.
+   --> src\zone_loader.rs:299:75
+    |
+299 |             view::{NoFrustumCulling, ViewVisibility, InheritedVisibility, VisibilityBundle, RenderLayers},
+    |                                                                           ^^^^^^^^^^^^^^^^
+
+warning: use of deprecated struct `bevy::prelude::VisibilityBundle`: Use the `Visibility` component instead. Inserting it will now also insert `InheritedVisibility` and `ViewVisibility` automatically.
+    --> src\zone_loader.rs:2911:13
+     |
+2911 |             VisibilityBundle {
+     |             ^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `contains` found for unit type `()` in the current scope
+  --> src\render\particle_material.rs:82:36
+   |
+82 |             if key.bind_group_data.contains(MaterialPipelineKey::DEPTH_PREPASS) {
+   |                                    ^^^^^^^^
+   |
+help: there is a method `contains_token` with a similar name
+   |
+82 |             if key.bind_group_data.contains_token(MaterialPipelineKey::DEPTH_PREPASS) {
+   |                                            ++++++
+
+error[E0599]: no associated item named `DEPTH_PREPASS` found for struct `MaterialPipelineKey<M>` in the current scope
+  --> src\render\particle_material.rs:82:66
+   |
+82 |             if key.bind_group_data.contains(MaterialPipelineKey::DEPTH_PREPASS) {
+   |                                                                  ^^^^^^^^^^^^^ associated item not found in `MaterialPipelineKey<_>`
+
+error[E0599]: no method named `contains` found for unit type `()` in the current scope
+  --> src\render\particle_material.rs:84:43
+   |
+84 |             } else if key.bind_group_data.contains(MaterialPipelineKey::NORMAL_PREPASS) {
+   |                                           ^^^^^^^^
+   |
+help: there is a method `contains_token` with a similar name
+   |
+84 |             } else if key.bind_group_data.contains_token(MaterialPipelineKey::NORMAL_PREPASS) {
+   |                                                   ++++++
+
+error[E0599]: no associated item named `NORMAL_PREPASS` found for struct `MaterialPipelineKey<M>` in the current scope
+  --> src\render\particle_material.rs:84:73
+   |
+84 |             } else if key.bind_group_data.contains(MaterialPipelineKey::NORMAL_PREPASS) {
+   |                                                                         ^^^^^^^^^^^^^^ associated item not found in `MaterialPipelineKey<_>`
+
+error[E0282]: type annotations needed
+  --> src\render\particle_debug.rs:21:35
+   |
+21 |         info!("  Has Mesh3d: {}", mesh.is_some());
+   |                                   ^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+  --> src\render\particle_debug.rs:22:37
+   |
+22 |         info!("  Has Material: {}", material.is_some());
+   |                                     ^^^^^^^^ cannot infer type
+
+error[E0282]: type annotations needed
+  --> src\render\particle_debug.rs:67:20
+   |
+67 |         .and_then(|d| d.smoothed());
+   |                    ^  - type must be known at this point
+   |
+help: consider giving this closure parameter an explicit type
+   |
+67 |         .and_then(|d: /* Type */| d.smoothed());
+   |                     ++++++++++++
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\ui_bank_system.rs:67:10
+   |
+67 |         .allocate_ui_at_rect(
+   |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_chatbox_system.rs:273:24
+    |
+273 |                     ui.allocate_ui_at_rect(
+    |                        ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated field `egui::Style::wrap`: Use wrap_mode instead
+  --> src\ui\ui_debug_entity_inspector_system.rs:27:25
+   |
+27 |                         ui.style_mut().wrap = Some(false);
+   |                         ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::DragValue::<'a>::clamp_range`: Use `range` instead
+  --> src\ui\ui_debug_item_list_system.rs:82:34
+   |
+82 | ...                   .clamp_range(1..=999usize),
+   |                        ^^^^^^^^^^^
+
+warning: use of deprecated method `egui::DragValue::<'a>::clamp_range`: Use `range` instead
+   --> src\ui\ui_debug_item_list_system.rs:131:34
+    |
+131 | ...                   .clamp_range(0..=9u8),
+    |                        ^^^^^^^^^^^
+
+warning: use of deprecated method `egui::DragValue::<'a>::clamp_range`: Use `range` instead
+  --> src\ui\ui_debug_npc_list_system.rs:81:34
+   |
+81 | ...                   .clamp_range(1..=1000),
+   |                        ^^^^^^^^^^^
+
+warning: use of deprecated associated function `egui::ComboBox::from_id_source`: Renamed id_salt
+  --> src\ui\ui_debug_npc_list_system.rs:93:41
+   |
+93 |                         egui::ComboBox::from_id_source("npc_list_controls_team")
+   |                                         ^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::set_enabled`: Use disable(), add_enabled_ui(), or add_enabled() instead
+   --> src\ui\ui_debug_window_system.rs:116:20
+    |
+116 |                 ui.set_enabled(true);
+    |                    ^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_hotbar_system.rs:126:10
+    |
+126 |         .allocate_ui_at_rect(
+    |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_inventory_system.rs:244:10
+    |
+244 |         .allocate_ui_at_rect(
+    |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_inventory_system.rs:619:24
+    |
+619 |                     ui.allocate_ui_at_rect(
+    |                        ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_message_box_system.rs:120:20
+    |
+120 |                 ui.allocate_ui_at_rect(interceptor_rect, |ui| {
+    |                    ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_message_box_system.rs:249:24
+    |
+249 |                     ui.allocate_ui_at_rect(message_rect, |ui| {
+    |                        ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `bevy::prelude::Vec2::angle_between`: Use angle_to() instead, the semantics of angle_between will change in the future.
+   --> src\ui\ui_minimap_system.rs:123:43
+    |
+123 |     let camera_angle = -camera_forward_2d.angle_between(Vec2::Y);
+    |                                           ^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_minimap_system.rs:335:24
+    |
+335 |                     ui.allocate_ui_at_rect(zone_name_rect, |ui| {
+    |                        ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_minimap_system.rs:444:28
+    |
+444 |                         ui.allocate_ui_at_rect(widget_rect, |ui| {
+    |                            ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_minimap_system.rs:530:20
+    |
+530 |                 ui.allocate_ui_at_rect(player_xy_rect.shrink(2.0), |ui| {
+    |                    ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_npc_store_system.rs:128:10
+    |
+128 |         .allocate_ui_at_rect(
+    |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_npc_store_system.rs:260:10
+    |
+260 |         .allocate_ui_at_rect(
+    |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_npc_store_system.rs:343:10
+    |
+343 |         .allocate_ui_at_rect(
+    |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\ui_number_input_dialog_system.rs:98:20
+   |
+98 |                 ui.allocate_ui_at_rect(interceptor_rect, |ui| {
+   |                    ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::child_ui`: Use ui.new_child() instead
+   --> src\ui\ui_party_system.rs:273:54
+    |
+273 | ...                   let ui = &mut ui.child_ui(rect, egui::Layout::default(), None);
+    |                                        ^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\ui_personal_store_system.rs:66:10
+   |
+66 |         .allocate_ui_at_rect(
+   |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\ui_player_info_system.rs:63:10
+   |
+63 |         .allocate_ui_at_rect(
+   |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\ui_quest_list_system.rs:43:10
+   |
+43 |         .allocate_ui_at_rect(
+   |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_quest_list_system.rs:238:32
+    |
+238 | ...                   ui.allocate_ui_at_rect(
+    |                          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_quest_list_system.rs:257:36
+    |
+257 | ...                   ui.allocate_ui_at_rect(rect, |ui| {
+    |                          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\ui_skill_list_system.rs:73:10
+   |
+73 |         .allocate_ui_at_rect(
+   |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+   --> src\ui\ui_skill_list_system.rs:248:36
+    |
+248 | ...                   ui.allocate_ui_at_rect(
+    |                          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\ui_skill_tree_system.rs:44:14
+   |
+44 |             .allocate_ui_at_rect(
+   |              ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\ui_skill_tree_system.rs:79:10
+   |
+79 |         .allocate_ui_at_rect(
+   |          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::child_ui`: Use ui.new_child() instead
+   --> src\ui\widgets\button.rs:147:24
+    |
+147 |                     ui.child_ui(rect, egui::Layout::top_down_justified(egui::Align::Center), None);
+    |                        ^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\widgets\draw.rs:23:14
+   |
+23 |         self.allocate_ui_at_rect(rect, |ui| ui.horizontal_top(|ui| ui.add(widget)).inner)
+   |              ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\widgets\draw_text.rs:50:12
+   |
+50 |         ui.allocate_ui_at_rect(rect, |ui| {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\widgets\editbox.rs:76:14
+   |
+76 |             .allocate_ui_at_rect(rect, |ui| {
+   |              ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\widgets\listbox.rs:66:12
+   |
+66 |         ui.allocate_ui_at_rect(rect, |ui| {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\widgets\listbox.rs:87:26
+   |
+87 |                         .allocate_ui_at_rect(
+   |                          ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\widgets\pane.rs:47:12
+   |
+47 |         ui.allocate_ui_at_rect(self.widget_rect(ui.min_rect().min), |ui| {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::child_ui`: Use ui.new_child() instead
+   --> src\ui\widgets\radio_button.rs:118:24
+    |
+118 |                     ui.child_ui(rect, egui::Layout::left_to_right(egui::Align::Center), None);
+    |                        ^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\widgets\tabbed_pane.rs:85:12
+   |
+85 |         ui.allocate_ui_at_rect(rect, |ui| {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\widgets\table.rs:62:12
+   |
+62 |         ui.allocate_ui_at_rect(rect, |ui| {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `egui::Ui::allocate_ui_at_rect`: Use `allocate_new_ui` instead
+  --> src\ui\widgets\zlistbox.rs:48:12
+   |
+48 |         ui.allocate_ui_at_rect(rect, |ui| {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated field `bevy::prelude::VisibilityBundle::visibility`: Use the `Visibility` component instead. Inserting it will now also insert `InheritedVisibility` and `ViewVisibility` automatically.
+    --> src\zone_loader.rs:2912:17
+     |
+2912 |                 visibility: Visibility::Visible,
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated field `bevy::prelude::VisibilityBundle::inherited_visibility`: Use the `Visibility` component instead. Inserting it will now also insert `InheritedVisibility` and `ViewVisibility` automatically.
+    --> src\zone_loader.rs:2913:17
+     |
+2913 |                 inherited_visibility: InheritedVisibility::default(),
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated field `bevy::prelude::VisibilityBundle::view_visibility`: Use the `Visibility` component instead. Inserting it will now also insert `InheritedVisibility` and `ViewVisibility` automatically.
+    --> src\zone_loader.rs:2914:17
+     |
+2914 |                 view_visibility: bevy::render::view::ViewVisibility::default(),
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::tasks::futures_lite::AsyncReadExt`
+ --> src\animation\zmo_asset_loader.rs:8:5
+  |
+8 | use bevy::tasks::futures_lite::AsyncReadExt;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::tasks::futures_lite::AsyncReadExt`
+ --> src\audio\ogg.rs:3:5
+  |
+3 | use bevy::tasks::futures_lite::AsyncReadExt;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::tasks::futures_lite::AsyncReadExt`
+ --> src\audio\wav.rs:5:5
+  |
+5 | use bevy::tasks::futures_lite::AsyncReadExt;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tasks::futures_lite::AsyncReadExt`
+ --> src\exe_resource_loader.rs:6:5
+  |
+6 |     tasks::futures_lite::AsyncReadExt,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::tasks::futures_lite::AsyncReadExt`
+  --> src\ui\dialog_loader.rs:45:17
+   |
+45 |             use bevy::tasks::futures_lite::AsyncReadExt;
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tasks::futures_lite::AsyncReadExt`
+ --> src\dds_image_loader.rs:8:5
+  |
+8 |     tasks::futures_lite::AsyncReadExt,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::tasks::futures_lite::AsyncReadExt`
+  --> src\zms_asset_loader.rs:52:17
+   |
+52 |             use bevy::tasks::futures_lite::AsyncReadExt;
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `tasks::futures_lite::AsyncReadExt`
+  --> src\zms_asset_loader.rs:17:5
+   |
+17 |     tasks::futures_lite::AsyncReadExt,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `bevy::tasks::futures_lite::AsyncReadExt`
+   --> src\zms_asset_loader.rs:172:17
+    |
+172 |             use bevy::tasks::futures_lite::AsyncReadExt;
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `futures_lite::AsyncReadExt`
+   --> src\zone_loader.rs:301:17
+    |
+301 |         tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `asset_path`
+   --> src\animation\zmo_asset_loader.rs:146:17
+    |
+146 |             let asset_path = load_context.path().to_string_lossy();
+    |                 ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_asset_path`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `asset_path`
+   --> src\animation\zmo_asset_loader.rs:252:17
+    |
+252 |             let asset_path = load_context.path().to_string_lossy();
+    |                 ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_asset_path`
+
+warning: variable does not need to be mutable
+   --> src\diagnostics\render_diagnostics.rs:150:5
+    |
+150 |     mut state: ResMut<RenderDiagnosticsState>,
+    |     ----^^^^^
+    |     |
+    |     help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `pipeline_cache`
+   --> src\diagnostics\render_diagnostics.rs:416:5
+    |
+416 |     pipeline_cache: Option<&PipelineCache>,
+    |     ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_pipeline_cache`
+
+warning: unused variable: `pipeline_cache`
+   --> src\diagnostics\render_diagnostics.rs:542:5
+    |
+542 |     pipeline_cache: Option<&PipelineCache>,
+    |     ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_pipeline_cache`
+
+warning: unused variable: `standard_materials`
+    --> src\model_loader.rs:1308:9
+     |
+1308 |         standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+     |         ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_standard_materials`
+
+warning: unused variable: `alpha_blended`
+    --> src\model_loader.rs:1334:13
+     |
+1334 |         let alpha_blended = zsc_material.alpha_enabled && !zsc_material.z_write_enabled;
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_alpha_blended`
+
+warning: unused variable: `render_queue`
+   --> src\render\world_ui.rs:490:5
+    |
+490 |     render_queue: Res<RenderQueue>,
+    |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_render_queue`
+
+warning: unused variable: `light_entity`
+  --> src\render\zone_lighting.rs:88:9
+   |
+88 |     let light_entity = commands.spawn((
+   |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_light_entity`
+
+warning: variable does not need to be mutable
+   --> src\resources\ui_resources.rs:320:9
+    |
+320 |     let mut loaded_required = true;
+    |         ----^^^^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src\resources\ui_resources.rs:627:12
+    |
+627 |     let Ok(mut window) = query_window.get_single_mut() else {
+    |            ----^^^^^^
+    |            |
+    |            help: remove this `mut`
+
+warning: unused variable: `requested_icon`
+   --> src\resources\ui_resources.rs:633:13
+    |
+633 |         let requested_icon = ui_resources.cursors[UiCursorType::Default]
+    |             ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_requested_icon`
+
+warning: unused variable: `world_cursor`
+   --> src\resources\ui_resources.rs:641:13
+    |
+641 |         let world_cursor = if matches!(window.cursor_options.grab_mode, CursorGrabMode::None) {
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_world_cursor`
+
+warning: unused variable: `script_resources`
+   --> src\scripting\quest_reward_functions.rs:129:5
+    |
+129 |     script_resources: &ScriptFunctionResources,
+    |     ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_script_resources`
+
+warning: unused variable: `script_context`
+   --> src\scripting\quest_reward_functions.rs:278:5
+    |
+278 |     script_context: &mut ScriptFunctionContext,
+    |     ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_script_context`
+
+warning: unused variable: `name`
+   --> src\scripting\quest_reward_functions.rs:280:5
+    |
+280 |     name: String,
+    |     ^^^^ help: if this is intentional, prefix it with an underscore: `_name`
+
+warning: unused variable: `character_model`
+  --> src\systems\character_model_blink_system.rs:12:10
+   |
+12 |     for (character_model, mut blink_timer, dead) in query_characters.iter_mut() {
+   |          ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_character_model`
+
+warning: unused variable: `app_state_current`
+   --> src\systems\collision_system.rs:117:5
+    |
+117 |     app_state_current: Res<State<AppState>>,
+    |     ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_app_state_current`
+
+warning: unused variable: `is_empty`
+   --> src\systems\collision_system.rs:144:9
+    |
+144 |     let is_empty = query_collision_entity.is_empty();
+    |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_empty`
+
+warning: variable does not need to be mutable
+   --> src\systems\conversation_dialog_system.rs:367:5
+    |
+367 |     mut current_dialog_state: Local<Option<ConversationDialogState>>,
+    |     ----^^^^^^^^^^^^^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src\systems\conversation_dialog_system.rs:368:5
+    |
+368 |     mut egui_context: EguiContexts,
+    |     ----^^^^^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src\systems\conversation_dialog_system.rs:369:5
+    |
+369 |     mut conversation_dialog_events: EventReader<ConversationDialogEvent>,
+    |     ----^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: unused variable: `current_dialog_state`
+   --> src\systems\conversation_dialog_system.rs:367:5
+    |
+367 |     mut current_dialog_state: Local<Option<ConversationDialogState>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_current_dialog_state`
+
+warning: unused variable: `egui_context`
+   --> src\systems\conversation_dialog_system.rs:368:5
+    |
+368 |     mut egui_context: EguiContexts,
+    |     ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_egui_context`
+
+warning: unused variable: `conversation_dialog_events`
+   --> src\systems\conversation_dialog_system.rs:369:5
+    |
+369 |     mut conversation_dialog_events: EventReader<ConversationDialogEvent>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_conversation_dialog_events`
+
+warning: unused variable: `script_function_resources`
+   --> src\systems\conversation_dialog_system.rs:371:5
+    |
+371 |     script_function_resources: ScriptFunctionResources,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_script_function_resources`
+
+warning: unused variable: `query_player_position`
+   --> src\systems\conversation_dialog_system.rs:372:5
+    |
+372 |     query_player_position: Query<&Position, With<PlayerCharacter>>,
+    |     ^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_query_player_position`
+
+warning: unused variable: `query_position`
+   --> src\systems\conversation_dialog_system.rs:373:5
+    |
+373 |     query_position: Query<&Position>,
+    |     ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_query_position`
+
+warning: unused variable: `query_name`
+   --> src\systems\conversation_dialog_system.rs:374:5
+    |
+374 |     query_name: Query<&ClientEntityName>,
+    |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_query_name`
+
+warning: unused variable: `lua_game_constants`
+   --> src\systems\conversation_dialog_system.rs:375:5
+    |
+375 |     lua_game_constants: Res<LuaGameConstants>,
+    |     ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_lua_game_constants`
+
+warning: unused variable: `lua_game_functions`
+   --> src\systems\conversation_dialog_system.rs:376:5
+    |
+376 |     lua_game_functions: Res<LuaGameFunctions>,
+    |     ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_lua_game_functions`
+
+warning: unused variable: `lua_quest_functions`
+   --> src\systems\conversation_dialog_system.rs:377:5
+    |
+377 |     lua_quest_functions: Res<LuaQuestFunctions>,
+    |     ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_lua_quest_functions`
+
+warning: unused variable: `game_data`
+   --> src\systems\conversation_dialog_system.rs:378:5
+    |
+378 |     game_data: Res<GameData>,
+    |     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_game_data`
+
+warning: unused variable: `vfs_resource`
+   --> src\systems\conversation_dialog_system.rs:379:5
+    |
+379 |     vfs_resource: Res<VfsResource>,
+    |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_vfs_resource`
+
+warning: unused variable: `dialog`
+   --> src\systems\conversation_dialog_system.rs:384:9
+    |
+384 |     let dialog = if let Some(dialog) = ui_state
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_dialog`
+
+warning: unused variable: `dialog_sprites`
+   --> src\systems\conversation_dialog_system.rs:408:9
+    |
+408 |     let dialog_sprites = ui_state.sprites.as_ref().unwrap();
+    |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dialog_sprites`
+
+warning: unused variable: `mesh_assets`
+   --> src\systems\debug_rendering_system.rs:366:5
+    |
+366 |     mesh_assets: Res<Assets<Mesh>>,
+    |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_mesh_assets`
+
+warning: unused variable: `cam_entity`
+   --> src\systems\debug_rendering_system.rs:380:10
+    |
+380 |     for (cam_entity, camera, cam_transform) in cameras.iter() {
+    |          ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_cam_entity`
+
+warning: unused variable: `camera`
+   --> src\systems\debug_rendering_system.rs:380:22
+    |
+380 |     for (cam_entity, camera, cam_transform) in cameras.iter() {
+    |                      ^^^^^^ help: if this is intentional, prefix it with an underscore: `_camera`
+
+warning: unused variable: `mesh_entity`
+   --> src\systems\debug_rendering_system.rs:391:14
+    |
+391 |         for (mesh_entity, mesh_transform, view_vis, visibility, mesh_handle) in meshes.iter() {
+    |              ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_mesh_entity`
+
+warning: unused variable: `view_vis`
+   --> src\systems\debug_rendering_system.rs:391:43
+    |
+391 |         for (mesh_entity, mesh_transform, view_vis, visibility, mesh_handle) in meshes.iter() {
+    |                                           ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_view_vis`
+
+warning: unused variable: `distance`
+   --> src\systems\debug_rendering_system.rs:397:17
+    |
+397 |             let distance = cam_pos.distance(mesh_pos);
+    |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_distance`
+
+warning: unused variable: `angle_to_mesh`
+   --> src\systems\debug_rendering_system.rs:401:17
+    |
+401 |             let angle_to_mesh = dot_product.acos().to_degrees();
+    |                 ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_angle_to_mesh`
+
+warning: unused variable: `visibility_str`
+   --> src\systems\debug_rendering_system.rs:403:17
+    |
+403 |             let visibility_str = match visibility {
+    |                 ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_visibility_str`
+
+warning: unused variable: `handle`
+   --> src\systems\debug_rendering_system.rs:419:25
+    |
+419 |             if let Some(handle) = mesh_handle {
+    |                         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_handle`
+
+warning: unused variable: `zone`
+    --> src\systems\debug_rendering_system.rs:1266:23
+     |
+1266 |     for (zone_entity, zone, zone_view_vis, zone_inherited_vis) in zones.iter() {
+     |                       ^^^^ help: if this is intentional, prefix it with an underscore: `_zone`
+
+warning: unused variable: `zone_view_vis`
+    --> src\systems\debug_rendering_system.rs:1266:29
+     |
+1266 |     for (zone_entity, zone, zone_view_vis, zone_inherited_vis) in zones.iter() {
+     |                             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_zone_view_vis`
+
+warning: variable `visible_children` is assigned to, but never used
+    --> src\systems\debug_rendering_system.rs:1273:13
+     |
+1273 |         let mut visible_children = 0;
+     |             ^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_visible_children` instead
+
+warning: unused variable: `mesh_handle`
+    --> src\systems\debug_rendering_system.rs:1276:92
+     |
+1276 |         for (child_entity, parent, child_view_vis, child_visibility, _child_inherited_vis, mesh_handle) in children.iter() {
+     |                                                                                            ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_mesh_handle`
+
+warning: unused variable: `visibility_str`
+    --> src\systems\debug_rendering_system.rs:1289:25
+     |
+1289 |                     let visibility_str = match child_visibility {
+     |                         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_visibility_str`
+
+warning: unused variable: `child_render_layers`
+    --> src\systems\debug_rendering_system.rs:1295:25
+     |
+1295 |                     let child_render_layers = world.get::<bevy::render::view::RenderLayers>(child_entity);
+     |                         ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_child_render_layers`
+
+warning: unused variable: `child_has_aabb`
+    --> src\systems\debug_rendering_system.rs:1296:25
+     |
+1296 |                     let child_has_aabb = world.get::<Aabb>(child_entity).is_some();
+     |                         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_child_has_aabb`
+
+warning: unused variable: `child_has_no_frustum_culling`
+    --> src\systems\debug_rendering_system.rs:1297:25
+     |
+1297 |                     let child_has_no_frustum_culling = world.get::<bevy::render::view::NoFrustumCulling>(child_entity).is_some();
+     |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_child_has_no_frustum_culling`
+
+warning: unused variable: `child_has_computed_visibility`
+    --> src\systems\debug_rendering_system.rs:1298:25
+     |
+1298 |                     let child_has_computed_visibility = world.get::<bevy::render::view::ViewVisibility>(child_entity).is_some();
+     |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_child_has_computed_visibility`
+
+warning: unused variable: `child_inherited_vis_comp`
+    --> src\systems\debug_rendering_system.rs:1299:25
+     |
+1299 |                     let child_inherited_vis_comp = world.get::<InheritedVisibility>(child_entity);
+     |                         ^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_child_inherited_vis_comp`
+
+warning: value assigned to `visible_children` is never read
+    --> src\systems\debug_rendering_system.rs:1282:21
+     |
+1282 |                     visible_children += 1;
+     |                     ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `position`
+    --> src\systems\debug_rendering_system.rs:1427:17
+     |
+1427 |             let position = transform.translation();
+     |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_position`
+
+warning: unused variable: `camera`
+    --> src\systems\debug_rendering_system.rs:1496:28
+     |
+1496 |     for (camera_transform, camera) in cameras.iter() {
+     |                            ^^^^^^ help: if this is intentional, prefix it with an underscore: `_camera`
+
+warning: variable does not need to be mutable
+   --> src\systems\name_tag_system.rs:336:9
+    |
+336 |     let mut image = Image::new(
+    |         ----^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused variable: `pending_damage_list`
+  --> src\systems\pending_damage_system.rs:18:5
+   |
+18 |     pending_damage_list: &mut PendingDamageList,
+   |     ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_pending_damage_list`
+
+warning: unused variable: `entity`
+  --> src\systems\pending_skill_effect_system.rs:25:5
+   |
+25 |     entity: Entity,
+   |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity`
+
+warning: unused variable: `pending_skill_effect_list`
+  --> src\systems\pending_skill_effect_system.rs:30:5
+   |
+30 |     pending_skill_effect_list: &mut PendingSkillEffectList,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_pending_skill_effect_list`
+
+warning: unused variable: `time`
+   --> src\systems\pending_skill_effect_system.rs:150:5
+    |
+150 |     time: Res<Time>,
+    |     ^^^^ help: if this is intentional, prefix it with an underscore: `_time`
+
+warning: unused variable: `zone_query`
+  --> src\systems\zone_render_validation_system.rs:76:5
+   |
+76 |     zone_query: Query<(Entity, Option<&Children>), With<Zone>>,
+   |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_zone_query`
+
+warning: unreachable pattern
+   --> src\systems\zone_render_validation_system.rs:219:17
+    |
+219 |                 _ => {}
+    |                 ^ no value can reach this
+    |
+note: multiple earlier patterns match some of the same values
+   --> src\systems\zone_render_validation_system.rs:219:17
+    |
+208 |                 LoadState::NotLoaded => {
+    |                 -------------------- matches some of the same values
+...
+212 |                 LoadState::Loading => {
+    |                 ------------------ matches some of the same values
+...
+215 |                 LoadState::Loaded => {}
+    |                 ----------------- matches some of the same values
+216 |                 LoadState::Failed(_) => {
+    |                 -------------------- matches some of the same values
+...
+219 |                 _ => {}
+    |                 ^ collectively making this unreachable
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `entity`
+  --> src\systems\zone_memory_protection_system.rs:92:10
+   |
+92 |     for (entity, mesh, material) in zone_objects.iter() {
+   |          ^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity`
+
+warning: unused variable: `id`
+   --> src\ui\dialog_loader.rs:127:35
+    |
+127 |             AssetEvent::Removed { id } => {
+    |                                   ^^ help: try ignoring the field: `id: _`
+
+warning: unused variable: `id`
+   --> src\ui\dialog_loader.rs:130:33
+    |
+130 |             AssetEvent::Added { id } => {
+    |                                 ^^ help: try ignoring the field: `id: _`
+
+warning: unused variable: `index`
+   --> src\ui\dialog_loader.rs:150:22
+    |
+150 |                 for (index, widget) in dialog.widgets.iter().enumerate() {
+    |                      ^^^^^ help: if this is intentional, prefix it with an underscore: `_index`
+
+warning: unused variable: `discriminant`
+   --> src\ui\dialog_loader.rs:151:25
+    |
+151 |                     let discriminant = std::mem::discriminant(widget);
+    |                         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_discriminant`
+
+warning: unused variable: `filter_name_re`
+  --> src\ui\ui_debug_dialog_list.rs:54:21
+   |
+54 |                 let filter_name_re = if !ui_state.filter_name.is_empty() {
+   |                     ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_filter_name_re`
+
+warning: unused variable: `asset_server`
+  --> src\ui\ui_debug_dialog_list.rs:24:5
+   |
+24 |     asset_server: Res<AssetServer>,
+   |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_asset_server`
+
+warning: unused variable: `entity`
+  --> src\ui\ui_debug_entity_inspector_system.rs:62:37
+   |
+62 |                         if let Some(entity) = debug_inspector_state.entity {
+   |                                     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity`
+
+warning: variable does not need to be mutable
+  --> src\ui\ui_debug_render_system.rs:28:5
+   |
+28 |     mut gizmo_config_store: ResMut<GizmoConfigStore>,
+   |     ----^^^^^^^^^^^^^^^^^^
+   |     |
+   |     help: remove this `mut`
+
+warning: unused variable: `query_event_objects`
+  --> src\ui\ui_debug_render_system.rs:25:5
+   |
+25 |     query_event_objects: Query<&Children, With<EventObject>>,
+   |     ^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_query_event_objects`
+
+warning: unused variable: `query_warp_objects`
+  --> src\ui\ui_debug_render_system.rs:26:5
+   |
+26 |     query_warp_objects: Query<&Children, With<WarpObject>>,
+   |     ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_query_warp_objects`
+
+warning: unused variable: `gizmo_config_store`
+  --> src\ui\ui_debug_render_system.rs:28:5
+   |
+28 |     mut gizmo_config_store: ResMut<GizmoConfigStore>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_gizmo_config_store`
+
+warning: unused variable: `item`
+   --> src\ui\ui_inventory_system.rs:307:17
+    |
+307 |     if let Some(item) = item {
+    |                 ^^^^ help: if this is intentional, prefix it with an underscore: `_item`
+
+warning: unused variable: `response`
+   --> src\ui\ui_inventory_system.rs:308:13
+    |
+308 |         let response = response.context_menu(|ui| {
+    |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_response`
+
+warning: variable does not need to be mutable
+  --> src\ui\ui_party_system.rs:80:5
+   |
+80 |     mut query_player: Query<(Entity, &AbilityValues, &CharacterInfo, &HealthPoints, &Level, Option<&PartyInfo>), With<PlayerCharacter>>,
+   |     ----^^^^^^^^^^^^
+   |     |
+   |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src\ui\ui_skill_list_system.rs:123:5
+    |
+123 |     mut query_player: Query<(Entity, &CharacterInfo, &SkillList, &SkillPoints, &Cooldowns), With<PlayerCharacter>>,
+    |     ----^^^^^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src\ui\ui_skill_tree_system.rs:162:5
+    |
+162 |     mut query_player: Query<(Entity, &CharacterInfo, &SkillList, &SkillPoints), With<PlayerCharacter>>,
+    |     ----^^^^^^^^^^^^
+    |     |
+    |     help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src\ui\ui_status_effects_system.rs:16:5
+   |
+16 |     mut query_player: Query<(Entity, &StatusEffects), With<PlayerCharacter>>,
+   |     ----^^^^^^^^^^^^
+   |     |
+   |     help: remove this `mut`
+
+warning: unused variable: `time`
+  --> src\ui\ui_status_effects_system.rs:19:5
+   |
+19 |     time: Res<Time>,
+   |     ^^^^ help: if this is intentional, prefix it with an underscore: `_time`
+
+warning: unused variable: `entity`
+  --> src\ui\ui_status_effects_system.rs:27:10
+   |
+27 |     let (entity, status_effects) = player;
+   |          ^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity`
+
+warning: unused variable: `discriminant`
+   --> src\ui\widgets\mod.rs:191:13
+    |
+191 |         let discriminant = std::mem::discriminant(self);
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_discriminant`
+
+warning: unused variable: `index`
+   --> src\ui\widgets\mod.rs:231:14
+    |
+231 |         for (index, widget) in self.iter().enumerate() {
+    |              ^^^^^ help: if this is intentional, prefix it with an underscore: `_index`
+
+warning: unused variable: `widget_count`
+   --> src\ui\widgets\mod.rs:242:13
+    |
+242 |         let widget_count = self.len();
+    |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_widget_count`
+
+warning: unused variable: `index`
+   --> src\ui\widgets\mod.rs:244:14
+    |
+244 |         for (index, widget) in self.iter_mut().enumerate() {
+    |              ^^^^^ help: if this is intentional, prefix it with an underscore: `_index`
+
+warning: unused variable: `discriminant`
+   --> src\ui\widgets\mod.rs:245:17
+    |
+245 |             let discriminant = std::mem::discriminant(widget);
+    |                 ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_discriminant`
+
+warning: unused variable: `path_str`
+   --> src\vfs_asset_io.rs:219:17
+    |
+219 |             let path_str = path.to_str().unwrap_or("");
+    |                 ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_path_str`
+
+warning: unused variable: `asset_path`
+  --> src\zms_asset_loader.rs:55:17
+   |
+55 |             let asset_path = load_context.path().to_string_lossy();
+   |                 ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_asset_path`
+
+warning: unused variable: `path`
+   --> src\zone_loader.rs:414:51
+    |
+414 |     pub fn log_material_handle_created(&mut self, path: &str, texture_count: usize) {
+    |                                                   ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+
+warning: unused variable: `texture_count`
+   --> src\zone_loader.rs:414:63
+    |
+414 |     pub fn log_material_handle_created(&mut self, path: &str, texture_count: usize) {
+    |                                                               ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_texture_count`
+
+warning: unused variable: `entity_type`
+   --> src\zone_loader.rs:435:42
+    |
+435 |     pub fn log_entity_spawned(&mut self, entity_type: &str, asset_count: usize) {
+    |                                          ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_entity_type`
+
+warning: unused variable: `asset_count`
+   --> src\zone_loader.rs:435:61
+    |
+435 |     pub fn log_entity_spawned(&mut self, entity_type: &str, asset_count: usize) {
+    |                                                             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_asset_count`
+
+warning: variable `blocks_loaded` is assigned to, but never used
+   --> src\zone_loader.rs:770:9
+    |
+770 |     let mut blocks_loaded = 0;
+    |         ^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_blocks_loaded` instead
+
+warning: variable `blocks_skipped` is assigned to, but never used
+   --> src\zone_loader.rs:771:9
+    |
+771 |     let mut blocks_skipped = 0;
+    |         ^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider using `_blocks_skipped` instead
+
+warning: unused variable: `block_x`
+   --> src\zone_loader.rs:802:14
+    |
+802 |         for (block_x, block_y, error) in skipped_blocks.iter().take(10) {
+    |              ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_block_x`
+
+warning: unused variable: `block_y`
+   --> src\zone_loader.rs:802:23
+    |
+802 |         for (block_x, block_y, error) in skipped_blocks.iter().take(10) {
+    |                       ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_block_y`
+
+warning: unused variable: `error`
+   --> src\zone_loader.rs:802:32
+    |
+802 |         for (block_x, block_y, error) in skipped_blocks.iter().take(10) {
+    |                                ^^^^^ help: if this is intentional, prefix it with an underscore: `_error`
+
+warning: value assigned to `blocks_loaded` is never read
+   --> src\zone_loader.rs:779:21
+    |
+779 |                     blocks_loaded += 1;
+    |                     ^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `blocks_skipped` is never read
+   --> src\zone_loader.rs:782:21
+    |
+782 |                     blocks_skipped += 1;
+    |                     ^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: unused variable: `e`
+   --> src\zone_loader.rs:971:13
+    |
+971 |         Err(e) => {
+    |             ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+warning: unused variable: `e`
+   --> src\zone_loader.rs:983:13
+    |
+983 |         Err(e) => {
+    |             ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+warning: unused variable: `e`
+   --> src\zone_loader.rs:999:13
+    |
+999 |         Err(e) => {
+    |             ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+warning: unused variable: `e`
+    --> src\zone_loader.rs:1015:13
+     |
+1015 |         Err(e) => {
+     |             ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+warning: unreachable pattern
+    --> src\zone_loader.rs:1584:13
+     |
+1435 |             LoadingZoneState::Spawned => {
+     |             ------------------------- matches all the relevant values
+...
+1584 |             LoadingZoneState::Spawned => {
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^ no value can reach this
+
+warning: variable does not need to be mutable
+    --> src\zone_loader.rs:1130:5
+     |
+1130 |     mut zone_load_receiver: ResMut<ZoneLoadChannelReceiver>,
+     |     ----^^^^^^^^^^^^^^^^^^
+     |     |
+     |     help: remove this `mut`
+
+warning: unused variable: `zone_index`
+    --> src\zone_loader.rs:1442:43
+     |
+1442 |                 let zone_id = if let Some(zone_index) = zone_loader_cache.cache.iter().position(|z| {
+     |                                           ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_zone_index`
+
+warning: unused variable: `zone_id`
+    --> src\zone_loader.rs:1500:29
+     |
+1500 |                         let zone_id = zone_data.zone_id;
+     |                             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_zone_id`
+
+warning: unused variable: `zone_path`
+    --> src\zone_loader.rs:1501:29
+     |
+1501 |                         let zone_path = zone_data.zone_path.clone();
+     |                             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_zone_path`
+
+warning: unused variable: `blocks_len`
+    --> src\zone_loader.rs:1502:29
+     |
+1502 |                         let blocks_len = zone_data.blocks.len();
+     |                             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_blocks_len`
+
+warning: unused variable: `npcs_len`
+    --> src\zone_loader.rs:1503:29
+     |
+1503 |                         let npcs_len = zone_data.npcs.len();
+     |                             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_npcs_len`
+
+warning: unused variable: `texture_night_handle`
+    --> src\zone_loader.rs:2161:9
+     |
+2161 |     let texture_night_handle = if texture_night_path.is_empty() || texture_night_path == "NULL" {
+     |         ^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_texture_night_handle`
+
+warning: variable does not need to be mutable
+    --> src\zone_loader.rs:2219:9
+     |
+2219 |     let mut tile_texture_map = vec![0; tile_textures.len()];
+     |         ----^^^^^^^^^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: unused variable: `tile_texture_map`
+    --> src\zone_loader.rs:2219:9
+     |
+2219 |     let mut tile_texture_map = vec![0; tile_textures.len()];
+     |         ^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_tile_texture_map`
+
+warning: unused variable: `standard_materials`
+    --> src\zone_loader.rs:2421:5
+     |
+2421 |     standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+     |     ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_standard_materials`
+
+warning: variable does not need to be mutable
+    --> src\zone_loader.rs:2537:9
+     |
+2537 |     let mut object_entity_commands = commands.spawn((
+     |         ----^^^^^^^^^^^^^^^^^^^^^^
+     |         |
+     |         help: remove this `mut`
+
+warning: unused variable: `mesh_path_log`
+    --> src\zone_loader.rs:2595:21
+     |
+2595 |                 let mesh_path_log = mesh_path.clone();
+     |                     ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_mesh_path_log`
+
+warning: unused variable: `vfs_resource`
+    --> src\zone_loader.rs:2498:5
+     |
+2498 |     vfs_resource: &VfsResource,
+     |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_vfs_resource`
+
+warning: unused variable: `specular_texture`
+    --> src\zone_loader.rs:2500:5
+     |
+2500 |     specular_texture: &SpecularTexture,
+     |     ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_specular_texture`
+
+warning: unused variable: `lightmap_uv_offset`
+    --> src\zone_loader.rs:2620:18
+     |
+2620 |             let (lightmap_uv_offset, lightmap_uv_scale) = lit_part
+     |                  ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_lightmap_uv_offset`
+
+warning: unused variable: `lightmap_uv_scale`
+    --> src\zone_loader.rs:2620:38
+     |
+2620 |             let (lightmap_uv_offset, lightmap_uv_scale) = lit_part
+     |                                      ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_lightmap_uv_scale`
+
+warning: unused variable: `material_path_log`
+    --> src\zone_loader.rs:2639:17
+     |
+2639 |             let material_path_log = material_path.clone();
+     |                 ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_material_path_log`
+
+warning: unused variable: `lightmap_count`
+    --> src\zone_loader.rs:2645:17
+     |
+2645 |             let lightmap_count = lightmap_texture.as_ref().is_some() as usize;
+     |                 ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_lightmap_count`
+
+warning: unused variable: `material_id`
+    --> src\zone_loader.rs:2691:17
+     |
+2691 |             let material_id = material.id();
+     |                 ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_material_id`
+
+warning: unused variable: `is_material_weak`
+    --> src\zone_loader.rs:2692:17
+     |
+2692 |             let is_material_weak = material.is_weak();
+     |                 ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_material_weak`
+
+warning: unused variable: `mesh_count`
+    --> src\zone_loader.rs:2749:9
+     |
+2749 |     let mesh_count = mesh_cache.iter().filter(|m| m.is_some()).count();
+     |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_mesh_count`
+
+warning: unused variable: `effect_transform`
+    --> src\zone_loader.rs:2756:13
+     |
+2756 |         let effect_transform = Transform::default()
+     |             ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_effect_transform`
+
+warning: unused variable: `alpha_enabled`
+    --> src\zone_loader.rs:2825:9
+     |
+2825 |     let alpha_enabled = stb_morph_object.get_int(object_id, 4) != 0;
+     |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_alpha_enabled`
+
+warning: unused variable: `z_test_enabled`
+    --> src\zone_loader.rs:2828:9
+     |
+2828 |     let z_test_enabled = stb_morph_object.get_int(object_id, 7) != 0;
+     |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_z_test_enabled`
+
+warning: unused variable: `z_write_enabled`
+    --> src\zone_loader.rs:2829:9
+     |
+2829 |     let z_write_enabled = stb_morph_object.get_int(object_id, 8) != 0;
+     |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_z_write_enabled`
+
+warning: unused variable: `src_blend_factor`
+    --> src\zone_loader.rs:2831:9
+     |
+2831 |     let src_blend_factor = stb_morph_object.get_int(object_id, 9) as u32;
+     |         ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_src_blend_factor`
+
+warning: unused variable: `dst_blend_factor`
+    --> src\zone_loader.rs:2832:9
+     |
+2832 |     let dst_blend_factor = stb_morph_object.get_int(object_id, 10) as u32;
+     |         ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dst_blend_factor`
+
+warning: unused variable: `blend_op`
+    --> src\zone_loader.rs:2833:9
+     |
+2833 |     let blend_op = stb_morph_object.get_int(object_id, 11) as u32;
+     |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_blend_op`
+
+warning: unused variable: `mesh_path_str`
+    --> src\zone_loader.rs:2855:9
+     |
+2855 |     let mesh_path_str = mesh_path.clone();
+     |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_mesh_path_str`
+
+warning: unused variable: `texture_path_str`
+    --> src\zone_loader.rs:2856:9
+     |
+2856 |     let texture_path_str = texture_path.clone();
+     |         ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_texture_path_str`
+
+warning: unused variable: `motion_path_str`
+    --> src\zone_loader.rs:2857:9
+     |
+2857 |     let motion_path_str = motion_path.clone();
+     |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_motion_path_str`
+
+warning: unused variable: `effect_path_str`
+    --> src\zone_loader.rs:2953:9
+     |
+2953 |     let effect_path_str = effect_object.effect_path.path().to_string_lossy().to_string();
+     |         ^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_effect_path_str`
+
+warning: unused variable: `asset_server`
+    --> src\lib.rs:1550:5
+     |
+1550 |     asset_server: Res<AssetServer>,
+     |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_asset_server`
+
+Some errors have detailed explanations: E0252, E0282, E0425, E0432, E0433, E0599, E0603.
+For more information about an error, try `rustc --explain E0252`.
+warning: `rose-offline-client` (lib) generated 274 warnings
+error: could not compile `rose-offline-client` (lib) due to 24 previous errors; 274 warnings emitted

@@ -84,7 +84,7 @@ pub use collision_system::{
 pub use command_system::command_system;
 pub use conversation_dialog_system::conversation_dialog_system;
 pub use cooldown_system::cooldown_system;
-pub use damage_digit_render_system::damage_digit_render_system;
+pub use damage_digit_render_system::{damage_digit_render_system, create_damage_digit_material_system};
 pub use debug_inspector_system::DebugInspectorPlugin;
 pub use debug_render_collider_system::debug_render_collider_system;
 pub use debug_render_directional_light_system::debug_render_directional_light_system;
@@ -136,7 +136,12 @@ pub use npc_idle_sound_system::npc_idle_sound_system;
 pub use npc_model_add_collider_system::npc_model_add_collider_system;
 pub use npc_model_system::npc_model_update_system;
 pub use orbit_camera_system::{orbit_camera_system, OrbitCamera};
-pub use particle_sequence_system::{particle_sequence_system, particle_storage_buffer_update_system};
+pub use particle_sequence_system::{
+    particle_sequence_system,
+    particle_storage_buffer_update_system,
+    create_default_particle_texture,
+    DefaultParticleTexture,
+};
 pub use passive_recovery_system::passive_recovery_system;
 pub use pending_damage_system::pending_damage_system;
 pub use pending_skill_effect_system::pending_skill_effect_system;

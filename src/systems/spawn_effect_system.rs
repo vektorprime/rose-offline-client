@@ -7,7 +7,6 @@ use bevy::{
     },
     render::{
         mesh::skinning::SkinnedMesh,
-        storage::ShaderStorageBuffer,
     },
 };
 use rose_file_readers::VfsPath;
@@ -44,8 +43,8 @@ pub fn spawn_effect_system(
     vfs_resource: Res<VfsResource>,
     mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
+    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
 ) {
     for event in events.read() {
         match event {
@@ -58,8 +57,8 @@ pub fn spawn_effect_system(
                         &asset_server,
                         &mut particle_materials,
                         &mut effect_mesh_materials,
-                        &mut meshes,
                         &mut storage_buffers,
+                        &mut meshes,
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         Some(*effect_entity),
@@ -76,8 +75,8 @@ pub fn spawn_effect_system(
                             &asset_server,
                             &mut particle_materials,
                             &mut effect_mesh_materials,
-                            &mut meshes,
                             &mut storage_buffers,
+                            &mut meshes,
                             effect_file_path,
                             spawn_effect_data.manual_despawn,
                             None,
@@ -113,8 +112,8 @@ pub fn spawn_effect_system(
                         &asset_server,
                         &mut particle_materials,
                         &mut effect_mesh_materials,
-                        &mut meshes,
                         &mut storage_buffers,
+                        &mut meshes,
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         None,
@@ -132,8 +131,8 @@ pub fn spawn_effect_system(
                         &asset_server,
                         &mut particle_materials,
                         &mut effect_mesh_materials,
-                        &mut meshes,
                         &mut storage_buffers,
+                        &mut meshes,
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         None,

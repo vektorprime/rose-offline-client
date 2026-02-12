@@ -142,7 +142,7 @@ pub fn game_connection_system(
     current_zone: Option<Res<CurrentZone>>,
 ) {
     // DIAGNOSTIC: Log whether CurrentZone resource exists at system entry
-    log::info!("[DIAG_RUN_CONDITION] game_connection_system entry - CurrentZone resource exists: {}", current_zone.is_some());
+   // log::info!("[DIAG_RUN_CONDITION] game_connection_system entry - CurrentZone resource exists: {}", current_zone.is_some());
     let Some(game_connection) = game_connection else {
         return;
     };

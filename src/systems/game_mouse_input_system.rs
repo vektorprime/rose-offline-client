@@ -14,7 +14,7 @@ use rose_game_common::components::{ItemDrop, Team};
 
 use crate::{
     components::{
-        ClientEntity, ClientEntityType, PlayerCharacter, Position, ZoneObject,
+        ColliderParent, ClientEntity, ClientEntityType, PlayerCharacter, Position, ZoneObject,
         COLLISION_FILTER_CLICKABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_PLAYER,
     },
     events::{MoveDestinationEffectEvent, PlayerCommandEvent},
@@ -40,6 +40,7 @@ pub fn game_mouse_input_system(
         Option<&ClientEntity>,
     )>,
     query_player: Query<PlayerQuery, With<PlayerCharacter>>,
+    query_collider_parent: Query<&ColliderParent>,
     mut player_command_events: EventWriter<PlayerCommandEvent>,
     mut selected_target: ResMut<SelectedTarget>,
 ) {
@@ -88,7 +89,9 @@ pub fn game_mouse_input_system(
             )),
         ) {
             let hit_position = ray.get_point(distance);
-            let hit_entity = collider_entity; // Use collider entity directly
+            let hit_entity = query_collider_parent
+                .get(collider_entity)
+                .map_or(collider_entity, |collider_parent| collider_parent.entity);
 
             if let Ok((
                 hit_team,

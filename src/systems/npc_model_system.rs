@@ -8,7 +8,6 @@ use bevy::{
     render::{
         alpha::AlphaMode,
         mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
-        storage::ShaderStorageBuffer,
     },
 };
 
@@ -45,7 +44,7 @@ pub fn npc_model_update_system(
     mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
     mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
     game_data: Res<GameData>,
 ) {
     for (

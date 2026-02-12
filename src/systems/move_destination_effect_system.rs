@@ -6,7 +6,6 @@ use bevy::{
     },
     render::{
         alpha::AlphaMode,
-        storage::ShaderStorageBuffer,
     },
 };
 use rose_data::EffectFileId;
@@ -32,8 +31,8 @@ pub fn move_destination_effect_system(
     vfs_resource: Res<VfsResource>,
     mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
+    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
 ) {
     for event in events.read() {
         match event {
@@ -65,8 +64,8 @@ pub fn move_destination_effect_system(
                         &asset_server,
                         &mut particle_materials,
                         &mut effect_mesh_materials,
-                        &mut meshes,
                         &mut storage_buffers,
+                        &mut meshes,
                         effect_file_path,
                         true,
                         Some(effect_entity),
