@@ -2369,11 +2369,11 @@ fn spawn_terrain(
     }
 
     // Use first texture from tile_textures for StandardMaterial (simplified)
-    // FIX: Use unlit: true to ensure terrain is visible without requiring lights
+    // FIX: Enable PBR lighting so terrain responds to directional and ambient lights
     let base_texture = tile_textures.first().cloned();
     let material_handle = standard_materials.add(bevy::pbr::StandardMaterial {
         base_color_texture: base_texture,
-        unlit: true,  // CHANGED: Make material unlit so it doesn't require lighting
+        unlit: false,  // Enable PBR lighting for terrain
         ..Default::default()
     });
 
