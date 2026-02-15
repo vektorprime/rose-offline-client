@@ -111,7 +111,7 @@ fn spawn_lights(mut commands: Commands) {
     // or kept as a resource. Using as resource for global ambient light.
     commands.insert_resource(AmbientLight {
         color: Color::srgb(1.0, 1.0, 1.0),
-        brightness: 0.3,  // Reduced for balanced PBR lighting (was 1.0 too bright)
+        brightness: 500.0,  // Increased for better visibility in shadows
     });
     
     //bevy::log::info!("[ZONE LIGHTING] Ambient light inserted: brightness=1.0");
