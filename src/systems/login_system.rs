@@ -96,7 +96,7 @@ pub fn login_system(
                 });
         }
         _ => {
-            log::trace!("[LOGIN SYSTEM] No UI to render for state: {:?}", *login_state);
+            //log::trace!("[LOGIN SYSTEM] No UI to render for state: {:?}", *login_state);
         }
     }
 }

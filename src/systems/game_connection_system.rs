@@ -1,5 +1,6 @@
 use arrayvec::ArrayVec;
 use bevy::{
+    asset::Assets,
     ecs::event::Events,
     math::{Quat, Vec3},
     prelude::{
@@ -9,6 +10,7 @@ use bevy::{
     render::view::ViewVisibility,
 };
 use bevy::render::view::InheritedVisibility;
+use crate::zone_loader::ZoneLoaderAsset;
 
 use rose_data::{
     AbilityType, EquipmentItem, Item, ItemReference, ItemSlotBehaviour, ItemType, SkillCooldown,
@@ -123,6 +125,30 @@ fn update_inventory_and_money(
     }
 }
 
+
+/// Helper function to get terrain height at a position from the zone heightmap
+/// Returns the terrain height in meters, or a fallback value if zone data is unavailable
+fn get_spawn_height_from_world(
+    world: &World,
+    position_x: f32,
+    position_y: f32,
+) -> f32 {
+    // Try to get CurrentZone resource
+    if let Some(current_zone) = world.get_resource::<CurrentZone>() {
+        // Try to get zone loader assets
+        if let Some(zone_loader_assets) = world.get_resource::<Assets<ZoneLoaderAsset>>() {
+            if let Some(zone_data) = zone_loader_assets.get(&current_zone.handle) {
+                let terrain_height = zone_data.get_terrain_height(position_x, position_y) / 100.0;
+                log::info!("[SPAWN_HEIGHT] Terrain height at ({:.2}, {:.2}): {:.2}m", position_x, position_y, terrain_height);
+                return terrain_height;
+            }
+        }
+    }
+    // Fallback: use a reasonable default height if zone data is unavailable
+    log::warn!("[SPAWN_HEIGHT] Zone data unavailable, using fallback height of 10.0m");
+    10.0
+}
+
 pub fn game_connection_system(
     mut commands: Commands,
     game_connection: Option<Res<GameConnection>>,
@@ -139,7 +165,6 @@ pub fn game_connection_system(
     mut personal_store_events: EventWriter<PersonalStoreEvent>,
     mut quest_trigger_events: EventWriter<QuestTriggerEvent>,
     mut message_box_events: EventWriter<MessageBoxEvent>,
-    current_zone: Option<Res<CurrentZone>>,
 ) {
     // DIAGNOSTIC: Log whether CurrentZone resource exists at system entry
    // log::info!("[DIAG_RUN_CONDITION] game_connection_system entry - CurrentZone resource exists: {}", current_zone.is_some());
@@ -319,53 +344,67 @@ pub fn game_connection_system(
                 ability_values.attack_speed += message.passive_attack_speed;
                 ability_values.passive_attack_speed = message.passive_attack_speed;
 
-                let entity = commands
-                    .spawn(((
-                        ClientEntityName::new(message.character_info.name.clone()),
+                // Store data needed for deferred spawning
+                let position = message.position;
+                let entity_id = message.entity_id;
+                let character_info = message.character_info.clone();
+                let team = message.team;
+                let health = message.health;
+                let move_mode = message.move_mode;
+                let equipment = message.equipment.clone();
+                let level = message.level;
+                let move_speed = message.move_speed;
+                let personal_store_info = message.personal_store_info.clone();
+                let clan_membership = message.clan_membership.clone();
+                
+                commands.queue(move |world: &mut World| {
+                    // Get terrain height at spawn position
+                    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
+                    
+                    // Spawn with core components first
+                    let entity = world.spawn((
+                        ClientEntityName::new(character_info.name.clone()),
                         Command::with_stop(),
                         next_command,
-                        message.character_info,
-                        message.team,
-                        message.health,
-                        message.move_mode,
-                        Position::new(message.position),
-                        message.equipment,
-                        message.level,
-                        message.move_speed,
+                        character_info,
+                        team,
+                        health,
+                        move_mode,
+                        Position::new(position),
+                        equipment,
+                        level,
+                        move_speed,
                         ability_values,
                         status_effects,
                         StatusEffectsRegen::new(),
-                    ),
-                    (
-                        ClientEntity::new(message.entity_id, ClientEntityType::Character),
+                    )).id();
+
+                    // Add remaining components in a second insert to avoid tuple size limit
+                    world.entity_mut(entity).insert((
+                        ClientEntity::new(entity_id, ClientEntityType::Character),
                         CollisionHeightOnly,
                         FacingDirection::default(),
                         PendingDamageList::default(),
                         PendingSkillEffectList::default(),
                         PendingSkillTargetList::default(),
                         Transform::from_xyz(
-                            message.position.x / 100.0,
-                            message.position.z / 100.0 + 10000.0,
-                            -message.position.y / 100.0,
+                            position.x / 100.0,
+                            spawn_y,
+                            -position.y / 100.0,
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
                         VisibleStatusEffects::default(),
-                    ),))
-                    .id();
+                    ));
 
-                if let Some((skin, title)) = message.personal_store_info {
-                    commands
-                        .entity(entity)
-                        .insert(PersonalStore::new(title, skin as usize));
-                }
+                    if let Some((skin, title)) = personal_store_info {
+                        world.entity_mut(entity).insert(PersonalStore::new(title, skin as usize));
+                    }
 
-                if let Some(clan_membership) = message.clan_membership {
-                    commands
-                        .entity(entity)
-                        .insert(ClanMembership {
+                    if let Some(clan_membership) = clan_membership {
+                        world.entity_mut(entity).insert(ClanMembership {
                             clan_unique_id: clan_membership.clan_unique_id,
                             mark: clan_membership.mark,
                             level: clan_membership.level,
@@ -373,9 +412,10 @@ pub fn game_connection_system(
                             position: clan_membership.position,
                             contribution: ClanPoints(0),
                         });
-                }
+                    }
 
-                client_entity_list.add(message.entity_id, entity);
+                    world.resource_mut::<ClientEntityList>().add(entity_id, entity);
+                });
             }
             Ok(ServerMessage::SpawnEntityNpc {
                 entity_id,
@@ -393,8 +433,6 @@ pub fn game_connection_system(
                 log::info!("[DIAG_NPC_SPAWN]   entity_id: {:?}", entity_id);
                 log::info!("[DIAG_NPC_SPAWN]   npc_id: {:?}", npc.id);
                 log::info!("[DIAG_NPC_SPAWN]   initial position (server): x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
-                log::info!("[DIAG_NPC_SPAWN]   initial transform (bevy): x={:.2}, y={:.2}, z={:.2}", position.x / 100.0, position.z / 100.0 + 10000.0, -position.y / 100.0);
-                log::info!("[DIAG_NPC_SPAWN]   CurrentZone resource available: {}", current_zone.is_some());
 
                 let status_effects = StatusEffects {
                     active: status_effects,
@@ -408,12 +446,19 @@ pub fn game_connection_system(
                 let level = Level::new(ability_values.get_level() as u32);
                 let next_command = to_next_command(&spawn_command_state, &client_entity_list);
 
-                let entity = commands
-                    .spawn((
-                        (
+                // Store data needed for deferred spawning
+                let npc_clone = npc;
+                
+                commands.queue(move |world: &mut World| {
+                    // Get terrain height at spawn position
+                    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
+                    log::info!("[DIAG_NPC_SPAWN] Spawning at terrain height: {:.2}m (server z was: {:.2})", spawn_y, position.z / 100.0);
+
+                    // Spawn with core components first
+                    let entity = world.spawn((
                         Command::with_stop(),
                         next_command,
-                        npc,
+                        npc_clone,
                         team,
                         health,
                         move_mode,
@@ -422,7 +467,11 @@ pub fn game_connection_system(
                         level,
                         move_speed,
                         status_effects,
-                    ), (
+                        StatusEffectsRegen::new(),
+                    )).id();
+
+                    // Add remaining components in a second insert to avoid tuple size limit
+                    world.entity_mut(entity).insert((
                         ClientEntity::new(entity_id, ClientEntityType::Npc),
                         CollisionHeightOnly,
                         FacingDirection::default(),
@@ -432,7 +481,7 @@ pub fn game_connection_system(
                         VisibleStatusEffects::default(),
                         Transform::from_xyz(
                             position.x / 100.0,
-                            position.z / 100.0 + 10000.0,
+                            spawn_y,
                             -position.y / 100.0,
                         )
                         .with_rotation(Quat::from_axis_angle(
@@ -443,11 +492,10 @@ pub fn game_connection_system(
                         Visibility::default(),
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
-                    ),
-                    ))
-                    .id();
+                    ));
 
-                client_entity_list.add(entity_id, entity);
+                    world.resource_mut::<ClientEntityList>().add(entity_id, entity);
+                });
             }
             Ok(ServerMessage::SpawnEntityMonster { entity_id, npc, position, team, health, spawn_command_state, move_mode, status_effects }) => {
                 // DIAGNOSTIC: Log monster spawning information
@@ -455,8 +503,6 @@ pub fn game_connection_system(
                 log::info!("[DIAG_MONSTER_SPAWN]   entity_id: {:?}", entity_id);
                 log::info!("[DIAG_MONSTER_SPAWN]   npc_id: {:?}", npc.id);
                 log::info!("[DIAG_MONSTER_SPAWN]   initial position (server): x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
-                log::info!("[DIAG_MONSTER_SPAWN]   initial transform (bevy): x={:.2}, y={:.2}, z={:.2}", position.x / 100.0, position.z / 100.0 + 10000.0, -position.y / 100.0);
-                log::info!("[DIAG_MONSTER_SPAWN]   CurrentZone resource available: {}", current_zone.is_some());
 
                 let status_effects = StatusEffects {
                     active: status_effects,
@@ -503,11 +549,19 @@ pub fn game_connection_system(
                     }
                 }
 
-                let entity = commands
-                    .spawn(((
+                // Store data needed for deferred spawning
+                let npc_clone = npc;
+                
+                commands.queue(move |world: &mut World| {
+                    // Get terrain height at spawn position
+                    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
+                    log::info!("[DIAG_MONSTER_SPAWN] Spawning at terrain height: {:.2}m (server z was: {:.2})", spawn_y, position.z / 100.0);
+
+                    // Spawn with core components first
+                    let entity = world.spawn((
                         Command::with_stop(),
                         next_command,
-                        npc,
+                        npc_clone,
                         team,
                         health,
                         move_mode,
@@ -517,8 +571,11 @@ pub fn game_connection_system(
                         level,
                         move_speed,
                         status_effects,
-                    ),
-                    (
+                        StatusEffectsRegen::new(),
+                    )).id();
+
+                    // Add remaining components in a second insert to avoid tuple size limit
+                    world.entity_mut(entity).insert((
                         ClientEntity::new(entity_id, ClientEntityType::Monster),
                         CollisionHeightOnly,
                         FacingDirection::default(),
@@ -528,17 +585,17 @@ pub fn game_connection_system(
                         VisibleStatusEffects::default(),
                         Transform::from_xyz(
                             position.x / 100.0,
-                            position.z / 100.0 + 10000.0,
+                            spawn_y,
                             -position.y / 100.0,
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
-                    ),))
-                    .id();
+                    ));
 
-                client_entity_list.add(entity_id, entity);
+                    world.resource_mut::<ClientEntityList>().add(entity_id, entity);
+                });
             }
             Ok(ServerMessage::SpawnEntityItemDrop { entity_id, dropped_item, position, remaining_time: _, owner_entity_id: _ }) => {
                 let name = match &dropped_item {
@@ -554,9 +611,13 @@ pub fn game_connection_system(
                     }
                 };
 
-                // TODO: Use message.remaining_time, message.owner_entity_id ?
-                let entity = commands
-                    .spawn((
+                commands.queue(move |world: &mut World| {
+                    // Get terrain height at spawn position
+                    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
+
+                    // TODO: Use message.remaining_time, message.owner_entity_id ?
+                    let entity = world
+                        .spawn((
                         ClientEntityName::new(name),
                         ItemDrop::with_dropped_item(dropped_item),
                         Position::new(position),
@@ -564,17 +625,17 @@ pub fn game_connection_system(
                         CollisionHeightOnly,
                         Transform::from_xyz(
                             position.x / 100.0,
-                            position.z / 100.0 + 10000.0,
+                            spawn_y,
                             -position.y / 100.0,
                         ),
                         GlobalTransform::default(),
                         Visibility::default(),
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
-                    ))
-                    .id();
+                    )).id();
 
-                client_entity_list.add(entity_id, entity);
+                    world.resource_mut::<ClientEntityList>().add(entity_id, entity);
+                });
             }
             Ok(ServerMessage::MoveEntity { entity_id, target_entity_id, distance: _, x, y, z, move_mode }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {

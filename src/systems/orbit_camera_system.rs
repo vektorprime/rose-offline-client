@@ -186,16 +186,16 @@ pub fn orbit_camera_system(
         orbit_camera.rig.driver_mut::<Position>().position = position;
 
         // Log camera position and direction periodically
-        if time.elapsed().as_secs_f32() % 5.0 < time.delta().as_secs_f32() {
-            let yaw_pitch = orbit_camera.rig.driver::<YawPitch>();
-            log::info!("[CAMERA] Orbit Camera - Position: ({:.2}, {:.2}, {:.2}), Yaw: {:.2}°, Pitch: {:.2}°, Distance: {:.2}",
-                camera_transform.translation.x,
-                camera_transform.translation.y,
-                camera_transform.translation.z,
-                yaw_pitch.yaw_degrees,
-                yaw_pitch.pitch_degrees,
-                orbit_camera.follow_distance);
-        }
+        //if time.elapsed().as_secs_f32() % 5.0 < time.delta().as_secs_f32() {
+        //    let yaw_pitch = orbit_camera.rig.driver::<YawPitch>();
+        //    log::info!("[CAMERA] Orbit Camera - Position: ({:.2}, {:.2}, {:.2}), Yaw: {:.2}°, Pitch: {:.2}°, Distance: {:.2}",
+        //        camera_transform.translation.x,
+        //        camera_transform.translation.y,
+        //        camera_transform.translation.z,
+        //        yaw_pitch.yaw_degrees,
+        //        yaw_pitch.pitch_degrees,
+        //        orbit_camera.follow_distance);
+        //}
 
         // Camera collision
         let ray_direction = (camera_transform.translation - follow_position).normalize();

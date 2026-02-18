@@ -328,7 +328,7 @@ use crate::{
     effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect},
     events::{LoadZoneEvent, ZoneEvent, ZoneLoadedFromVfsEvent},
     render::{
-        MESH_ATTRIBUTE_UV_1, ParticleMaterial, RoseEffectExtension,
+        MESH_ATTRIBUTE_UV_1, ParticleMaterial, RoseEffectExtension, TerrainMaterial,
     },
     resources::{CurrentZone, DebugInspector, GameData, SpecularTexture},
     VfsResource,
@@ -1046,6 +1046,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub meshes: ResMut<'w, Assets<Mesh>>,
     pub specular_texture: Res<'w, SpecularTexture>,
     pub standard_materials: ResMut<'w, Assets<bevy::pbr::StandardMaterial>>,
+    pub terrain_materials: ResMut<'w, Assets<TerrainMaterial>>,
     pub effect_mesh_materials: ResMut<'w, Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     pub particle_materials: ResMut<'w, Assets<ParticleMaterial>>,
     pub storage_buffers: ResMut<'w, Assets<bevy::render::storage::ShaderStorageBuffer>>,
@@ -1174,11 +1175,13 @@ pub fn zone_loader_system(
                     log::warn!("[ZONE LOADER SYSTEM] Could not find zone {} in loading queue to remove", zone_id.get());
                 }
 
-                // Send event to the new zone_loaded_from_vfs_system for spawning
-                zone_loaded_from_vfs_events.send(ZoneLoadedFromVfsEvent {
-                    zone_id,
-                    zone_asset,
-                });
+                // CRITICAL FIX: Add the zone asset to the Assets collection HERE where we have ownership
+                // This allows collision_player_system to access terrain height data
+                let zone_handle = spawn_zone_params.zone_loader_assets.add(zone_asset);
+                log::info!("[ZONE LOADER SYSTEM] Zone {} added to Assets collection with handle: {:?}", zone_id.get(), zone_handle);
+
+                // Send event with the handle (not the Arc) to zone_loaded_from_vfs_system for spawning
+                zone_loaded_from_vfs_events.send(ZoneLoadedFromVfsEvent::new(zone_id, zone_handle));
             }
             Err(e) => {
                 log::error!("[ZONE LOADER SYSTEM] Failed to load zone {} from async task: {:?}", zone_id.get(), e);
@@ -1719,11 +1722,36 @@ pub fn zone_loaded_from_vfs_system(
             spawn_zone_params.commands.remove_resource::<CurrentZone>();
         }
         
-        // Spawn the zone using the asset from the event
+        // CRITICAL FIX: The zone asset was already added to the Assets collection in zone_loader_system
+        // We just need to use the handle from the event to spawn the zone
+        let zone_handle = event.zone_handle.clone();
+        log::info!("[ZONE LOADED FROM VFS] Using zone handle from event: {:?}", zone_handle);
+        
+        // Spawn the zone using the asset from the collection (via handle)
         // DIAGNOSTIC: About to call spawn_zone
         log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] About to call spawn_zone for zone_id={}",
             event.zone_id.get());
-        match spawn_zone(&mut spawn_zone_params, &event.zone_asset) {
+        
+        // Use raw pointer to work around borrow checker (same pattern as zone_loader_system line 1510-1516)
+        // This is safe because spawn_zone doesn't modify zone_loader_assets
+        let zone_asset_ref = match spawn_zone_params.zone_loader_assets.get(&zone_handle) {
+            Some(asset) => asset,
+            None => {
+                log::error!("[ZONE LOADED FROM VFS] Zone asset not found in collection for handle: {:?}", zone_handle);
+                failed_count += 1;
+                continue;
+            }
+        };
+        let zone_data_ptr: *const ZoneLoaderAsset = zone_asset_ref;
+        let spawn_zone_params_ptr: *mut SpawnZoneParams = &mut spawn_zone_params;
+        
+        let spawn_result = unsafe {
+            let zone_data_ref: &ZoneLoaderAsset = &*zone_data_ptr;
+            let spawn_zone_params_ref: &mut SpawnZoneParams = &mut *spawn_zone_params_ptr;
+            spawn_zone(spawn_zone_params_ref, zone_data_ref)
+        };
+        
+        match spawn_result {
             Ok((entity, _zone_assets)) => {
                 success_count += 1;
                 log::info!("[ZONE LOADED FROM VFS] Zone {} spawned successfully! entity={:?}",
@@ -1733,23 +1761,18 @@ pub fn zone_loaded_from_vfs_system(
                 log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] ✓ Zone entity created in zone_loaded_from_vfs_system: entity={:?}, zone_id={}",
                     entity, event.zone_id.get());
 
-                // CRITICAL FIX: Create a placeholder handle for VFS-loaded zones
-                // VFS zones bypass the AssetServer, so we use a default handle
-                // The entity is tracked via the zone entity itself and CurrentZone resource
-                let zone_handle = Handle::<ZoneLoaderAsset>::default();
-                
-                // CRITICAL FIX: Cache VFS-loaded zones with placeholder handle
-                // The spawned_entity is what matters for despawning; handle is not used for VFS zones
+                // CRITICAL FIX: Cache VFS-loaded zones with the REAL handle (not placeholder)
+                // The spawned_entity is what matters for despawning; handle is used for terrain height lookups
                 zone_loader_cache.cache[zone_index] = Some(CachedZone {
-                    data_handle: zone_handle,
+                    data_handle: zone_handle.clone(),
                     spawned_entity: Some(entity),
                 });
 
-                // CRITICAL FIX: Set CurrentZone resource (matching AssetServer path)
-                // Note: VFS-loaded zones use a default handle since they bypass AssetServer
+                // CRITICAL FIX: Set CurrentZone resource with the REAL handle
+                // This allows collision_player_system to access zone data via zone_loader_assets.get(&current_zone.handle)
                 spawn_zone_params.commands.insert_resource(CurrentZone {
                     id: event.zone_id,
-                    handle: Handle::<ZoneLoaderAsset>::default(),
+                    handle: zone_handle,
                 });
                 
                 // Send loaded event
@@ -1825,6 +1848,7 @@ pub fn spawn_zone(
         meshes,
         specular_texture,
         standard_materials,
+        terrain_materials,
         effect_mesh_materials,
         particle_materials,
         storage_buffers,
@@ -1930,7 +1954,7 @@ pub fn spawn_zone(
                     commands,
                     asset_server,
                     meshes,
-                    standard_materials,
+                    terrain_materials,
                     &tile_textures,
                     zone_data,
                     block_data,
@@ -2196,7 +2220,7 @@ fn spawn_terrain(
     commands: &mut Commands,
     asset_server: &AssetServer,
     meshes: &mut Assets<Mesh>,
-    standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+    terrain_materials: &mut Assets<TerrainMaterial>,
     tile_textures: &Vec<Handle<Image>>,
     zone_data: &ZoneLoaderAsset,
     block_data: &ZoneLoaderBlock,
@@ -2216,56 +2240,69 @@ fn spawn_terrain(
     let tilemap = block_data.til.as_ref();
     let heightmap = &block_data.him;
 
-    let mut tile_texture_map = vec![0; tile_textures.len()];
-    
-    // Build list of textures for this terrain block
-    let mut terrain_textures: Vec<Handle<Image>> = Vec::with_capacity(tile_textures.len() + 1);
-    
-    // Add lightmap as first texture
-    terrain_textures.push(asset_server.load(format!(
-        "{}/{1:}_{2:}/{1:}_{2:}_PLANELIGHTINGMAP.DDS",
-        zone_data.zone_path.to_str().unwrap(),
-        block_data.block_x,
-        block_data.block_y,
-    )    ));
-
-    // Simplified terrain - just use first texture for now
     // Build tile_texture_map for UV lookup
-    let mut tile_texture_map = vec![0u32; tile_textures.len()];
+    let mut tile_texture_map = vec![0u32; tile_textures.len().max(1)];
+    
+    // First pass: build the texture mapping
     for tile_x in 0..16 {
         for tile_y in 0..16 {
-            let tile = &zone_data.zon.tiles[tilemap
-                .map(|tilemap| tilemap.get_clamped(tile_x, tile_y) as usize)
-                .unwrap_or(0)];
-            let tile_array_index1 = tile.layer1 + tile.offset1;
-            let tile_array_index2 = tile.layer2 + tile.offset2;
+            let tile_idx = tilemap
+                .map(|tm| tm.get_clamped(tile_x, tile_y) as usize)
+                .unwrap_or(0);
+            
+            if tile_idx >= zone_data.zon.tiles.len() {
+                continue;
+            }
+            
+            let tile = &zone_data.zon.tiles[tile_idx];
+            let tile_array_index1 = (tile.layer1 + tile.offset1) as usize;
+            let tile_array_index2 = (tile.layer2 + tile.offset2) as usize;
 
-            if tile_array_index1 as usize >= tile_texture_map.len() {
+            if tile_array_index1 < tile_texture_map.len() {
+                tile_texture_map[tile_array_index1] = tile_array_index1 as u32;
+            } else {
                 warn!(
-                    "Invalid tile layer1 id {}, tile.layer1: {} + tile.offset1: {}",
-                    tile_array_index1, tile.layer1, tile.offset1
+                    "[SPAWN TERRAIN] Invalid tile layer1 id {} (max: {}), clamping",
+                    tile_array_index1, tile_texture_map.len().saturating_sub(1)
                 );
             }
 
-            if tile_array_index2 as usize >= tile_texture_map.len() {
+            if tile_array_index2 < tile_texture_map.len() {
+                tile_texture_map[tile_array_index2] = tile_array_index2 as u32;
+            } else {
                 warn!(
-                    "Invalid tile layer2 id {}, tile.layer2: {} + tile.offset2: {}",
-                    tile_array_index2, tile.layer2, tile.offset2
+                    "[SPAWN TERRAIN] Invalid tile layer2 id {} (max: {}), clamping",
+                    tile_array_index2, tile_texture_map.len().saturating_sub(1)
                 );
             }
-
-            tile_texture_map[tile_array_index1 as usize] = tile_array_index1 as u32;
-            tile_texture_map[tile_array_index2 as usize] = tile_array_index2 as u32;
         }
     }
 
+    // Second pass: build mesh vertices with tile info
     for tile_x in 0..16 {
         for tile_y in 0..16 {
-            let tile = &zone_data.zon.tiles[tilemap
-                .map(|tilemap| tilemap.get_clamped(tile_x, tile_y) as usize)
-                .unwrap_or(0)];
-            let tile_array_index1 = tile_texture_map[(tile.layer1 + tile.offset1) as usize];
-            let tile_array_index2 = tile_texture_map[(tile.layer2 + tile.offset2) as usize];
+            let tile_idx = tilemap
+                .map(|tm| tm.get_clamped(tile_x, tile_y) as usize)
+                .unwrap_or(0);
+            
+            let tile = if tile_idx < zone_data.zon.tiles.len() {
+                &zone_data.zon.tiles[tile_idx]
+            } else {
+                continue;
+            };
+            
+            // Get tile texture indices with bounds checking
+            let tile_array_index1 = if ((tile.layer1 + tile.offset1) as usize) < tile_texture_map.len() {
+                tile_texture_map[(tile.layer1 + tile.offset1) as usize]
+            } else {
+                0
+            };
+            let tile_array_index2 = if ((tile.layer2 + tile.offset2) as usize) < tile_texture_map.len() {
+                tile_texture_map[(tile.layer2 + tile.offset2) as usize]
+            } else {
+                0
+            };
+            
             let tile_rotation = match tile.rotation {
                 ZonTileRotation::FlipHorizontal => 2,
                 ZonTileRotation::FlipVertical => 3,
@@ -2306,7 +2343,8 @@ fn spawn_terrain(
                         (tile_y as f32 * 4.0 + y as f32) / 64.0,
                     ]);
 
-                    tile_ids.push(tile_array_index1 | tile_array_index2 << 8 | tile_rotation << 16);
+                    // Pack tile info: layer1_id | layer2_id << 8 | rotation << 16
+                    tile_ids.push(tile_array_index1 | (tile_array_index2 << 8) | ((tile_rotation as u32) << 16));
                 }
             }
 
@@ -2336,7 +2374,15 @@ fn spawn_terrain(
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs_lightmap);
     mesh.insert_attribute(MESH_ATTRIBUTE_UV_1, uvs_tile);
-    log::info!("[SPAWN TERRAIN] Block {}_{}: Mesh created with {} vertices, {} triangles",
+    
+    // CRITICAL FIX: Insert tile_ids as custom vertex attribute for terrain texture mapping
+    // This was the missing piece - tile_ids was computed but never added to the mesh!
+    mesh.insert_attribute(
+        crate::render::TERRAIN_MESH_ATTRIBUTE_TILE_INFO,
+        tile_ids,
+    );
+    
+    log::info!("[SPAWN TERRAIN] Block {}_{}: Mesh created with {} vertices, {} triangles (with tile_info attribute)",
         block_data.block_x, block_data.block_y, vertex_count, triangle_count);
     log::info!("[MEMORY] Terrain mesh created for block {}_{}", block_data.block_x, block_data.block_y);
 
@@ -2368,13 +2414,10 @@ fn spawn_terrain(
         }
     }
 
-    // Use first texture from tile_textures for StandardMaterial (simplified)
-    // FIX: Enable PBR lighting so terrain responds to directional and ambient lights
-    let base_texture = tile_textures.first().cloned();
-    let material_handle = standard_materials.add(bevy::pbr::StandardMaterial {
-        base_color_texture: base_texture,
-        unlit: false,  // Enable PBR lighting for terrain
-        ..Default::default()
+    // Create TerrainMaterial with all tile textures for proper multi-texture terrain rendering
+    // The shader uses binding_array to sample from up to 100 textures based on per-vertex tile_info
+    let material_handle = terrain_materials.add(TerrainMaterial {
+        textures: tile_textures.clone(),
     });
 
     let terrain_entity = commands

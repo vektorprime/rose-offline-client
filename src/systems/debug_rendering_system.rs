@@ -710,7 +710,7 @@ pub fn active_camera_diagnostics(
     
     // Always log first frame to confirm system is running
     if *frame_count == 1 {
-        log::info!("[ACTIVE CAMERA] Diagnostic system initialized - will report every 60 frames");
+        //log::info!("[ACTIVE CAMERA] Diagnostic system initialized - will report every 60 frames");
     }
     
     // Only run every 60 frames (approximately once per second at 60fps)
@@ -718,12 +718,12 @@ pub fn active_camera_diagnostics(
         return;
     }
     
-    info!("========================================");
-    info!("[ACTIVE CAMERA] Frame {}", *frame_count);
-    info!("========================================");
+    //info!("========================================");
+    //info!("[ACTIVE CAMERA] Frame {}", *frame_count);
+    //info!("========================================");
     
     let total_cameras = cameras.iter().count();
-    info!("[ACTIVE CAMERA] Found {} camera(s) in scene", total_cameras);
+    //info!("[ACTIVE CAMERA] Found {} camera(s) in scene", total_cameras);
     
     // Count active cameras
     let active_cameras: Vec<_> = cameras.iter()
@@ -731,37 +731,37 @@ pub fn active_camera_diagnostics(
         .collect();
     
     let active_count = active_cameras.len();
-    info!("[ACTIVE CAMERA] Active camera(s): {}", active_count);
+    //info!("[ACTIVE CAMERA] Active camera(s): {}", active_count);
     
     if total_cameras == 0 {
-        warn!("[ACTIVE CAMERA] WARNING: No active camera found - this would cause black screen!");
-        info!("========================================");
+        //warn!("[ACTIVE CAMERA] WARNING: No active camera found - this would cause black screen!");
+        //info!("========================================");
         return;
     }
     
     if active_count == 0 {
-        warn!("[ACTIVE CAMERA] WARNING: NO active camera found - this would cause black screen!");
-        warn!("[ACTIVE CAMERA] All {} camera(s) are inactive!", total_cameras);
+        //warn!("[ACTIVE CAMERA] WARNING: NO active camera found - this would cause black screen!");
+        //warn!("[ACTIVE CAMERA] All {} camera(s) are inactive!", total_cameras);
     } else if active_count > 1 {
-        warn!("[ACTIVE CAMERA] WARNING: Multiple active cameras found - this may cause rendering issues!");
-        warn!("[ACTIVE CAMERA] Active cameras: {}", active_count);
+        //warn!("[ACTIVE CAMERA] WARNING: Multiple active cameras found - this may cause rendering issues!");
+        //warn!("[ACTIVE CAMERA] Active cameras: {}", active_count);
     } else {
-        info!("[ACTIVE CAMERA] Exactly one active camera - OK");
+        //info!("[ACTIVE CAMERA] Exactly one active camera - OK");
     }
     
     // Log details for each camera, highlighting active ones
     for (entity, camera, transform) in cameras.iter() {
         let position = transform.translation();
         let forward = transform.forward();
-        let up = transform.up();
+        let _up = transform.up();
 
         if camera.is_active {
-            info!("[ACTIVE CAMERA] *** ACTIVE CAMERA *** Entity: {:?}", entity);
-            info!("[ACTIVE CAMERA]     Position: ({:.2}, {:.2}, {:.2})", position.x, position.y, position.z);
-            info!("[ACTIVE CAMERA]     Forward: ({:.2}, {:.2}, {:.2})", forward.x, forward.y, forward.z);
-            info!("[ACTIVE CAMERA]     Up: ({:.2}, {:.2}, {:.2})", up.x, up.y, up.z);
-            info!("[ACTIVE CAMERA]     Target: {:?}", camera.target);
-            info!("[ACTIVE CAMERA]     Order: {:?}", camera.order);
+            //info!("[ACTIVE CAMERA] *** ACTIVE CAMERA *** Entity: {:?}", entity);
+            //info!("[ACTIVE CAMERA]     Position: ({:.2}, {:.2}, {:.2})", position.x, position.y, position.z);
+            //info!("[ACTIVE CAMERA]     Forward: ({:.2}, {:.2}, {:.2})", forward.x, forward.y, forward.z);
+            //info!("[ACTIVE CAMERA]     Up: ({:.2}, {:.2}, {:.2})", up.x, up.y, up.z);
+            //info!("[ACTIVE CAMERA]     Target: {:?}", camera.target);
+            //info!("[ACTIVE CAMERA]     Order: {:?}", camera.order);
             
             // Check for invalid camera values
             if position.x.is_nan() || position.y.is_nan() || position.z.is_nan() {
@@ -772,7 +772,7 @@ pub fn active_camera_diagnostics(
                 error!("[ACTIVE CAMERA]     CRITICAL: Active camera forward vector contains NaN!");
             }
         } else {
-            info!("[ACTIVE CAMERA] Inactive camera Entity: {:?} (not being used for rendering)", entity);
+            //info!("[ACTIVE CAMERA] Inactive camera Entity: {:?} (not being used for rendering)", entity);
         }
     }
     
@@ -781,16 +781,17 @@ pub fn active_camera_diagnostics(
         if let Some((entity, _camera, transform)) = active_cameras.first() {
             let position = transform.translation();
             let forward = transform.forward();
-            info!("[ACTIVE CAMERA] SUMMARY: Active camera {:?} at ({:.1}, {:.1}, {:.1}), facing ({:.1}, {:.1}, {:.1})",
-                entity, position.x, position.y, position.z, forward.x, forward.y, forward.z);
+            let _ = (entity, position, forward); // Suppress unused variable warnings
+            //info!("[ACTIVE CAMERA] SUMMARY: Active camera {:?} at ({:.1}, {:.1}, {:.1}), facing ({:.1}, {:.1}, {:.1})",
+            //    entity, position.x, position.y, position.z, forward.x, forward.y, forward.z);
         }
     } else if active_count == 0 {
-        error!("[ACTIVE CAMERA] SUMMARY: CRITICAL - No active camera! Rendering will fail!");
+        //error!("[ACTIVE CAMERA] SUMMARY: CRITICAL - No active camera! Rendering will fail!");
     } else {
-        warn!("[ACTIVE CAMERA] SUMMARY: Multiple active cameras detected - rendering may be ambiguous");
+        //warn!("[ACTIVE CAMERA] SUMMARY: Multiple active cameras detected - rendering may be ambiguous");
     }
     
-    info!("========================================");
+    //info!("========================================");
 }
 
 /// Camera configuration diagnostics to check camera setup
@@ -809,26 +810,26 @@ pub fn camera_configuration_diagnostics(
         return;
     }
     
-    info!("========================================");
-    info!("[CAMERA CONFIG DIAGNOSTICS] Frame {}", *frame_count);
-    info!("========================================");
+    //info!("========================================");
+    //info!("[CAMERA CONFIG DIAGNOSTICS] Frame {}", *frame_count);
+    //info!("========================================");
     
     for (entity, camera, transform) in cameras.iter() {
-        info!("[CAMERA] Camera {:?}:", entity);
-        info!("[CAMERA]   Is active: {}", camera.is_active);
-        info!("[CAMERA]   Target: {:?}", camera.target);
-        info!("[CAMERA]   Viewport: {:?}", camera.viewport);
-        info!("[CAMERA]   Order: {:?}", camera.order);
-        info!("[CAMERA]   Output mode: {:?}", camera.output_mode);
+        //info!("[CAMERA] Camera {:?}:", entity);
+        //info!("[CAMERA]   Is active: {}", camera.is_active);
+        //info!("[CAMERA]   Target: {:?}", camera.target);
+        //info!("[CAMERA]   Viewport: {:?}", camera.viewport);
+        //info!("[CAMERA]   Order: {:?}", camera.order);
+        //info!("[CAMERA]   Output mode: {:?}", camera.output_mode);
 
         let position = transform.translation();
         let forward = transform.forward();
-        let up = transform.up();
+        let _up = transform.up();
 
-        info!("[CAMERA]   Transform:");
-        info!("[CAMERA]     Position: {:?}", position);
-        info!("[CAMERA]     Forward vector: {:?}", forward);
-        info!("[CAMERA]     Up vector: {:?}", up);
+        //info!("[CAMERA]   Transform:");
+        //info!("[CAMERA]     Position: {:?}", position);
+        //info!("[CAMERA]     Forward vector: {:?}", forward);
+        //info!("[CAMERA]     Up vector: {:?}", up);
         
         // Check for invalid camera values
         if position.x.is_nan() || position.y.is_nan() || position.z.is_nan() {
@@ -840,11 +841,12 @@ pub fn camera_configuration_diagnostics(
         }
         
         if !camera.is_active {
-            warn!("[CAMERA]   WARNING: Camera is not active!");
+            //warn!("[CAMERA]   WARNING: Camera is not active!");
         }
+        let _ = entity; // Suppress unused variable warning
     }
     
-    info!("========================================");
+    //info!("========================================");
 }
 
 /// Render layer diagnostics to check if entities are in correct render layers
@@ -1489,17 +1491,17 @@ pub fn diagnose_camera_entity_distances(
         return;
     }
     
-    info!("========================================");
-    info!("[CAMERA-ENTITY DISTANCE] Frame {}", *frame_count);
-    info!("========================================");
+    //info!("========================================");
+    //info!("[CAMERA-ENTITY DISTANCE] Frame {}", *frame_count);
+    //info!("========================================");
     
-    for (camera_transform, camera) in cameras.iter() {
+    for (camera_transform, _camera) in cameras.iter() {
         let camera_pos = camera_transform.translation();
-        info!("[CAMERA-ENTITY DISTANCE] Camera position: ({:.1}, {:.1}, {:.1})", 
-            camera_pos.x, camera_pos.y, camera_pos.z);
+        //info!("[CAMERA-ENTITY DISTANCE] Camera position: ({:.1}, {:.1}, {:.1})",
+        //    camera_pos.x, camera_pos.y, camera_pos.z);
         
         let mut visible_count = 0;
-        let mut far_entities = 0;
+        let mut _far_entities = 0;
         let mut logged = 0;
         
         for (entity, entity_transform, view_vis) in visible_entities.iter() {
@@ -1513,34 +1515,36 @@ pub fn diagnose_camera_entity_distances(
             
             // Check if entity is suspiciously far (more than 1000 units)
             if distance > 1000.0 && logged < 5 {
-                warn!(
-                    "[CAMERA-ENTITY DISTANCE] Entity {:?} is {:.1} units from camera (visible but far!)",
-                    entity, distance
-                );
-                far_entities += 1;
+                //warn!(
+                //    "[CAMERA-ENTITY DISTANCE] Entity {:?} is {:.1} units from camera (visible but far!)",
+                //    entity, distance
+                //);
+                _far_entities += 1;
                 logged += 1;
             }
             
             // Log first few visible entities
             if logged < 3 {
-                info!(
-                    "[CAMERA-ENTITY DISTANCE] Visible entity {:?}: pos=({:.1}, {:.1}, {:.1}), dist={:.1}",
-                    entity, entity_pos.x, entity_pos.y, entity_pos.z, distance
-                );
+                //info!(
+                //    "[CAMERA-ENTITY DISTANCE] Visible entity {:?}: pos=({:.1}, {:.1}, {:.1}), dist={:.1}",
+                //    entity, entity_pos.x, entity_pos.y, entity_pos.z, distance
+                //);
                 logged += 1;
             }
+            let _ = entity; // Suppress unused variable warning
         }
         
-        info!("[CAMERA-ENTITY DISTANCE] Total visible entities: {}", visible_count);
-        if far_entities > 0 {
-            warn!(
-                "[CAMERA-ENTITY DISTANCE] {} visible entities are >1000 units from camera",
-                far_entities
-            );
-        }
+        //info!("[CAMERA-ENTITY DISTANCE] Total visible entities: {}", visible_count);
+        //if far_entities > 0 {
+        //    warn!(
+        //        "[CAMERA-ENTITY DISTANCE] {} visible entities are >1000 units from camera",
+        //        far_entities
+        //    );
+        //}
+        let _ = visible_count; // Suppress unused variable warning
     }
     
-    info!("========================================");
+    //info!("========================================");
 }
 
 /// Material plugin verification system

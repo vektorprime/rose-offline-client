@@ -1,4 +1,4 @@
-use bevy::prelude::Event;
+use bevy::prelude::{Event, Handle};
 
 use rose_data::ZoneId;
 
@@ -25,9 +25,19 @@ pub enum ZoneEvent {
     Loaded(ZoneId),
 }
 
-/// Event sent when a zone is loaded from VFS via async task
-#[derive(Event)]
+/// Event sent when a zone is loaded from VFS via async task and added to the Assets collection
+/// Contains the handle to the asset so systems can look it up
+#[derive(Event, Clone)]
 pub struct ZoneLoadedFromVfsEvent {
     pub zone_id: ZoneId,
-    pub zone_asset: ZoneLoaderAsset,
+    pub zone_handle: Handle<ZoneLoaderAsset>,
+}
+
+impl ZoneLoadedFromVfsEvent {
+    pub fn new(zone_id: ZoneId, zone_handle: Handle<ZoneLoaderAsset>) -> Self {
+        Self {
+            zone_id,
+            zone_handle,
+        }
+    }
 }

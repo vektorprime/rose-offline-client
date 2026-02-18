@@ -43,7 +43,7 @@ pub fn ui_login_system(
     
     if !matches!(*login_state, LoginState::Input) {
         ui_state.initial_focus_set = false;
-        log::warn!("[UI LOGIN] Skipping - not in Input state, current state: {:?}", *login_state);
+        //log::warn!("[UI LOGIN] Skipping - not in Input state, current state: {:?}", *login_state);
         return;
     }
 
@@ -51,27 +51,27 @@ pub fn ui_login_system(
     let ui_state = &mut *ui_state;
 
     // Diagnostic: Check dialog asset status
-    log::debug!(
-        "[UI LOGIN] Checking dialog_login handle: {:?}",
-        ui_resources.dialog_login
-    );
+    //log::debug!(
+    //    "[UI LOGIN] Checking dialog_login handle: {:?}",
+    //    ui_resources.dialog_login
+    //);
 
     let dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_login) {
-        log::debug!("[UI LOGIN] Dialog found, loaded: {}, widget count: {}", dialog.loaded, dialog.widgets.len());
+        //log::debug!("[UI LOGIN] Dialog found, loaded: {}, widget count: {}", dialog.loaded, dialog.widgets.len());
         
         // Only render if dialog is fully loaded (widgets have been processed)
         // This requires ui_resources.loaded_all_textures to be true first
         if !dialog.loaded {
-            log::warn!(
-                "[UI LOGIN] Dialog not loaded yet - waiting for textures (loaded_all_textures: {})",
-                ui_resources.loaded_all_textures
-            );
+            //log::warn!(
+            //    "[UI LOGIN] Dialog not loaded yet - waiting for textures (loaded_all_textures: {})",
+            //    ui_resources.loaded_all_textures
+            //);
             return;
         }
         
         dialog
     } else {
-        log::warn!("[UI LOGIN] Dialog asset not found - UI will not render!");
+        //log::warn!("[UI LOGIN] Dialog asset not found - UI will not render!");
         return;
     };
 
@@ -161,7 +161,7 @@ pub fn ui_login_system(
                 r.request_focus();
             }
         } else {
-            log::debug!("[UI LOGIN] Sending LoginEvent");
+            //log::debug!("[UI LOGIN] Sending LoginEvent");
             login_events.send(LoginEvent::Login {
                 username: ui_state.username.clone(),
                 password: ui_state.password.clone(),

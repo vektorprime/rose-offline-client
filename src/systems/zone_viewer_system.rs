@@ -21,11 +21,11 @@ pub fn zone_viewer_enter_system(
     let camera_yaw: f32 = -45.0;
     let camera_pitch: f32 = -20.0;
 
-    info!("[CAMERA FIX] Initializing zone viewer camera for Bevy 0.14");
-    info!("[CAMERA FIX] Camera position: {:?}", camera_position);
-    info!("[CAMERA FIX] Looking toward zone center: (5200.0, 0.0, -5200.0)");
-    info!("[CAMERA FIX] Camera yaw: {} degrees", camera_yaw);
-    info!("[CAMERA FIX] Camera pitch: {} degrees", camera_pitch);
+    //info!("[CAMERA FIX] Initializing zone viewer camera for Bevy 0.14");
+    //info!("[CAMERA FIX] Camera position: {:?}", camera_position);
+    //info!("[CAMERA FIX] Looking toward zone center: (5200.0, 0.0, -5200.0)");
+    //info!("[CAMERA FIX] Camera yaw: {} degrees", camera_yaw);
+    //info!("[CAMERA FIX] Camera pitch: {} degrees", camera_pitch);
 
     // Calculate forward vector for verification
     let yaw_rad = f32::to_radians(camera_yaw);
@@ -35,8 +35,8 @@ pub fn zone_viewer_enter_system(
         pitch_rad.sin(),
         yaw_rad.cos() * pitch_rad.cos(),
     );
-    info!("[CAMERA FIX] Camera forward vector: {:?}", forward);
-    info!("[CAMERA FIX] Camera looking towards: Z = {} (negative Z direction)", if forward.z < 0.0 { "NEGATIVE" } else { "POSITIVE" });
+    //info!("[CAMERA FIX] Camera forward vector: {:?}", forward);
+    //info!("[CAMERA FIX] Camera looking towards: Z = {} (negative Z direction)", if forward.z < 0.0 { "NEGATIVE" } else { "POSITIVE" });
 
     for entity in query_cameras.iter() {
         commands
@@ -48,16 +48,18 @@ pub fn zone_viewer_enter_system(
                 camera_yaw,
                 camera_pitch,
             ));
+        let _ = entity; // Suppress unused variable warning
     }
 
-    info!("[CAMERA FIX] Zone viewer camera initialized successfully");
+    //info!("[CAMERA FIX] Zone viewer camera initialized successfully");
 
     // Enhanced camera logging
-    info!("[CAMERA] Zone viewer camera initialized:");
-    info!("[CAMERA]   Position: ({}, {}, {})", camera_position.x, camera_position.y, camera_position.z);
-    info!("[CAMERA]   Yaw: {} degrees", camera_yaw);
-    info!("[CAMERA]   Pitch: {} degrees", camera_pitch);
-    info!("[CAMERA]   Looking direction: {}", calculate_look_direction(camera_yaw, camera_pitch));
+    //info!("[CAMERA] Zone viewer camera initialized:");
+    //info!("[CAMERA]   Position: ({}, {}, {})", camera_position.x, camera_position.y, camera_position.z);
+    //info!("[CAMERA]   Yaw: {} degrees", camera_yaw);
+    //info!("[CAMERA]   Pitch: {} degrees", camera_pitch);
+    //info!("[CAMERA]   Looking direction: {}", calculate_look_direction(camera_yaw, camera_pitch));
+    let _ = (forward, camera_position, camera_yaw, camera_pitch); // Suppress unused variable warnings
 
     // Open relevant debug windows
     ui_state_debug_windows.camera_info_open = true;
@@ -84,30 +86,31 @@ pub fn debug_camera_render_state_system(
         let translation = global_transform.translation();
         let forward = global_transform.forward();
         
-        log::info!("[RENDER DEBUG] Camera Entity: {:?}", entity);
-        log::info!("[RENDER DEBUG]   Local Position: {:.2}, {:.2}, {:.2}", 
-            transform.translation.x, transform.translation.y, transform.translation.z);
-        log::info!("[RENDER DEBUG]   Global Position: {:.2}, {:.2}, {:.2}", 
-            translation.x, translation.y, translation.z);
-        log::info!("[RENDER DEBUG]   Forward Direction: {:.2}, {:.2}, {:.2}", 
-            forward.x, forward.y, forward.z);
+        //log::info!("[RENDER DEBUG] Camera Entity: {:?}", entity);
+        //log::info!("[RENDER DEBUG]   Local Position: {:.2}, {:.2}, {:.2}",
+        //    transform.translation.x, transform.translation.y, transform.translation.z);
+        //log::info!("[RENDER DEBUG]   Global Position: {:.2}, {:.2}, {:.2}",
+        //    translation.x, translation.y, translation.z);
+        //log::info!("[RENDER DEBUG]   Forward Direction: {:.2}, {:.2}, {:.2}",
+        //    forward.x, forward.y, forward.z);
         
         if let Some(_cam) = free_cam {
-            log::info!("[RENDER DEBUG]   FreeCamera component present");
+            //log::info!("[RENDER DEBUG]   FreeCamera component present");
         }
         
         // Check if camera is at origin (common black screen cause)
         if translation.length() < 0.01 {
-            log::warn!("[RENDER DEBUG] WARNING: Camera is at or near origin! This may cause black screen.");
+            //log::warn!("[RENDER DEBUG] WARNING: Camera is at or near origin! This may cause black screen.");
         }
         
         // Check if camera is looking at origin
         let to_origin = -translation;
         let alignment = forward.dot(to_origin.normalize());
         if alignment > 0.9 {
-            log::info!("[RENDER DEBUG] Camera is looking toward origin (alignment: {:.2})", alignment);
+            //log::info!("[RENDER DEBUG] Camera is looking toward origin (alignment: {:.2})", alignment);
         }
         
-        log::info!("[RENDER DEBUG] ===========================================");
+        //log::info!("[RENDER DEBUG] ===========================================");
+        let _ = entity; // Suppress unused variable warning
     }
 }

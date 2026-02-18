@@ -1059,9 +1059,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // Zone Viewer
     app.add_systems(OnEnter(AppState::ZoneViewer), zone_viewer_enter_system);
 
-    // [NAME_TAG_DEBUG] Camera extraction diagnostic system - runs in PostUpdate to check camera state
-    app.add_systems(PostUpdate, diagnose_camera_extraction_state);
-
     // CRITICAL DIAGNOSTIC: Check if transform and visibility propagation sets are running
     app.add_systems(
         PostUpdate,
@@ -1195,13 +1192,17 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, facing_direction_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, update_position_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, collision_height_only_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, collision_player_system.run_if(in_state(AppState::Game)));
+    // CRITICAL: collision_player_system_join_zone must run BEFORE collision_player_system
+    // - join_zone uses a long raycast (Y=100000) to find initial ground height on spawn
+    // - collision_player_system uses short raycast for continuous terrain following
+    // Using Added<CollisionPlayer> filter ensures join_zone only runs once on spawn
     app.add_systems(
         Update,
         collision_player_system_join_zone
             .run_if(in_state(AppState::Game))
-            .after(collision_player_system),
+            .before(collision_player_system),
     );
+    app.add_systems(Update, collision_player_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, cooldown_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, client_entity_event_system.run_if(in_state(AppState::Game)));
 
@@ -1504,7 +1505,7 @@ fn load_common_game_data(
     mut egui_context: EguiContexts,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    bevy::log::info!("[load_common_game_data] Starting to load common game data");
+    //bevy::log::info!("[load_common_game_data] Starting to load common game data");
 
     commands.insert_resource(SpecularTexture {
         image: asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS"),
@@ -1523,7 +1524,7 @@ fn load_common_game_data(
         .expect("Failed to create model loader"),
     );
 
-    bevy::log::info!("[load_common_game_data] Spawning camera entity");
+    //bevy::log::info!("[load_common_game_data] Spawning camera entity");
     let camera_entity = commands.spawn((
         Camera3d::default(),
         Camera {
@@ -1555,7 +1556,7 @@ fn load_common_game_data(
             max_depth: 2000.0,         // Max depth range
         },
     )).id();
-    bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
+    //bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
 
     commands.insert_resource(DamageDigitsSpawner::load(
         &asset_server,

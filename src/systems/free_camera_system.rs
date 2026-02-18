@@ -57,9 +57,9 @@ pub fn free_camera_system(
     mut egui_ctx: EguiContexts,
 ) {
     // Log camera system execution once per second to avoid spam
-    if time.elapsed().as_secs_f32() % 1.0 < time.delta().as_secs_f32() {
-        log::info!("[CAMERA] Free camera system running");
-    }
+    //if time.elapsed().as_secs_f32() % 1.0 < time.delta().as_secs_f32() {
+    //    log::info!("[CAMERA] Free camera system running");
+    //}
     let Ok(mut window) = query_window.get_single_mut() else {
         return;
     };
@@ -205,14 +205,14 @@ pub fn free_camera_system(
     );
 
     // Log camera position and direction periodically
-    if time.elapsed().as_secs_f32() % 5.0 < time.delta().as_secs_f32() {
-        let yaw_pitch = free_camera.rig.driver::<YawPitch>();
-        log::info!("[CAMERA] Free camera position: ({:.1}, {:.1}, {:.1})",
-            camera_transform.translation.x,
-            camera_transform.translation.y,
-            camera_transform.translation.z);
-        log::info!("[CAMERA] Free camera rotation: yaw={:.1}°, pitch={:.1}°",
-            yaw_pitch.yaw_degrees,
-            yaw_pitch.pitch_degrees);
-    }
+    //if time.elapsed().as_secs_f32() % 5.0 < time.delta().as_secs_f32() {
+    //    let yaw_pitch = free_camera.rig.driver::<YawPitch>();
+    //    log::info!("[CAMERA] Free camera position: ({:.1}, {:.1}, {:.1})",
+    //        camera_transform.translation.x,
+    //        camera_transform.translation.y,
+    //        camera_transform.translation.z);
+    //    log::info!("[CAMERA] Free camera rotation: yaw={:.1}°, pitch={:.1}°",
+    //        yaw_pitch.yaw_degrees,
+    //        yaw_pitch.pitch_degrees);
+    //}
 }

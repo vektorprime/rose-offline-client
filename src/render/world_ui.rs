@@ -69,10 +69,7 @@ impl Plugin for WorldUiRenderPlugin {
                 .add_render_command::<Transparent3d, DrawWorldUi>()
                 .init_resource::<SpecializedRenderPipelines<WorldUiPipeline>>()
                 .add_systems(ExtractSchedule, extract_world_ui_rects)
-                .add_systems(Render, (queue_world_ui_meshes).in_set(RenderSet::Queue))
-                .add_systems(Render, diagnose_prepare_view_uniforms
-                    .in_set(RenderSet::PrepareResources)
-                    .after(prepare_view_uniforms));
+                .add_systems(Render, (queue_world_ui_meshes).in_set(RenderSet::Queue));
         }
     }
 
@@ -125,22 +122,13 @@ fn extract_world_ui_rects(
     images: Extract<Res<Assets<Image>>>,
     query: Extract<Query<(&InheritedVisibility, &GlobalTransform, &WorldUiRect)>>,
 ) {
-    // [NAME_TAG_DEBUG] Log extraction start
-    let total_count = query.iter().count();
-    log::info!("[NAME_TAG_DEBUG] extract_world_ui_rects: {} total WorldUiRect entities in query", total_count);
-    
     extracted_world_ui.rects.clear();
-    let mut visible_count = 0;
-    let mut image_missing_count = 0;
-    let mut extracted_count = 0;
     for (inherited_visibility, global_transform, rect) in query.iter() {
         if !inherited_visibility.get() {
             continue;
         }
-        visible_count += 1;
 
         if !images.contains(rect.image.id()) {
-            image_missing_count += 1;
             continue;
         }
 
@@ -154,14 +142,7 @@ fn extract_world_ui_rects(
             color: rect.color,
             order: rect.order,
         });
-        extracted_count += 1;
     }
-
-    // [NAME_TAG_DEBUG] Log extraction summary
-    log::info!(
-        "[NAME_TAG_DEBUG] Extraction summary: {} total, {} passed visibility, {} image_missing, {} extracted",
-        total_count, visible_count, image_missing_count, extracted_count
-    );
 }
 
 #[repr(C)]
@@ -484,22 +465,6 @@ pub struct ImageBindGroups {
     pub values: HashMap<AssetId<Image>, BindGroup>,
 }
 
-/// Diagnostic system to verify ExtractedView count and ViewUniforms state before prepare_view_uniforms
-#[allow(clippy::too_many_arguments)]
-pub fn diagnose_prepare_view_uniforms(
-    view_uniforms: Res<ViewUniforms>,
-    views: Query<&ExtractedView>,
-) {
-    let view_count = views.iter().len();
-    let has_buffer = view_uniforms.uniforms.buffer().is_some();
-    
-    log::warn!(
-        "[NAME_TAG_DEBUG] AFTER_PREPARE: ExtractedView count={}, GPU buffer exists={}",
-        view_count,
-        has_buffer
-    );
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn queue_world_ui_meshes(
     transparent_draw_functions: Res<DrawFunctions<Transparent3d>>,
@@ -516,15 +481,8 @@ pub fn queue_world_ui_meshes(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     view_uniforms: Res<ViewUniforms>,
-    // mut diagnostics_state: ResMut<crate::diagnostics::render_diagnostics::RenderDiagnosticsState>,
 ) {
-    // [NAME_TAG_DEBUG] Log queue function start
-    let view_count = views.iter().count();
-    log::info!("[NAME_TAG_DEBUG] queue_world_ui_meshes: {} rects, {} views, GPU buffer exists: {}",
-        extracted_world_ui.rects.len(), view_count, view_uniforms.uniforms.buffer().is_some());
-    
     if view_uniforms.uniforms.buffer().is_none() {
-        log::warn!("[NAME_TAG_DEBUG] Early return: ViewUniforms GPU buffer does not exist");
         return;
     }
 
@@ -554,21 +512,8 @@ pub fn queue_world_ui_meshes(
         });
     }
 
-    // Query for views and look up their phases from the resource
-    log::info!("[NAME_TAG_DEBUG] Processing {} views", view_count);
-    
     for (view_entity, view, msaa) in views.iter() {
-        // [NAME_TAG_DEBUG] Log ExtractedView details
-        log::info!(
-            "[NAME_TAG_DEBUG] ExtractedView entity {:?}: viewport={:?}, hdr={}, world_from_view translation={:?}",
-            view_entity,
-            view.viewport,
-            view.hdr,
-            view.world_from_view.translation()
-        );
-        
         let Some(transparent_phase) = transparent_render_phases.get_mut(&view_entity) else {
-            log::warn!("[NAME_TAG_DEBUG] No transparent_phase for view {:?}", view_entity);
             continue;
         };
 
@@ -591,9 +536,6 @@ pub fn queue_world_ui_meshes(
         let view_proj = view.clip_from_world.unwrap_or_else(|| view.clip_from_view * inverse_view_transform);
         let view_width = view.viewport.z as f32;
         let view_height = view.viewport.w as f32;
-        
-        log::info!("[NAME_TAG_DEBUG] View {:?}: viewport=({}, {}), hdr={}",
-            view_entity, view_width, view_height, view.hdr);
 
         extracted_world_ui.rects.sort_unstable_by(|a, b| {
             match view_proj
@@ -720,8 +662,5 @@ pub fn queue_world_ui_meshes(
                 extra_index: bevy::render::render_phase::PhaseItemExtraIndex(0),
             });
         }
-        
-        log::info!("[NAME_TAG_DEBUG] View {:?} summary: queued={}, gpu_missing={}, frustum_culled={}, screen_culled={}",
-            view_entity, queued_count, gpu_image_missing_count, frustum_culled_count, screen_culled_count);
     }
 }

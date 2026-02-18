@@ -246,30 +246,31 @@ pub fn camera_validation_system(
         }
     }
 
-    log::info!("[CAMERA VALIDATION] Checking camera configuration...");
+    //log::info!("[CAMERA VALIDATION] Checking camera configuration...");
 
     let camera_count = camera_query.iter().count();
-    log::info!("[CAMERA VALIDATION] Found {} 3D cameras", camera_count);
-
+    //log::info!("[CAMERA VALIDATION] Found {} 3D cameras", camera_count);
+    
     for (entity, camera, transform) in camera_query.iter() {
-        log::info!("[CAMERA VALIDATION] Camera {:?}:", entity);
-        log::info!("  - Is active: {}", camera.is_active);
-        log::info!("  - Order: {}", camera.order);
+        //log::info!("[CAMERA VALIDATION] Camera {:?}:", entity);
+        //log::info!("  - Is active: {}", camera.is_active);
+        //log::info!("  - Order: {}", camera.order);
         
         if let Some(transform) = transform {
-            log::info!("  - Position: {:?}", transform.translation);
-            log::info!("  - Looking at: (check forward vector)");
+            //log::info!("  - Position: {:?}", transform.translation);
+            //log::info!("  - Looking at: (check forward vector)");
         } else {
-            log::warn!("  - WARNING: No Transform component!");
+            //log::warn!("  - WARNING: No Transform component!");
         }
-
+        
         if !camera.is_active {
-            log::warn!("[CAMERA VALIDATION] WARNING: Camera {:?} is not active!", entity);
+            //log::warn!("[CAMERA VALIDATION] WARNING: Camera {:?} is not active!", entity);
         }
+        let _ = entity; // Suppress unused variable warning
     }
-
+    
     if camera_count == 0 {
-        log::error!("[CAMERA VALIDATION] CRITICAL: No 3D cameras found! This explains the black screen!");
+        //log::error!("[CAMERA VALIDATION] CRITICAL: No 3D cameras found! This explains the black screen!");
     }
 }
 

@@ -3,8 +3,16 @@ use bevy::{
     render::{mesh::MeshVertexAttribute, render_resource::VertexFormat},
 };
 
-// Simplified render module - using Bevy's built-in materials
-// Custom materials removed to use StandardMaterial instead
+// Custom terrain material with texture array support
+pub mod terrain_material;
+pub use terrain_material::{
+    TerrainMaterial, TerrainMaterialPlugin, TERRAIN_MATERIAL_MAX_TEXTURES,
+};
+
+/// Custom vertex attribute for terrain tile info
+/// Encoded as u32: layer1_id (bits 0-7) | layer2_id (bits 8-15) | rotation (bits 16-23)
+pub const TERRAIN_MESH_ATTRIBUTE_TILE_INFO: MeshVertexAttribute =
+    MeshVertexAttribute::new("Vertex_TileInfo", 988347822, VertexFormat::Uint32);
 
 pub mod world_ui;
 pub use world_ui::{WorldUiRect, WorldUiRenderPlugin};
@@ -67,7 +75,12 @@ pub const MESH_ATTRIBUTE_UV_3: MeshVertexAttribute =
 pub struct RoseRenderPlugin;
 
 impl Plugin for RoseRenderPlugin {
-    fn build(&self, _app: &mut App) {
+    fn build(&self, app: &mut App) {
+        bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Registering terrain material plugin");
+        
+        // Register the terrain material plugin
+        app.add_plugins(TerrainMaterialPlugin);
+        
         bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Materials registered via their own plugins");
     }
 }

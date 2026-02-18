@@ -51,20 +51,20 @@ impl VfsReadStats {
         }
         
         // Log large files (>10MB) for memory leak investigation
-        if size > 10 * 1024 * 1024 {
-            log::warn!("[VFS MEMORY] Large file loaded: {} (size: {})", path, format_bytes(size));
-        }
+        //if size > 10 * 1024 * 1024 {
+        //    log::warn!("[VFS MEMORY] Large file loaded: {} (size: {})", path, format_bytes(size));
+        //}
         
         // Log every 100 files and every 100MB
-        if self.total_files_read % 100 == 0 {
-            log::info!(
-                "[VFS MEMORY] Cumulative stats: {} files, {} total, largest: {} ({})",
-                self.total_files_read,
-                format_bytes(self.total_bytes_read),
-                self.largest_file_path,
-                format_bytes(self.largest_file_size)
-            );
-        }
+        //if self.total_files_read % 100 == 0 {
+        //    log::info!(
+        //        "[VFS MEMORY] Cumulative stats: {} files, {} total, largest: {} ({})",
+        //        self.total_files_read,
+        //        format_bytes(self.total_bytes_read),
+        //        self.largest_file_path,
+        //        format_bytes(self.largest_file_size)
+        //    );
+        //}
     }
     
     pub fn log_summary(&self) {
@@ -263,7 +263,7 @@ impl AssetReader for VfsAssetIo {
                     match file {
                         VfsFile::Buffer(buffer) => {
                             let size = buffer.len();
-                            log::debug!("[VFS MEMORY] File loaded from VFS buffer: {} (size: {})", path_str, format_bytes(size));
+                            //log::debug!("[VFS MEMORY] File loaded from VFS buffer: {} (size: {})", path_str, format_bytes(size));
                             
                             // Track read statistics
                             if let Ok(mut stats) = self.read_stats.lock() {
@@ -275,7 +275,7 @@ impl AssetReader for VfsAssetIo {
                         VfsFile::View(view) => {
                             let size = view.len();
                             let data: Vec<u8> = view.into();
-                            log::debug!("[VFS MEMORY] File loaded from VFS view: {} (size: {})", path_str, format_bytes(size));
+                            //log::debug!("[VFS MEMORY] File loaded from VFS view: {} (size: {})", path_str, format_bytes(size));
                             
                             // Track read statistics
                             if let Ok(mut stats) = self.read_stats.lock() {
