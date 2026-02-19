@@ -12,6 +12,7 @@ use std::num::NonZeroU32;
 use bevy::{
     asset::{load_internal_asset, Asset, AssetApp, Handle},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
+    math::{Vec3, Vec4},
     pbr::{
         Material, MaterialPipeline, MaterialPipelineKey, MeshPipelineKey,
     },
@@ -79,6 +80,27 @@ pub struct WaterAnimationTime {
 pub struct WaterMaterial {
     /// Array of water texture handles (25 frames for animation)
     pub textures: Vec<Handle<bevy::image::Image>>,
+    /// Light direction for specular highlights (normalized, pointing towards light)
+    pub light_direction: Vec3,
+    /// Ambient light color
+    pub ambient_color: Vec4,
+    /// Diffuse light color
+    pub diffuse_color: Vec4,
+}
+
+/// Default implementation for WaterMaterial
+impl Default for WaterMaterial {
+    fn default() -> Self {
+        Self {
+            textures: Vec::new(),
+            // Default light direction pointing down and slightly forward
+            light_direction: Vec3::new(0.3, -0.8, 0.5).normalize(),
+            // Default ambient color (warm daylight)
+            ambient_color: Vec4::new(0.4, 0.4, 0.45, 1.0),
+            // Default diffuse color (bright sunlight)
+            diffuse_color: Vec4::new(0.8, 0.75, 0.7, 1.0),
+        }
+    }
 }
 
 /// Data stored alongside the prepared bind group
@@ -160,7 +182,7 @@ impl AsBindGroup for WaterMaterial {
         Some("water_material")
     }
 
-    /// Override as_bind_group to create bind group with texture array
+    /// Override as_bind_group to create bind group with texture array and lighting uniforms
     fn as_bind_group(
         &self,
         layout: &BindGroupLayout,
@@ -195,6 +217,34 @@ impl AsBindGroup for WaterMaterial {
             ..Default::default()
         });
 
+        // Create uniform buffers for lighting data
+        // Light direction as vec4 (with padding for alignment)
+        let light_dir_data = Vec4::new(
+            self.light_direction.x,
+            self.light_direction.y,
+            self.light_direction.z,
+            0.0, // padding
+        );
+        let light_dir_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("water_light_direction_buffer"),
+            contents: bytemuck::cast_slice(&[light_dir_data]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        // Ambient color buffer
+        let ambient_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("water_ambient_color_buffer"),
+            contents: bytemuck::cast_slice(&[self.ambient_color]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        // Diffuse color buffer
+        let diffuse_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("water_diffuse_color_buffer"),
+            contents: bytemuck::cast_slice(&[self.diffuse_color]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
         // Create bind group entries
         let entries = vec![
             BindGroupEntry {
@@ -204,6 +254,18 @@ impl AsBindGroup for WaterMaterial {
             BindGroupEntry {
                 binding: 1,
                 resource: BindingResource::Sampler(&sampler),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: light_dir_buffer.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 3,
+                resource: ambient_buffer.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 4,
+                resource: diffuse_buffer.as_entire_binding(),
             },
         ];
 
@@ -250,6 +312,39 @@ impl AsBindGroup for WaterMaterial {
                 binding: 1,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+            // Light direction uniform (vec3 with padding to vec4)
+            BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            // Ambient color uniform (vec4)
+            BindGroupLayoutEntry {
+                binding: 3,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            // Diffuse color uniform (vec4)
+            BindGroupLayoutEntry {
+                binding: 4,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
                 count: None,
             },
         ]

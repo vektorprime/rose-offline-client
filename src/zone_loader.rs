@@ -1891,8 +1891,10 @@ pub fn spawn_zone(
 
         let texture_count = water_material_textures.len();
         // Use custom WaterMaterial with animated texture array support
+        // Note: Uses default lighting values since we can't access zone_lighting (bind group 3)
         let material = water_materials.add(WaterMaterial {
             textures: water_material_textures,
+            ..Default::default()
         });
         log::info!("[SPAWN ZONE] Water material created with {} textures (animated)", texture_count);
         log::info!("[MEMORY] Water material handle created");
