@@ -9,6 +9,12 @@ pub use terrain_material::{
     TerrainMaterial, TerrainMaterialPlugin, TERRAIN_MATERIAL_MAX_TEXTURES,
 };
 
+// Custom water material with animated texture array support
+pub mod water_material;
+pub use water_material::{
+    WaterMaterial, WaterMaterialPlugin, WaterAnimationTime, WATER_MATERIAL_NUM_TEXTURES,
+};
+
 /// Custom vertex attribute for terrain tile info
 /// Encoded as u32: layer1_id (bits 0-7) | layer2_id (bits 8-15) | rotation (bits 16-23)
 pub const TERRAIN_MESH_ATTRIBUTE_TILE_INFO: MeshVertexAttribute =
@@ -32,6 +38,7 @@ pub use particle_test::test_particle_spawn;
 pub mod zone_lighting;
 pub use zone_lighting::ZoneLighting;
 pub use zone_lighting::ZoneLightingPlugin;
+pub use zone_lighting::VolumetricFogVolume;
 
 pub mod trail_effect;
 pub use trail_effect::*;
@@ -76,10 +83,13 @@ pub struct RoseRenderPlugin;
 
 impl Plugin for RoseRenderPlugin {
     fn build(&self, app: &mut App) {
-        bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Registering terrain material plugin");
+        bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Registering material plugins");
         
         // Register the terrain material plugin
         app.add_plugins(TerrainMaterialPlugin);
+        
+        // Register the water material plugin for animated water rendering
+        app.add_plugins(WaterMaterialPlugin);
         
         bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Materials registered via their own plugins");
     }

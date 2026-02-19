@@ -17,6 +17,10 @@ fn fragment(
     // Generate PBR input from standard material
     var pbr_input = pbr_input_from_standard_material(in, is_front);
     
+    // CRITICAL: Apply alpha discard for transparency
+    // Without this, pixels that should be transparent are rendered as opaque squares
+    pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
+    
 #ifdef PREPASS_PIPELINE
     // Deferred rendering - just pass through
     let out = deferred_output(in, pbr_input);

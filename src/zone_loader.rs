@@ -328,7 +328,8 @@ use crate::{
     effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect},
     events::{LoadZoneEvent, ZoneEvent, ZoneLoadedFromVfsEvent},
     render::{
-        MESH_ATTRIBUTE_UV_1, ParticleMaterial, RoseEffectExtension, TerrainMaterial,
+        MESH_ATTRIBUTE_UV_1, ParticleMaterial, RoseEffectExtension, RoseObjectExtension, TerrainMaterial,
+        WaterMaterial,
     },
     resources::{CurrentZone, DebugInspector, GameData, SpecularTexture},
     VfsResource,
@@ -1047,7 +1048,9 @@ pub struct SpawnZoneParams<'w, 's> {
     pub specular_texture: Res<'w, SpecularTexture>,
     pub standard_materials: ResMut<'w, Assets<bevy::pbr::StandardMaterial>>,
     pub terrain_materials: ResMut<'w, Assets<TerrainMaterial>>,
+    pub water_materials: ResMut<'w, Assets<WaterMaterial>>,
     pub effect_mesh_materials: ResMut<'w, Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+    pub object_materials: ResMut<'w, Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     pub particle_materials: ResMut<'w, Assets<ParticleMaterial>>,
     pub storage_buffers: ResMut<'w, Assets<bevy::render::storage::ShaderStorageBuffer>>,
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
@@ -1849,7 +1852,9 @@ pub fn spawn_zone(
         specular_texture,
         standard_materials,
         terrain_materials,
+        water_materials,
         effect_mesh_materials,
+        object_materials,
         particle_materials,
         storage_buffers,
         zone_loader_assets: _,
@@ -1885,13 +1890,11 @@ pub fn spawn_zone(
         }
 
         let texture_count = water_material_textures.len();
-        let material = standard_materials.add(bevy::pbr::StandardMaterial {
-            base_color_texture: water_material_textures.first().cloned(),
-            unlit: true,  // CHANGED: Make material unlit so it doesn't require lighting
-            ..Default::default()
+        // Use custom WaterMaterial with animated texture array support
+        let material = water_materials.add(WaterMaterial {
+            textures: water_material_textures,
         });
-        //info!("[MEMORY TRACKING] Water material created with {} textures", texture_count);
-        log::info!("[SPAWN ZONE] Water material created with {} textures", texture_count);
+        log::info!("[SPAWN ZONE] Water material created with {} textures (animated)", texture_count);
         log::info!("[MEMORY] Water material handle created");
         material
     };
@@ -1971,7 +1974,6 @@ pub fn spawn_zone(
                         let water_entity = spawn_water(
                             commands,
                             meshes,
-                            standard_materials,
                             ifo.water_size,
                             Vec3::new(plane_start.x, plane_start.y, plane_start.z),
                             Vec3::new(plane_end.x, plane_end.y, plane_end.z),
@@ -1987,7 +1989,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             vfs_resource,
-                            standard_materials.as_mut(),
+                            object_materials.as_mut(),
                             specular_texture,
                             &game_data.zsc_event_object,
                             &lightmap_path,
@@ -2014,7 +2016,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             vfs_resource,
-                            standard_materials.as_mut(),
+                            object_materials.as_mut(),
                             specular_texture,
                             &game_data.zsc_special_object,
                             &lightmap_path,
@@ -2046,7 +2048,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             vfs_resource,
-                            standard_materials.as_mut(),
+                            object_materials.as_mut(),
                             specular_texture,
                             &zone_data.zsc_cnst,
                             &lightmap_path,
@@ -2074,7 +2076,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             vfs_resource,
-                            standard_materials.as_mut(),
+                            object_materials.as_mut(),
                             specular_texture,
                             &zone_data.zsc_deco,
                             &lightmap_path,
@@ -2461,11 +2463,10 @@ fn spawn_terrain(
 fn spawn_water(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
     water_size: f32,
     plane_start: Vec3,
     plane_end: Vec3,
-    water_material: &Handle<bevy::pbr::StandardMaterial>,  // Pass water material as parameter
+    water_material: &Handle<WaterMaterial>,  // Use custom WaterMaterial
 ) -> Entity {
     let start = Vec3::new(
         plane_start.x / 100.0,
@@ -2539,7 +2540,7 @@ fn spawn_object(
     asset_server: &AssetServer,
     zone_loading_assets: &mut Vec<UntypedHandle>,
     vfs_resource: &VfsResource,
-    standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+    object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
     specular_texture: &SpecularTexture,
     zsc: &ZscFile,
     lightmap_path: &Path,
@@ -2687,27 +2688,37 @@ fn spawn_object(
 
             let lightmap_count = lightmap_texture.as_ref().is_some() as usize;
 
-            // Simplified material using Bevy's StandardMaterial
-            // FIX: Enable PBR lighting so objects/decorations respond to directional and ambient lights
-            let material = standard_materials.add(bevy::pbr::StandardMaterial {
-                base_color_texture: if material_path.is_empty() || material_path == "" || material_path == "NULL" {
-                    log::warn!("[SPAWN OBJECT DEBUG] Empty or NULL texture path for mesh_id {}, using fallback", mesh_id);
-                    Some(asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS"))
-                } else {
-                    Some(base_texture_handle.clone())
-                },
-                unlit: false,  // Enable PBR lighting for objects/decorations
-                double_sided: zsc_material.two_sided,
-                alpha_mode: if zsc_material.alpha_enabled {
-                    if let Some(threshold) = zsc_material.alpha_test {
-                        AlphaMode::Mask(threshold)
+            // Create ExtendedMaterial with RoseObjectExtension for zone lighting support
+            // This applies zone lighting ambient color to darken objects to match the original game
+            let material = object_materials.add(ExtendedMaterial {
+                base: StandardMaterial {
+                    base_color_texture: if material_path.is_empty() || material_path == "" || material_path == "NULL" {
+                        log::warn!("[SPAWN OBJECT DEBUG] Empty or NULL texture path for mesh_id {}, using fallback", mesh_id);
+                        Some(asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS"))
                     } else {
-                        AlphaMode::Blend
-                    }
-                } else {
-                    AlphaMode::Opaque
+                        Some(base_texture_handle.clone())
+                    },
+                    unlit: false,  // Enable PBR lighting for objects/decorations
+                    double_sided: zsc_material.two_sided,
+                    // PBR properties for realistic lighting on vegetation and outdoor objects
+                    perceptual_roughness: 0.8,  // Higher roughness for matte vegetation/buildings
+                    metallic: 0.0,              // Non-metallic for organic/building materials
+                    alpha_mode: if zsc_material.alpha_enabled {
+                        if let Some(threshold) = zsc_material.alpha_test {
+                            AlphaMode::Mask(threshold)
+                        } else {
+                            AlphaMode::Blend
+                        }
+                    } else {
+                        AlphaMode::Opaque
+                    },
+                    ..Default::default()
                 },
-                ..Default::default()
+                extension: RoseObjectExtension {
+                    lightmap_params: Vec3::new(lightmap_uv_offset.x, lightmap_uv_offset.y, lightmap_uv_scale).extend(0.0),
+                    lightmap_texture: lightmap_texture.clone(),
+                    specular_texture: Some(specular_texture.image.clone()),
+                },
             });
 
             let mut collision_filter = COLLISION_FILTER_INSPECTABLE;
@@ -2749,6 +2760,10 @@ fn spawn_object(
             //         zsc_object_id, part_index);
             // }
 
+            // Determine if this part should cast shadows based on material transparency
+            // Opaque and alpha-masked materials cast shadows, alpha-blended materials don't
+            let is_transparent = zsc_material.alpha_enabled && zsc_material.alpha_test.is_none();
+            
             let part_entity = commands.spawn((
                 part_object_type(ZoneObjectPart {
                     ifo_object_id,
@@ -2779,11 +2794,16 @@ fn spawn_object(
                 NoFrustumCulling,
                 Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
                 RenderLayers::layer(0),
-                NotShadowCaster,
                 ColliderParent::new(object_entity),
                 AsyncCollider(ComputedColliderShape::TriMesh(bevy_rapier3d::prelude::TriMeshFlags::FIX_INTERNAL_EDGES)),
                 CollisionGroups::new(collision_group, collision_filter),
             )).id();
+            
+            // Only disable shadow casting for truly transparent (alpha-blended) materials
+            // Opaque and alpha-masked materials should cast shadows
+            if is_transparent {
+                commands.entity(part_entity).insert(NotShadowCaster);
+            }
 
             let active_motion = object_part.animation_path.as_ref().map(|animation_path| {
                 TransformAnimation::repeat(asset_server.load(animation_path.path().to_string_lossy().into_owned()), None)
@@ -2933,6 +2953,9 @@ fn spawn_animated_object(
     let material = effect_mesh_materials.add(ExtendedMaterial {
         base: StandardMaterial {
             base_color_texture: Some(texture_handle),
+            // PBR properties for realistic lighting on animated objects
+            perceptual_roughness: 0.8,  // Higher roughness for matte vegetation/outdoor objects
+            metallic: 0.0,              // Non-metallic for organic materials
             alpha_mode: if alpha_test_enabled {
                 AlphaMode::Mask(0.5)
             } else {
@@ -2947,6 +2970,10 @@ fn spawn_animated_object(
     });
 
     //info!("[MEMORY TRACKING] Animated object material created with 3 textures (base, motion texture, motion)");
+
+    // Determine if this animated object should cast shadows based on material transparency
+    // Opaque and alpha-masked materials cast shadows, alpha-blended materials don't
+    let is_transparent = alpha_enabled && !alpha_test_enabled;
 
     let animated_entity = commands
         .spawn((
@@ -2968,11 +2995,16 @@ fn spawn_animated_object(
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
-            NotShadowCaster,
             AsyncCollider(ComputedColliderShape::TriMesh(bevy_rapier3d::prelude::TriMeshFlags::empty())),
             CollisionGroups::new(COLLISION_GROUP_ZONE_OBJECT, COLLISION_FILTER_INSPECTABLE),
         ))
         .id();
+    
+    // Only disable shadow casting for truly transparent (alpha-blended) materials
+    // Opaque and alpha-masked materials should cast shadows
+    if is_transparent {
+        commands.entity(animated_entity).insert(NotShadowCaster);
+    }
 
    // info!("[ASSET LIFECYCLE] Animated object entity spawned: {:?}", animated_entity);
     animated_entity

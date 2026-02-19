@@ -7,8 +7,10 @@ use bevy::{
         asset::AssetApp,
         core_pipeline::bloom::BloomSettings,
         core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
+        core_pipeline::experimental::taa::{TemporalAntiAliasPlugin, TemporalAntiAliasing},
+        core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
         log::{info, warn, Level},
-        pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial, MeshMaterial3d},
+        pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial, MeshMaterial3d, VolumetricFog, VolumetricLight, FogVolume, ShadowFilteringMethod, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel},
         prelude::{
             apply_deferred, default, in_state, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
             ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoSystemConfigs,
@@ -788,6 +790,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
             // Diagnostic plugins for debugging rendering crashes during zone loading
             RenderDiagnosticsPlugin,
+
+            // TAA plugin for temporal anti-aliasing and temporal shadow filtering
+            TemporalAntiAliasPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -1527,6 +1532,7 @@ fn load_common_game_data(
     //bevy::log::info!("[load_common_game_data] Spawning camera entity");
     let camera_entity = commands.spawn((
         Camera3d::default(),
+        Msaa::Off,  // Required for SSAO and TAA compatibility
         Camera {
             hdr: true,  // Enable HDR for better depth of field
             clear_color: ClearColorConfig::Custom(Color::srgb(0.70, 0.90, 1.0)),
@@ -1546,6 +1552,16 @@ fn load_common_game_data(
         bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
         // Add Bloom - enhances the depth of field effect visibility
         bevy::core_pipeline::bloom::Bloom::NATURAL,
+        // Shadow filtering - best quality with temporal filtering
+        ShadowFilteringMethod::Temporal,
+        // TAA for temporal stability and smoother shadow edges
+        TemporalAntiAliasing::default(),
+        // Prepasses required for TAA (automatically added by #[require] attribute, but explicit for clarity)
+        DepthPrepass,
+        MotionVectorPrepass,
+    )).id();
+    // Insert additional components separately to avoid tuple size limit
+    commands.entity(camera_entity).insert((
         // Add Depth of Field effect
         DepthOfField {
             mode: DepthOfFieldMode::Bokeh,
@@ -1555,8 +1571,27 @@ fn load_common_game_data(
             max_circle_of_confusion_diameter: 64.0,
             max_depth: 2000.0,         // Max depth range
         },
-    )).id();
-    //bevy::log::info!("[load_common_game_data] Camera entity spawned with id: {:?}", camera_entity);
+        // Add VolumetricFog for light shafts/god rays effect
+        // Configured for 60fps target with balanced quality
+        VolumetricFog {
+            ambient_intensity: 0.1,
+            jitter: 0.0,
+            step_count: 64,
+            ..default()
+        },
+        // SSAO for contact shadows - adds darkening in crevices and where objects meet ground
+        // Requires Msaa::Off (which is the default in Bevy 0.15)
+        ScreenSpaceAmbientOcclusion {
+            quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium,
+            constant_object_thickness: 0.25,  // Adjust if AO is too strong/weak
+        },
+    ));
+    bevy::log::info!("[CAMERA] Camera entity spawned with id: {:?}", camera_entity);
+    bevy::log::info!("[CAMERA] VolumetricFog settings: ambient_intensity=0.1, step_count=64");
+    bevy::log::info!("[CAMERA] Shadow filtering: Temporal (best quality with TAA)");
+    bevy::log::info!("[CAMERA] TAA enabled for temporal stability");
+    bevy::log::info!("[CAMERA] SSAO enabled with Medium quality for contact shadows");
+    bevy::log::info!("[CAMERA] Camera position: ~5120.0, 100.0, -5120.0 (game world center)");
 
     commands.insert_resource(DamageDigitsSpawner::load(
         &asset_server,

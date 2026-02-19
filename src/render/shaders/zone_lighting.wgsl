@@ -3,7 +3,7 @@
 
 #define_import_path rose_client::zone_lighting
 
-struct ZoneLighting {
+struct ZoneLightingData {
     // Group 0: 64 bytes (4 vec4)
     map_ambient_color: vec4<f32>,
     character_ambient_color: vec4<f32>,
@@ -27,7 +27,12 @@ struct ZoneLighting {
 
 // Zone lighting is at group 3 (after view 0, mesh 1, material 2)
 @group(3) @binding(0)
-var<uniform> zone_lighting: ZoneLighting;
+var<uniform> zone_lighting: ZoneLightingData;
+
+// Getter function to access zone lighting data from other shaders
+fn get_zone_lighting() -> ZoneLightingData {
+    return zone_lighting;
+}
 
 fn apply_zone_lighting_fog(world_position: vec4<f32>, fragment_color: vec4<f32>, view_z: f32) -> vec4<f32> {
     let fog_density = zone_lighting.fog_params.x;

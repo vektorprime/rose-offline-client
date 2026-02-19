@@ -295,3 +295,211 @@ var tile_array_sampler: sampler;
 5. Import `AssetApp` trait for `app.init_asset::<T>()` to work
 6. Texture arrays require `count: NonZeroU32::new(N)` in bind group layout
 
+---
+
+## MaterialExtension Shaders Cannot Access Custom Bind Groups (2026-02-18)
+
+### Problem
+Attempted to import `zone_lighting` module in `rose_object_extension.wgsl` to apply zone ambient color. This caused runtime crash:
+```
+Error matching ShaderStages(FRAGMENT) shader requirements against the pipeline
+Shader global ResourceBinding { group: 3, binding: 0 } is not available in the pipeline layout
+```
+
+### Root Cause
+`MaterialExtension` shaders use Bevy's standard `MaterialPlugin` pipeline layout, which only includes:
+- Group 0: View uniforms
+- Group 1: Mesh uniforms  
+- Group 2: Material uniforms
+
+The zone lighting bind group at group 3 is NOT included in the standard pipeline layout. Only custom materials with specialized pipeline setup (like `world_ui.rs`) can access additional bind groups.
+
+### Solution
+Do NOT import modules with `@group(3)+` bind groups in `MaterialExtension` shaders. Instead:
+1. Use only the extension's own bindings (100+) at group 2
+2. Pass any needed data through the extension's uniform/texture bindings
+3. Or create a fully custom Material with specialized pipeline layout
+
+### Files Modified
+- `src/render/shaders/rose_object_extension.wgsl` - Removed zone_lighting import
+
+### Lesson Learned
+`ExtendedMaterial<StandardMaterial, T>` shaders cannot access bind groups beyond the standard PBR pipeline layout (groups 0-2). Custom bind groups require a full custom `Material` implementation with specialized pipeline setup, not just a `MaterialExtension`.
+
+---
+
+## Shadow/Shader Quality (Bevy 0.15) (Fixed 2026-02-19)
+
+### Problem 1: SSAO and TAA Require Msaa::Off
+**Error:** `SSAO is being used which requires Msaa::Off, but Msaa is currently set to Msaa::Sample4`
+
+**Cause:** Both Screen Space Ambient Occlusion (SSAO) and Temporal Anti-Aliasing (TAA) are computationally intensive techniques that are incompatible with Multi-Sample Anti-Aliasing (MSAA).
+
+**Solution:** Add `Msaa::Off` component to the camera when using SSAO or TAA:
+```rust
+commands.spawn((
+    Camera3d::default(),
+    Msaa::Off,  // Required for SSAO/TAA
+    ScreenSpaceAmbientOcclusion::default(),
+    TemporalAntiAliasing::default(),
+));
+```
+
+---
+
+### Problem 2: ExtendedMaterial Limited Bind Group Access
+**Error:** `Shader global ResourceBinding { group: 3, binding: 0 } is not available in the pipeline layout`
+
+**Cause:** `ExtendedMaterial` in Bevy 0.15 only has access to bind groups 0, 1, and 2:
+- Group 0: View uniforms (camera, view-projection matrices)
+- Group 1: Mesh uniforms (transform data)
+- Group 2: Material uniforms (StandardMaterial + extension data)
+
+Cannot access group 3+ where custom zone lighting data might be stored.
+
+**Solution:** Use Bevy's built-in fog systems (`DistanceFog`, `FogMetadata`) instead of trying to access custom zone lighting bind groups in material extensions. Pass any needed additional data through the extension's own bindings at group 2.
+
+---
+
+### Problem 3: PbrInput Struct Missing Direct `view` Field
+**Error:** Cannot access `pbr_input.view.z` directly in Bevy 0.15 shaders.
+
+**Cause:** The `PbrInput` struct structure changed in Bevy 0.15. The view vector is not directly accessible as a simple field.
+
+**Solution:** Calculate view_z using the `view.view_from_world` matrix transformation, or use Bevy's built-in shader functions for depth calculations.
+
+---
+
+### Problem 4: Shadow Casting and Transparency Artifacts
+**Problem:** Alpha-blended objects (like tree leaves with `AlphaMode::Blend`) caused shadow artifacts when casting shadows.
+
+**Cause:** Alpha-blended materials don't have well-defined opacity for shadow mapping, causing visual artifacts.
+
+**Solution:** Configure shadow casting based on transparency type:
+- **Opaque objects:** Should cast shadows (`casts_shadow: true`)
+- **Alpha-blended objects:** Should NOT cast shadows (`casts_shadow: false`)
+- **Alpha-masked objects:** CAN cast shadows (binary transparency works with shadow mapping)
+
+```rust
+match material.alpha_mode {
+    AlphaMode::Opaque | AlphaMode::Mask(_) => {
+        // Cast shadows
+    }
+    AlphaMode::Blend | AlphaMode::Premultiplied | AlphaMode::Add | AlphaMode::Multiply => {
+        // Don't cast shadows to avoid artifacts
+    }
+}
+```
+
+---
+
+### Problem 5: High Ambient Light Washes Out Shadows
+**Problem:** Shadows appeared washed out and had poor contrast.
+
+**Cause:** Ambient light brightness was set too high (500.0 cd/m²), which fills in shadowed areas and reduces shadow contrast.
+
+**Solution:** Reduce ambient light brightness to improve shadow contrast:
+```rust
+// Before (shadows washed out)
+AmbientLight { brightness: 500.0, ... }
+
+// After (better shadow contrast)
+AmbientLight { brightness: 150.0, ... }
+```
+
+**Note:** This is a trade-off - lower ambient means darker shadows but also darker non-illuminated surfaces. Balance based on scene requirements.
+
+---
+
+### Problem 6: Vegetation Appears Too Shiny
+**Problem:** Trees and vegetation had an unrealistic shiny appearance.
+
+**Cause:** Default `StandardMaterial` roughness (0.5) is too low for vegetation, which typically has a matte appearance.
+
+**Solution:** Increase roughness for vegetation materials:
+```rust
+// For trees, grass, and other vegetation
+material.perceptual_roughness = 0.8;  // More realistic matte appearance
+```
+
+---
+
+### Problem 7: Foliage Alpha Masks Not Working in ExtendedMaterial
+**Problem:** Foliage and objects with alpha masks appeared as opaque squares instead of having proper transparency.
+
+**Cause:** When using `ExtendedMaterial` in Bevy 0.15, the extension's fragment shader replaces the base material's fragment function. The shader imported `alpha_discard` but never called it, so pixels that should be transparent were not being discarded.
+
+**Solution:** Add `alpha_discard()` call in the fragment shader after creating the PBR input:
+```wgsl
+// In the fragment shader's main function
+pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
+```
+
+This ensures that pixels below the alpha threshold are discarded before rendering, allowing alpha-masked textures (like tree leaves, grass, fences) to render with proper transparency.
+
+**Note:** The `alpha_discard` function must be imported from `bevy_pbr::pbr_fragment::pbr_types`:
+```wgsl
+#import bevy_pbr::pbr_fragment::pbr_types::{alpha_discard, PbrInput}
+```
+
+---
+
+### Files Modified
+- `src/lib.rs` - Camera setup with `Msaa::Off`
+- `src/render/zone_lighting.rs` - Ambient light brightness adjustment
+- `src/model_loader.rs` - Vegetation roughness, shadow casting configuration
+- `src/zone_loader.rs` - Shadow casting based on alpha mode
+
+### Lesson Learned
+1. SSAO and TAA require `Msaa::Off` - they are fundamentally incompatible with MSAA
+2. `ExtendedMaterial` can only access bind groups 0-2; use built-in Bevy systems for fog/lighting effects
+3. Shadow casting should be disabled for alpha-blended materials to avoid artifacts
+4. Ambient light brightness directly affects shadow contrast - balance carefully
+5. Vegetation materials need higher roughness values (0.7-0.9) for realistic appearance
+6. **ExtendedMaterial fragment shaders must call `alpha_discard()`** - when using `AlphaMode::Mask`, the extension's fragment shader replaces the base material's fragment function, so you must explicitly call `alpha_discard(pbr_input.material, pbr_input.material.base_color)` to discard transparent pixels
+
+---
+
+## Water Material Not Rendering (Fixed 2026-02-19)
+
+### Problem
+Water planes were not visible in the game after porting from Bevy 0.11 to Bevy 0.15.
+
+### Root Cause
+The water shader (`water_material.wgsl`) was using `view.time` for animation, but in Bevy 0.15.4, the `View` struct no longer has a `time` field. Time is now stored in a separate `Globals` struct accessed via `globals.time`.
+
+**Before (Bevy 0.11):**
+```wgsl
+#import bevy_pbr::mesh_view_bindings view
+// ...
+let time = view.time * 10.0;
+```
+
+**After (Bevy 0.15.4):**
+```wgsl
+#import bevy_pbr::mesh_view_bindings::{view, globals}
+// ...
+let time = globals.time * 10.0;
+```
+
+### Solution
+1. Updated shader import to include `globals` from `mesh_view_bindings`
+2. Changed `view.time` to `globals.time`
+3. Changed `view.inverse_view` to `view.view_from_world` (the correct field name in Bevy 0.15.4)
+
+### Files Modified
+- `src/render/shaders/water_material.wgsl` - Updated shader imports and time access
+
+### Key Changes in Bevy 0.15.4 WGSL API
+| Bevy 0.11 | Bevy 0.15.4 |
+|-----------|-------------|
+| `view.time` | `globals.time` |
+| `view.inverse_view` | `view.view_from_world` |
+| `#import bevy_pbr::mesh_view_bindings view` | `#import bevy_pbr::mesh_view_bindings::{view, globals}` |
+
+### Lesson Learned
+When porting custom shaders between Bevy versions, check the WGSL struct definitions in the Bevy source code:
+- `crates/bevy_render/src/view/view.wgsl` - View struct definition
+- `crates/bevy_render/src/globals.wgsl` - Globals struct definition
+- `crates/bevy_pbr/src/render/mesh_view_bindings.wgsl` - Available bindings
+

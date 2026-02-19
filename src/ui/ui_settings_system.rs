@@ -3,13 +3,18 @@ use bevy::prelude::{Local, Query, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts};
 
 use crate::{
-    audio::SoundGain, components::SoundCategory, resources::SoundSettings, ui::UiStateWindows,
+    audio::SoundGain,
+    components::SoundCategory,
+    render::ZoneLighting,
+    resources::SoundSettings,
+    ui::UiStateWindows,
 };
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum SettingsPage {
     Sound,
     DepthOfField,
+    VolumetricFog,
 }
 
 pub struct UiStateSettings {
@@ -64,6 +69,7 @@ pub fn ui_settings_system(
     mut sound_settings: ResMut<SoundSettings>,
     mut query_sounds: Query<(&SoundCategory, &mut SoundGain)>,
     mut dof_settings: ResMut<DepthOfFieldSettings>,
+    mut zone_lighting: ResMut<ZoneLighting>,
 ) {
     egui::Window::new("Settings")
         .open(&mut ui_state_windows.settings_open)
@@ -75,6 +81,11 @@ pub fn ui_settings_system(
                     &mut ui_state_settings.page,
                     SettingsPage::DepthOfField,
                     "Depth of Field",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::VolumetricFog,
+                    "Volumetric Fog",
                 );
             });
 
@@ -212,6 +223,46 @@ pub fn ui_settings_system(
 
                     ui.separator();
                     ui.label("Tip: Lower f-stop = more blur. Focal distance = sharp plane.");
+                }
+                SettingsPage::VolumetricFog => {
+                    egui::Grid::new("volumetric_fog_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Volumetric Fog:");
+                            ui.checkbox(&mut zone_lighting.volumetric_fog_enabled, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Density:");
+                            ui.add(
+                                egui::Slider::new(&mut zone_lighting.volumetric_density_factor, 0.0..=0.5)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Absorption:");
+                            ui.add(
+                                egui::Slider::new(&mut zone_lighting.volumetric_absorption, 0.0..=0.5)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Scattering:");
+                            ui.add(
+                                egui::Slider::new(&mut zone_lighting.volumetric_scattering, 0.0..=0.5)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Scattering Asymmetry:");
+                            ui.add(
+                                egui::Slider::new(&mut zone_lighting.volumetric_scattering_asymmetry, -1.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                        });
+
+                    ui.separator();
+                    ui.label("Tip: Lower absorption = brighter scene. Higher scattering = more visible light shafts.");
                 }
             }
         });

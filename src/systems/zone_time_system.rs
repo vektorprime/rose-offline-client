@@ -16,6 +16,7 @@ use crate::{
 // Note: ZoneLighting is now used from resources::CurrentZone (via zone_lighting.rs)
 // It provides all the necessary fields for lighting calculations
 
+// Standard fog colors and densities
 const MORNING_FOG_COLOR: Vec3 = Vec3::new(100.0 / 255.0, 100.0 / 255.0, 100.0 / 255.0);
 const MORNING_FOG_DENSITY: f32 = 0.0022;
 
@@ -27,6 +28,24 @@ const EVENING_FOG_DENSITY: f32 = 0.0022;
 
 const NIGHT_FOG_COLOR: Vec3 = Vec3::new(10.0 / 255.0, 10.0 / 255.0, 10.0 / 255.0);
 const NIGHT_FOG_DENSITY: f32 = 0.0020;
+
+// Volumetric fog colors for time-of-day integration
+// These should be bright and subtle - volumetric fog is a light effect, not heavy fog
+// Dawn (morning): Warm orange/pink tones (bright)
+const VOLUMETRIC_MORNING_COLOR: Vec3 = Vec3::new(1.0, 0.85, 0.7);
+// Day: Light blue/white tones (bright, nearly white)
+const VOLUMETRIC_DAY_COLOR: Vec3 = Vec3::new(0.9, 0.95, 1.0);
+// Dusk (evening): Warm orange/purple tones (bright)
+const VOLUMETRIC_EVENING_COLOR: Vec3 = Vec3::new(1.0, 0.7, 0.8);
+// Night: Darker blue but still visible (not pitch black)
+const VOLUMETRIC_NIGHT_COLOR: Vec3 = Vec3::new(0.3, 0.35, 0.5);
+
+// Volumetric fog density factors for time of day
+// Keep these LOW - volumetric fog should be subtle atmosphere, not heavy fog
+const VOLUMETRIC_MORNING_DENSITY: f32 = 0.03;
+const VOLUMETRIC_DAY_DENSITY: f32 = 0.02;
+const VOLUMETRIC_EVENING_DENSITY: f32 = 0.03;
+const VOLUMETRIC_NIGHT_DENSITY: f32 = 0.01; // Very light for clear night air
 
 // TODO: Now that we have Visibility::Inherited, this probably does not need to be recursive ?
 fn set_visible_recursive(
@@ -107,6 +126,10 @@ pub fn zone_time_system(
         zone_time.state_percent_complete =
             (state_ticks as f32 + partial_tick) / state_length as f32;
 
+        // Update volumetric fog for night time
+        zone_lighting.volumetric_fog_color = VOLUMETRIC_NIGHT_COLOR;
+        zone_lighting.volumetric_density_factor = VOLUMETRIC_NIGHT_DENSITY;
+
         if let Some(skybox_data) = skybox_data {
             zone_lighting.map_ambient_color =
                 skybox_data.map_ambient_color[SkyboxState::Night].xyz();
@@ -130,6 +153,25 @@ pub fn zone_time_system(
         zone_time.state = ZoneTimeState::Evening;
         zone_time.state_percent_complete =
             (state_ticks as f32 + partial_tick) / state_length as f32;
+
+        // Update volumetric fog for evening/dusk with smooth interpolation
+        if zone_time.state_percent_complete < 0.5 {
+            // First half: transition from day to evening colors
+            zone_lighting.volumetric_fog_color = VOLUMETRIC_DAY_COLOR.lerp(
+                VOLUMETRIC_EVENING_COLOR,
+                zone_time.state_percent_complete * 2.0,
+            );
+            zone_lighting.volumetric_density_factor = VOLUMETRIC_DAY_DENSITY
+                .lerp(VOLUMETRIC_EVENING_DENSITY, zone_time.state_percent_complete * 2.0);
+        } else {
+            // Second half: transition from evening to night colors
+            zone_lighting.volumetric_fog_color = VOLUMETRIC_EVENING_COLOR.lerp(
+                VOLUMETRIC_NIGHT_COLOR,
+                (zone_time.state_percent_complete - 0.5) * 2.0,
+            );
+            zone_lighting.volumetric_density_factor = VOLUMETRIC_EVENING_DENSITY
+                .lerp(VOLUMETRIC_NIGHT_DENSITY, (zone_time.state_percent_complete - 0.5) * 2.0);
+        }
 
         if let Some(skybox_data) = skybox_data {
             if zone_time.state_percent_complete < 0.5 {
@@ -203,6 +245,10 @@ pub fn zone_time_system(
         zone_time.state_percent_complete =
             (state_ticks as f32 + partial_tick) / state_length as f32;
 
+        // Update volumetric fog for day time
+        zone_lighting.volumetric_fog_color = VOLUMETRIC_DAY_COLOR;
+        zone_lighting.volumetric_density_factor = VOLUMETRIC_DAY_DENSITY;
+
         if let Some(skybox_data) = skybox_data {
             zone_lighting.map_ambient_color = skybox_data.map_ambient_color[SkyboxState::Day].xyz();
             zone_lighting.character_ambient_color =
@@ -225,6 +271,25 @@ pub fn zone_time_system(
         zone_time.state = ZoneTimeState::Morning;
         zone_time.state_percent_complete =
             (state_ticks as f32 + partial_tick) / state_length as f32;
+
+        // Update volumetric fog for morning/dawn with smooth interpolation
+        if zone_time.state_percent_complete < 0.5 {
+            // First half: transition from night to morning colors
+            zone_lighting.volumetric_fog_color = VOLUMETRIC_NIGHT_COLOR.lerp(
+                VOLUMETRIC_MORNING_COLOR,
+                zone_time.state_percent_complete * 2.0,
+            );
+            zone_lighting.volumetric_density_factor = VOLUMETRIC_NIGHT_DENSITY
+                .lerp(VOLUMETRIC_MORNING_DENSITY, zone_time.state_percent_complete * 2.0);
+        } else {
+            // Second half: transition from morning to day colors
+            zone_lighting.volumetric_fog_color = VOLUMETRIC_MORNING_COLOR.lerp(
+                VOLUMETRIC_DAY_COLOR,
+                (zone_time.state_percent_complete - 0.5) * 2.0,
+            );
+            zone_lighting.volumetric_density_factor = VOLUMETRIC_MORNING_DENSITY
+                .lerp(VOLUMETRIC_DAY_DENSITY, (zone_time.state_percent_complete - 0.5) * 2.0);
+        }
 
         if let Some(skybox_data) = skybox_data {
             if zone_time.state_percent_complete < 0.5 {

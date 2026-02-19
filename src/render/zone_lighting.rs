@@ -1,15 +1,16 @@
 use bevy::{
     asset::{load_internal_asset, UntypedHandle, UntypedAssetId, Handle},
     ecs::{
+        component::Component,
         query::ROQueryItem,
         system::{lifetimeless::SRes, SystemParamItem},
     },
     math::{Vec3, Vec4},
-    pbr::CascadeShadowConfig,
+    pbr::{CascadeShadowConfig, FogVolume, VolumetricLight},
     prelude::{
-        AmbientLight, App, Color, Commands, DirectionalLight, EulerRot,
-        FromWorld, IntoSystemConfigs, Local, Plugin, Quat, ReflectResource, Res, ResMut,
-        Resource, Shader, Startup, Transform, World,
+        AmbientLight, App, Color, Commands, DetectChanges, DirectionalLight, EulerRot,
+        FromWorld, IntoSystemConfigs, Local, Plugin, Query, Quat, ReflectResource, Res, ResMut,
+        Resource, Shader, Startup, Transform, Update, World, With,
     },
     reflect::{Reflect, TypePath},
     render::{
@@ -25,6 +26,11 @@ use bevy::{
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
     },
 };
+
+/// Marker component for the volumetric fog volume entity.
+/// Used to query the fog volume for modifications or removal.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct VolumetricFogVolume;
 use std::any::TypeId;
 use std::sync::OnceLock;
 use uuid::Uuid;
@@ -53,7 +59,7 @@ pub struct ZoneLightingPlugin;
 
 impl Plugin for ZoneLightingPlugin {
     fn build(&self, app: &mut App) {
-        bevy::log::info!("[ZONE LIGHTING] Building ZoneLightingPlugin");
+        // bevy::log::info!("[ZONE LIGHTING] Building ZoneLightingPlugin");
         
         load_internal_asset!(
             app,
@@ -66,7 +72,7 @@ impl Plugin for ZoneLightingPlugin {
             .init_resource::<ZoneLighting>();
 
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-            bevy::log::info!("[ZONE LIGHTING] Initializing render app systems");
+            // bevy::log::info!("[ZONE LIGHTING] Initializing render app systems");
             render_app
                 .add_systems(ExtractSchedule, extract_uniform_data)
                 .add_systems(Render, (prepare_uniform_data,).in_set(RenderSet::Prepare));
@@ -74,8 +80,9 @@ impl Plugin for ZoneLightingPlugin {
             bevy::log::error!("[ZONE LIGHTING] FAILED to get render app - lighting will not work!");
         }
 
-        app.add_systems(Startup, spawn_lights);
-        bevy::log::info!("[ZONE LIGHTING] ZoneLightingPlugin build complete");
+        app.add_systems(Startup, spawn_lights)
+            .add_systems(Update, update_volumetric_fog_system);
+        // bevy::log::info!("[ZONE LIGHTING] ZoneLightingPlugin build complete");
     }
 
     fn finish(&self, app: &mut App) {
@@ -86,35 +93,128 @@ impl Plugin for ZoneLightingPlugin {
     }
 }
 
-fn spawn_lights(mut commands: Commands) {
-    //bevy::log::info!("[ZONE LIGHTING] Spawning directional and ambient lights for Bevy 0.14");
+fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
+    // bevy::log::info!("[ZONE LIGHTING] Spawning directional and ambient lights");
 
     // Bevy 0.14: Use individual components instead of DirectionalLightBundle
+    // IMPORTANT: shadows_enabled MUST be true for VolumetricLight to work
     let light_entity = commands.spawn((
         DirectionalLight {
             illuminance: 15000.0,  // Reduced for balanced PBR lighting (was 50000.0 too bright)
-            shadows_enabled: true,
+            shadows_enabled: true,  // REQUIRED for volumetric lighting
             ..Default::default()
         },
         default_light_transform(),
         CascadeShadowConfig {
-            bounds: vec![100.0, 500.0, 2000.0, 10000.0],  // Multiple cascade levels for better shadow quality
-            overlap_proportion: 0.2,
+            bounds: vec![50.0, 150.0, 500.0, 2000.0],  // Tighter bounds for better shadow quality at game scale
+            overlap_proportion: 0.3,  // More overlap for smoother cascade transitions
             minimum_distance: 0.1,
         },
         RenderLayers::default(),
+        VolumetricLight,  // Enable volumetric light shafts for this directional light
     )).id();
 
-    //bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=15000.0", light_entity);
+    // bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=15000.0, shadows_enabled=true, VolumetricLight component added", light_entity);
 
     // Bevy 0.14: AmbientLight is now a component that can be spawned as an entity
     // or kept as a resource. Using as resource for global ambient light.
     commands.insert_resource(AmbientLight {
-        color: Color::srgb(1.0, 1.0, 1.0),
-        brightness: 500.0,  // Increased for better visibility in shadows
+        color: Color::srgb(0.9, 0.9, 1.0),  // Slightly cool ambient for better atmosphere
+        brightness: 150.0,  // Reduced for better shadow contrast (was 500.0)
     });
     
     //bevy::log::info!("[ZONE LIGHTING] Ambient light inserted: brightness=1.0");
+
+    // Spawn the volumetric fog volume that covers the entire world
+    // This enables light shafts/god rays from the directional light
+    // Use initial values from ZoneLighting resource
+    let density_factor = if zone_lighting.volumetric_fog_enabled {
+        zone_lighting.volumetric_density_factor
+    } else {
+        0.0
+    };
+    
+    // Use volumetric_fog_color from ZoneLighting for time-of-day integration
+    let fog_color = Color::srgb(
+        zone_lighting.volumetric_fog_color.x,
+        zone_lighting.volumetric_fog_color.y,
+        zone_lighting.volumetric_fog_color.z,
+    );
+    
+    // CRITICAL FIX: Position the fog volume at the center of the game world (5120, 0, -5120)
+    // The game world is centered around these coordinates, NOT at origin (0,0,0).
+    // If the fog volume is at origin, the camera is ~7200 units away and sees a black box.
+    // Scale of 2000.0 means the volume spans from (4120, -1000, -6120) to (6120, 1000, -4120)
+    let fog_volume_center = Vec3::new(5120.0, 0.0, -5120.0);
+    let fog_volume_scale = 2000.0;
+    
+    commands.spawn((
+        FogVolume {
+            fog_color,
+            density_factor,
+            absorption: zone_lighting.volumetric_absorption,
+            scattering: zone_lighting.volumetric_scattering,
+            scattering_asymmetry: zone_lighting.volumetric_scattering_asymmetry,
+            ..Default::default()
+        },
+        Transform::from_translation(fog_volume_center).with_scale(Vec3::splat(fog_volume_scale)),
+        VolumetricFogVolume,  // Marker component for querying
+    ));
+    
+    // bevy::log::info!(
+    //     "[ZONE LIGHTING] Volumetric fog volume spawned at center=({}), scale={}, density_factor={}",
+    //     fog_volume_center, fog_volume_scale, density_factor
+    // );
+    // bevy::log::info!(
+    //     "[ZONE LIGHTING] Fog volume bounds: ({}) to ({})",
+    //     fog_volume_center - Vec3::splat(fog_volume_scale / 2.0),
+    //     fog_volume_center + Vec3::splat(fog_volume_scale / 2.0)
+    // );
+}
+
+/// System that updates the FogVolume component from ZoneLighting resource settings.
+/// This allows runtime control of volumetric fog parameters through the ZoneLighting resource.
+/// Uses change detection to only update when ZoneLighting has been modified.
+fn update_volumetric_fog_system(
+    zone_lighting: Res<ZoneLighting>,
+    mut fog_volume_query: Query<&mut FogVolume, With<VolumetricFogVolume>>,
+) {
+    // Only proceed if ZoneLighting has changed (change detection)
+    if !zone_lighting.is_changed() {
+        return;
+    }
+    
+    // bevy::log::debug!(
+    //     "[ZONE LIGHTING] ZoneLighting changed - updating fog volumes (enabled={}, density={}, absorption={}, scattering={})",
+    //     zone_lighting.volumetric_fog_enabled,
+    //     zone_lighting.volumetric_density_factor,
+    //     zone_lighting.volumetric_absorption,
+    //     zone_lighting.volumetric_scattering
+    // );
+    
+    // Update all fog volumes marked with VolumetricFogVolume
+    for mut fog_volume in fog_volume_query.iter_mut() {
+        if zone_lighting.volumetric_fog_enabled {
+            fog_volume.fog_color = Color::srgb(
+                zone_lighting.volumetric_fog_color.x,
+                zone_lighting.volumetric_fog_color.y,
+                zone_lighting.volumetric_fog_color.z,
+            );
+            fog_volume.density_factor = zone_lighting.volumetric_density_factor;
+            fog_volume.absorption = zone_lighting.volumetric_absorption;
+            fog_volume.scattering = zone_lighting.volumetric_scattering;
+            fog_volume.scattering_asymmetry = zone_lighting.volumetric_scattering_asymmetry;
+            
+            // bevy::log::debug!(
+            //     "[ZONE LIGHTING] FogVolume updated: density_factor={}, absorption={}, scattering={}",
+            //     fog_volume.density_factor, fog_volume.absorption, fog_volume.scattering
+            // );
+        } else {
+            // When disabled, set density to 0 to effectively disable the fog
+            fog_volume.density_factor = 0.0;
+            // bevy::log::debug!("[ZONE LIGHTING] Volumetric fog disabled - set density_factor to 0");
+        }
+    }
 }
 
 #[derive(Resource, Reflect)]
@@ -142,6 +242,13 @@ pub struct ZoneLighting {
     pub time_of_day: f32,
     pub day_color: Vec3,
     pub night_color: Vec3,
+    // Volumetric fog settings
+    pub volumetric_fog_enabled: bool,
+    pub volumetric_fog_color: Vec3,
+    pub volumetric_density_factor: f32,
+    pub volumetric_absorption: f32,
+    pub volumetric_scattering: f32,
+    pub volumetric_scattering_asymmetry: f32,
 }
 
 impl Default for ZoneLighting {
@@ -167,6 +274,13 @@ impl Default for ZoneLighting {
             time_of_day: 0.5, // 0.0 = night, 1.0 = day
             day_color: Vec3::new(0.7, 0.8, 1.0), // Day fog color (blueish)
             night_color: Vec3::new(0.1, 0.1, 0.3), // Night fog color (dark blue)
+            // Volumetric fog settings
+            volumetric_fog_enabled: true,
+            volumetric_fog_color: Vec3::new(0.9, 0.95, 1.0), // Brighter day color (nearly white with slight blue)
+            volumetric_density_factor: 0.02,  // Reduced from 0.1 to 0.02 for much lighter fog
+            volumetric_absorption: 0.01,  // Reduced from 0.1 to 0.01 - minimal absorption for brighter scene
+            volumetric_scattering: 0.3,  // Standard scattering for light shafts
+            volumetric_scattering_asymmetry: 0.5,
         }
     }
 }

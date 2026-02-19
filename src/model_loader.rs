@@ -1384,14 +1384,14 @@ fn spawn_skeleton(
         ));
 
         // DIAGNOSTIC LOG: Log mesh spawning details
-        log::info!(
-            "[DIAGNOSTIC] Spawned mesh - model_id: {}, mesh_id: {}, material_id: {}, is_skin: {}, has_skinned_mesh_param: {}",
-            model_id,
-            mesh_id,
-            material_id,
-            zsc_material.is_skin,
-            skinned_mesh.is_some()
-        );
+        // log::info!(
+        //     "[DIAGNOSTIC] Spawned mesh - model_id: {}, mesh_id: {}, material_id: {}, is_skin: {}, has_skinned_mesh_param: {}",
+        //     model_id,
+        //     mesh_id,
+        //     material_id,
+        //     zsc_material.is_skin,
+        //     skinned_mesh.is_some()
+        // );
 
         if load_clip_faces {
             let zms_material_num_faces = crate::zms_asset_loader::ZmsMaterialNumFacesHandle(asset_server.load(format!(
