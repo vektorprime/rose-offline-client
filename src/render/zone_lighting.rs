@@ -275,7 +275,7 @@ impl Default for ZoneLighting {
             day_color: Vec3::new(0.7, 0.8, 1.0), // Day fog color (blueish)
             night_color: Vec3::new(0.1, 0.1, 0.3), // Night fog color (dark blue)
             // Volumetric fog settings
-            volumetric_fog_enabled: true,
+            volumetric_fog_enabled: false,
             volumetric_fog_color: Vec3::new(0.9, 0.95, 1.0), // Brighter day color (nearly white with slight blue)
             volumetric_density_factor: 0.02,  // Reduced from 0.1 to 0.02 for much lighter fog
             volumetric_absorption: 0.01,  // Reduced from 0.1 to 0.01 - minimal absorption for brighter scene

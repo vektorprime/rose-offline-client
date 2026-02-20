@@ -324,6 +324,7 @@ use crate::{
         COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_ZONE_EVENT_OBJECT,
         COLLISION_GROUP_ZONE_OBJECT, COLLISION_GROUP_ZONE_TERRAIN,
         COLLISION_GROUP_ZONE_WARP_OBJECT, COLLISION_GROUP_ZONE_WATER,
+        WaterSpawnedEvent,
     },
     effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect},
     events::{LoadZoneEvent, ZoneEvent, ZoneLoadedFromVfsEvent},
@@ -1055,6 +1056,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub storage_buffers: ResMut<'w, Assets<bevy::render::storage::ShaderStorageBuffer>>,
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
+    pub water_spawned_events: EventWriter<'w, WaterSpawnedEvent>,
 }
 
 pub struct CachedZone {
@@ -1859,6 +1861,7 @@ pub fn spawn_zone(
         storage_buffers,
         zone_loader_assets: _,
         memory_tracking,
+        ref mut water_spawned_events,
     } = params;
 
     let zone_list_entry = game_data
@@ -1973,7 +1976,7 @@ pub fn spawn_zone(
                         .join(format!("{}_{}/LIGHTMAP/", block_x, block_y));
 
                     for (plane_start, plane_end) in ifo.water_planes.iter() {
-                        let water_entity = spawn_water(
+                        let (water_entity, water_center, water_half_extents) = spawn_water(
                             commands,
                             meshes,
                             ifo.water_size,
@@ -1983,6 +1986,16 @@ pub fn spawn_zone(
                         );
                         commands.entity(zone_entity).add_child(water_entity);
                         water_count += 1;
+                        
+                        // Send event to spawn fish in this water
+                        log::info!("[FISH DEBUG] Sending WaterSpawnedEvent from zone_loader: water_entity={:?}, zone_entity={:?}, center={:?}, extents={:?}",
+                            water_entity, zone_entity, water_center, water_half_extents);
+                        water_spawned_events.send(WaterSpawnedEvent {
+                            water_entity,
+                            zone_entity,
+                            water_center,
+                            water_half_extents,
+                        });
                     }
 
                     for (ifo_object_id, event_object) in ifo.event_objects.iter().enumerate() {
@@ -2469,7 +2482,7 @@ fn spawn_water(
     plane_start: Vec3,
     plane_end: Vec3,
     water_material: &Handle<WaterMaterial>,  // Use custom WaterMaterial
-) -> Entity {
+) -> (Entity, Vec3, Vec2) {
     let start = Vec3::new(
         plane_start.x / 100.0,
         plane_start.y / 100.0,
@@ -2482,6 +2495,13 @@ fn spawn_water(
     );
     let uv_x = (end.x - start.x) / (water_size / 100.0);
     let uv_y = (end.z - start.z) / (water_size / 100.0);
+
+    // Calculate water center and half extents for fish spawning
+    let water_center = (start + end) * 0.5;
+    let water_half_extents = Vec2::new(
+        (end.x - start.x).abs() * 0.5,
+        (end.z - start.z).abs() * 0.5,
+    );
 
     let vertices = [
         ([start.x, start.y, end.z], [0.0, 1.0, 0.0], [uv_x, uv_y]),
@@ -2534,7 +2554,7 @@ fn spawn_water(
     commands.entity(water_entity).insert(CollisionGroups::new(COLLISION_GROUP_ZONE_WATER, COLLISION_FILTER_INSPECTABLE));
     
    // info!("[ASSET LIFECYCLE] Water entity spawned: {:?}", water_entity);
-    water_entity
+    (water_entity, water_center, water_half_extents)
 }
 
 fn spawn_object(

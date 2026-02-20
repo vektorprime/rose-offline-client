@@ -4,9 +4,9 @@ use bevy_egui::{egui, EguiContexts};
 
 use crate::{
     audio::SoundGain,
-    components::SoundCategory,
+    components::{BirdSettings, FishSettings, Season, SoundCategory},
     render::ZoneLighting,
-    resources::SoundSettings,
+    resources::{SeasonSettings, SoundSettings, WaterSettings},
     ui::UiStateWindows,
 };
 
@@ -15,6 +15,10 @@ enum SettingsPage {
     Sound,
     DepthOfField,
     VolumetricFog,
+    Water,
+    Fish,
+    Birds,
+    Seasons,
 }
 
 pub struct UiStateSettings {
@@ -51,7 +55,7 @@ pub struct DepthOfFieldSettings {
 impl Default for DepthOfFieldSettings {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             mode: DepthOfFieldMode::Bokeh,
             focal_distance: 10.0,
             aperture_f_stops: 3.3,
@@ -70,6 +74,10 @@ pub fn ui_settings_system(
     mut query_sounds: Query<(&SoundCategory, &mut SoundGain)>,
     mut dof_settings: ResMut<DepthOfFieldSettings>,
     mut zone_lighting: ResMut<ZoneLighting>,
+    mut water_settings: ResMut<WaterSettings>,
+    mut fish_settings: ResMut<FishSettings>,
+    mut bird_settings: ResMut<BirdSettings>,
+    mut season_settings: ResMut<SeasonSettings>,
 ) {
     egui::Window::new("Settings")
         .open(&mut ui_state_windows.settings_open)
@@ -86,6 +94,26 @@ pub fn ui_settings_system(
                     &mut ui_state_settings.page,
                     SettingsPage::VolumetricFog,
                     "Volumetric Fog",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::Water,
+                    "Water",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::Fish,
+                    "Fish",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::Birds,
+                    "Birds",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::Seasons,
+                    "Seasons",
                 );
             });
 
@@ -263,6 +291,268 @@ pub fn ui_settings_system(
 
                     ui.separator();
                     ui.label("Tip: Lower absorption = brighter scene. Higher scattering = more visible light shafts.");
+                }
+                SettingsPage::Water => {
+                    egui::Grid::new("water_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Foam Intensity:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.foam_intensity, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Foam Threshold:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.foam_threshold, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("SSS Intensity:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.sss_intensity, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Refraction Strength:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.refraction_strength, 0.0..=0.2)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Wave Speed:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.wave_speed, 0.1..=5.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Fresnel Strength:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.fresnel_strength, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Specular Intensity:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.specular_intensity, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                        });
+
+                    ui.separator();
+                    ui.label("Tip: Adjust foam for wave crests, SSS for light scattering, fresnel for angle reflectivity.");
+                }
+                SettingsPage::Fish => {
+                    egui::Grid::new("fish_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Fish per Water:");
+                            ui.add(
+                                egui::Slider::new(&mut fish_settings.fish_count_per_water, 0..=200)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Min Depth:");
+                            ui.add(
+                                egui::Slider::new(&mut fish_settings.min_depth, 0.1..=5.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Depth:");
+                            ui.add(
+                                egui::Slider::new(&mut fish_settings.max_depth, 1.0..=10.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Min Speed:");
+                            ui.add(
+                                egui::Slider::new(&mut fish_settings.min_speed, 0.1..=3.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Speed:");
+                            ui.add(
+                                egui::Slider::new(&mut fish_settings.max_speed, 1.0..=5.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Boundary Margin:");
+                            ui.add(
+                                egui::Slider::new(&mut fish_settings.boundary_margin, 0.5..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Target Reach Dist:");
+                            ui.add(
+                                egui::Slider::new(&mut fish_settings.target_reach_distance, 0.5..=5.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                        });
+
+                    ui.separator();
+                    ui.label("Tip: Fish settings apply when entering a new zone. Set fish count to 0 to disable.");
+                }
+                SettingsPage::Birds => {
+                    egui::Grid::new("bird_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Enabled:");
+                            ui.checkbox(&mut bird_settings.enabled, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Birds Per Zone:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.birds_per_zone, 0..=200)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Min Altitude:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.min_altitude, 10.0..=100.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Altitude:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.max_altitude, 20.0..=200.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Min Speed:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.min_speed, 1.0..=20.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Speed:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.max_speed, 1.0..=30.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Roam Radius:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.roam_radius, 50.0..=2000.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Flap Speed:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.flap_speed, 1.0..=30.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Bob Amplitude:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.bob_amplitude, 0.0..=2.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Bob Speed:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.bob_speed, 0.0..=10.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                        });
+
+                    ui.separator();
+                    ui.label("Note: Bird count changes apply when entering a new zone");
+                }
+                SettingsPage::Seasons => {
+                    egui::Grid::new("season_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Weather Effects:");
+                            ui.checkbox(&mut season_settings.enabled, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Season:");
+                            let season_text = match season_settings.current_season {
+                                Season::None => "None",
+                                Season::Fall => "Fall",
+                                Season::Spring => "Spring",
+                                Season::Winter => "Winter",
+                            };
+                            egui::ComboBox::from_label("")
+                                .selected_text(season_text)
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut season_settings.current_season,
+                                        Season::None,
+                                        "None",
+                                    );
+                                    ui.selectable_value(
+                                        &mut season_settings.current_season,
+                                        Season::Fall,
+                                        "Fall",
+                                    );
+                                    ui.selectable_value(
+                                        &mut season_settings.current_season,
+                                        Season::Spring,
+                                        "Spring",
+                                    );
+                                    ui.selectable_value(
+                                        &mut season_settings.current_season,
+                                        Season::Winter,
+                                        "Winter",
+                                    );
+                                });
+                            ui.end_row();
+
+                            ui.label("Max Particles:");
+                            ui.add(
+                                egui::Slider::new(&mut season_settings.max_particles, 1000..=20000)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Spawn Rate:");
+                            ui.add(
+                                egui::Slider::new(&mut season_settings.spawn_rate, 100.0..=5000.0)
+                                    .text("/s")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Wind Strength:");
+                            ui.add(
+                                egui::Slider::new(&mut season_settings.wind_strength, 0.0..=5.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                        });
+
+                    ui.separator();
+                    ui.label("Tip: Season changes apply immediately. Disable to turn off all weather effects.");
                 }
             }
         });

@@ -91,6 +91,7 @@ use render::{
     ZoneLightingPlugin,
     ExtensionMaterialPlugin,
     RoseObjectMaterialPlugin,
+    WaterMaterial,
     debug_particle_rendering,
     particle_performance_monitor,
 };
@@ -98,7 +99,7 @@ use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
     AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, GameData, NameTagSettings,
     NetworkThread, NetworkThreadMessage, RenderConfiguration, RenderExtractionDiagnostics, SelectedTarget, ServerConfiguration,
-    SoundCache, SoundSettings, SpecularTexture, VfsResource, WorldTime, ZoneTime,
+    SoundCache, SoundSettings, SpecularTexture, VfsResource, WaterSettings, WorldTime, ZoneTime,
 };
 use scripting::RoseScriptingPlugin;
 use systems::{
@@ -126,7 +127,7 @@ use systems::{
     status_effect_system, system_func_event_system, update_position_system, use_item_event_system,
     vehicle_model_system, vehicle_sound_system, visible_status_effects_system,
     world_connection_system, world_time_system, zone_time_system, zone_viewer_enter_system,
-    DebugInspectorPlugin,
+    DebugInspectorPlugin, FishPlugin, BirdPlugin,
 };
 use ui::{
     load_dialog_sprites_system, ui_bank_system, ui_character_create_system,
@@ -793,6 +794,15 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
             // TAA plugin for temporal anti-aliasing and temporal shadow filtering
             TemporalAntiAliasPlugin,
+
+            // Fish in water feature
+            FishPlugin,
+
+            // Birds in sky feature
+            BirdPlugin,
+
+            // Weather season system
+            systems::season::SeasonPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -1182,12 +1192,16 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<ZoneTime>()
         .init_resource::<SelectedTarget>()
         .init_resource::<NameTagSettings>()
-        .init_resource::<DepthOfFieldSettings>();
+        .init_resource::<DepthOfFieldSettings>()
+        .init_resource::<WaterSettings>();
 
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
 
     // System to apply depth of field settings from the resource to the camera
     app.add_systems(Update, apply_depth_of_field_settings);
+    
+    // System to apply water settings from the resource to water materials
+    app.add_systems(Update, apply_water_settings);
 
     // Register systems individually to avoid Bevy 0.13's IntoSystemConfigs trait bound issues
     // Game systems - part 1
@@ -1734,6 +1748,22 @@ fn apply_depth_of_field_settings(
                 // When disabled, use Gaussian mode with minimal effect (effectively off)
                 dof.mode = DepthOfFieldMode::Gaussian;
             }
+        }
+    }
+}
+
+/// System to apply water settings from the resource to water materials
+/// This allows live adjustment of water parameters via the Settings UI
+fn apply_water_settings(
+    water_settings: Res<WaterSettings>,
+    mut water_materials: ResMut<Assets<WaterMaterial>>,
+) {
+    use bevy::ecs::change_detection::DetectChanges;
+    
+    // Only update if settings have changed
+    if water_settings.is_changed() {
+        for (_, material) in water_materials.iter_mut() {
+            material.settings = water_settings.clone();
         }
     }
 }

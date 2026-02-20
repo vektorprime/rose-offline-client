@@ -6,6 +6,7 @@
 //! - Additive blending (SrcAlpha + One) for water transparency
 //! - Depth write disabled for proper water rendering
 //! - Zone lighting integration
+//! - Configurable water settings via WaterSettings resource
 
 use std::num::NonZeroU32;
 
@@ -27,6 +28,8 @@ use bevy::{
         texture::{FallbackImage, GpuImage},
     },
 };
+
+use crate::resources::WaterSettings;
 
 /// Shader handle for the water material shader
 pub const WATER_MATERIAL_SHADER_HANDLE: Handle<Shader> =
@@ -86,6 +89,8 @@ pub struct WaterMaterial {
     pub ambient_color: Vec4,
     /// Diffuse light color
     pub diffuse_color: Vec4,
+    /// Water rendering settings
+    pub settings: WaterSettings,
 }
 
 /// Default implementation for WaterMaterial
@@ -99,6 +104,8 @@ impl Default for WaterMaterial {
             ambient_color: Vec4::new(0.4, 0.4, 0.45, 1.0),
             // Default diffuse color (bright sunlight)
             diffuse_color: Vec4::new(0.8, 0.75, 0.7, 1.0),
+            // Default water settings
+            settings: WaterSettings::default(),
         }
     }
 }
@@ -245,6 +252,27 @@ impl AsBindGroup for WaterMaterial {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
+        // Water settings uniform buffer
+        // Layout: foam_intensity, foam_threshold, sss_intensity, refraction_strength (vec4)
+        //         wave_speed, fresnel_strength, specular_intensity, _padding (vec4)
+        let settings_data_1 = Vec4::new(
+            self.settings.foam_intensity,
+            self.settings.foam_threshold,
+            self.settings.sss_intensity,
+            self.settings.refraction_strength,
+        );
+        let settings_data_2 = Vec4::new(
+            self.settings.wave_speed,
+            self.settings.fresnel_strength,
+            self.settings.specular_intensity,
+            0.0, // padding
+        );
+        let settings_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("water_settings_buffer"),
+            contents: bytemuck::cast_slice(&[settings_data_1, settings_data_2]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
         // Create bind group entries
         let entries = vec![
             BindGroupEntry {
@@ -266,6 +294,10 @@ impl AsBindGroup for WaterMaterial {
             BindGroupEntry {
                 binding: 4,
                 resource: diffuse_buffer.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 5,
+                resource: settings_buffer.as_entire_binding(),
             },
         ];
 
@@ -339,6 +371,17 @@ impl AsBindGroup for WaterMaterial {
             // Diffuse color uniform (vec4)
             BindGroupLayoutEntry {
                 binding: 4,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            // Water settings uniform (2x vec4 for 7 parameters + padding)
+            BindGroupLayoutEntry {
+                binding: 5,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,

@@ -48,6 +48,23 @@ var<uniform> ambient_color: vec4<f32>;
 @group(2) @binding(4)
 var<uniform> diffuse_color: vec4<f32>;
 
+// Water settings uniform (passed from WaterMaterial struct)
+// Layout matches WaterSettings struct in water_settings.rs
+struct WaterSettingsUniform {
+    // First vec4: foam_intensity, foam_threshold, sss_intensity, refraction_strength
+    foam_intensity: f32,
+    foam_threshold: f32,
+    sss_intensity: f32,
+    refraction_strength: f32,
+    // Second vec4: wave_speed, fresnel_strength, specular_intensity, padding
+    wave_speed: f32,
+    fresnel_strength: f32,
+    specular_intensity: f32,
+    _padding: f32,
+}
+@group(2) @binding(5)
+var<uniform> water_settings: WaterSettingsUniform;
+
 // Fresnel-Schlick approximation for angle-dependent reflectivity
 // F0 is the reflectance at normal incidence (0.02 for water)
 fn fresnel_schlick(cos_theta: f32, F0: f32) -> f32 {
@@ -102,36 +119,184 @@ fn blend_normals(base_normal: vec3<f32>, wave_normal: vec3<f32>, wave_strength: 
 
 // === PHASE 3: WATER QUALITY IMPROVEMENTS ===
 
-// === FOAM EFFECTS ===
-// Foam appears on wave crests (high wave height) and creates white foam patterns
-// This is purely procedural and doesn't require additional textures
-fn calculate_foam(wave_height_val: f32, time: f32, uv: vec2<f32>) -> f32 {
-    // Foam threshold - foam appears when wave height exceeds this value
-    let foam_threshold = 0.3;
+// === ORGANIC FOAM NOISE FUNCTIONS ===
+// These create smooth, irregular patterns without cell-like structures
+
+// Enhanced hash function for better randomness distribution
+// Creates pseudo-random values from 2D coordinates
+fn hash(p: vec2<f32>) -> f32 {
+    let p3 = fract(vec3<f32>(p.xyx) * 0.1031);
+    let p3_dot = p3 + dot(p3, p3.yzx + 33.33);
+    return fract((p3_dot.x + p3_dot.y) * p3_dot.z);
+}
+
+// Hash returning vec2 for gradient calculations
+fn hash2(p: vec2<f32>) -> vec2<f32> {
+    let p3 = fract(vec3<f32>(p.xyx) * vec3<f32>(0.1031, 0.1030, 0.0973));
+    let p3_dot = p3 + dot(p3, p3.yzx + 33.33);
+    return fract(vec2<f32>((p3_dot.x + p3_dot.y) * p3_dot.z, (p3_dot.x + p3_dot.z) * p3_dot.y));
+}
+
+// Gradient noise (Perlin-like) - creates smooth, organic patterns
+// Unlike Voronoi, this doesn't create cell edges or circular patterns
+fn gradient_noise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    // Smoothstep interpolation for smooth curves
+    let u = f * f * (3.0 - 2.0 * f);
     
+    // Sample 4 corners and interpolate
+    let a = hash(i);
+    let b = hash(i + vec2<f32>(1.0, 0.0));
+    let c = hash(i + vec2<f32>(0.0, 1.0));
+    let d = hash(i + vec2<f32>(1.0, 1.0));
+    
+    return mix(
+        mix(a, b, u.x),
+        mix(c, d, u.x),
+        u.y
+    );
+}
+
+// Domain warping for organic distortion
+// Distorts the noise coordinates to break up regular patterns
+fn warp_noise(p: vec2<f32>, time: f32) -> f32 {
+    // First warp layer - subtle distortion
+    let warp1 = vec2<f32>(
+        gradient_noise(p + vec2<f32>(time * 0.1, 0.0)),
+        gradient_noise(p + vec2<f32>(0.0, time * 0.12))
+    );
+    
+    // Apply first warp
+    let warped_p = p + warp1 * 0.4;
+    
+    // Second warp layer for more complexity
+    let warp2 = vec2<f32>(
+        gradient_noise(warped_p * 1.5 + vec2<f32>(time * 0.08, time * 0.05)),
+        gradient_noise(warped_p * 1.5 + vec2<f32>(time * 0.05, time * 0.08))
+    );
+    
+    // Apply second warp
+    let final_p = warped_p + warp2 * 0.2;
+    
+    // Multiple octaves for natural detail
+    let n1 = gradient_noise(final_p * 2.0);
+    let n2 = gradient_noise(final_p * 4.0) * 0.5;
+    let n3 = gradient_noise(final_p * 8.0) * 0.25;
+    
+    return (n1 + n2 + n3) / 1.75;
+}
+
+// Organic foam noise - combines warped noise with turbulence
+// Creates irregular, patchy patterns without cells or circles
+fn organic_foam_noise(p: vec2<f32>, time: f32) -> f32 {
+    // Base warped noise for organic shapes
+    let base = warp_noise(p, time);
+    
+    // Add turbulence at different scales
+    let turb1 = gradient_noise(p * 3.0 + time * 0.2);
+    let turb2 = gradient_noise(p * 6.0 - time * 0.15);
+    
+    // Combine for complex, non-repeating patterns
+    return base * 0.6 + turb1 * 0.25 + turb2 * 0.15;
+}
+
+// Fractal Brownian Motion (FBM) for more complex noise patterns
+// Layers multiple octaves of noise at different frequencies
+fn fbm(p: vec2<f32>, time: f32) -> f32 {
+    var value = 0.0;
+    var amplitude = 0.5;
+    var freq = 1.0;
+    var pos = p;
+    
+    // Accumulate 4 octaves of noise
+    for (var i = 0; i < 4; i++) {
+        value += amplitude * gradient_noise(pos * freq + time * 0.1);
+        freq *= 2.0;
+        amplitude *= 0.5;
+    }
+    
+    return value;
+}
+
+// === FOAM EFFECTS (ORGANIC) ===
+// Foam appears on wave crests and creates organic white patterns
+// Uses gradient noise with domain warping - no cells or circles
+fn calculate_foam(wave_height_val: f32, time: f32, uv: vec2<f32>, world_pos_xz: vec2<f32>, foam_threshold: f32) -> f32 {
     // Calculate foam factor based on wave height using smoothstep for soft edges
-    let foam_factor = smoothstep(foam_threshold, foam_threshold + 0.2, wave_height_val);
+    let foam_factor = smoothstep(foam_threshold, foam_threshold + 0.3, wave_height_val);
     
-    // Add noise variation using additional sine waves
-    // This creates more natural-looking foam patterns
-    let noise = sin(uv.x * 15.0 + time * 1.5) * 0.5 +
-                cos(uv.y * 12.0 + time * 1.2) * 0.5 +
-                sin((uv.x + uv.y) * 20.0 + time * 2.0) * 0.3;
-    let noise_normalized = noise * 0.33 + 0.5; // Normalize to 0-1 range
+    // Use world position for foam patterns so they stay in place
+    // Scale for appropriate pattern size
+    let world_noise_scale = 0.08;
+    let base_p = world_pos_xz * world_noise_scale;
     
-    // Combine foam factor with noise for varied foam appearance
-    let foam = foam_factor * noise_normalized;
+    // Get organic foam pattern using warped noise
+    let organic_pattern = organic_foam_noise(base_p, time);
     
-    // Animate foam with pulsing effect
-    let animated_foam = foam * (0.7 + 0.3 * sin(time * 2.0));
+    // Add fine detail using gradient noise at higher frequency
+    let detail_scale = 0.3;
+    let detail = gradient_noise(world_pos_xz * detail_scale + time * 0.2);
+    
+    // Combine patterns - organic base with detail overlay
+    let combined = organic_pattern * 0.75 + detail * 0.25;
+    
+    // Create irregular foam patches using smooth threshold
+    // The smoothstep creates soft, blobby transitions
+    let foam_mask = smoothstep(0.35, 0.65, combined);
+    
+    // Add variation based on wave height for dynamic foam
+    let height_variation = smoothstep(0.0, 0.4, wave_height_val);
+    
+    // Combine foam factor with organic mask
+    let foam = foam_factor * foam_mask * (0.6 + 0.4 * height_variation);
+    
+    // Subtle animation for living foam effect
+    let animated_foam = foam * (0.9 + 0.1 * sin(time * 0.8 + combined * 3.0));
     
     return clamp(animated_foam, 0.0, 1.0);
+}
+
+// === WATER EDGE SPLASH EFFECT (ORGANIC) ===
+// Creates foam/splash effect where water meets terrain
+// Uses organic noise patterns instead of cells
+fn calculate_edge_splash(world_pos: vec3<f32>, time: f32, uv: vec2<f32>) -> f32 {
+    // Use world position XZ for detecting shore proximity
+    let shore_noise = gradient_noise(world_pos.xz * 0.3);
+    
+    // Effective shore height varies based on terrain
+    let base_shore_height = 0.5;
+    let shore_height = base_shore_height + shore_noise * 1.5;
+    
+    // Calculate distance from water surface to effective shore height
+    let dist_to_shore = abs(world_pos.y - shore_height);
+    
+    // Create splash effect that decreases with distance from shore
+    let splash_range = 3.0;
+    let edge_factor = smoothstep(splash_range, 0.0, dist_to_shore);
+    
+    // Use organic foam noise for irregular splash patterns
+    let splash_pattern = organic_foam_noise(world_pos.xz * 0.1, time);
+    
+    // Add animated wave surge effect
+    let wave_surge = sin(time * 2.0 + world_pos.x * 0.5) * 0.5 + 0.5;
+    
+    // Create breaking wave effect
+    let breaking_wave = smoothstep(0.3, 0.7, wave_surge) * edge_factor;
+    
+    // Animated splash intensity
+    let splash_animation = 0.5 + 0.5 * sin(time * 2.5 + splash_pattern * 4.0);
+    
+    // Combine edge factor with organic foam pattern
+    let splash = (edge_factor * splash_pattern * 0.6 + breaking_wave * 0.4) * splash_animation;
+    
+    return clamp(splash, 0.0, 1.0);
 }
 
 // === SUBSURFACE SCATTERING (SSS) APPROXIMATION ===
 // Simulates light penetrating and scattering through water
 // This gives water a glowing appearance when viewed at certain angles
-fn calculate_sss(view_dir: vec3<f32>, light_dir: vec3<f32>, normal: vec3<f32>) -> vec3<f32> {
+fn calculate_sss(view_dir: vec3<f32>, light_dir: vec3<f32>, normal: vec3<f32>, sss_intensity: f32) -> vec3<f32> {
     // SSS is strongest when looking through water toward the light
     // VdotN determines the viewing angle relative to the surface
     let VdotN = dot(view_dir, normal);
@@ -148,21 +313,23 @@ fn calculate_sss(view_dir: vec3<f32>, light_dir: vec3<f32>, normal: vec3<f32>) -
     let sss_color = vec3<f32>(0.0, 0.8, 0.7);
     
     // Return SSS contribution with intensity scaling
-    return sss_color * sss_factor * 0.4;
+    return sss_color * sss_factor * sss_intensity;
 }
 
 // === PSEUDO-REFRACTION EFFECT ===
 // Since we can't access the opaque render texture directly, create a pseudo-refraction
 // effect by distorting UV coordinates based on wave normals
-fn apply_refraction(uv: vec2<f32>, normal: vec3<f32>, time: f32) -> vec2<f32> {
+fn apply_refraction(uv: vec2<f32>, normal: vec3<f32>, time: f32, refraction_strength: f32) -> vec2<f32> {
     // Distort UVs based on wave normal XZ components
     // The normal's X and Z components indicate surface tilt
-    let distortion = normal.xz * 0.03;
+    // Scale by refraction_strength (default 0.05 gives subtle distortion)
+    let base_distortion = refraction_strength * 0.6; // Scale factor for visible effect
+    let distortion = normal.xz * base_distortion;
     
     // Add time-based animation for flowing water effect
     let animated_distortion = distortion + vec2<f32>(
-        sin(time * 0.5 + uv.y * 3.0) * 0.015,
-        cos(time * 0.3 + uv.x * 3.0) * 0.015
+        sin(time * 0.5 + uv.y * 3.0) * refraction_strength * 0.3,
+        cos(time * 0.3 + uv.x * 3.0) * refraction_strength * 0.3
     );
     
     return uv + animated_distortion;
@@ -195,8 +362,8 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // === PROCEDURAL WAVE NORMALS (calculate early for refraction) ===
     // Calculate wave normal based on world position for consistent wave patterns
-    // Use a separate time for waves (slower than texture animation)
-    let wave_time = globals.time * 2.0;
+    // Use wave_speed from settings to control animation speed
+    let wave_time = globals.time * 2.0 * water_settings.wave_speed;
     
     // Use world position XZ for wave calculation (water is on XZ plane)
     let wave_pos = in.world_position.xz * 0.5; // Scale down for larger waves
@@ -213,7 +380,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     
     // === PHASE 3: PSEUDO-REFRACTION ===
     // Apply UV distortion based on wave normal for a refraction-like effect
-    let refracted_uv = apply_refraction(in.uv0, wave_normal, wave_time);
+    let refracted_uv = apply_refraction(in.uv0, wave_normal, wave_time, water_settings.refraction_strength);
     
     // Animate water at 10 FPS (same as original)
     // globals.time is in seconds, wrap it to avoid precision issues
@@ -242,15 +409,21 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Apply lighting to water color
     let lit_water_color = water_color.rgb * lighting;
     
-    // === FRESNEL EFFECT ===
+    // === FRESNEL EFFECT (IMPROVED - MORE REFLECTION) ===
     // Calculate view direction (from fragment to camera)
     // view.world_position is camera position in world space
     let view_dir = normalize(view.world_position.xyz - in.world_position.xyz);
     let VdotN = max(dot(view_dir, N), 0.0);
     
     // Fresnel effect: more reflective at grazing angles
-    // F0 = 0.02 is typical for water/air interface
-    let fresnel = fresnel_schlick(VdotN, 0.02);
+    // F0 = 0.2 for significantly increased base reflection (was 0.02, then 0.1)
+    // This makes water much more reflective at all angles
+    let base_fresnel = fresnel_schlick(VdotN, 0.2);
+    
+    // Apply fresnel_strength from settings with a boost multiplier
+    // reflection_boost increased to 2.0 for more prominent reflections
+    let reflection_boost = 2.0;
+    let fresnel = base_fresnel * water_settings.fresnel_strength * reflection_boost;
     
     // === SPECULAR SUN HIGHLIGHTS ===
     // Calculate specular highlight using Blinn-Phong half vector
@@ -259,25 +432,46 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let spec = pow(max(dot(N, half_vec), 0.0), 256.0);
     
     // Add specular highlight to color (bright sun reflection)
-    let specular_color = vec3<f32>(spec * 0.5);
+    // Use specular_intensity from settings with boost for more visible highlights
+    let specular_boost = 1.3;
+    let specular_color = vec3<f32>(spec * water_settings.specular_intensity * specular_boost);
     
     // === PHASE 3: SUBSURFACE SCATTERING ===
     // Calculate SSS for light passing through water
-    let sss_contribution = calculate_sss(view_dir, light_dir, N);
+    let sss_contribution = calculate_sss(view_dir, light_dir, N, water_settings.sss_intensity);
     
-    // === PHASE 3: FOAM EFFECTS ===
+    // === PHASE 3: FOAM EFFECTS (IMPROVED) ===
     // Calculate wave height for foam (reuse wave position)
     let current_wave_height = wave_height(wave_pos, wave_time);
     
-    // Calculate foam factor based on wave height
-    let foam_factor = calculate_foam(current_wave_height, wave_time, in.uv0);
+    // Calculate foam factor using improved Voronoi-based noise
+    // Pass world position XZ for stable, natural foam patterns
+    let foam_factor = calculate_foam(current_wave_height, wave_time, in.uv0, in.world_position.xz, water_settings.foam_threshold);
+    
+    // === WATER EDGE SPLASH EFFECT (IMPROVED) ===
+    // Calculate splash/foam where water meets terrain using full world position
+    let edge_splash = calculate_edge_splash(in.world_position.xyz, wave_time, in.uv0);
+    
+    // Combine foam from waves and edge splash
+    let total_foam = foam_factor + edge_splash * 0.5;
     
     // Foam color (white with slight blue tint for more natural look)
     let foam_color = vec3<f32>(0.95, 0.97, 1.0);
     
+    // === SKY REFLECTION COLOR (IMPROVED) ===
+    // Enhanced sky color approximation for more vivid reflections
+    // Uses fresnel to blend sky color into water at grazing angles
+    let sky_color = vec3<f32>(0.35, 0.55, 0.95); // More saturated blue sky
+    let horizon_color = vec3<f32>(0.65, 0.75, 0.92); // Lighter at horizon
+    let sun_reflection_color = vec3<f32>(1.0, 0.95, 0.85); // Warm sun tint
+    let sky_reflection = mix(horizon_color, sky_color, VdotN);
+    
     // === COMBINE ALL EFFECTS ===
     // Start with lit water color
     var final_color = lit_water_color;
+    
+    // Add sky reflection based on fresnel (increased from 0.4 to 0.6 for more reflection)
+    final_color = mix(final_color, sky_reflection, fresnel * 0.6);
     
     // Add specular highlights
     final_color = final_color + specular_color;
@@ -285,15 +479,20 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Add subsurface scattering contribution
     final_color = final_color + sss_contribution;
     
-    // Blend in foam on wave crests (foam_factor controls intensity)
-    final_color = mix(final_color, foam_color, foam_factor * 0.4);
+    // Blend in foam on wave crests and edges (total_foam combines both)
+    // Use foam_intensity from settings
+    final_color = mix(final_color, foam_color, total_foam * water_settings.foam_intensity);
     
     // Base alpha from water texture
     let base_alpha = water_color.a;
     
+    // Ensure minimum opacity of 0.7 to make water less see-through
+    let min_alpha = 0.7;
+    let clamped_base_alpha = max(base_alpha, min_alpha);
+    
     // Increase alpha at grazing angles (Fresnel makes water more opaque at low angles)
     // Also increase alpha where there's foam
-    let final_alpha = mix(base_alpha, 1.0, fresnel * 0.5) + foam_factor * 0.2;
+    let final_alpha = mix(clamped_base_alpha, 1.0, fresnel * 0.5) + total_foam * 0.2;
     
     // Final color with additive blending (handled by blend state in material)
     // Note: Zone fog is not available since we can't access bind group 3

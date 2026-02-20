@@ -3,6 +3,7 @@ mod animation_effect_system;
 mod animation_sound_system;
 mod auto_login_system;
 mod background_music_system;
+mod bird_system;
 mod character_model_add_collider_system;
 mod character_model_blink_system;
 mod character_model_system;
@@ -22,6 +23,7 @@ mod debug_rendering_system;
 mod directional_light_system;
 mod effect_system;
 mod facing_direction_system;
+mod fish_system;
 mod free_camera_system;
 mod game_connection_system;
 mod game_mouse_input_system;
@@ -63,6 +65,9 @@ mod world_connection_system;
 mod world_time_system;
 pub mod zone_time_system;
 mod zone_viewer_system;
+
+// Season weather systems
+pub mod season;
 
 pub use ability_values_system::ability_values_system;
 pub use animation_effect_system::animation_effect_system;
@@ -113,6 +118,8 @@ pub use debug_rendering_system::{
 pub use directional_light_system::directional_light_system;
 pub use effect_system::effect_system;
 pub use facing_direction_system::facing_direction_system;
+pub use fish_system::{FishPlugin, spawn_fish_on_water_system, update_fish_movement_system};
+pub use bird_system::{BirdPlugin, spawn_birds_on_zone_system, update_bird_movement_system};
 pub use free_camera_system::{free_camera_system, FreeCamera};
 pub use game_connection_system::game_connection_system;
 pub use game_mouse_input_system::game_mouse_input_system;
