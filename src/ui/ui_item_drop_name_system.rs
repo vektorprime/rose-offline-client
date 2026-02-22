@@ -95,18 +95,20 @@ pub fn ui_item_drop_name_system(
     visible_names.sort_by(|a, b| a.screen_z.partial_cmp(&b.screen_z).unwrap());
 
     for visible_name in visible_names.drain(..) {
+        let rect = visible_name
+            .galley
+            .rect
+            .translate(egui::vec2(visible_name.pos.x, visible_name.pos.y))
+            .expand(2.0);
         tooltip_painter.add(egui::epaint::RectShape {
-            rect: visible_name
-                .galley
-                .rect
-                .translate(egui::vec2(visible_name.pos.x, visible_name.pos.y))
-                .expand(2.0),
-            rounding: egui::Rounding::ZERO,
+            rect,
+            corner_radius: egui::epaint::CornerRadius::ZERO,
             fill: style.visuals.window_fill,
             stroke: style.visuals.window_stroke,
-            fill_texture_id: egui::TextureId::default(),
-            uv: egui::Rect::ZERO,
+            stroke_kind: egui::epaint::StrokeKind::Outside,
+            round_to_pixels: Some(false),
             blur_width: 0.0,
+            brush: None,
         });
         tooltip_painter.add(egui::epaint::TextShape {
             pos: visible_name.pos,

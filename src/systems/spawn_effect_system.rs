@@ -1,5 +1,4 @@
 use bevy::{
-    hierarchy::BuildChildren,
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
         AssetServer, Assets, Commands, EventReader, GlobalTransform, Query, Res, ResMut, Transform,

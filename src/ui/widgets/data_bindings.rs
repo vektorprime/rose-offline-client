@@ -45,7 +45,7 @@ pub struct DataBindings<'a, 'w> {
 impl<'a, 'w> DataBindings<'a, 'w> {
     pub fn emit_sound(&mut self, sound_id: SoundId) {
         if let Some(sound_events) = self.sound_events.as_mut() {
-            sound_events.send(UiSoundEvent::new(sound_id));
+            sound_events.write(UiSoundEvent::new(sound_id));
         }
     }
 

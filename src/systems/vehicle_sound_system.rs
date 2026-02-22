@@ -1,5 +1,5 @@
 use bevy::prelude::{
-    AssetServer, BuildChildren, Changed, Commands, GlobalTransform, Or, Query, Res, Transform,
+    AssetServer, Changed, Commands, GlobalTransform, Or, Query, Res, Transform,
 };
 use enum_map::enum_map;
 use rose_data::{VehiclePartIndex, VehicleType};

@@ -150,7 +150,7 @@ pub fn zone_render_validation_system(
         
         // Also track parent ZoneObjects that have children with mesh/material
         if let Some(children) = children {
-            for &child in children.iter() {
+            for child in children.iter() {
                 // Check if child has mesh/material by querying it
                 if let Ok((_, _, child_mesh, _, _, _, child_material)) = zone_object_query.get(child) {
                     let child_mesh: Option<&Mesh3d> = child_mesh;

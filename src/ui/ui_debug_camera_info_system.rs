@@ -19,10 +19,12 @@ pub fn ui_debug_camera_info_system(
     >,
     mut ui_state_debug_windows: ResMut<UiStateDebugWindows>,
 ) {
+    let Ok((transform, free_camera, orbit_camera)) = camera_query.get_single_mut() else {
+        return;
+    };
     egui::Window::new("Camera")
         .open(&mut ui_state_debug_windows.camera_info_open)
         .show(egui_context.ctx_mut(), |ui| {
-            let (transform, free_camera, orbit_camera) = camera_query.single_mut();
 
             egui::Grid::new("camera_info_grid")
                 .num_columns(2)

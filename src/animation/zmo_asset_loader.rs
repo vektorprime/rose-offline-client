@@ -144,12 +144,17 @@ impl AssetLoader for ZmoAssetLoader {
     ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
             let asset_path = load_context.path().to_string_lossy();
-        //info!("[ASSET LIFECYCLE] Loading ZMO animation asset: {}", asset_path);
+        // CRITICAL: Use log::error to ensure visibility
+        log::error!("[ZMO_LOADER] ========== LOAD CALLED ==========");
+        log::error!("[ZMO_LOADER] Loading ZMO animation asset: {}", asset_path);
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
-        //info!("[ASSET LIFECYCLE] ZMO asset size: {} bytes", bytes.len());
+        //log::info!("[ZMO_LOADER] ZMO asset size: {} bytes", bytes.len());
         match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
             Ok(zmo) => {
+                //log::info!("[ZMO_LOADER] ZMO loaded: num_frames={}, fps={}, channels={}",
+                    //zmo.num_frames, zmo.fps, zmo.channels.len());
+                
                 // First count how many transform channels there are
                 let mut max_bone_id = 0;
                 for (bone_id, _) in zmo.channels.iter() {
@@ -159,6 +164,7 @@ impl AssetLoader for ZmoAssetLoader {
                 // Camera / morph target animations have only position channels
                 // but no bone id so we can use bone id as a channel id instead.
                 let assign_bone_id = max_bone_id == 0 && zmo.channels.len() > 2;
+                //log::info!("[ZMO_LOADER] max_bone_id={}, assign_bone_id={}", max_bone_id, assign_bone_id);
                 if assign_bone_id {
                     max_bone_id = (zmo.channels.len() - 1) as u32;
                 }
@@ -172,6 +178,8 @@ impl AssetLoader for ZmoAssetLoader {
                     };
                     match channel {
                         ZmoChannel::Position(positions) => {
+                            //log::info!("[ZMO_LOADER] Channel {} (bone_id={}): Position channel with {} frames",
+                                //channel_id, bone_id, positions.len());
                             bone_animation.translation = positions
                                 .iter()
                                 .map(|position| {
@@ -180,6 +188,8 @@ impl AssetLoader for ZmoAssetLoader {
                                 .collect();
                         }
                         ZmoChannel::Rotation(rotations) => {
+                            //log::info!("[ZMO_LOADER] Channel {} (bone_id={}): Rotation channel with {} frames",
+                                //channel_id, bone_id, rotations.len());
                             bone_animation.rotation = rotations
                                 .iter()
                                 .map(|rotation| {
@@ -193,10 +203,21 @@ impl AssetLoader for ZmoAssetLoader {
                                 .collect();
                         }
                         ZmoChannel::Scale(scales) => {
+                            //log::info!("[ZMO_LOADER] Channel {} (bone_id={}): Scale channel with {} frames",
+                                //channel_id, bone_id, scales.len());
                             bone_animation.scale = scales.clone();
                         }
-                        _ => {}
+                        other => {
+                            log::warn!("[ZMO_LOADER] Channel {} (bone_id={}): Unknown channel type: {:?}",
+                                channel_id, bone_id, std::mem::discriminant(other));
+                        }
                     }
+                }
+                
+                // Log final bone state
+                for (i, bone) in bones.iter().enumerate() {
+                    //log::info!("[ZMO_LOADER] Bone {}: translation={}, rotation={}, scale={}",
+                        //i, bone.translation.len(), bone.rotation.len(), bone.scale.len());
                 }
                 let asset = ZmoAsset {
                     num_frames: zmo.num_frames,
@@ -217,7 +238,7 @@ impl AssetLoader for ZmoAssetLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["zmo"]
+        &["zmo", "ZMO"]
     }
 }
 
@@ -239,7 +260,7 @@ impl AssetLoader for ZmoTextureAssetLoader {
     type Error = anyhow::Error;
 
     fn extensions(&self) -> &[&str] {
-        &["zmo_texture"]
+        &["zmo_texture", "ZMO_TEXTURE"]
     }
 
     fn load(
@@ -250,12 +271,16 @@ impl AssetLoader for ZmoTextureAssetLoader {
     ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
             let asset_path = load_context.path().to_string_lossy();
-        //info!("[ASSET LIFECYCLE] Loading ZMO texture asset: {}", asset_path);
+        log::error!("[ZMO_TEXTURE_LOADER] ========== LOAD CALLED ==========");
+        log::error!("[ZMO_TEXTURE_LOADER] Loading ZMO texture asset: {}", asset_path);
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
-        //info!("[ASSET LIFECYCLE] ZMO texture asset size: {} bytes", bytes.len());
+        log::error!("[ZMO_TEXTURE_LOADER] ZMO texture asset size: {} bytes", bytes.len());
         match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
             Ok(zmo) => {
+                log::error!("[ZMO_TEXTURE_LOADER] ZMO loaded: num_frames={}, fps={}, channels={}",
+                    zmo.num_frames, zmo.fps, zmo.channels.len());
+                
                 let mut num_vertices = 0;
                 let mut has_position_channel = false;
                 let mut has_normal_channel = false;
@@ -272,6 +297,9 @@ impl AssetLoader for ZmoTextureAssetLoader {
                         _ => {}
                     }
                 }
+                
+                log::error!("[ZMO_TEXTURE_LOADER] has_position={}, has_normal={}, has_alpha={}, has_uv1={}",
+                    has_position_channel, has_normal_channel, has_alpha_channel, has_uv1_channel);
 
                 // RGBA 32F where x = frame number, y = vertex id, pixel = (pos.x, pos.y, pos.z, 0.0)
                 // vert0: (frame[0].pos.xyz, frame[0].uv.x)..n (frame[0].normal.xyz, frame[0].uv.y)..n

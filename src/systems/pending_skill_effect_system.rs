@@ -189,7 +189,7 @@ pub fn pending_skill_effect_system(
                         if let Some(skill_data) =
                             game_data.skills.get_skill(pending_skill_effect.skill_id)
                         {
-                            hit_events.send(HitEvent::with_skill_effect(
+                            hit_events.write(HitEvent::with_skill_effect(
                                 event.entity,
                                 target_entity,
                                 pending_skill_effect.skill_id,

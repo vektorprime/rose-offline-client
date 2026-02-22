@@ -78,7 +78,7 @@ pub fn spawn_projectile_system(
             .get_effect(event.effect_id)
             .and_then(|x| x.bullet_effect)
         {
-            spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+            spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                 projectile_entity,
                 None,
                 SpawnEffectData::with_file_id(projectile_effect_file_id),

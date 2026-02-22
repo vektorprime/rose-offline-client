@@ -130,7 +130,7 @@ fn ui_add_hotbar_slot(
         .inner;
 
     if use_slot || response.double_clicked() {
-        player_command_events.send(PlayerCommandEvent::UseHotbar(
+        player_command_events.write(PlayerCommandEvent::UseHotbar(
             hotbar_index.0,
             hotbar_index.1,
         ));
@@ -169,8 +169,8 @@ fn ui_add_hotbar_slot(
                 let slot_a = player.hotbar.pages[hotbar_index.0][hotbar_index.1].take();
                 let slot_b = player.hotbar.pages[page][index].take();
 
-                player_command_events.send(PlayerCommandEvent::SetHotbar(page, index, slot_a));
-                player_command_events.send(PlayerCommandEvent::SetHotbar(
+                player_command_events.write(PlayerCommandEvent::SetHotbar(page, index, slot_a));
+                player_command_events.write(PlayerCommandEvent::SetHotbar(
                     hotbar_index.0,
                     hotbar_index.1,
                     slot_b,
@@ -178,14 +178,14 @@ fn ui_add_hotbar_slot(
             }
         }
         Some(DragAndDropId::Inventory(item_slot)) => {
-            player_command_events.send(PlayerCommandEvent::SetHotbar(
+            player_command_events.write(PlayerCommandEvent::SetHotbar(
                 hotbar_index.0,
                 hotbar_index.1,
                 Some(HotbarSlot::Inventory(item_slot)),
             ));
         }
         Some(DragAndDropId::Skill(skill_slot)) => {
-            player_command_events.send(PlayerCommandEvent::SetHotbar(
+            player_command_events.write(PlayerCommandEvent::SetHotbar(
                 hotbar_index.0,
                 hotbar_index.1,
                 Some(HotbarSlot::Skill(skill_slot)),

@@ -133,7 +133,7 @@ pub fn ui_server_select_system(
                 .game_servers
                 .get(ui_state.selected_game_server_index as usize)
             {
-                login_events.send(LoginEvent::SelectServer {
+                login_events.write(LoginEvent::SelectServer {
                     server_id: world_server.id,
                     channel_id: game_server.id,
                 });

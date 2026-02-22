@@ -1,5 +1,4 @@
 use bevy::{
-    hierarchy::DespawnRecursiveExt,
     math::{Vec3Swizzles, Vec4},
     pbr::MeshMaterial3d,
     prelude::{Commands, Entity, GlobalTransform, Query, ResMut, Assets, Handle},
@@ -68,7 +67,7 @@ pub fn damage_digit_render_system(
         let animation: &TransformAnimation = animation;
         if animation.completed() {
             // Animation completed, despawn
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
             continue;
         }
 

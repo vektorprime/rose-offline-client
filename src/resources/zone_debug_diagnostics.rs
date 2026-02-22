@@ -246,11 +246,11 @@ pub fn zone_child_visibility_diagnostic_system(
         &ViewVisibility,
         Option<&GlobalTransform>,
         Option<&Mesh3d>,
-        Option<&Parent>
+        Option<&ChildOf>
     ), Without<crate::components::Zone>>,
     meshes: Res<Assets<Mesh>>,
 ) {
-    use bevy::hierarchy::Parent;
+    // ChildOf is now in bevy::prelude, already imported
 
     // Only run this diagnostic once after zone is loaded
     // This is controlled by a frame counter in the actual system

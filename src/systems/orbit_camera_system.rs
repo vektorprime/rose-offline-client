@@ -5,7 +5,7 @@ use bevy::{
     },
     math::{Quat, Vec2, Vec3},
     prelude::{
-        Component, Entity, EventReader, GlobalTransform, Local, MouseButton, Query, Res, Time,
+        BevyError, Component, Entity, EventReader, GlobalTransform, Local, MouseButton, Query, Res, Time,
         Transform, With,
     },
     window::{CursorGrabMode, PrimaryWindow, Window},
@@ -13,7 +13,9 @@ use bevy::{
 use bevy_egui::EguiContexts;
 use bevy_rapier3d::{
     geometry::ShapeCastOptions,
-    prelude::{Collider, CollisionGroups, QueryFilter, RapierContext, ReadDefaultRapierContext},
+    plugin::context::systemparams::ReadRapierContext,
+    prelude::{Collider, CollisionGroups, QueryFilter},
+    rapier::prelude::Shape,
 };
 use dolly::prelude::{Arm, CameraRig, LeftHanded, Position, Smooth, YawPitch};
 
@@ -79,14 +81,18 @@ pub fn orbit_camera_system(
     mut egui_ctx: EguiContexts,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
-    rapier_context: ReadDefaultRapierContext,
-) {
+    rapier_context: ReadRapierContext,
+) -> Result<(), BevyError> {
+    let Ok(rapier_context) = rapier_context.single() else {
+        return Ok(());
+    };
+    
     // Log camera system execution once per second to avoid spam
     if time.elapsed().as_secs_f32() % 1.0 < time.delta().as_secs_f32() {
         //log::info!("[CAMERA] Orbit camera system running");
     }
     let Ok(mut window) = query_window.get_single_mut() else {
-        return;
+        return Ok(());
     };
 
     let (mut orbit_camera, mut camera_transform) = if let Ok((a, b)) = query.get_single_mut() {
@@ -103,7 +109,7 @@ pub fn orbit_camera_system(
             control_state.is_dragging = false;
         }
 
-        return;
+        return Ok(());
     };
 
     // If the camera has not had its initial position yet, move straight to entity
@@ -129,7 +135,7 @@ pub fn orbit_camera_system(
             orbit_camera.has_initial_position = true;
         }
 
-        return;
+        return Ok(());
     }
 
     let allow_mouse_input = control_state.is_dragging || !egui_ctx.ctx_mut().wants_pointer_input();
@@ -200,11 +206,12 @@ pub fn orbit_camera_system(
         // Camera collision
         let ray_direction = (camera_transform.translation - follow_position).normalize();
         let ball_radius = 0.5;
+        let ball_collider = Collider::ball(ball_radius);
         if let Some((_, distance)) = rapier_context.cast_shape(
             follow_position + ray_direction * ball_radius,
             Quat::default(),
             ray_direction,
-            &Collider::ball(ball_radius),
+            <&dyn Shape>::from(&ball_collider),
             ShapeCastOptions {
                 max_time_of_impact: orbit_camera.max_distance,
                 target_distance: 0.0,
@@ -263,6 +270,8 @@ pub fn orbit_camera_system(
         calculated_transform.rotation.v.z,
         calculated_transform.rotation.s,
     );
+    
+    Ok(())
 }
 
 pub trait Interpolate {

@@ -29,7 +29,7 @@ pub struct UiSprite {
 impl UiSprite {
     pub fn draw(&self, ui: &mut egui::Ui, pos: egui::Pos2) {
         let rect = egui::Rect::from_min_size(pos, egui::vec2(self.width, self.height));
-        // log::trace!("[UI SPRITE] Drawing sprite: texture_id={:?}, pos=({:.1},{:.1}), size=({:.1}x{:.1}), uv=({:.2},{:.2})-({:.2},{:.2})",
+        // log::info!("[UI SPRITE] Drawing sprite: texture_id={:?}, pos=({:.1},{:.1}), size=({:.1}x{:.1}), uv=({:.2},{:.2})-({:.2},{:.2})",
         //     self.texture_id, pos.x, pos.y, self.width, self.height,
         //     self.uv.min.x, self.uv.min.y, self.uv.max.x, self.uv.max.y);
 
@@ -161,16 +161,41 @@ impl UiResources {
             7 => UiSpriteSheetType::ClanMarkBackground,
             8 => UiSpriteSheetType::ClanMarkForeground,
             9 => UiSpriteSheetType::TargetMark,
-            _ => return None,
+            _ => {
+                //log::warn!("[GET SPRITE] Unknown module_id={} for sprite '{}'", module_id, sprite_name);
+                return None;
+            }
         };
-        let sprite_sheet = self.sprite_sheets[sprite_sheet_type].as_ref()?;
-        let sprite_index = sprite_sheet
-            .sprites_by_name
-            .as_ref()
-            .unwrap()
-            .get(sprite_name)?;
+        
+        let sprite_sheet = match self.sprite_sheets[sprite_sheet_type].as_ref() {
+            Some(sheet) => sheet,
+            None => {
+                //log::warn!("[GET SPRITE] Sprite sheet {:?} not loaded for sprite '{}'", sprite_sheet_type, sprite_name);
+                return None;
+            }
+        };
+        
+        let sprites_by_name = match sprite_sheet.sprites_by_name.as_ref() {
+            Some(map) => map,
+            None => {
+                //log::warn!("[GET SPRITE] sprites_by_name not loaded for sprite '{}'", sprite_name);
+                return None;
+            }
+        };
+        
+        let sprite_index = match sprites_by_name.get(sprite_name) {
+            Some(idx) => idx,
+            None => {
+                //log::warn!("[GET SPRITE] Sprite '{}' not found in sprites_by_name", sprite_name);
+                return None;
+            }
+        };
 
-        self.get_sprite_by_index(sprite_sheet_type, *sprite_index as usize)
+        let result = self.get_sprite_by_index(sprite_sheet_type, *sprite_index as usize);
+        if result.is_none() {
+            //log::warn!("[GET SPRITE] get_sprite_by_index returned None for '{}' (index {})", sprite_name, sprite_index);
+        }
+        result
     }
 
     pub fn get_sprite_by_index(
@@ -178,12 +203,41 @@ impl UiResources {
         sprite_sheet_type: UiSpriteSheetType,
         sprite_index: usize,
     ) -> Option<UiSprite> {
-        let sprite_sheet = self.sprite_sheets[sprite_sheet_type].as_ref()?;
-        let sprite = sprite_sheet.sprites.get(sprite_index)?;
-        let texture = sprite_sheet
-            .loaded_textures
-            .get(sprite.texture_id as usize)?;
-        let texture_size = texture.size?;
+        let sprite_sheet = match self.sprite_sheets[sprite_sheet_type].as_ref() {
+            Some(sheet) => sheet,
+            None => {
+                //log::warn!("[GET SPRITE BY INDEX] Sprite sheet {:?} not loaded (index {})", sprite_sheet_type, sprite_index);
+                return None;
+            }
+        };
+        
+        let sprite = match sprite_sheet.sprites.get(sprite_index) {
+            Some(s) => s,
+            None => {
+                //log::warn!("[GET SPRITE BY INDEX] Sprite index {} out of bounds (max {})", sprite_index, sprite_sheet.sprites.len());
+                return None;
+            }
+        };
+        
+        let texture = match sprite_sheet.loaded_textures.get(sprite.texture_id as usize) {
+            Some(t) => t,
+            None => {
+                //log::warn!("[GET SPRITE BY INDEX] Texture index {} out of bounds (max {})", sprite.texture_id, sprite_sheet.loaded_textures.len());
+                return None;
+            }
+        };
+        
+        let texture_size = match texture.size {
+            Some(size) if size.x >0.0 && size.y > 0.0 => size,
+            Some(size) => {
+                //log::warn!("[GET SPRITE BY INDEX] Texture {} size is zero or invalid: {:?} (not loaded yet?)", sprite.texture_id, size);
+                return None;
+            }
+            None => {
+                //log::warn!("[GET SPRITE BY INDEX] Texture {} size is None (not loaded yet?)", sprite.texture_id);
+                return None;
+            }
+        };
 
         Some(UiSprite {
             texture_id: texture.texture_id,
@@ -287,8 +341,10 @@ fn load_ui_spritesheet(
 
     let mut loaded_textures = Vec::new();
     for (tsi_texture_index, tsi_texture) in tsi_file.textures.iter().enumerate() {
-        log::info!("[UI RESOURCES] Loading texture index {}: filename = {}", tsi_texture_index, tsi_texture.filename);
-        let handle = asset_server.load(format!("3DDATA/CONTROL/RES/{}", tsi_texture.filename));
+        // Convert path to lowercase to ensure extension matching works with Bevy's asset loader
+        let texture_path = format!("3ddata/control/res/{}", tsi_texture.filename).to_lowercase();
+        log::info!("[UI RESOURCES] Loading texture index {}: filename = {}, path = {}", tsi_texture_index, tsi_texture.filename, texture_path);
+        let handle = asset_server.load(&texture_path);
         let texture_id = egui_context.add_image(handle.clone());
         loaded_textures.push(UiTexture {
             handle,
@@ -325,8 +381,11 @@ pub fn update_ui_resources(
         .filter_map(|(_, spritesheet)| spritesheet.as_mut())
     {
         for (texture_index, texture) in spritesheet.loaded_textures.iter_mut().enumerate() {
-            if texture.size.is_some() {
-                continue;
+            // Skip textures that are already loaded with valid size
+            if let Some(size) = texture.size {
+                if size.x > 0.0 && size.y > 0.0 {
+                    continue;
+                }
             }
 
             // Log detailed information for texture 25 specifically
@@ -335,19 +394,28 @@ pub fn update_ui_resources(
             }
 
             if let Some(image) = images.get(&texture.handle) {
-                texture.size = Some(image.size().as_vec2());
-                log::debug!("[UI RESOURCES] Texture loaded: {:?}", texture.handle);
+                let size = image.size().as_vec2();
+                if size.x > 0.0 && size.y > 0.0 {
+                    texture.size = Some(size);
+                    log::info!("[UI RESOURCES] Texture loaded successfully: texture_index={}, handle={:?}", texture_index, texture.handle);
+                } else {
+                    // Image exists but has zero size - still loading
+                    log::warn!("[UI RESOURCES] Texture has zero size: texture_index={}, size={:?}", texture_index, size);
+                    loaded_all = false;
+                    loaded_required = false;
+                }
             } else {
-                // Treat any non-successful load state as failed to allow UI to render
+                // Check load state for diagnostics
                 let load_state = asset_server.get_load_state(&texture.handle);
+                let handle_path = format!("{:?}", texture.handle);
+                log::warn!("[UI RESOURCES] Texture NOT in images resource: texture_index={}, load_state={:?}, handle={}", texture_index, load_state, handle_path);
                 if matches!(load_state, Some(LoadState::Failed(_))) {
                     texture.size = Some(Vec2::ZERO);
-                    log::warn!("[UI RESOURCES] Texture FAILED to load: texture_id={:?}, handle={:?}, load_state={:?}", texture.texture_id, texture.handle, load_state);
                 } else {
-                    // Loading, NotLoaded, or None - treat as failed load to allow UI to render
+                    // Loading, NotLoaded, or None - keep trying
                     texture.size = Some(Vec2::ZERO);
                     loaded_all = false;
-                    log::warn!("[UI RESOURCES] Texture MISSING or FAILED to load: texture_id={:?}, handle={:?}, load_state={:?}", texture.texture_id, texture.handle, load_state);
+                    loaded_required = false;
                 }
             }
         }
@@ -399,8 +467,9 @@ pub fn update_ui_resources(
                             log::warn!("[UI RESOURCES] Skill tree texture load state unknown (None): {:?}", texture.handle);
                         }
                     } else {
+                        // Convert path to lowercase for Bevy asset loader compatibility
                         let handle = asset_server
-                            .load(format!("3DDATA/CONTROL/RES/{}", &skill_widget.image));
+                            .load(format!("3ddata/control/res/{}", &skill_widget.image).to_lowercase());
                         let texture_id = egui_context.add_image(handle.clone());
                         skill_widget.ui_texture = Some(UiTexture {
                             handle: handle.clone(),
@@ -514,12 +583,12 @@ pub fn load_ui_resources(
     for filename in dialog_filenames {
         dialog_files.insert(
             filename.to_string(),
-            asset_server.load(format!("3DDATA/CONTROL/XML/{}", filename)),
+            asset_server.load(format!("3ddata/control/xml/{}", filename).to_lowercase()),
         );
     }
 
     let mut style = (*egui_context.ctx_mut().style()).clone();
-    style.visuals.menu_rounding = egui::Rounding::same(2.0);
+    // Note: menu_rounding field was removed in newer egui versions
     style.visuals.window_fill = egui::Color32::from_rgba_unmultiplied(10, 10, 10, 220);
     style.visuals.window_stroke = egui::Stroke::NONE;
     style.visuals.popup_shadow = egui::epaint::Shadow::NONE;
@@ -532,17 +601,17 @@ pub fn load_ui_resources(
         loaded_all_textures: false,
         loaded_required_textures: false,
         sprite_sheets: enum_map! {
-            UiSpriteSheetType::Ui => load_ui_spritesheet(vfs, &asset_server, &mut egui_context, "3DDATA/CONTROL/RES/UI.TSI", "3DDATA/CONTROL/XML/UI_STRID.ID").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::ExUi => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3DDATA/CONTROL/RES/EXUI.TSI", "3DDATA/CONTROL/XML/EXUI_STRID.ID").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::StateIcon => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3DDATA/CONTROL/RES/STATEICON.TSI", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::Skill => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3DDATA/CONTROL/RES/SKILLICON.TSI", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::Item => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3DDATA/CONTROL/RES/ITEM1.TSI", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::ItemSocketGem => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3DDATA/CONTROL/RES/SOKETJAM.TSI", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::TargetMark => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3DDATA/CONTROL/RES/TARGETMARK.TSI", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::ClanMarkForeground => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3DDATA/CONTROL/RES/CLANCENTER.TSI", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::ClanMarkBackground => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3DDATA/CONTROL/RES/CLANBACK.TSI", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
+            UiSpriteSheetType::Ui => load_ui_spritesheet(vfs, &asset_server, &mut egui_context, "3ddata/control/res/ui.tsi", "3ddata/control/xml/ui_strid.id").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
+            UiSpriteSheetType::ExUi => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/exui.tsi", "3ddata/control/xml/exui_strid.id").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
+            UiSpriteSheetType::StateIcon => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/stateicon.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
+            UiSpriteSheetType::Skill => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/skillicon.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
+            UiSpriteSheetType::Item => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/item1.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
+            UiSpriteSheetType::ItemSocketGem => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/soketjam.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
+            UiSpriteSheetType::TargetMark => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/targetmark.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
+            UiSpriteSheetType::ClanMarkForeground => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/clancenter.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
+            UiSpriteSheetType::ClanMarkBackground => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/clanback.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
             UiSpriteSheetType::MinimapArrow => {
-                let handle = asset_server.load("3DDATA/CONTROL/RES/MINIMAP_ARROW.TGA");
+                let handle = asset_server.load("3ddata/control/res/minimap_arrow.tga");
                 let texture_id = egui_context.add_image(handle.clone());
 
                 Some(UiSpriteSheet {
@@ -556,7 +625,7 @@ pub fn load_ui_resources(
                 })
             }
             UiSpriteSheetType::ItemSocketEmpty => {
-                let handle = asset_server.load("3DDATA/CONTROL/RES/SOKET.DDS");
+                let handle = asset_server.load("3ddata/control/res/soket.dds");
                 let texture_id = egui_context.add_image(handle.clone());
 
                 Some(UiSpriteSheet {

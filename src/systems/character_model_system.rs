@@ -1,5 +1,4 @@
 use bevy::{
-    hierarchy::DespawnRecursiveExt,
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{AssetServer, Assets, Changed, Commands, Entity, Or, Query, Res, ResMut},
     render::mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
@@ -76,14 +75,14 @@ pub fn character_model_update_system(
             // Despawn model parts
             for (_, (_, model_parts)) in current_character_model.model_parts.iter_mut() {
                 for part_entity in model_parts.drain(..) {
-                    commands.entity(part_entity).despawn_recursive();
+                    commands.entity(part_entity).despawn();
                 }
             }
 
             // Despawn model skeleton
             if let Some(current_skinned_mesh) = current_skinned_mesh.as_mut() {
                 for bone_entity in current_skinned_mesh.joints.drain(..) {
-                    commands.entity(bone_entity).despawn_recursive();
+                    commands.entity(bone_entity).despawn();
                 }
             }
 

@@ -4,8 +4,9 @@ use arrayvec::ArrayVec;
 use bevy::{
     ecs::query::QueryData,
     log::info,
+    platform::collections::HashMap,
     prelude::{
-        Assets, BuildChildren, Changed, Color, Commands, DespawnRecursiveExt, Entity, EventReader,
+        Assets, Changed, Color, Commands, Entity, EventReader,
         GlobalTransform, Handle, Image, Local, Query, Res, ResMut, Transform, Vec2, Vec3,
         Visibility, With, Without,
     },
@@ -14,7 +15,6 @@ use bevy::{
         render_resource::{Extent3d, TextureDimension, TextureFormat},
         view::{ViewVisibility, InheritedVisibility, NoFrustumCulling},
     },
-    utils::HashMap,
     window::PrimaryWindow,
 };
 use bevy_egui::{egui, EguiContexts};
@@ -412,7 +412,7 @@ pub fn name_tag_system(
         // If pixels_per_point has changed then we need to regenerate name tags using new DPI
         for (entity, name_tag_entity) in query_nametags.iter() {
             commands.entity(entity).remove::<NameTagEntity>();
-            commands.entity(name_tag_entity.0).despawn_recursive();
+            commands.entity(name_tag_entity.0).despawn();
         }
 
         name_tag_cache.cache.clear();
@@ -425,7 +425,7 @@ pub fn name_tag_system(
         // Despawn previous name tag
         if let Some(name_tag_entity) = name_tag_entity {
             commands.entity(entity).remove::<NameTagEntity>();
-            commands.entity(name_tag_entity.0).despawn_recursive();
+            commands.entity(name_tag_entity.0).despawn();
         }
 
         // Clear any pending name tag for this entity

@@ -12,47 +12,47 @@ pub fn system_func_event_system(
 
         match function_name.as_str() {
             "Lunar_Warp_Gate01" => {
-                conversation_dialog_events.send(ConversationDialogEvent::OpenEventDialog(
+                conversation_dialog_events.write(ConversationDialogEvent::OpenEventDialog(
                     VfsPathBuf::new("3DDATA/EVENT/OBJECT001.CON"),
                 ));
             }
             "mushroom" => {
-                conversation_dialog_events.send(ConversationDialogEvent::OpenEventDialog(
+                conversation_dialog_events.write(ConversationDialogEvent::OpenEventDialog(
                     VfsPathBuf::new("3DDATA/EVENT/OBJECT002.CON"),
                 ));
             }
             "sandglass" => {
-                conversation_dialog_events.send(ConversationDialogEvent::OpenEventDialog(
+                conversation_dialog_events.write(ConversationDialogEvent::OpenEventDialog(
                     VfsPathBuf::new("3DDATA/EVENT/OBJECT003.CON"),
                 ));
             }
             "horriblebook" => {
-                conversation_dialog_events.send(ConversationDialogEvent::OpenEventDialog(
+                conversation_dialog_events.write(ConversationDialogEvent::OpenEventDialog(
                     VfsPathBuf::new("3DDATA/EVENT/OBJECT004.CON"),
                 ));
             }
             "piramid01" | "piramid03" => {
-                conversation_dialog_events.send(ConversationDialogEvent::OpenEventDialog(
+                conversation_dialog_events.write(ConversationDialogEvent::OpenEventDialog(
                     VfsPathBuf::new("3DDATA/EVENT/OBJECT005.CON"),
                 ));
             }
             "piramid02" => {
-                conversation_dialog_events.send(ConversationDialogEvent::OpenEventDialog(
+                conversation_dialog_events.write(ConversationDialogEvent::OpenEventDialog(
                     VfsPathBuf::new("3DDATA/EVENT/OBJECT006.CON"),
                 ));
             }
             "owl" => {
-                conversation_dialog_events.send(ConversationDialogEvent::OpenEventDialog(
+                conversation_dialog_events.write(ConversationDialogEvent::OpenEventDialog(
                     VfsPathBuf::new("3DDATA/EVENT/OBJECT007.CON"),
                 ));
             }
             "mana" => {
-                conversation_dialog_events.send(ConversationDialogEvent::OpenEventDialog(
+                conversation_dialog_events.write(ConversationDialogEvent::OpenEventDialog(
                     VfsPathBuf::new("3DDATA/EVENT/OBJECT008.CON"),
                 ));
             }
             "genzistone" => {
-                conversation_dialog_events.send(ConversationDialogEvent::OpenEventDialog(
+                conversation_dialog_events.write(ConversationDialogEvent::OpenEventDialog(
                     VfsPathBuf::new("3DDATA/EVENT/OBJECT009.CON"),
                 ));
             }

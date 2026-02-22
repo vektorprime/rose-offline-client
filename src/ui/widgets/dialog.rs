@@ -96,7 +96,7 @@ impl Dialog {
         let style = ui.style_mut();
         style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::WHITE;
         style.spacing.item_spacing = egui::Vec2::ZERO;
-        style.spacing.window_margin = egui::Margin::same(0.0);
+        style.spacing.window_margin = egui::Margin::same(0);
 
         // log::debug!("[DIALOG DRAW] Starting widget rendering");
         self.widgets.draw_widget(ui, &mut bindings);

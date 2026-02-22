@@ -6,14 +6,17 @@ use bevy::{
     input::ButtonInput,
     prelude::{
         AssetServer, Camera, Camera3d, Commands, Component, ViewVisibility, InheritedVisibility,
-        DespawnRecursiveExt, Entity, EventReader, EventWriter, GlobalTransform, Handle, Local,
-        MouseButton, NextState, Query, Res, ResMut, Resource, Visibility, With,
+        Entity, EventReader, EventWriter, GlobalTransform, Handle, Local,
+        MouseButton, NextState, Query, Res, ResMut, Resource, Vec2, Visibility, With, World,
     },
     render::mesh::skinning::SkinnedMesh,
     window::{CursorGrabMode, PrimaryWindow, Window},
 };
 use bevy_egui::{egui, EguiContexts};
-use bevy_rapier3d::prelude::{CollisionGroups, QueryFilter, ReadDefaultRapierContext};
+use bevy_rapier3d::{
+    plugin::context::systemparams::ReadRapierContext,
+    prelude::{CollisionGroups, QueryFilter},
+};
 
 use rose_data::{CharacterMotionAction, ZoneId};
 use rose_game_common::messages::{client::ClientMessage, server::CreateCharacterError};
@@ -50,6 +53,7 @@ pub fn character_select_enter_system(
     asset_server: Res<AssetServer>,
     game_data: Res<GameData>,
 ) {
+    log::info!("[CHAR_SELECT] Enter system called - setting up character select screen");
     if let Ok(mut window) = query_window.get_single_mut() {
         window.cursor_options.grab_mode = CursorGrabMode::None;
         window.cursor_options.visible = true;
@@ -96,7 +100,7 @@ pub fn character_select_exit_system(
 ) {
     // Despawn character models
     for (_, entity) in model_list.models.iter() {
-        commands.entity(*entity).despawn_recursive();
+        commands.entity(*entity).despawn();
     }
 
     commands.remove_resource::<CharacterList>();
@@ -183,10 +187,11 @@ pub fn character_select_system(
     for event in world_connection_events.read() {
         match event {
             WorldConnectionEvent::CreateCharacterSuccess { character_slot: _ } => {
-                let (camera_entity, _, _, _) = query_camera.single();
-                commands.entity(camera_entity).insert(CameraAnimation::once(
-                    asset_server.load("3DDATA/TITLE/CAMERA01_OUTCREATE01.ZMO"),
-                ));
+                if let Ok((camera_entity, _, _, _)) = query_camera.get_single() {
+                    commands.entity(camera_entity).insert(CameraAnimation::once(
+                        asset_server.load("3DDATA/TITLE/CAMERA01_OUTCREATE01.ZMO"),
+                    ));
+                }
                 *character_select_state = CharacterSelectState::CharacterSelect(None);
 
                 world_connection
@@ -257,10 +262,15 @@ pub fn character_select_system(
 
     match character_select_state {
         CharacterSelectState::Entering => {
-            let (_, _, _, camera_motion) = query_camera.single();
-            if camera_motion.map_or(true, |animation| animation.completed())
+            let camera_result = query_camera.get_single();
+            let camera_motion = camera_result.ok().and_then(|(_, _, _, m)| m);
+            let camera_completed = camera_motion.map_or(true, |animation| animation.completed());
+            log::info!("[CHAR_SELECT] Entering state - camera_completed: {}, auto_login: {}",
+                camera_completed, server_configuration.auto_login);
+            if camera_completed
                 || server_configuration.auto_login
             {
+                log::info!("[CHAR_SELECT] Transitioning to CharacterSelect(None)");
                 *character_select_state = CharacterSelectState::CharacterSelect(None);
             }
         }
@@ -286,23 +296,24 @@ pub fn character_select_system(
                 let &GameConnectionEvent::Connected(zone_id) = event;
 
                 // Start camera animation
-                let (camera_entity, _, _, _) = query_camera.single();
-                commands.entity(camera_entity).insert(CameraAnimation::once(
-                    asset_server.load("3DDATA/TITLE/CAMERA01_INGAME01.ZMO"),
-                ));
+                if let Ok((camera_entity, _, _, _)) = query_camera.get_single() {
+                    commands.entity(camera_entity).insert(CameraAnimation::once(
+                        asset_server.load("3DDATA/TITLE/CAMERA01_INGAME01.ZMO"),
+                    ));
+                }
 
                 *character_select_state = CharacterSelectState::Leaving;
                 *join_zone_id = Some(zone_id);
             }
         }
         CharacterSelectState::Leaving => {
-            let (_, _, _, camera_motion) = query_camera.single();
+            let camera_motion = query_camera.get_single().ok().and_then(|(_, _, _, m)| m);
             if camera_motion.map_or(true, |animation| animation.completed())
                 || server_configuration.auto_login
             {
                 // Wait until camera motion complete, then load the zone!
                 *character_select_state = CharacterSelectState::Loading;
-                load_zone_events.send(LoadZoneEvent::new(join_zone_id.take().unwrap()));
+                load_zone_events.write(LoadZoneEvent::new(join_zone_id.take().unwrap()));
             }
         }
         CharacterSelectState::Loading => {}
@@ -381,89 +392,106 @@ pub fn character_select_event_system(
     }
 }
 
+/// Resource to track character select input state (cursor position and last click time)
+#[derive(Resource, Default)]
+pub struct CharacterSelectInputState {
+    pub cursor_position: Option<Vec2>,
+    pub last_click_time: Option<Instant>,
+    pub selected_character_index: Option<usize>,
+}
+
+/// Combined system for character selection input handling
 #[allow(clippy::too_many_arguments)]
 pub fn character_select_input_system(
-    mut character_select_state: ResMut<CharacterSelectState>,
-    mut egui_ctx: EguiContexts,
+    _character_select_state: Res<CharacterSelectState>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
-    rapier_context: ReadDefaultRapierContext,
-    mut last_selected_time: Local<Option<Instant>>,
-    query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    query_collider_parent: Query<&ColliderParent>,
-    query_select_character: Query<&CharacterSelectCharacter>,
+    rapier_context: ReadRapierContext,
+    mut input_state: ResMut<CharacterSelectInputState>,
+    mut egui_ctx: EguiContexts,
     query_window: Query<&Window, With<PrimaryWindow>>,
+    query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    query_entities: Query<(Option<&ColliderParent>, Option<&CharacterSelectCharacter>)>,
     mut character_select_events: EventWriter<CharacterSelectEvent>,
 ) {
-    let egui_wants_pointer = egui_ctx.ctx_mut().wants_pointer_input();
-    //info!("Character select input: egui wants_pointer_input: {}", egui_wants_pointer);
+    // Get the single rapier context
+    let Ok(rapier_context) = rapier_context.single() else {
+        return;
+    };
 
-    if egui_wants_pointer {
-        // Mouse is over UI
+    // Only process input when egui is not using the mouse
+    let ctx = egui_ctx.ctx_mut();
+    if ctx.is_pointer_over_area() || ctx.is_using_pointer() {
         return;
     }
 
-    let selected_character_index =
-        if let CharacterSelectState::CharacterSelect(selected_character_index) =
-            &mut *character_select_state
-        {
-            selected_character_index
-        } else {
-            // Not in character select
-            return;
-        };
-
+    // Get cursor position from window
     let Ok(window) = query_window.get_single() else {
         return;
     };
+
     let Some(cursor_position) = window.cursor_position() else {
+        input_state.cursor_position = None;
+        return;
+    };
+    input_state.cursor_position = Some(cursor_position);
+
+    // Check for left mouse button click
+    if !mouse_button_input.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    // Debounce: Only allow one click per 200ms
+    let now = Instant::now();
+    if let Some(last_click_time) = input_state.last_click_time {
+        if now.duration_since(last_click_time) < Duration::from_millis(200) {
+            return;
+        }
+    }
+    input_state.last_click_time = Some(now);
+
+    // Get camera for raycasting
+    let Ok((camera, camera_transform)) = query_camera.get_single() else {
         return;
     };
 
-    if mouse_button_input.just_pressed(MouseButton::Left) {
-        info!("Character select input: Mouse button pressed at {:?}", cursor_position);
+    // Generate ray from cursor position
+    let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) else {
+        return;
+    };
 
-        for (camera, camera_transform) in query_camera.iter() {
-            if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
-                info!("Raycast origin: {:?}, direction: {:?}", ray.origin, ray.direction);
+    log::info!("[CHAR_SELECT_INPUT] Casting ray from origin {:?} direction {:?}", ray.origin, ray.direction);
+    
+    // Cast ray and find the closest hit
+    let query_filter = QueryFilter::new().groups(CollisionGroups::new(
+        COLLISION_FILTER_CLICKABLE,
+        COLLISION_GROUP_CHARACTER | COLLISION_GROUP_PLAYER,
+    ));
 
-                if let Some((collider_entity, _)) = rapier_context.cast_ray(
-                    ray.origin,
-                    *ray.direction,
-                    10000000.0,
-                    false,
-                    QueryFilter::new().groups(CollisionGroups::new(
-                        COLLISION_FILTER_CLICKABLE,
-                        COLLISION_GROUP_CHARACTER | COLLISION_GROUP_PLAYER,
-                    )),
-                ) {
-                    info!("Raycast hit collider entity: {:?}", collider_entity);
-                    let hit_entity = query_collider_parent
-                        .get(collider_entity)
-                        .map_or(collider_entity, |collider_parent| collider_parent.entity);
+    if let Some((collider_entity, _distance)) = rapier_context.cast_ray(
+        ray.origin,
+        *ray.direction,
+        f32::MAX,
+        true,
+        query_filter,
+    ) {
+        log::info!("[CHAR_SELECT_INPUT] Ray hit entity {:?}", collider_entity);
+        // The hit entity might be the collider, so we need to find the parent
+        if let Ok((Some(collider_parent), _)) = query_entities.get(collider_entity) {
+            if let Ok((_, Some(character_select))) = query_entities.get(collider_parent.entity) {
+                let selected_index = character_select.index;
+                input_state.selected_character_index = Some(selected_index);
 
-                    if let Ok(select_character) = query_select_character.get(hit_entity) {
-                        info!("Character select input: Successfully selected character at index {}", select_character.index);
-                        let now = Instant::now();
-
-                        if *selected_character_index == Some(select_character.index) {
-                            if let Some(last_selected_time) = *last_selected_time {
-                                if now - last_selected_time < Duration::from_millis(250) {
-                                    info!("Character select input: Double-click detected, sending PlaySelected event");
-                                    character_select_events
-                                        .send(CharacterSelectEvent::PlaySelected);
-                                }
-                            }
-                        }
-
-                        *selected_character_index = Some(select_character.index);
-                        *last_selected_time = Some(now);
-                    } else {
-                        info!("Character select input: Hit entity is not a CharacterSelectCharacter");
-                    }
-                } else {
-                    info!("Character select input: Raycast did not hit any collider");
-                }
+                // Send character select event
+                character_select_events.write(CharacterSelectEvent::SelectCharacter(selected_index));
             }
+        } else if let Ok((_, Some(character_select))) = query_entities.get(collider_entity) {
+            let selected_index = character_select.index;
+            input_state.selected_character_index = Some(selected_index);
+
+            // Send character select event
+            character_select_events.write(CharacterSelectEvent::SelectCharacter(selected_index));
         }
+    } else {
+        log::info!("[CHAR_SELECT_INPUT] No ray hit found");
     }
 }

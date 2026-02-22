@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 
 use bevy::{
-    hierarchy::DespawnRecursiveExt,
     math::Vec3,
     pbr::AmbientLight,
     prelude::{
@@ -97,6 +96,7 @@ pub fn model_viewer_enter_system(
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
         brightness: 80.0,  // Bevy 0.13 requires much higher values (was ~1.0 in 0.12)
+        affects_lightmapped_meshes: true,
     });
 
     // Open relevant debug windows
@@ -117,11 +117,11 @@ pub fn model_viewer_exit_system(
     mut name_tag_settings: ResMut<NameTagSettings>,
 ) {
     for entity in model_viewer_state.characters.iter() {
-        commands.entity(*entity).despawn_recursive();
+        commands.entity(*entity).despawn();
     }
 
     for entity in model_viewer_state.npcs.iter() {
-        commands.entity(*entity).despawn_recursive();
+        commands.entity(*entity).despawn();
     }
 
     // Restore default NameTagSettings
@@ -177,7 +177,7 @@ pub fn model_viewer_system(
                 // Delete some NPCs
                 let num_npcs = ui_state.num_npcs;
                 for entity in ui_state.npcs.split_off(num_npcs).iter() {
-                    commands.entity(*entity).despawn_recursive();
+                    commands.entity(*entity).despawn();
                 }
             }
             Ordering::Greater => {
@@ -218,7 +218,7 @@ pub fn model_viewer_system(
                 // Delete some characters
                 let num_characters = ui_state.num_characters;
                 for entity in ui_state.characters.split_off(num_characters).iter() {
-                    commands.entity(*entity).despawn_recursive();
+                    commands.entity(*entity).despawn();
                 }
             }
             Ordering::Greater => {

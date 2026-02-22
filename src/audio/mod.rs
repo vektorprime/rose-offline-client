@@ -1,4 +1,4 @@
-use bevy::prelude::{App, AssetApp, Component, IntoSystemConfigs, Last, Plugin, Resource};
+use bevy::prelude::{App, AssetApp, Component, IntoScheduleConfigs, Last, Plugin, Resource};
 
 mod audio_source;
 mod global_sound;

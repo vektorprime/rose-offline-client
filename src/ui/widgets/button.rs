@@ -64,27 +64,27 @@ widget_to_rect! { Button }
 
 impl LoadWidget for Button {
     fn load_widget(&mut self, ui_resources: &UiResources) {
-        // log::debug!("[BUTTON LOAD] Loading button widget id={}, name='{}', module_id={}",
-        //     self.id, self.name, self.module_id);
+        //log::info!("[BUTTON LOAD] Loading button id={}, name='{}', module_id={}", self.id, self.name, self.module_id);
 
         self.normal_sprite = ui_resources.get_sprite(self.module_id, &self.normal_sprite_name);
-        //log::debug!("[BUTTON LOAD] Button {}: normal_sprite '{}' loaded: {}",
-            //self.id, self.normal_sprite_name, self.normal_sprite.is_some());
+        //log::info!("[BUTTON LOAD] Button {}: normal_sprite '{}' -> {:?} (texture_id={:?})",
+            //self.id, self.normal_sprite_name, self.normal_sprite.is_some(),
+            //self.normal_sprite.as_ref().map(|s| s.texture_id));
 
         self.over_sprite = ui_resources.get_sprite(self.module_id, &self.over_sprite_name);
-        //log::debug!("[BUTTON LOAD] Button {}: over_sprite '{}' loaded: {}",
-           // self.id, self.over_sprite_name, self.over_sprite.is_some());
+        //log::info!("[BUTTON LOAD] Button {}: over_sprite '{}' -> {}",
+           //self.id, self.over_sprite_name, self.over_sprite.is_some());
 
         self.blink_sprite = ui_resources.get_sprite(self.module_id, &self.blink_sprite_name);
-        //log::debug!("[BUTTON LOAD] Button {}: blink_sprite '{}' loaded: {}",
-           // self.id, self.blink_sprite_name, self.blink_sprite.is_some());
+        //log::info!("[BUTTON LOAD] Button {}: blink_sprite '{}' -> {}",
+            //self.id, self.blink_sprite_name, self.blink_sprite.is_some());
 
         self.down_sprite = ui_resources.get_sprite(self.module_id, &self.down_sprite_name);
-        //log::debug!("[BUTTON LOAD] Button {}: down_sprite '{}' loaded: {}",
+        //log::info!("[BUTTON LOAD] Button {}: down_sprite '{}' -> {}",
             //self.id, self.down_sprite_name, self.down_sprite.is_some());
 
         self.disable_sprite = ui_resources.get_sprite(self.module_id, &self.disable_sprite_name);
-        //log::debug!("[BUTTON LOAD] Button {}: disable_sprite '{}' loaded: {}",
+        //log::info!("[BUTTON LOAD] Button {}: disable_sprite '{}' -> {}",
             //self.id, self.disable_sprite_name, self.disable_sprite.is_some());
     }
 }
@@ -93,12 +93,15 @@ impl DrawWidget for Button {
     fn draw_widget(&self, ui: &mut egui::Ui, bindings: &mut DataBindings) {
         let visible = bindings.get_visible(self.id);
         if !visible {
-            //log::debug!("[BUTTON DRAW] Button id={} name='{}' is not visible, skipping draw",
-               // self.id, self.name);
             return;
         }
 
         let rect = self.widget_rect(ui.min_rect().min);
+        
+        // Debug: Log button drawing details
+        // log::info!("[BUTTON DRAW] Button id={} name='{}' rect=({:.1},{:.1}) size=({:.1}x{:.1}) normal_sprite={}",
+        //     self.id, self.name, rect.min.x, rect.min.y, rect.width(), rect.height(),
+        //     self.normal_sprite.is_some());
         let enabled = bindings.get_enabled(self.id);
        // log::debug!("[BUTTON DRAW] Button id={} name='{}' visible={}, enabled={}, rect=({:.1},{:.1}) size=({:.1}x{:.1})",
            // self.id, self.name, visible, enabled, rect.min.x, rect.min.y, rect.width(), rect.height());
@@ -127,8 +130,8 @@ impl DrawWidget for Button {
             .or(self.normal_sprite.as_ref());
 
             if let Some(sprite) = sprite {
-                //log::debug!("[BUTTON DRAW] Button id={} drawing sprite: texture_id={:?}, uv=({:.2},{:.2})-({:.2},{:.2}), size=({:.1}x{:.1})",
-                    //self.id, sprite.texture_id, sprite.uv.min.x, sprite.uv.min.y, sprite.uv.max.x, sprite.uv.max.y, sprite.width, sprite.height);
+                // log::info!("[BUTTON DRAW] Button id={} drawing sprite: texture_id={:?}, uv=({:.2},{:.2})-({:.2},{:.2}), size=({:.1}x{:.1})",
+                //     self.id, sprite.texture_id, sprite.uv.min.x, sprite.uv.min.y, sprite.uv.max.x, sprite.uv.max.y, sprite.width, sprite.height);
                 sprite.draw(ui, rect.min);
             } else {
                 //log::warn!("[BUTTON DRAW] Button id={} has no sprite to draw!", self.id);
@@ -175,9 +178,6 @@ impl DrawWidget for Button {
                     response = response.on_hover_text(label);
                 }
             }
-        } else {
-            log::warn!("[BUTTON DRAW] Button id={} rect is NOT visible on screen! rect=({:.1},{:.1})-({:.1},{:.1})",
-                self.id, rect.min.x, rect.min.y, rect.max.x, rect.max.y);
         }
 
         bindings.set_response(self.id, response);

@@ -92,7 +92,7 @@ fn ui_add_skill_list_slot(
         .inner;
 
     if response.double_clicked() {
-        player_command_events.send(PlayerCommandEvent::UseSkill(skill_slot));
+        player_command_events.write(PlayerCommandEvent::UseSkill(skill_slot));
     }
 
     if let Some(skill_id) = skill {

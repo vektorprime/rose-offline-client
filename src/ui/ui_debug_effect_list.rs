@@ -1,7 +1,7 @@
 use bevy::{
     ecs::event::EventWriter,
     prelude::{
-        Commands, DespawnRecursiveExt, Entity, GlobalTransform, Local,
+        Commands, Entity, GlobalTransform, Local,
         Query, Res, ResMut, Transform, Visibility, With,
     },
     render::view::{ViewVisibility, InheritedVisibility},
@@ -67,7 +67,7 @@ pub fn ui_debug_effect_list_system(
                         if ui.button("Despawn").clicked() {
                             if let Some(last_effect_entity) = ui_state.last_effect_entity.take() {
                                 if query_effects.get(last_effect_entity).is_ok() {
-                                    commands.entity(last_effect_entity).despawn_recursive();
+                                    commands.entity(last_effect_entity).despawn();
                                 }
                             }
                         }
@@ -145,7 +145,7 @@ pub fn ui_debug_effect_list_system(
                                         ui_state.last_effect_entity.take()
                                     {
                                         if query_effects.get(last_effect_entity).is_ok() {
-                                            commands.entity(last_effect_entity).despawn_recursive();
+                                            commands.entity(last_effect_entity).despawn();
                                         }
                                     }
 
@@ -169,7 +169,7 @@ pub fn ui_debug_effect_list_system(
                                         ))
                                         .id();
 
-                                    spawn_effect_events.send(SpawnEffectEvent::InEntity(
+                                    spawn_effect_events.write(SpawnEffectEvent::InEntity(
                                         effect_entity,
                                         SpawnEffectData::with_path(effect_file_path.clone()),
                                     ));

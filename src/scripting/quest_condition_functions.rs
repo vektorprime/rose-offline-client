@@ -35,8 +35,12 @@ fn quest_condition_ability_value(
     operator: QsdConditionOperator,
     compare_value: i32,
 ) -> bool {
-    let player_stats = script_context.query_player_stats.single();
-    let player_mutable = script_context.query_player_mutable.single();
+    let Ok(player_stats) = script_context.query_player_stats.get_single() else {
+        return false;
+    };
+    let Ok(player_mutable) = script_context.query_player_mutable.get_single() else {
+        return false;
+    };
 
     let ability_type = script_resources
         .game_data
@@ -76,7 +80,9 @@ fn quest_condition_check_switch(
     switch_id: usize,
     value: bool,
 ) -> bool {
-    let quest_state = script_context.query_quest.single();
+    let Ok(quest_state) = script_context.query_quest.get_single() else {
+        return false;
+    };
 
     if let Some(switch_value) = quest_state.quest_switches.get(switch_id) {
         return *switch_value == value;
@@ -108,8 +114,12 @@ fn quest_condition_quest_item(
             .decode_equipment_index(equipment_index.get())
     });
 
-    let quest_state = script_context.query_quest.single();
-    let player_mutable = script_context.query_player_mutable.single();
+    let Ok(quest_state) = script_context.query_quest.get_single() else {
+        return false;
+    };
+    let Ok(player_mutable) = script_context.query_player_mutable.get_single() else {
+        return false;
+    };
 
     // Tuple structure for query_player_mutable: (HealthPoints, ManaPoints, Equipment, Inventory, MoveSpeed, SkillPoints, Stamina, StatPoints, Team)
     let equipment = player_mutable.2;
@@ -177,7 +187,9 @@ fn quest_condition_select_quest(
     quest_context: &mut QuestFunctionContext,
     quest_id: usize,
 ) -> bool {
-    let quest_state = script_context.query_quest.single();
+    let Ok(quest_state) = script_context.query_quest.get_single() else {
+        return false;
+    };
 
     if let Some(quest_index) = quest_state.find_active_quest_index(quest_id) {
         quest_context.selected_quest_index = Some(quest_index);

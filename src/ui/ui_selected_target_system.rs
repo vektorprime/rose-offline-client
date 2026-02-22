@@ -61,7 +61,7 @@ pub fn ui_selected_target_system(
                         let style = ui.style_mut();
                         style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::BLACK;
                         style.spacing.item_spacing = egui::Vec2::ZERO;
-                        style.spacing.window_margin = egui::Margin::same(0.0);
+                        style.spacing.window_margin = egui::Margin::same(0);
 
                         if let (
                             Some(sprite_top),

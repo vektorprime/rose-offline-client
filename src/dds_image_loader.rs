@@ -7,7 +7,7 @@ use bevy::{
     },
     tasks::futures_lite::AsyncReadExt,
 };
-use log::{info, warn};
+use log::{info, warn, error};
 use std::future::Future;
 
 /// Custom asset loader for DDS files that handles unsupported formats like R8G8B8

@@ -1,7 +1,7 @@
 use bevy::{
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, DespawnRecursiveExt, Entity, EventReader,
+        AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, Entity, EventReader,
         GlobalTransform, Local, Res, ResMut, Transform, Visibility, Mesh,
     },
     render::{
@@ -38,7 +38,7 @@ pub fn move_destination_effect_system(
         match event {
             MoveDestinationEffectEvent::Show { position } => {
                 if let Some(last_effect_entity) = state.last_effect_entity.take() {
-                    commands.entity(last_effect_entity).despawn_recursive();
+                    commands.entity(last_effect_entity).despawn();
                 }
 
                 if let Some(effect_file_path) = game_data
@@ -74,7 +74,7 @@ pub fn move_destination_effect_system(
             }
             MoveDestinationEffectEvent::Hide => {
                 if let Some(last_effect_entity) = state.last_effect_entity.take() {
-                    commands.entity(last_effect_entity).despawn_recursive();
+                    commands.entity(last_effect_entity).despawn();
                 }
             }
         }

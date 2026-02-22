@@ -1,7 +1,7 @@
 use bevy::{
     color::Srgba,
     ecs::query::QueryData,
-    prelude::{Changed, Children, Color, Or, Parent, Query, With},
+    prelude::{Changed, ChildOf, Children, Color, Or, Query, With},
 };
 
 use rose_game_common::components::{Level, Team};
@@ -20,7 +20,7 @@ pub struct PlayerQuery<'w> {
 
 pub fn name_tag_update_color_system(
     query_player: Query<PlayerQuery, (With<PlayerCharacter>, Or<(Changed<Level>, Changed<Team>)>)>,
-    query_nametags: Query<(&Parent, &NameTag, &Children)>,
+    query_nametags: Query<(&ChildOf, &NameTag, &Children)>,
     query_level: Query<&Level>,
     query_team: Query<&Team>,
     mut query_name_rects: Query<&mut WorldUiRect, With<NameTagName>>,

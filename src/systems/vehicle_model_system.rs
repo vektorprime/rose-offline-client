@@ -1,8 +1,8 @@
 use bevy::{
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
-        AssetServer, Assets, BuildChildren, Changed, Commands, ViewVisibility, InheritedVisibility,
-        DespawnRecursiveExt, Entity, GlobalTransform, Query, Res, ResMut, Transform, Visibility,
+        AssetServer, Assets, Changed, Commands, ViewVisibility, InheritedVisibility,
+        Entity, GlobalTransform, Query, Res, ResMut, Transform, Visibility,
         World,
     },
     render::{
@@ -115,7 +115,7 @@ pub fn vehicle_model_system(
             // Despawn vehicle model
             commands
                 .entity(vehicle.vehicle_model_entity)
-                .despawn_recursive();
+                .despawn();
             commands.entity(entity).remove::<Vehicle>();
         } else if matches!(move_mode, MoveMode::Drive) {
             let driver_model_entity = skinned_mesh.joints[0];

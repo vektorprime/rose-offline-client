@@ -107,7 +107,9 @@ fn GF_getVariable(
     parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
     let variable_id = parameters[0].to_i32().unwrap();
-    let character = context.query_player_stats.single();
+    let Ok(character) = context.query_player_stats.get_single() else {
+        return vec![0.into()];
+    };
 
     // Tuple structure: (AbilityValues, CharacterInfo, BasicStats, ExperiencePoints, Level, UnionMembership)
     let value = match variable_id {
@@ -146,7 +148,7 @@ fn GF_openBank(
 ) -> Vec<Lua4Value> {
     (|| -> Option<()> {
         let npc_client_entity_id = ClientEntityId(parameters.get(0)?.to_usize().ok()?);
-        context.bank_events.send(BankEvent::OpenBankFromClientEntity { client_entity_id: npc_client_entity_id });
+        context.bank_events.write(BankEvent::OpenBankFromClientEntity { client_entity_id: npc_client_entity_id });
         Some(())
     })();
     vec![]
@@ -160,7 +162,7 @@ fn GF_openStore(
 ) -> Vec<Lua4Value> {
     (|| -> Option<()> {
         let npc_client_entity_id = ClientEntityId(parameters.get(0)?.to_usize().ok()?);
-        context.npc_store_events.send(NpcStoreEvent::OpenClientEntityStore(npc_client_entity_id));
+        context.npc_store_events.write(NpcStoreEvent::OpenClientEntityStore(npc_client_entity_id));
         Some(())
     })();
     vec![]
@@ -172,6 +174,6 @@ fn GF_organizeClan(
     context: &mut ScriptFunctionContext,
     _parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
-    context.clan_dialog_events.send(ClanDialogEvent::Open);
+    context.clan_dialog_events.write(ClanDialogEvent::Open);
     vec![]
 }

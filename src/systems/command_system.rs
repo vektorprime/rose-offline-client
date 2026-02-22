@@ -1,6 +1,5 @@
 use bevy::{
     ecs::{event::EventWriter, system::EntityCommands},
-    hierarchy::DespawnRecursiveExt,
     math::{Vec3, Vec3Swizzles},
     prelude::{AssetServer, Commands, Entity, Handle, Mut, Or, Query, Res, With},
 };
@@ -421,7 +420,7 @@ pub fn command_system(
         if command.is_die() {
             if npc_model.is_some() {
                 // Despawn NPC once the die animation completes
-                commands.entity(entity).despawn_recursive();
+                commands.entity(entity).despawn();
                 continue;
             }
 
@@ -739,7 +738,7 @@ pub fn command_system(
                                     if let Some(conversation_data) =
                                         game_data.npcs.find_conversation(npc.quest_index as usize)
                                     {
-                                        conversation_dialog_events.send(
+                                        conversation_dialog_events.write(
                                             ConversationDialogEvent::OpenNpcDialog(
                                                 talk_to_npc_entity,
                                                 VfsPathBuf::new(&conversation_data.filename),
@@ -759,7 +758,7 @@ pub fn command_system(
 
                             // If character is running a personal store, open it
                             if query_personal_store.contains(move_to_character_entity) {
-                                personal_store_events.send(PersonalStoreEvent::OpenEntityStore(
+                                personal_store_events.write(PersonalStoreEvent::OpenEntityStore(
                                     move_to_character_entity,
                                 ));
                             }
@@ -908,7 +907,7 @@ pub fn command_system(
                     commands.entity(entity).remove::<SkeletalAnimation>();
                 }
 
-                client_entity_events.send(ClientEntityEvent::Die(entity));
+                client_entity_events.write(ClientEntityEvent::Die(entity));
 
                 *command = Command::with_die();
                 *next_command = NextCommand::default();

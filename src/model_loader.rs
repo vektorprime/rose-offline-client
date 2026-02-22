@@ -5,7 +5,7 @@ use bevy::{
     math::{Mat4, Quat, Vec2, Vec3, Vec4},
     pbr::{ExtendedMaterial, MeshMaterial3d, StandardMaterial},
     prelude::{
-        AssetServer, Assets, BuildChildren, Color, Commands, DespawnRecursiveExt, Entity,
+        AssetServer, Assets, Color, Commands, Entity,
         GlobalTransform, Handle, Image, Mesh, Mesh3d, Resource, Transform, Visibility,
     },
     render::{
@@ -939,7 +939,7 @@ impl ModelLoader {
             if model_id != character_model.model_parts[model_part].0 {
                 // Despawn previous model
                 for &entity in character_model.model_parts[model_part].1.iter() {
-                    commands.entity(entity).despawn_recursive();
+                    commands.entity(entity).despawn();
                 }
 
                 // Spawn new model
@@ -1140,7 +1140,11 @@ impl DefaultBoneId for CharacterModelPart {
             CharacterModelPart::Head => Some(dummy_bone_offset + 6),
             CharacterModelPart::FaceItem => Some(dummy_bone_offset + 4),
             CharacterModelPart::Back => Some(dummy_bone_offset + 3),
-            _ => None,
+            // Body/Hands/Feet/Weapon/SubWeapon: Use bone 0 (root/pelvis) as default
+            // This ensures these meshes are parented to a bone that animates
+            // In Bevy 0.16, we can't use SkinnedMesh on child entities without joint attributes,
+            // so we rely on transform hierarchy animation instead
+            _ => Some(0),
         }
     }
 }
@@ -1325,7 +1329,10 @@ fn spawn_skeleton(
 
         for object_part in object.parts.iter() {
         let mesh_id = object_part.mesh_id as usize;
-        let mesh: Handle<Mesh> = asset_server.load(model_list.meshes[mesh_id].path().to_string_lossy().into_owned());
+        // Convert path to lowercase to ensure extension matching works with Bevy's asset loader
+        // Bevy's extension matching is case-sensitive, and ZmsAssetLoader registers for "zms"
+        let mesh_path: String = model_list.meshes[mesh_id].path().to_string_lossy().to_lowercase();
+        let mesh: Handle<Mesh> = asset_server.load(mesh_path);
         let material_id = object_part.material_id as usize;
         let zsc_material = &model_list.materials[material_id];
 
@@ -1383,16 +1390,6 @@ fn spawn_skeleton(
             ViewVisibility::default(),
         ));
 
-        // DIAGNOSTIC LOG: Log mesh spawning details
-        // log::info!(
-        //     "[DIAGNOSTIC] Spawned mesh - model_id: {}, mesh_id: {}, material_id: {}, is_skin: {}, has_skinned_mesh_param: {}",
-        //     model_id,
-        //     mesh_id,
-        //     material_id,
-        //     zsc_material.is_skin,
-        //     skinned_mesh.is_some()
-        // );
-
         if load_clip_faces {
             let zms_material_num_faces = crate::zms_asset_loader::ZmsMaterialNumFacesHandle(asset_server.load(format!(
                 "{}#material_num_faces",
@@ -1401,33 +1398,34 @@ fn spawn_skeleton(
             entity_commands.insert(zms_material_num_faces);
         }
 
+        // Log all mesh spawning for diagnostics
+        log::info!(
+            "[SPAWN_MODEL] model_id={}, mesh_id={}, is_skin={}, has_skinned_mesh_param={}, bone_index={:?}, dummy_index={:?}, default_bone_index={:?}",
+            model_id,
+            mesh_id,
+            zsc_material.is_skin,
+            skinned_mesh.is_some(),
+            object_part.bone_index,
+            object_part.dummy_index,
+            default_bone_index
+        );
+        
+        // CRITICAL: Do NOT insert SkinnedMesh directly in Bevy0.16
+        // The ZSC material's is_skin flag doesn't guarantee the ZMS mesh has joint attributes
+        // If SkinnedMesh is inserted but the mesh lacks joint attributes, it causes a bind group mismatch
+        //
+        // Solution: Insert SkinningTarget marker which defers SkinnedMesh insertion until mesh loads
+        // The add_skinned_mesh_to_skinning_targets system will:
+        // 1. Wait for mesh to load
+        // 2. Check if mesh has joint attributes (JOINT_INDEX, JOINT_WEIGHT)
+        // 3. Only add SkinnedMesh if mesh actually has joint attributes
         if zsc_material.is_skin {
             if let Some(skinned_mesh) = skinned_mesh {
-                // CRITICAL VALIDATION: Ensure SkinnedMesh has valid joints
-                if skinned_mesh.joints.is_empty() {
-                    log::error!(
-                        "[SKINNED_MESH_FIX] CRITICAL: Mesh (model_id: {}, mesh_id: {}) is marked as is_skin but SkinnedMesh has no joints! This will cause a bind group mismatch!",
-                        model_id,
-                        mesh_id
-                    );
-                    // Do NOT insert SkinnedMesh to prevent crash
-                } else {
-                    // DIAGNOSTIC LOG: SkinnedMesh component inserted on mesh entity
-                    // log::info!(
-                    //     "[SKINNED_MESH_FIX] Inserting SkinnedMesh component on mesh entity - model_id: {}, mesh_id: {}, joints_count: {}",
-                    //     model_id,
-                    //     mesh_id,
-                    //     skinned_mesh.joints.len()
-                    // );
-                    entity_commands.insert(skinned_mesh.clone());
-                }
-            } else {
-                // DIAGNOSTIC LOG: Mesh marked as is_skin but no SkinnedMesh provided
-                log::warn!(
-                    "[SKINNED_MESH_FIX] Mesh (model_id: {}, mesh_id: {}) is marked as is_skin but no SkinnedMesh component was provided. Spawning as non-skinned mesh to prevent bind group mismatch!",
-                    model_id,
-                    mesh_id
-                );
+                // Get the model_entity (parent with SkinnedMesh) from the bone hierarchy
+                // The skinned_mesh.joints[0] is the root bone, its parent is the model_entity
+                entity_commands.insert(crate::components::SkinningTarget {
+                    skinned_mesh_parent: model_entity,
+                });
             }
         }
 
@@ -1450,8 +1448,9 @@ fn spawn_skeleton(
             None
         };
 
+        let parent_entity = link_bone_entity.unwrap_or(model_entity);
         commands
-            .entity(link_bone_entity.unwrap_or(model_entity))
+            .entity(parent_entity)
             .add_child(entity);
 
         parts.push(entity);

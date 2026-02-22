@@ -1,7 +1,6 @@
 use bevy::{
     gizmos::config::GizmoConfigStore,
-    hierarchy::Children,
-    prelude::{Assets, Handle, Local, Query, ResMut, With},
+    prelude::{Assets, Children, Handle, Local, Query, ResMut, With},
 };
 use bevy_egui::{egui, EguiContexts};
 

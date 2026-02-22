@@ -9,7 +9,7 @@
 //! confirmed working.
 
 use bevy::{
-    asset::load_internal_asset,
+    asset::{load_internal_asset, weak_handle},
     pbr::{
         MaterialExtension, MaterialPlugin, StandardMaterial,
         ExtendedMaterial, MaterialPipeline, MaterialPipelineKey,
@@ -24,17 +24,17 @@ use bevy::{
 use crate::render::object_material_extension::RoseObjectExtension;
 
 // Shader handles for material extensions
-pub const ROSE_OBJECT_EXTENSION_SHADER_HANDLE: bevy::asset::Handle<Shader> =
-    bevy::asset::Handle::weak_from_u128(0x8a1b2c3d4e5f6789);
+pub const ROSE_OBJECT_EXTENSION_SHADER_HANDLE: Handle<Shader> =
+    weak_handle!("8a1b2c3d-4e5f-6789-0000-000000000000");
 
-pub const ROSE_TERRAIN_EXTENSION_SHADER_HANDLE: bevy::asset::Handle<Shader> =
-    bevy::asset::Handle::weak_from_u128(0x9b2c3d4e5f6a7890);
+pub const ROSE_TERRAIN_EXTENSION_SHADER_HANDLE: Handle<Shader> =
+    weak_handle!("9b2c3d4e-5f6a-7890-0000-000000000000");
 
-pub const ROSE_WATER_EXTENSION_SHADER_HANDLE: bevy::asset::Handle<Shader> =
-    bevy::asset::Handle::weak_from_u128(0xac3d4e5f6a7b89c1);
+pub const ROSE_WATER_EXTENSION_SHADER_HANDLE: Handle<Shader> =
+    weak_handle!("ac3d4e5f-6a7b-89c1-0000-000000000000");
 
-pub const ROSE_EFFECT_EXTENSION_SHADER_HANDLE: bevy::asset::Handle<Shader> =
-    bevy::asset::Handle::weak_from_u128(0xbd4e5f6a7b8c9d2e);
+pub const ROSE_EFFECT_EXTENSION_SHADER_HANDLE: Handle<Shader> =
+    weak_handle!("bd4e5f6a-7b8c-9d2e-0000-000000000000");
 
 /// Type alias for the RoseObject material type
 pub type RoseObjectMaterial = ExtendedMaterial<StandardMaterial, RoseObjectExtension>;
@@ -51,6 +51,7 @@ pub struct RoseObjectMaterialPlugin {
 impl Default for RoseObjectMaterialPlugin {
     fn default() -> Self {
         Self {
+            // Prepass and shadows enabled for proper depth rendering and shadow mapping
             prepass_enabled: true,
             shadows_enabled: true,
         }

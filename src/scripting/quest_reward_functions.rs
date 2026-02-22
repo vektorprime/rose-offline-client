@@ -47,7 +47,9 @@ fn quest_reward_add_item(
     }
     let item_reference = item_reference.unwrap();
 
-    let mut quest_state = script_context.query_quest.single_mut();
+    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+        return false;
+    };
 
     if item_reference.item_type.is_quest_item() {
         // Add to quest items
@@ -89,7 +91,9 @@ fn quest_reward_remove_item(
     }
     let item_reference = item_reference.unwrap();
 
-    let mut quest_state = script_context.query_quest.single_mut();
+    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+        return false;
+    };
 
     if item_reference.item_type.is_quest_item() {
         // Remove from quest items
@@ -115,7 +119,9 @@ fn quest_reward_select_quest(
     quest_context: &mut QuestFunctionContext,
     quest_id: usize,
 ) -> bool {
-    let quest_state = script_context.query_quest.single();
+    let Ok(quest_state) = script_context.query_quest.get_single() else {
+        return false;
+    };
 
     if let Some(quest_index) = quest_state.find_active_quest_index(quest_id) {
         quest_context.selected_quest_index = Some(quest_index);
@@ -130,7 +136,9 @@ fn quest_reward_remove_selected_quest(
     script_context: &mut ScriptFunctionContext,
     quest_context: &mut QuestFunctionContext,
 ) -> bool {
-    let mut quest_state = script_context.query_quest.single_mut();
+    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+        return false;
+    };
 
     if let Some(quest_index) = quest_context.selected_quest_index {
         if let Some(quest_slot) = quest_state.get_quest_slot_mut(quest_index) {
@@ -151,7 +159,9 @@ fn quest_reward_add_quest(
     quest_context: &mut QuestFunctionContext,
     quest_id: usize,
 ) -> bool {
-    let mut quest_state = script_context.query_quest.single_mut();
+    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+        return false;
+    };
 
     if let Some(quest_index) = quest_state.try_add_quest(ActiveQuest::new(
         quest_id,
@@ -177,7 +187,9 @@ fn quest_reward_change_selected_quest_id(
     quest_id: usize,
     keep_data: bool,
 ) -> bool {
-    let mut quest_state = script_context.query_quest.single_mut();
+    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+        return false;
+    };
 
     if let Some(quest_index) = quest_context.selected_quest_index {
         if let Some(Some(active_quest)) = quest_state.get_quest_slot_mut(quest_index) {
@@ -205,8 +217,12 @@ fn quest_reward_set_health_mana_percent(
     health_percent: i32,
     mana_percent: i32,
 ) -> bool {
-    let player_stats = script_context.query_player_stats.single();
-    let mut player_mutable = script_context.query_player_mutable.single_mut();
+    let Ok(player_stats) = script_context.query_player_stats.get_single() else {
+        return false;
+    };
+    let Ok(mut player_mutable) = script_context.query_player_mutable.get_single_mut() else {
+        return false;
+    };
 
     // Tuple structure for query_player_stats: (AbilityValues, CharacterInfo, BasicStats, ExperiencePoints, Level, UnionMembership)
     // Tuple structure for query_player_mutable: (HealthPoints, ManaPoints, Equipment, Inventory, MoveSpeed, SkillPoints, Stamina, StatPoints, Team)
@@ -222,7 +238,9 @@ fn quest_reward_set_quest_switch(
     switch_id: usize,
     value: bool,
 ) -> bool {
-    let mut quest_state = script_context.query_quest.single_mut();
+    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+        return false;
+    };
 
     if let Some(mut switch) = quest_state.quest_switches.get_mut(switch_id) {
         *switch = value;

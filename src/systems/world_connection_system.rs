@@ -57,7 +57,7 @@ pub fn world_connection_system(
                 ip,
                 port,
             }) => {
-                network_events.send(NetworkEvent::ConnectGame {
+                network_events.write(NetworkEvent::ConnectGame {
                     ip,
                     port,
                     packet_codec_seed,
@@ -70,20 +70,20 @@ pub fn world_connection_system(
             }
             Ok(ServerMessage::CreateCharacterSuccess { character_slot }) => {
                 world_connection_events
-                    .send(WorldConnectionEvent::CreateCharacterSuccess { character_slot });
+                    .write(WorldConnectionEvent::CreateCharacterSuccess { character_slot });
             }
             Ok(ServerMessage::CreateCharacterError { error }) => {
-                world_connection_events.send(WorldConnectionEvent::CreateCharacterError { error });
+                world_connection_events.write(WorldConnectionEvent::CreateCharacterError { error });
             }
             Ok(ServerMessage::DeleteCharacterStart { name, delete_time }) => {
                 world_connection_events
-                    .send(WorldConnectionEvent::DeleteCharacterStart { name, delete_time });
+                    .write(WorldConnectionEvent::DeleteCharacterStart { name, delete_time });
             }
             Ok(ServerMessage::DeleteCharacterCancel { name }) => {
-                world_connection_events.send(WorldConnectionEvent::DeleteCharacterCancel { name });
+                world_connection_events.write(WorldConnectionEvent::DeleteCharacterCancel { name });
             }
             Ok(ServerMessage::DeleteCharacterError { name }) => {
-                world_connection_events.send(WorldConnectionEvent::DeleteCharacterError { name });
+                world_connection_events.write(WorldConnectionEvent::DeleteCharacterError { name });
             }
             // ServerMessage::ReturnToCharacterSelect
             Ok(message) => {

@@ -150,7 +150,7 @@ fn ui_add_store_item_slot(
     if let Some(item) = item.as_ref() {
         if response.double_clicked() {
             if item.is_stackable_item() {
-                number_input_dialog_events.send(NumberInputDialogEvent::Show {
+                number_input_dialog_events.write(NumberInputDialogEvent::Show {
                     max_value: Some(999),
                     modal: false,
                     ok: Some(Box::new(move |commands, quantity| {
@@ -675,7 +675,7 @@ pub fn ui_npc_store_system(
                     .ok();
             }
         } else {
-            message_box_events.send(MessageBoxEvent::Show {
+            message_box_events.write(MessageBoxEvent::Show {
                 message: "You do not have enough Zuly for this transaction.".to_string(),
                 modal: true,
                 ok: Some(Box::new(|_| {})),

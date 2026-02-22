@@ -1,7 +1,7 @@
 use bevy::{
     ecs::event::EventWriter,
     prelude::{
-        AssetServer, Assets, Camera3d, Commands, DespawnRecursiveExt, Entity,
+        AssetServer, Assets, Camera3d, Commands, Entity,
         GlobalTransform, Local, Quat, Query, Res, ResMut, Transform, Vec3, Visibility,
         With,
     },
@@ -103,7 +103,7 @@ pub fn ui_character_create_system(
         CharacterSelectState::CharacterCreate
     ) {
         if let Some(entity) = ui_state.entity.take() {
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
         }
 
         ui_state.initial_focus_set = false;
@@ -301,11 +301,13 @@ pub fn ui_character_create_system(
     }
 
     if response_cancel.map_or(false, |r| r.clicked()) {
-        commands
-            .entity(query_camera.single())
-            .insert(CameraAnimation::once(
-                asset_server.load("3DDATA/TITLE/CAMERA01_OUTCREATE01.ZMO"),
-            ));
+        if let Ok(camera_entity) = query_camera.get_single() {
+            commands
+                .entity(camera_entity)
+                .insert(CameraAnimation::once(
+                    asset_server.load("3DDATA/TITLE/CAMERA01_OUTCREATE01.ZMO"),
+                ));
+        }
         *character_select_state = CharacterSelectState::CharacterSelect(None);
     }
 

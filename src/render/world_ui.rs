@@ -1,8 +1,9 @@
 use std::{cmp::Ordering, ops::Range};
 use std::ops::Deref;
+use std::collections::HashMap;
 
 use bevy::{
-    asset::{AssetId, Handle, UntypedAssetId, UntypedHandle, load_internal_asset},
+    asset::{AssetId, Handle, UntypedAssetId, UntypedHandle, load_internal_asset, weak_handle},
     math::Mat4,
     core_pipeline::core_3d::Transparent3d,
     ecs::{
@@ -13,14 +14,14 @@ use bevy::{
     },
     pbr::MeshPipelineKey,
     prelude::{
-        App, Assets, Color, Commands, Component, Entity, FromWorld, GlobalTransform, InheritedVisibility, IntoSystemConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3, ViewVisibility, World, Image
+        App, Assets, Color, Commands, Component, Entity, FromWorld, GlobalTransform, InheritedVisibility, IntoScheduleConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3, ViewVisibility, World, Image
     },
     render::{
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
         render_asset::RenderAssets,
         texture::GpuImage,
         render_phase::{
-            AddRenderCommand, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult,
+            AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand, RenderCommandResult,
             SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
         },
         render_resource::{
@@ -29,7 +30,6 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         view::{prepare_view_uniforms, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms}
     },
-    utils::HashMap,
     color::ColorToComponents,
 };
 use uuid::Uuid;
@@ -47,7 +47,7 @@ pub const WORLD_UI_SHADER_HANDLE: UntypedHandle =
     UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0xd5cdda11c713e3a7) });
 
 pub const WORLD_UI_SHADER_HANDLE_TYPED: Handle<Shader> =
-    Handle::weak_from_u128(0xd5cdda11c713e3a7);
+    weak_handle!("d5cdda11-c713-e3a7-0000-000000000000");
 
 #[derive(Default)]
 pub struct WorldUiRenderPlugin;
@@ -513,7 +513,7 @@ pub fn queue_world_ui_meshes(
     }
 
     for (view_entity, view, msaa) in views.iter() {
-        let Some(transparent_phase) = transparent_render_phases.get_mut(&view_entity) else {
+        let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity) else {
             continue;
         };
 
@@ -659,7 +659,8 @@ pub fn queue_world_ui_meshes(
                 pipeline,
                 distance: inverse_view_row_2.dot(rect.world_position.extend(1.0)) + 999999.0,
                 batch_range: 0..1,
-                extra_index: bevy::render::render_phase::PhaseItemExtraIndex(0),
+                extra_index: PhaseItemExtraIndex::None,
+                indexed: false,
             });
         }
     }

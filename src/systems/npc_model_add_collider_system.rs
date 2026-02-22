@@ -3,7 +3,7 @@ use bevy::{
     ecs::query::QueryEntityError,
     math::{Quat, Vec3, Vec3A},
     prelude::{
-        AssetServer, Assets, BuildChildren, Commands, Entity, GlobalTransform, Query, Res,
+        AssetServer, Assets, Commands, Entity, GlobalTransform, Query, Res,
         Transform, With, Without,
     },
     render::{
@@ -44,7 +44,7 @@ pub fn npc_model_add_collider_system(
                     min = Some(min.map_or_else(|| aabb.min(), |min| min.min(aabb.min())));
                     max = Some(max.map_or_else(|| aabb.max(), |max| max.max(aabb.max())));
                 }
-                Ok(None) | Err(QueryEntityError::NoSuchEntity(_)) => {
+                Ok(None) | Err(QueryEntityError::EntityDoesNotExist(_)) => {
                     all_parts_loaded = false;
                     break;
                 }

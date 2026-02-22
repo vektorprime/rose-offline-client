@@ -21,7 +21,7 @@ mod model_height;
 mod name_tag_entity;
 mod night_time_effect;
 mod npc_model;
-mod particle_sequence;
+pub mod particle_sequence;
 mod party_info;
 mod passive_recovery_time;
 mod pending_damage_list;
@@ -39,6 +39,8 @@ mod visible_status_effects;
 mod warp_object;
 mod zone;
 mod zone_object;
+mod skinning_target;
+mod skinned_mesh_target_bone;
 
 pub use bank::Bank;
 pub use bird::{Bird, BirdMesh, BirdSettings};
@@ -99,3 +101,5 @@ pub use zone_object::{
     ZoneObject, ZoneObjectAnimatedObject, ZoneObjectId, ZoneObjectPart,
     ZoneObjectPartCollisionShape, ZoneObjectTerrain,
 };
+pub use skinned_mesh_target_bone::SkinnedMeshTargetBone;
+pub use skinning_target::SkinningTarget;

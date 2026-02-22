@@ -80,7 +80,7 @@ pub fn animation_effect_system(
                         })
                 };
 
-                hit_events.send(HitEvent::with_weapon(
+                hit_events.write(HitEvent::with_weapon(
                     event.entity,
                     target_entity,
                     effect_id,
@@ -151,7 +151,7 @@ pub fn animation_effect_system(
 
                 if let Some(projectile_effect_data) = projectile_effect_data {
                     if projectile_effect_data.bullet_effect.is_some() {
-                        spawn_projectile_events.send(SpawnProjectileEvent {
+                        spawn_projectile_events.write(SpawnProjectileEvent {
                             effect_id: projectile_effect_data.id,
                             source: event.entity,
                             source_dummy_bone_id,
@@ -187,7 +187,7 @@ pub fn animation_effect_system(
                         .and_then(|id| game_data.effect_database.get_effect(id))
                     {
                         if effect_data.bullet_effect.is_some() {
-                            spawn_projectile_events.send(SpawnProjectileEvent {
+                                spawn_projectile_events.write(SpawnProjectileEvent {
                                 effect_id: effect_data.id,
                                 source: event.entity,
                                 source_dummy_bone_id: Some(
@@ -235,7 +235,7 @@ pub fn animation_effect_system(
                             .and_then(|id| game_data.effect_database.get_effect(id))
                         {
                             if let Some(effect_file_id) = effect_data.bullet_effect {
-                                spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+                                spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                                     event.entity,
                                     Some(skill_data.bullet_link_dummy_bone_id as usize),
                                     SpawnEffectData::with_file_id(effect_file_id),
@@ -244,7 +244,7 @@ pub fn animation_effect_system(
                         }
 
                         if let Some(hit_effect_file_id) = skill_data.hit_effect_file_id {
-                            spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+                            spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                                 event.entity,
                                 skill_data.hit_link_dummy_bone_id,
                                 SpawnEffectData::with_file_id(hit_effect_file_id),
@@ -258,7 +258,7 @@ pub fn animation_effect_system(
                                 .and_then(|id| game_data.effect_database.get_effect(id))
                             {
                                 if effect_data.bullet_effect.is_some() {
-                                    spawn_projectile_events.send(SpawnProjectileEvent {
+                                        spawn_projectile_events.write(SpawnProjectileEvent {
                                         effect_id: effect_data.id,
                                         source: event.entity,
                                         source_dummy_bone_id: Some(
@@ -291,7 +291,7 @@ pub fn animation_effect_system(
                                 .and_then(|id| game_data.effect_database.get_effect(id))
                             {
                                 if effect_data.bullet_effect.is_some() {
-                                    spawn_projectile_events.send(SpawnProjectileEvent {
+                                        spawn_projectile_events.write(SpawnProjectileEvent {
                                         effect_id: effect_data.id,
                                         source: event.entity,
                                         source_dummy_bone_id: Some(
@@ -346,13 +346,13 @@ pub fn animation_effect_system(
                     });
 
                 if skill_data.hit_effect_file_id.is_some() {
-                    hit_events.send(HitEvent::with_skill_damage(
+                    hit_events.write(HitEvent::with_skill_damage(
                         event.entity,
                         target_entity.unwrap_or(event.entity),
                         skill_data.id,
                     ));
                 } else {
-                    hit_events.send(HitEvent::with_weapon(
+                    hit_events.write(HitEvent::with_weapon(
                         event.entity,
                         target_entity.unwrap_or(event.entity),
                         weapon_effect_id,
@@ -371,7 +371,7 @@ pub fn animation_effect_system(
                 .and_then(|skill_id| game_data.skills.get_skill(skill_id))
                 .and_then(|skill_data| skill_data.hit_dummy_effect_file_id[0])
             {
-                spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+                spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                     target_entity.unwrap_or(event.entity),
                     None,
                     SpawnEffectData::with_file_id(effect_file_id),
@@ -389,7 +389,7 @@ pub fn animation_effect_system(
                 .and_then(|skill_id| game_data.skills.get_skill(skill_id))
                 .and_then(|skill_data| skill_data.hit_dummy_effect_file_id[1])
             {
-                spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+                spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                     target_entity.unwrap_or(event.entity),
                     None,
                     SpawnEffectData::with_file_id(effect_file_id),
@@ -459,7 +459,7 @@ pub fn animation_effect_system(
                 .and_then(|legs| game_data.items.get_vehicle_item(legs.item.item_number))
                 .and_then(|vehicle_item_data| vehicle_item_data.move_effect_file_id)
             {
-                spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+                spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                     event.entity,
                     Some(1),
                     SpawnEffectData::with_file_id(effect_file_id),
@@ -477,7 +477,7 @@ pub fn animation_effect_system(
                 .and_then(|legs| game_data.items.get_vehicle_item(legs.item.item_number))
                 .and_then(|vehicle_item_data| vehicle_item_data.move_effect_file_id)
             {
-                spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+                spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                     event.entity,
                     Some(2),
                     SpawnEffectData::with_file_id(effect_file_id),
@@ -498,7 +498,7 @@ fn show_casting_effect(
         .get(casting_effect_index)
         .and_then(|x| x.as_ref())
     {
-        spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+        spawn_effect_events.write(SpawnEffectEvent::OnEntity(
             entity,
             casting_effect.effect_dummy_bone_id,
             SpawnEffectData::with_file_id(casting_effect.effect_file_id),

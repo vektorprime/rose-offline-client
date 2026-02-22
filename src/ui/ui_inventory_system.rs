@@ -653,7 +653,7 @@ pub fn ui_inventory_system(
     }
 
     if response_drop_money_button.map_or(false, |r| r.clicked()) && player.1.money.0 > 0 {
-        number_input_dialog_events.send(NumberInputDialogEvent::Show {
+        number_input_dialog_events.write(NumberInputDialogEvent::Show {
             max_value: Some(player.1.money.0 as usize),
             modal: false,
             ok: Some(Box::new(move |commands, amount| {

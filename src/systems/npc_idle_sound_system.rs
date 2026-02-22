@@ -1,6 +1,5 @@
 use bevy::{
-    hierarchy::{BuildChildren, ChildBuild},
-    prelude::{AssetServer, Commands, Component, Entity, GlobalTransform, Query, Res, Transform},
+    prelude::{AssetServer, ChildSpawnerCommands, Commands, Component, Entity, GlobalTransform, Query, Res, Transform},
 };
 use rand::Rng;
 

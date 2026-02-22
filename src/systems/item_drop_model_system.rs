@@ -3,7 +3,7 @@ use bevy::{
     math::{Vec3, Vec3A},
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
-        AssetServer, Assets, BuildChildren, Changed, Commands, Entity, GlobalTransform, Handle,
+        AssetServer, Assets, Changed, Commands, Entity, GlobalTransform, Handle,
         Mesh, Mesh3d, Query, Res, ResMut, Transform, With, Without,
     },
     render::{
@@ -82,7 +82,7 @@ pub fn item_drop_model_add_collider_system(
                     min = Some(min.map_or_else(|| aabb.min(), |min| min.min(aabb.min())));
                     max = Some(max.map_or_else(|| aabb.max(), |max| max.max(aabb.max())));
                 }
-                Ok(None) | Err(QueryEntityError::NoSuchEntity(_)) => {
+                Ok(None) | Err(QueryEntityError::EntityDoesNotExist(_)) => {
                     all_parts_loaded = false;
                     break;
                 }

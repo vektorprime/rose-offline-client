@@ -13,9 +13,9 @@ var base_sampler: sampler;
 
 // Zone lighting uniforms (when ZONE_LIGHTING_GROUP_2 is defined)
 #ifdef ZONE_LIGHTING_GROUP_2
-#import rose_client::zone_lighting::ZoneLighting
+#import rose_client::zone_lighting
 @group(2) @binding(0)
-var<uniform> zone_lighting: ZoneLighting;
+var<uniform> zone_lighting: ZoneLightingData;
 #endif
 
 struct VertexInput {

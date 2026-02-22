@@ -99,7 +99,7 @@ pub fn player_command_system(
                     };
 
                     if has_skill_cooldown || player_cooldowns.has_global_cooldown() {
-                        chatbox_events.send(ChatboxEvent::System("Waiting...".to_string()));
+                        chatbox_events.write(ChatboxEvent::System("Waiting...".to_string()));
                         continue;
                     }
 
@@ -396,7 +396,7 @@ pub fn player_command_system(
                                 }
                             } else {
                                 chatbox_events
-                                    .send(ChatboxEvent::System("Invalid target".to_string()));
+                                    .write(ChatboxEvent::System("Invalid target".to_string()));
                                 continue;
                             }
                         }
@@ -450,7 +450,7 @@ pub fn player_command_system(
                                 })
                                 .is_some()
                             {
-                                chatbox_events.send(ChatboxEvent::System("Waiting...".to_string()));
+                                chatbox_events.write(ChatboxEvent::System("Waiting...".to_string()));
                                 continue;
                             }
 
@@ -476,7 +476,7 @@ pub fn player_command_system(
                                             // TODO: Check target team
                                             use_item_target = Some(target_client_entity.id);
                                         } else {
-                                            chatbox_events.send(ChatboxEvent::System(
+                                            chatbox_events.write(ChatboxEvent::System(
                                                 "Invalid target".to_string(),
                                             ));
                                             continue;

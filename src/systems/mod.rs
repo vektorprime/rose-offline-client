@@ -80,6 +80,7 @@ pub use character_model_system::character_model_update_system;
 pub use character_select_system::{
     character_select_enter_system, character_select_event_system, character_select_exit_system,
     character_select_input_system, character_select_models_system, character_select_system,
+    CharacterSelectInputState,
 };
 pub use clan_system::clan_system;
 pub use client_entity_event_system::client_entity_event_system;

@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{load_internal_asset, Handle},
+    asset::{load_internal_asset, weak_handle, Handle},
     pbr::{Material, MaterialPlugin, MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     render::{
@@ -10,7 +10,9 @@ use bevy::{
     },
 };
 
-pub const PARTICLE_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(10002000);
+use log::{info, warn, error};
+
+pub const PARTICLE_SHADER_HANDLE: Handle<Shader> = weak_handle!("00010002-0000-0000-0000-000000000000");
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct ParticleMaterial {

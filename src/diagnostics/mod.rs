@@ -1,13 +1,10 @@
-//! Diagnostic logging systems for rendering crash investigation
+//! Diagnostic systems for rendering crash investigation
 //!
-//! This module provides comprehensive diagnostic logging to help identify
-//! the root causes of rendering crashes, particularly:
-//! - PipelineCache index out of bounds errors
-//! - Missing pipeline binding errors
-//! - Skinned mesh bind group layout mismatches
+//! This module provides optional debugging for rendering pipeline investigation.
+//! NOTE: SkinnedMeshFixPlugin has been moved to render::skinned_mesh_fix as it is
+//! REQUIRED for proper skinned mesh rendering, not optional diagnostics.
 
 pub mod render_diagnostics;
-pub mod skinned_mesh_diagnostics;
 
 pub use render_diagnostics::{
     RenderDiagnosticsPlugin,
@@ -18,5 +15,3 @@ pub use render_diagnostics::{
     log_shader_binding_config,
     log_render_state,
 };
-
-pub use skinned_mesh_diagnostics::SkinnedMeshDiagnosticsPlugin;

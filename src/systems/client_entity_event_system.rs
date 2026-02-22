@@ -47,7 +47,7 @@ pub fn client_entity_event_system(
                         }
 
                         if let Some(die_effect_file_id) = npc_data.die_effect_file_id {
-                            spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+                            spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                                 entity,
                                 None,
                                 SpawnEffectData::with_file_id(die_effect_file_id),
@@ -59,7 +59,7 @@ pub fn client_entity_event_system(
             ClientEntityEvent::LevelUp(entity, level) => {
                 let sound_category = if is_player(entity) {
                     if let Some(level) = level {
-                        chatbox_events.send(ChatboxEvent::System(format!(
+                        chatbox_events.write(ChatboxEvent::System(format!(
                             "Congratulations! You are now level {}!",
                             level
                         )));
@@ -83,7 +83,7 @@ pub fn client_entity_event_system(
                     }
                 }
 
-                spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+                spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                     entity,
                     None,
                     SpawnEffectData::with_path(VfsPathBuf::new("3DDATA/EFFECT/LEVELUP_01.EFT")),

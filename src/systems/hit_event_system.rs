@@ -142,7 +142,7 @@ pub fn hit_event_system(
         {
             if damage.is_critical {
                 if let Some(effect_file_id) = effect_data.hit_effect_critical {
-                    spawn_effect_events.send(SpawnEffectEvent::AtEntity(
+                    spawn_effect_events.write(SpawnEffectEvent::AtEntity(
                         defender.entity,
                         SpawnEffectData::with_file_id(effect_file_id),
                     ));
@@ -150,7 +150,7 @@ pub fn hit_event_system(
             }
 
             if let Some(effect_file_id) = effect_data.hit_effect_normal {
-                spawn_effect_events.send(SpawnEffectEvent::AtEntity(
+                spawn_effect_events.write(SpawnEffectEvent::AtEntity(
                     defender.entity,
                     SpawnEffectData::with_file_id(effect_file_id),
                 ));
@@ -159,7 +159,7 @@ pub fn hit_event_system(
 
         if let Some(skill_data) = event.skill_id.and_then(|id| game_data.skills.get_skill(id)) {
             if let Some(effect_file_id) = skill_data.hit_effect_file_id {
-                spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+                spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                     defender.entity,
                     skill_data.hit_link_dummy_bone_id,
                     SpawnEffectData::with_file_id(effect_file_id),

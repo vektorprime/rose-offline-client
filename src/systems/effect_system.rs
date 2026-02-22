@@ -1,6 +1,5 @@
 use bevy::{
-    hierarchy::{Children, DespawnRecursiveExt},
-    prelude::{Commands, Entity, Query},
+    prelude::{Children, Commands, Entity, Query},
 };
 
 use crate::{
@@ -58,7 +57,7 @@ pub fn effect_system(
         }
 
         if children_finished > 0 && children_running == 0 {
-            commands.entity(effect_entity).despawn_recursive();
+            commands.entity(effect_entity).despawn();
         }
     }
 }

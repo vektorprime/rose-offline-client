@@ -97,7 +97,7 @@ fn ui_add_bank_slot(
     }
 
     if let Some(DragAndDropId::Inventory(dropped_inventory_slot)) = dropped_item {
-        player_command_events.send(PlayerCommandEvent::BankDepositItem(dropped_inventory_slot));
+        player_command_events.write(PlayerCommandEvent::BankDepositItem(dropped_inventory_slot));
     }
 }
 

@@ -28,28 +28,28 @@ pub fn ui_drag_and_drop_system(
             match last_dropped_item {
                 DragAndDropId::Inventory(item_slot) => match item_slot {
                     ItemSlot::Inventory(_, _) => {
-                        player_command_events.send(PlayerCommandEvent::DropItem(item_slot));
+                        player_command_events.write(PlayerCommandEvent::DropItem(item_slot));
                     }
                     ItemSlot::Ammo(ammo_index) => {
-                        player_command_events.send(PlayerCommandEvent::UnequipAmmo(ammo_index));
+                        player_command_events.write(PlayerCommandEvent::UnequipAmmo(ammo_index));
                     }
                     ItemSlot::Equipment(equipment_index) => {
                         player_command_events
-                            .send(PlayerCommandEvent::UnequipEquipment(equipment_index));
+                            .write(PlayerCommandEvent::UnequipEquipment(equipment_index));
                     }
                     ItemSlot::Vehicle(vehicle_part_index) => {
                         player_command_events
-                            .send(PlayerCommandEvent::UnequipVehicle(vehicle_part_index));
+                            .write(PlayerCommandEvent::UnequipVehicle(vehicle_part_index));
                     }
                 },
                 DragAndDropId::Hotbar(page, slot) => {
-                    player_command_events.send(PlayerCommandEvent::SetHotbar(page, slot, None));
+                    player_command_events.write(PlayerCommandEvent::SetHotbar(page, slot, None));
                 }
                 DragAndDropId::NpcStoreBuyList(index) => {
-                    npc_store_events.send(NpcStoreEvent::RemoveFromBuyList(index));
+                    npc_store_events.write(NpcStoreEvent::RemoveFromBuyList(index));
                 }
                 DragAndDropId::NpcStoreSellList(index) => {
-                    npc_store_events.send(NpcStoreEvent::RemoveFromSellList(index));
+                    npc_store_events.write(NpcStoreEvent::RemoveFromSellList(index));
                 }
                 _ => {}
             }

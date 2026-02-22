@@ -1,21 +1,20 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 #![allow(warnings)]
-
+use log::{info, warn, error};
 use animation::RoseAnimationPlugin;
 use bevy::{
         asset::AssetApp,
-        core_pipeline::bloom::BloomSettings,
+        core_pipeline::bloom::Bloom,
         core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
         core_pipeline::experimental::taa::{TemporalAntiAliasPlugin, TemporalAntiAliasing},
         core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
-        log::{info, warn, Level},
         pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial, MeshMaterial3d, VolumetricFog, VolumetricLight, FogVolume, ShadowFilteringMethod, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel},
         prelude::{
-            apply_deferred, default, in_state, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
-            ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoSystemConfigs,
-            IntoSystemSetConfigs, Local, Mesh, Mesh3d, Msaa, OnEnter, OnExit, PbrBundle, PerspectiveProjection, PluginGroup,
-            PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
+            apply_deferred, default, in_state, not, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
+            ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoScheduleConfigs,
+            Local, Mesh, Mesh3d, Msaa, OnEnter, OnExit, PerspectiveProjection,
+            PluginGroup, PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
             SystemSet, Time, Transform, Update, Vec3, ViewVisibility, Visibility, With, Without, World,
         },
         render::view::VisibilitySystems,
@@ -28,7 +27,7 @@ use bevy::{
         transform::{TransformSystem, components::GlobalTransform},
         window::{Window, WindowMode},
     };
-use bevy_egui::{egui, EguiContext, EguiContexts, EguiRenderOutput};
+use bevy_egui::{egui, input::egui_wants_any_pointer_input, EguiContext, EguiContexts, EguiRenderOutput};
 use bevy_rapier3d::plugin::PhysicsSet;
 use enum_map::enum_map;
 use exe_resource_loader::{ExeResourceCursor, ExeResourceLoader};
@@ -106,8 +105,9 @@ use systems::{
     ability_values_system, animation_effect_system, animation_sound_system, auto_login_system,
     background_music_system, character_model_add_collider_system, character_model_blink_system,
     character_model_update_system, character_select_enter_system, character_select_event_system,
-    character_select_exit_system, character_select_input_system, character_select_models_system,
-    character_select_system, clan_system, client_entity_event_system, collision_height_only_system,
+    character_select_exit_system, character_select_input_system,
+    character_select_models_system, character_select_system, CharacterSelectInputState,
+    clan_system, client_entity_event_system, collision_height_only_system,
     collision_player_system, collision_player_system_join_zone, command_system,
     conversation_dialog_system, cooldown_system, damage_digit_render_system,
     create_damage_digit_material_system,
@@ -553,6 +553,8 @@ enum CharacterSelectSystemOrdering {
     CharacterSelectEventSystem,
     CharacterSelectModelsSystem,
     UiCharacterSelect,
+    /// System set for all character select systems - used to apply run_if to the group
+    AllCharacterSelectSystems,
 }
 
 fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsConfig) {
@@ -652,6 +654,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                         ..Default::default()
                     }),
                     synchronous_pipeline_compilation: false,
+                    debug_flags: Default::default(),
                 })
                 .set(bevy::window::WindowPlugin {
                     primary_window: Some(Window {
@@ -681,13 +684,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                 })
                 .set(bevy::pbr::PbrPlugin::default()),
             bevy::diagnostic::EntityCountDiagnosticsPlugin,
-            bevy::diagnostic::FrameTimeDiagnosticsPlugin,
+            bevy::diagnostic::FrameTimeDiagnosticsPlugin::new(60),  // 60 frame history
         ));
 
     // Initialise 3rd party bevy plugins
     // Note: RapierConfiguration is no longer a Resource in Bevy 0.15
     // Configuration is now handled through the RapierPhysicsPlugin
-    app.add_plugins(bevy_egui::EguiPlugin);
+    app.add_plugins(bevy_egui::EguiPlugin { enable_multipass_for_primary_context: false });
     app.add_plugins(bevy_rapier3d::prelude::RapierPhysicsPlugin::<bevy_rapier3d::prelude::NoUserData>::default());
     // Disabled: RapierDebugRenderPlugin (debug plugin)
     // Disabled: RenderDocPlugin (debug plugin)
@@ -789,8 +792,12 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             RoseScriptingPlugin,
             DebugInspectorPlugin,
 
-            // Diagnostic plugins for debugging rendering crashes during zone loading
-            RenderDiagnosticsPlugin,
+            // REQUIRED: SkinnedMeshFixPlugin deferred-inserts SkinnedMesh components after mesh loading.
+            // Without this, skinned meshes won't render correctly (bind group layout mismatch).
+            render::SkinnedMeshFixPlugin,
+            
+            // OPTIONAL: RenderDiagnosticsPlugin is for debugging rendering issues - keep disabled to reduce log noise
+            // RenderDiagnosticsPlugin,
 
             // TAA plugin for temporal anti-aliasing and temporal shadow filtering
             TemporalAntiAliasPlugin,
@@ -856,9 +863,12 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         (apply_deferred,).in_set(GameStages::DebugRenderPreFlush),
     );
 
+    // Camera systems use EguiContexts to check if egui wants pointer input
     app.add_systems(
         Update,
-        (free_camera_system, orbit_camera_system).in_set(GameSystemSets::UpdateCamera),
+        (free_camera_system, orbit_camera_system)
+            .in_set(GameSystemSets::UpdateCamera)
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
 
     // Configure system ordering for model systems
@@ -912,10 +922,14 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             effect_system,
             animation_sound_system,
             npc_idle_sound_system,
-            name_tag_system,
             character_model_update_system,
             character_model_add_collider_system,
         ),
+    );
+    // name_tag_system uses EguiContexts
+    app.add_systems(
+        Update,
+        name_tag_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
     app.add_systems(
         Update,
@@ -944,7 +958,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             create_damage_digit_material_system.before(damage_digit_render_system),
             damage_digit_render_system,
             name_tag_update_healthbar_system,
-            update_ui_resources,
             name_tag_visibility_system,
             name_tag_update_color_system,
             world_time_system,
@@ -954,16 +967,15 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             directional_light_system,
         ),
     );
+    // update_ui_resources uses EguiContexts
+    app.add_systems(Update, update_ui_resources.after(bevy_egui::EguiPreUpdateSet::InitContexts));
 
-    app.add_systems(
-        PostUpdate,
-        ui_requested_cursor_apply_system,
-    );
+    // ui_requested_cursor_apply_system uses EguiContexts
+    app.add_systems(PostUpdate, ui_requested_cursor_apply_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
 
     app.add_systems(
         Update,
-        ui_item_drop_name_system
-            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
+        ui_item_drop_name_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
 
     app.add_systems(
@@ -1003,16 +1015,11 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     );
 
     // DISABLED: app.add_systems(Update, ui_debug_physics_system); // Too many parameters for Bevy 0.15
-    app.add_systems(Update, ui_debug_render_system
-        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
-    app.add_systems(Update, ui_debug_skill_list_system
-        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
-    app.add_systems(Update, ui_debug_zone_lighting_system
-        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
-    app.add_systems(Update, ui_debug_zone_list_system
-        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
-    app.add_systems(Update, ui_debug_zone_time_system
-        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_debug_render_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_debug_skill_list_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_debug_zone_lighting_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_debug_zone_list_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_debug_zone_time_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
     // DISABLED: app.add_systems(Update, ui_debug_diagnostics_system);
 
     // character_model_blink_system in PostUpdate to avoid any conflicts with model destruction
@@ -1140,14 +1147,18 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             login_system.before(login_event_system),
             login_event_system,
         )
-        .run_if(in_state(AppState::GameLogin)),
+        .run_if(in_state(AppState::GameLogin))
+        .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
 
     app.add_systems(
         Update,
-        (ui_login_system, ui_server_select_system).run_if(in_state(AppState::GameLogin)).in_set(UiSystemSets::Ui)
-        .after(login_system)
-        .before(login_event_system),
+        (ui_login_system, ui_server_select_system)
+            .run_if(in_state(AppState::GameLogin))
+            .in_set(UiSystemSets::Ui)
+            .after(login_system)
+            .before(login_event_system)
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
 
     // Game Character Select
@@ -1160,17 +1171,25 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         character_select_exit_system,
     );
 
+    app.init_resource::<CharacterSelectInputState>();
+    // character_select_system uses EguiContexts for UI dialogs
+    app.add_systems(
+        Update,
+        character_select_system
+            .run_if(in_state(AppState::GameCharacterSelect))
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
+    );
+    // character_select_models_system and character_select_event_system don't use EguiContexts
     app.add_systems(
         Update,
         (
-            character_select_system,
-            character_select_input_system,
             character_select_models_system,
             character_select_event_system,
         )
             .run_if(in_state(AppState::GameCharacterSelect)),
     );
 
+    // UI systems
     app.add_systems(
         Update,
         (
@@ -1178,6 +1197,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             ui_character_select_system,
             ui_character_select_name_tag_system,
         )
+            .run_if(in_state(AppState::GameCharacterSelect))
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
+    );
+    // character_select_input_system uses EguiContexts to check if egui wants pointer input
+    app.add_systems(
+        Update,
+        character_select_input_system
             .run_if(in_state(AppState::GameCharacterSelect))
             .after(bevy_egui::EguiPreUpdateSet::InitContexts),
     );
@@ -1230,33 +1256,33 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, (status_effect_system.run_if(in_state(AppState::Game)),));
     app.add_systems(Update, (passive_recovery_system.run_if(in_state(AppState::Game)),));
     app.add_systems(Update, (quest_trigger_system.run_if(in_state(AppState::Game)),));
-    app.add_systems(Update, game_mouse_input_system);
+    // game_mouse_input_system uses EguiContexts to check if egui wants pointer input
+    app.add_systems(Update, game_mouse_input_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
     // UI systems - part 1
-    app.add_systems(Update, ui_bank_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_chatbox_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_character_info_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_clan_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_create_clan_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_inventory_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_game_menu_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_hotbar_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_minimap_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_npc_store_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_party_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_party_option_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_personal_store_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_player_info_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_quest_list_system.run_if(in_state(AppState::Game)));
+    app.add_systems(Update, ui_bank_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_chatbox_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_character_info_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_clan_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_create_clan_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_inventory_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_game_menu_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_hotbar_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_minimap_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_npc_store_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_party_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_party_option_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_personal_store_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_player_info_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_quest_list_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
 
     // UI systems - part 2
-    app.add_systems(Update, ui_respawn_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_selected_target_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_skill_list_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_skill_tree_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_settings_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, ui_status_effects_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, conversation_dialog_system.run_if(in_state(AppState::Game))
-        .after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_respawn_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_selected_target_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_skill_list_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_skill_tree_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_settings_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, ui_status_effects_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, conversation_dialog_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
 
     if !systems_config.disable_player_command_system {
         app.add_systems(
@@ -1265,7 +1291,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         );
     }
 
-    app.add_systems(PostUpdate, ui_drag_and_drop_system);
+    // ui_drag_and_drop_system uses EguiContexts
+    app.add_systems(Update, ui_drag_and_drop_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
 
     // Setup network
     let (network_thread_tx, network_thread_rx) =
@@ -1364,8 +1391,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.configure_sets(
         Update,
         (UiSystemSets::UiDebugMenu, UiSystemSets::UiFirst, UiSystemSets::Ui, UiSystemSets::UiLast, UiSystemSets::UiDebug)
-            .in_set(GameSystemSets::Ui)
-            .after(bevy_egui::EguiPreUpdateSet::InitContexts),
+            .in_set(GameSystemSets::Ui),
     );
 
     app.configure_sets(
@@ -1524,7 +1550,7 @@ fn load_common_game_data(
     mut egui_context: EguiContexts,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    //bevy::log::info!("[load_common_game_data] Starting to load common game data");
+    //info!("[load_common_game_data] Starting to load common game data");
 
     commands.insert_resource(SpecularTexture {
         image: asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS"),
@@ -1543,7 +1569,7 @@ fn load_common_game_data(
         .expect("Failed to create model loader"),
     );
 
-    //bevy::log::info!("[load_common_game_data] Spawning camera entity");
+    //info!("[load_common_game_data] Spawning camera entity");
     let camera_entity = commands.spawn((
         Camera3d::default(),
         Msaa::Off,  // Required for SSAO and TAA compatibility
@@ -1600,12 +1626,12 @@ fn load_common_game_data(
             constant_object_thickness: 0.25,  // Adjust if AO is too strong/weak
         },
     ));
-    bevy::log::info!("[CAMERA] Camera entity spawned with id: {:?}", camera_entity);
-    bevy::log::info!("[CAMERA] VolumetricFog settings: ambient_intensity=0.1, step_count=64");
-    bevy::log::info!("[CAMERA] Shadow filtering: Temporal (best quality with TAA)");
-    bevy::log::info!("[CAMERA] TAA enabled for temporal stability");
-    bevy::log::info!("[CAMERA] SSAO enabled with Medium quality for contact shadows");
-    bevy::log::info!("[CAMERA] Camera position: ~5120.0, 100.0, -5120.0 (game world center)");
+    info!("[CAMERA] Camera entity spawned with id: {:?}", camera_entity);
+    info!("[CAMERA] VolumetricFog settings: ambient_intensity=0.1, step_count=64");
+    info!("[CAMERA] Shadow filtering: Temporal (best quality with TAA)");
+    info!("[CAMERA] TAA enabled for temporal stability");
+    info!("[CAMERA] SSAO enabled with Medium quality for contact shadows");
+    info!("[CAMERA] Camera position: ~5120.0, 100.0, -5120.0 (game world center)");
 
     commands.insert_resource(DamageDigitsSpawner::load(
         &asset_server,

@@ -136,12 +136,12 @@ pub fn load_dialog_sprites_system(
         }
     }
 
-    if loaded_count > 0 || modified_count > 0 {
-        //log::info!("[DIALOG SYSTEM] Processing {} Loaded and {} Modified dialog events", loaded_count, modified_count);
-    }
+    // if loaded_count > 0 || modified_count > 0 {
+    //     log::info!("[DIALOG SYSTEM] Processing {} Loaded and {} Modified dialog events", loaded_count, modified_count);
+    // }
 
     if ui_resources.loaded_required_textures {
-        // log::debug!("[DIALOG SYSTEM] loaded_required_textures=true, processing {} pending dialogs", load_state.pending_dialogs.len());
+        //log::info!("[DIALOG SYSTEM] loaded_required_textures=true, processing {} pending dialogs", load_state.pending_dialogs.len());
         for handle in load_state.pending_dialogs.drain(..) {
             if let Some(dialog) = assets.get_mut(handle) {
                // log::info!("[DIALOG SYSTEM] Loading widgets for dialog with {} widgets", dialog.widgets.len());
@@ -155,10 +155,10 @@ pub fn load_dialog_sprites_system(
                 
                 dialog.widgets.load_widget(&ui_resources);
                 dialog.loaded = true;
-                // log::debug!("[DIALOG SYSTEM] Dialog loaded and marked as loaded: {:?}", handle);
+                //log::info!("[DIALOG SYSTEM] Dialog loaded and marked as loaded: {:?}", handle);
             }
         }
     } else {
-        // log::debug!("[DIALOG SYSTEM] loaded_required_textures=false, deferring widget loading for {} pending dialogs", load_state.pending_dialogs.len());
+        log::warn!("[DIALOG SYSTEM] loaded_required_textures=false, deferring widget loading for {} pending dialogs", load_state.pending_dialogs.len());
     }
 }

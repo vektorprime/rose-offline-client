@@ -2,7 +2,7 @@ use bevy::{
     ecs::query::QueryEntityError,
     math::{Vec3, Vec3A},
     prelude::{
-        BuildChildren, Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Transform, With,
+        Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Transform, With,
         Without,
     },
     render::primitives::Aabb,
@@ -34,7 +34,7 @@ pub fn personal_store_model_add_collider_system(
                     min = Some(min.map_or_else(|| aabb.min(), |min| min.min(aabb.min())));
                     max = Some(max.map_or_else(|| aabb.max(), |max| max.max(aabb.max())));
                 }
-                Ok(None) | Err(QueryEntityError::NoSuchEntity(_)) => {
+                Ok(None) | Err(QueryEntityError::EntityDoesNotExist(_)) => {
                     all_parts_loaded = false;
                     break;
                 }

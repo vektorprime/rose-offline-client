@@ -378,28 +378,21 @@ impl<'w> DragAndDropSlot<'w> {
                         )
                     });
 
-                    ui.painter().add(egui::Shape::Rect(egui::epaint::RectShape {
-                        rect: Rect::from_min_max(
-                            egui::Pos2::new(
-                                content_rect.max.x
-                                    - text_galley.rect.right()
-                                    - self.quantity_margin,
-                                content_rect.min.y,
-                            ),
-                            egui::Pos2::new(
-                                content_rect.max.x,
-                                content_rect.min.y
-                                    + self.quantity_margin * 2.0
-                                    + text_galley.rect.height(),
-                            ),
+                    let qty_rect = Rect::from_min_max(
+                        egui::Pos2::new(
+                            content_rect.max.x
+                                - text_galley.rect.right()
+                                - self.quantity_margin,
+                            content_rect.min.y,
                         ),
-                        rounding: egui::Rounding::same(0.0),
-                        fill: Color32::from_rgba_unmultiplied(50, 50, 50, 200),
-                        stroke: Stroke::NONE,
-                        fill_texture_id: egui::TextureId::default(),
-                        uv: egui::Rect::ZERO,
-                        blur_width: 0.0,
-                    }));
+                        egui::Pos2::new(
+                            content_rect.max.x,
+                            content_rect.min.y
+                                + self.quantity_margin * 2.0
+                                + text_galley.rect.height(),
+                        ),
+                    );
+                    ui.painter().rect_filled(qty_rect, egui::Rounding::same(0), Color32::from_rgba_unmultiplied(50, 50, 50, 200));
 
                     ui.painter().add(Shape::galley(
                         egui::Pos2::new(
@@ -434,18 +427,15 @@ impl<'w> DragAndDropSlot<'w> {
             }
 
             if is_active {
-                ui.painter().add(egui::Shape::Rect(egui::epaint::RectShape {
-                    rect: rect.shrink(self.border_width),
-                    rounding: egui::Rounding::same(0.0),
-                    fill: Default::default(),
-                    stroke: egui::Stroke {
+                ui.painter().rect_stroke(
+                    rect.shrink(self.border_width),
+                    egui::Rounding::same(0),
+                    egui::Stroke {
                         width: self.border_width,
                         color: egui::Color32::YELLOW,
                     },
-                    fill_texture_id: egui::TextureId::default(),
-                    uv: egui::Rect::ZERO,
-                    blur_width: 0.0,
-                }));
+                    egui::epaint::StrokeKind::Outside,
+                );
             }
         }
         (dropped, response)

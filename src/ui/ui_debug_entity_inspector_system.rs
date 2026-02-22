@@ -7,10 +7,13 @@ use bevy_egui::EguiContext;
 use crate::{components::PlayerCharacter, resources::DebugInspector, ui::UiStateDebugWindows};
 
 pub fn ui_debug_entity_inspector_system(world: &mut World) {
-    let mut egui_context = world
+    let Ok(mut egui_context) = world
         .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
-        .single(world)
-        .clone();
+        .get_single_mut(world)
+    else {
+        return;
+    };
+    let mut egui_context = egui_context.clone();
 
     world.resource_scope(
         |world, mut ui_state_debug_windows: Mut<UiStateDebugWindows>| {
@@ -28,27 +31,30 @@ pub fn ui_debug_entity_inspector_system(world: &mut World) {
 
                         ui.horizontal(|ui| {
                             if ui.button("Camera").clicked() {
-                                debug_inspector_state.entity = Some(
-                                    world
-                                        .query_filtered::<Entity, With<Camera3d>>()
-                                        .single(world),
-                                );
+                                if let Ok(entity) = world
+                                    .query_filtered::<Entity, With<Camera3d>>()
+                                    .get_single(world)
+                                {
+                                    debug_inspector_state.entity = Some(entity);
+                                }
                             }
 
                             if ui.button("Player").clicked() {
-                                debug_inspector_state.entity = Some(
-                                    world
-                                        .query_filtered::<Entity, With<PlayerCharacter>>()
-                                        .single(world),
-                                );
+                                if let Ok(entity) = world
+                                    .query_filtered::<Entity, With<PlayerCharacter>>()
+                                    .get_single(world)
+                                {
+                                    debug_inspector_state.entity = Some(entity);
+                                }
                             }
 
                             if ui.button("Light").clicked() {
-                                debug_inspector_state.entity = Some(
-                                    world
-                                        .query_filtered::<Entity, With<DirectionalLight>>()
-                                        .single(world),
-                                );
+                                if let Ok(entity) = world
+                                    .query_filtered::<Entity, With<DirectionalLight>>()
+                                    .get_single(world)
+                                {
+                                    debug_inspector_state.entity = Some(entity);
+                                }
                             }
                         });
 

@@ -1,6 +1,6 @@
 use bevy::{
     ecs::system::EntityCommands,
-    prelude::{despawn_with_children_recursive, Component, Deref, DerefMut, Entity, World},
+    prelude::{Component, Deref, DerefMut, Entity, World},
 };
 use enum_map::Enum;
 
@@ -48,7 +48,8 @@ impl<'w> RemoveNameTagCommand for EntityCommands<'w> {
             if let Some(nametag_entity) = world_entity.get::<NameTagEntity>() {
                 let nametag_entity = nametag_entity.0;
                 world_entity.remove::<NameTagEntity>();
-                despawn_with_children_recursive(world, nametag_entity, false);
+                // In Bevy 0.16, despawn() now despawns entity and children recursively
+                world.entity_mut(nametag_entity).despawn();
             }
         });
 

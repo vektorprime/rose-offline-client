@@ -272,9 +272,7 @@ pub mod memory_monitor {
 }
 
 use memory_monitor::{MemorySnapshot, log_memory_status};
-use bevy::prelude::Query;
-use bevy::hierarchy::Children;
-use bevy::prelude::{Without};
+use bevy::prelude::{Query, Children, Without};
 use uuid::Uuid;
 
 use anyhow::Result;
@@ -282,12 +280,11 @@ use arrayvec::ArrayVec;
 use    bevy::{
         asset::{Asset, AssetLoader, Assets, io::Reader, LoadContext, LoadState},
         ecs::system::SystemParam,
-        hierarchy::{BuildChildren, DespawnRecursiveExt},
         math::{Quat, Vec2, Vec3},
         pbr::{ExtendedMaterial, NotShadowCaster, NotShadowReceiver, StandardMaterial},
         prelude::{
             AssetServer, Color, Commands, Entity, EventReader, EventWriter, GlobalTransform, Handle,
-            Image, Local, Res, ResMut, Resource, Transform, TransformBundle, UntypedHandle, Visibility, With,
+            Image, Local, Res, ResMut, Resource, Transform, UntypedHandle, Visibility, With,
             Mesh3d, MeshMaterial3d,
         },
         reflect::TypePath,
@@ -296,7 +293,7 @@ use    bevy::{
             mesh::{Indices, Mesh, PrimitiveTopology},
             primitives::Aabb,
             render_asset::RenderAssetUsages,
-            view::{NoFrustumCulling, ViewVisibility, InheritedVisibility, VisibilityBundle, RenderLayers},
+            view::{NoFrustumCulling, ViewVisibility, InheritedVisibility, RenderLayers},
         },
         tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
     };
@@ -1186,7 +1183,7 @@ pub fn zone_loader_system(
                 log::info!("[ZONE LOADER SYSTEM] Zone {} added to Assets collection with handle: {:?}", zone_id.get(), zone_handle);
 
                 // Send event with the handle (not the Arc) to zone_loaded_from_vfs_system for spawning
-                zone_loaded_from_vfs_events.send(ZoneLoadedFromVfsEvent::new(zone_id, zone_handle));
+                zone_loaded_from_vfs_events.write(ZoneLoadedFromVfsEvent::new(zone_id, zone_handle));
             }
             Err(e) => {
                 log::error!("[ZONE LOADER SYSTEM] Failed to load zone {} from async task: {:?}", zone_id.get(), e);
@@ -1254,7 +1251,7 @@ pub fn zone_loader_system(
                     if let Some(entity) = cached.spawned_entity {
                         // log::info!("[ZONE LOADER SYSTEM] Despawning existing zone {} entity {:?} as requested",
                             //event.id.get(), entity);
-                        spawn_zone_params.commands.entity(entity).despawn_recursive();
+                        spawn_zone_params.commands.entity(entity).despawn();
                     }
                 }
                 zone_loader_cache.cache[zone_index] = None;
@@ -1360,7 +1357,7 @@ pub fn zone_loader_system(
         {
             // Zone is already spawned
             // log::info!("[ZONE LOADER SYSTEM] Zone already spawned, sending Loaded event");
-            zone_events.send(ZoneEvent::Loaded(event.id));
+            zone_events.write(ZoneEvent::Loaded(event.id));
             debug_inspector_state.entity = Some(zone_entity);
             continue;
         } else {
@@ -1484,7 +1481,7 @@ pub fn zone_loader_system(
                             spawn_zone_params
                                     .commands
                                     .entity(spawned_entity)
-                                    .despawn_recursive();
+                                    .despawn();
                             spawn_zone_params.memory_tracking.log_entity_despawned();
                         }
                     }
@@ -1566,7 +1563,7 @@ pub fn zone_loader_system(
                                 // MEMORY LEAK FIX: Clear asset handles before removing zone
                                 loading_zone.clear_asset_handles();
 
-                                zone_events.send(ZoneEvent::Loaded(zone_id));
+                                zone_events.write(ZoneEvent::Loaded(zone_id));
                                 loading_zones.remove(index);
                             } else {
                                 // log::info!("[ZONE LOADER SYSTEM] Waiting for additional assets to load");
@@ -1609,7 +1606,7 @@ pub fn zone_loader_system(
                         // MEMORY LEAK FIX: Clear asset handles before removing zone
                         loading_zone.clear_asset_handles();
                         
-                        zone_events.send(ZoneEvent::Loaded(zone_data.zone_id));
+                        zone_events.write(ZoneEvent::Loaded(zone_data.zone_id));
                         loading_zones.remove(index);
                     } else {
                         index += 1;
@@ -1719,7 +1716,7 @@ pub fn zone_loaded_from_vfs_system(
                     spawn_zone_params
                             .commands
                             .entity(spawned_entity)
-                            .despawn_recursive();
+                            .despawn();
                     spawn_zone_params.memory_tracking.log_entity_despawned();
                 }
             }
@@ -1781,7 +1778,7 @@ pub fn zone_loaded_from_vfs_system(
                 });
                 
                 // Send loaded event
-                zone_events.send(ZoneEvent::Loaded(event.zone_id));
+                zone_events.write(ZoneEvent::Loaded(event.zone_id));
                 
                 // Update debug inspector
                 debug_inspector_state.entity = Some(entity);
@@ -1990,7 +1987,7 @@ pub fn spawn_zone(
                         // Send event to spawn fish in this water
                         log::info!("[FISH DEBUG] Sending WaterSpawnedEvent from zone_loader: water_entity={:?}, zone_entity={:?}, center={:?}, extents={:?}",
                             water_entity, zone_entity, water_center, water_half_extents);
-                        water_spawned_events.send(WaterSpawnedEvent {
+                        water_spawned_events.write(WaterSpawnedEvent {
                             water_entity,
                             zone_entity,
                             water_center,
@@ -2437,6 +2434,7 @@ fn spawn_terrain(
         textures: tile_textures.clone(),
     });
 
+    // Split spawn to avoid Bundle tuple limit (15+ components not supported)
     let terrain_entity = commands
         .spawn((
             ZoneObject::Terrain(ZoneObjectTerrain {
@@ -2454,8 +2452,10 @@ fn spawn_terrain(
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
             NotShadowCaster,
+        ))
+        .insert((
             RigidBody::Fixed,
-            Collider::trimesh(collider_verts, collider_indices),
+            Collider::trimesh(collider_verts, collider_indices).expect("Failed to create terrain collider"),
             CollisionGroups::new(
                 COLLISION_GROUP_ZONE_TERRAIN,
                 COLLISION_FILTER_INSPECTABLE
@@ -2532,6 +2532,7 @@ fn spawn_water(
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
 
+    // Split spawn to avoid Bundle tuple limit (15+ components not supported)
     let water_entity = commands
         .spawn((
             ZoneObject::Water,
@@ -2546,12 +2547,14 @@ fn spawn_water(
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
             NotShadowCaster,
+        ))
+        .insert((
             NotShadowReceiver,
             RigidBody::Fixed,
-            Collider::trimesh(collider_verts, collider_indices),
+            Collider::trimesh(collider_verts, collider_indices).expect("Failed to create water collider"),
+            CollisionGroups::new(COLLISION_GROUP_ZONE_WATER, COLLISION_FILTER_INSPECTABLE),
         ))
         .id();
-    commands.entity(water_entity).insert(CollisionGroups::new(COLLISION_GROUP_ZONE_WATER, COLLISION_FILTER_INSPECTABLE));
     
    // info!("[ASSET LIFECYCLE] Water entity spawned: {:?}", water_entity);
     (water_entity, water_center, water_half_extents)
@@ -3009,11 +3012,9 @@ fn spawn_animated_object(
             MeshAnimation::repeat(motion_handle, None),
             object_transform,
             GlobalTransform::default(),
-            VisibilityBundle {
-                visibility: Visibility::Visible,
-                inherited_visibility: InheritedVisibility::default(),
-                view_visibility: bevy::render::view::ViewVisibility::default(),
-            },
+            Visibility::Visible,
+            InheritedVisibility::default(),
+            ViewVisibility::default(),
             NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),

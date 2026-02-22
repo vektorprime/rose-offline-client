@@ -142,7 +142,7 @@ pub fn ui_debug_zone_list_system(
                                 }
                                 AppState::ZoneViewer => {
                                     if ui.button("Load").clicked() {
-                                        load_zone_events.send(LoadZoneEvent {
+                                        load_zone_events.write(LoadZoneEvent {
                                             id: zone_data.id,
                                             despawn_other_zones: ui_state.despawn_other_zones,
                                         });

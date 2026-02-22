@@ -1,8 +1,7 @@
 use bevy::{
     ecs::prelude::{Res, ResMut},
-    hierarchy::Children,
     math::{Vec3, Vec4Swizzles},
-    prelude::{Entity, Query, Visibility, With},
+    prelude::{Children, Entity, Query, Visibility, With},
 };
 
 use rose_data::{SkyboxState, WORLD_TICK_DURATION};

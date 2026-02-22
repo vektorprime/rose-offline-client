@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{load_internal_asset, UntypedHandle, UntypedAssetId, Handle},
+    asset::{load_internal_asset, UntypedHandle, UntypedAssetId, Handle, weak_handle},
     ecs::{
         component::Component,
         query::ROQueryItem,
@@ -9,7 +9,7 @@ use bevy::{
     pbr::{CascadeShadowConfig, FogVolume, VolumetricLight},
     prelude::{
         AmbientLight, App, Color, Commands, DetectChanges, DirectionalLight, EulerRot,
-        FromWorld, IntoSystemConfigs, Local, Plugin, Query, Quat, ReflectResource, Res, ResMut,
+        FromWorld, IntoScheduleConfigs, Local, Plugin, Query, Quat, ReflectResource, Res, ResMut,
         Resource, Shader, Startup, Transform, Update, World, With,
     },
     reflect::{Reflect, TypePath},
@@ -43,7 +43,7 @@ pub const ZONE_LIGHTING_SHADER_HANDLE: UntypedHandle =
     UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0x444949d32b35d5d9) });
 
 pub const ZONE_LIGHTING_SHADER_HANDLE_TYPED: Handle<Shader> =
-    Handle::weak_from_u128(0x444949d32b35d5d9);
+    weak_handle!("444949d3-2b35-d5d9-0000-000000000000");
 
 fn default_light_transform() -> Transform {
     Transform::from_rotation(Quat::from_euler(
@@ -121,6 +121,7 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
     commands.insert_resource(AmbientLight {
         color: Color::srgb(0.9, 0.9, 1.0),  // Slightly cool ambient for better atmosphere
         brightness: 150.0,  // Reduced for better shadow contrast (was 500.0)
+        affects_lightmapped_meshes: true,
     });
     
     //bevy::log::info!("[ZONE LIGHTING] Ambient light inserted: brightness=1.0");

@@ -119,7 +119,10 @@ pub fn ui_minimap_system(
         None => return,
     };
 
-    let camera_forward_2d = query_camera.single().forward().xz().normalize_or_zero();
+    let Ok(camera_transform) = query_camera.get_single() else {
+        return;
+    };
+    let camera_forward_2d = camera_transform.forward().xz().normalize_or_zero();
     let camera_angle = -camera_forward_2d.angle_between(Vec2::Y);
 
     // If zone has changed, reload the minimap image

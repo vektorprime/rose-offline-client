@@ -1,12 +1,12 @@
 use bevy::{
     prelude::*,
     render::{alpha::AlphaMode, render_resource::*, storage::ShaderStorageBuffer},
-    asset::{load_internal_asset, Handle},
+    asset::{load_internal_asset, Handle, weak_handle},
     pbr::Material,
 };
 
 pub const DAMAGE_DIGIT_MATERIAL_SHADER_HANDLE: Handle<Shader> =
-    Handle::weak_from_u128(0x6a4b5c6d7e8f9a0b);
+    weak_handle!("6a4b5c6d-7e8f-9a0b-0000-000000000000");
 
 #[derive(Debug, Clone, Asset, TypePath, AsBindGroup)]
 pub struct DamageDigitMaterial {

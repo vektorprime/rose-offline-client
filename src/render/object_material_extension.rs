@@ -51,6 +51,10 @@ impl MaterialExtension for RoseObjectExtension {
         crate::render::extension_material_plugin::ROSE_OBJECT_EXTENSION_SHADER_HANDLE.into()
     }
 
+    fn deferred_fragment_shader() -> ShaderRef {
+        crate::render::extension_material_plugin::ROSE_OBJECT_EXTENSION_SHADER_HANDLE.into()
+    }
+
     fn specialize(
         _pipeline: &MaterialExtensionPipeline,
         _descriptor: &mut RenderPipelineDescriptor,

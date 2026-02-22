@@ -11,7 +11,7 @@
 use std::num::NonZeroU32;
 
 use bevy::{
-    asset::{load_internal_asset, Asset, AssetApp, Handle},
+    asset::{load_internal_asset, Asset, AssetApp, Handle, weak_handle},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     math::{Vec3, Vec4},
     pbr::{
@@ -33,7 +33,7 @@ use crate::resources::WaterSettings;
 
 /// Shader handle for the water material shader
 pub const WATER_MATERIAL_SHADER_HANDLE: Handle<Shader> =
-    Handle::weak_from_u128(0x333959e64b35d5d9);
+    weak_handle!("333959e6-4b35-d5d9-0000-000000000000");
 
 /// Number of water animation frames
 pub const WATER_MATERIAL_NUM_TEXTURES: usize = 25;
@@ -305,7 +305,7 @@ impl AsBindGroup for WaterMaterial {
         let bind_group = render_device.create_bind_group(Self::label(), layout, &entries);
 
         Ok(PreparedBindGroup {
-            bindings: vec![],
+            bindings: BindingResources(vec![]),
             bind_group,
             data: WaterMaterialKey {
                 texture_count: self.textures.len() as u32,
@@ -319,6 +319,7 @@ impl AsBindGroup for WaterMaterial {
         _layout: &BindGroupLayout,
         _render_device: &RenderDevice,
         _param: &mut SystemParamItem<'_, '_, Self::Param>,
+        _bindless: bool,
     ) -> Result<UnpreparedBindGroup<Self::Data>, AsBindGroupError> {
         // This should never be called since we override as_bind_group
         Err(AsBindGroupError::RetryNextUpdate)
@@ -326,6 +327,7 @@ impl AsBindGroup for WaterMaterial {
 
     fn bind_group_layout_entries(
         _render_device: &RenderDevice,
+        _bindless: bool,
     ) -> Vec<BindGroupLayoutEntry> {
         vec![
             // Texture array binding (25 water frames)

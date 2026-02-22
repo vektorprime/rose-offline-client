@@ -53,11 +53,24 @@ impl AssetLoader for ZmsAssetLoader {
             reader.read_to_end(&mut bytes).await?;
             
             let asset_path = load_context.path().to_string_lossy();
-            //info!("[ASSET LIFECYCLE] Loading ZMS mesh asset: {}", asset_path);
-            //info!("[ASSET LIFECYCLE] Asset size: {} bytes", bytes.len());
 
             match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(mut zms) => {
+                    let has_bone_weights = !zms.bone_weights.is_empty();
+                    let has_bone_indices = !zms.bone_indices.is_empty();
+                    let bone_weight_count = zms.bone_weights.len();
+                    let bone_index_count = zms.bone_indices.len();
+                    log::error!(
+                        "[ZMS LOADER] ========== LOAD CALLED =========="
+                    );
+                    log::error!(
+                        "[ZMS LOADER] Loading mesh: {} - vertices={}, bone_weights={}, bone_indices={}",
+                        asset_path,
+                        zms.position.len(),
+                        bone_weight_count,
+                        bone_index_count
+                    );
+                    
                     let mut mesh = Mesh::new(
                         PrimitiveTopology::TriangleList,
                         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
@@ -144,7 +157,7 @@ impl AssetLoader for ZmsAssetLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["zms"]
+        &["zms", "ZMS"]
     }
 }
 

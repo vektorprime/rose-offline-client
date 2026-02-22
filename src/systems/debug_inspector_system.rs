@@ -1,12 +1,13 @@
 use bevy::{
     input::ButtonInput,
     prelude::{
-        App, Camera, Camera3d, GlobalTransform, KeyCode, Plugin, Query, Res, ResMut, Update, With,
+        App, Camera, Camera3d, GlobalTransform, IntoScheduleConfigs, KeyCode, Plugin, Query, Res, ResMut, Update, With,
     },
     window::{PrimaryWindow, Window},
 };
-use bevy_egui::EguiContexts;
-use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter, ReadDefaultRapierContext};
+use bevy_egui::{EguiContexts, EguiPreUpdateSet};
+use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter};
+use bevy_rapier3d::plugin::context::systemparams::ReadRapierContext;
 
 use rose_game_common::{components::*, messages::ClientEntityId};
 
@@ -20,7 +21,7 @@ pub struct DebugInspectorPlugin;
 impl Plugin for DebugInspectorPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(DebugInspector::default())
-            .add_systems(Update, debug_inspector_picking_system);
+            .add_systems(Update, debug_inspector_picking_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
 
         app.register_type::<rose_data::MotionId>()
             .register_type::<rose_data::NpcId>()
@@ -93,23 +94,27 @@ fn debug_inspector_picking_system(
     mut debug_inspector_state: ResMut<DebugInspector>,
     mut egui_ctx: EguiContexts,
     key_code_input: Res<ButtonInput<KeyCode>>,
-    rapier_context: ReadDefaultRapierContext,
+    rapier_context: ReadRapierContext,
     query_window: Query<&Window, With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-) {
+) -> Result<(), bevy::prelude::BevyError> {
+    let Ok(rapier_context) = rapier_context.single() else {
+        return Ok(());
+    };
+    
     if !debug_inspector_state.enable_picking {
         // Picking disabled
-        return;
+        return Ok(());
     }
 
     let Ok(window) = query_window.get_single() else {
-        return;
+        return Ok(());
     };
 
     let cursor_position = window.cursor_position();
     if cursor_position.is_none() || egui_ctx.ctx_mut().wants_pointer_input() {
         // Mouse not in window, or is over UI
-        return;
+        return Ok(());
     }
     let cursor_position = cursor_position.unwrap();
 
@@ -131,4 +136,5 @@ fn debug_inspector_picking_system(
             }
         }
     }
+    Ok(())
 }

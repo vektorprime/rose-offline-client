@@ -1,5 +1,5 @@
 use bevy::{
-    prelude::{App, AssetApp, IntoSystemConfigs, IntoSystemSetConfigs, Plugin, PostUpdate, SystemSet},
+    prelude::{App, AssetApp, IntoScheduleConfigs, Plugin, PostUpdate, SystemSet},
     transform::TransformSystem,
 };
 

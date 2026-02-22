@@ -51,7 +51,7 @@ pub fn use_item_event_system(
             };
 
         if let Some(effect_file_id) = item_data.effect_file_id {
-            spawn_effect_events.send(SpawnEffectEvent::OnEntity(
+            spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                 user_entity,
                 None,
                 SpawnEffectData::with_file_id(effect_file_id),

@@ -11,13 +11,15 @@ Do NOT run "cargo build --release" only run "cargo build"
 
 Do NOT run "cargo run" ask the user for output of the compiled software
 
+Do NOT run "cargo clean" without asking the user for permission.
 
-
-## Source Code For Bevy 0.15.4 We Use
+## Source Code For Bevy 0.16.1 We Use
 
 Before you begin troubleshooting, make note of the features that are involved in this interaction, then search the bevy source code located here for those features and read their .rs files to make sure we fully understand how they work.
-C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.15.4
+C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.16.1
 
+### Source Code For WGPU v24
+C:\Users\vicha\RustroverProjects\bevy-collection\wgpu-24.0.5
 
 ## What To Do When Stuck
 

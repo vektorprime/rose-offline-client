@@ -20,10 +20,10 @@ use bevy::{
     ecs::{
         component::Component,
         entity::Entity,
-        system::{Local, Res, ResMut, Resource},
+        system::{Local, Res, ResMut},
     },
     log,
-    prelude::{App, Plugin, Query, Assets, Image},
+    prelude::{App, Plugin, Query, Assets, Image, BevyError, Resource},
     render::{
         render_resource::{
             BindGroupLayout, BindGroupLayoutEntry, BindingType, PipelineCache, ShaderStages,
@@ -32,7 +32,7 @@ use bevy::{
         render_asset::RenderAssets,
         ExtractSchedule, Render, RenderApp, RenderSet,
     },
-    utils::HashMap,
+    platform::collections::HashMap,
 };
 use std::fmt;
 
@@ -141,14 +141,15 @@ impl Plugin for RenderDiagnosticsPlugin {
 }
 
 /// Update frame counter
-pub fn update_frame_counter(mut state: ResMut<RenderDiagnosticsState>) {
+pub fn update_frame_counter(mut state: ResMut<RenderDiagnosticsState>) -> Result<(), BevyError> {
     state.frame_count += 1;
+    Ok(())
 }
 
 /// Log render state extraction from main world to render world
 pub fn log_render_state_extraction(
     mut state: ResMut<RenderDiagnosticsState>,
-) {
+) -> Result<(), BevyError> {
     if state.frame_count % 300 == 0 {
         // Log summary every ~5 seconds at 60fps
         // log::info!(
@@ -160,6 +161,7 @@ pub fn log_render_state_extraction(
         //     state.shader_binding_configs.len(),
         // );
     }
+    Ok(())
 }
 
 /// Log pipeline cache access attempt

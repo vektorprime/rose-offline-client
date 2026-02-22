@@ -3,7 +3,7 @@ use bevy::{
     math::{Quat, Vec3},
     pbr::{ExtendedMaterial, MeshMaterial3d, StandardMaterial},
     prelude::{
-        AssetServer, Assets, BuildChildren, ChildBuild, Commands, Entity, GlobalTransform, Mesh3d, Transform, Visibility,
+        AssetServer, Assets, Commands, Entity, GlobalTransform, Mesh3d, Transform, Visibility,
     },
     render::{
         alpha::AlphaMode,

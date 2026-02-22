@@ -69,6 +69,10 @@ pub mod extension_material_plugin;
 pub use extension_material_plugin::ExtensionMaterialPlugin;
 pub use extension_material_plugin::RoseObjectMaterialPlugin;
 
+// Skinned mesh fix for Bevy 0.16 - REQUIRED for proper skinned mesh rendering
+pub mod skinned_mesh_fix;
+pub use skinned_mesh_fix::SkinnedMeshFixPlugin;
+
 pub const MESH_ATTRIBUTE_UV_1: MeshVertexAttribute =
     MeshVertexAttribute::new("Vertex_Uv2", 280035324, VertexFormat::Float32x2);
 

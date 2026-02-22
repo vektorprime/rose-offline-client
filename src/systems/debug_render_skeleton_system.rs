@@ -1,7 +1,6 @@
 use bevy::{
     color::palettes::css::{GRAY, PINK, PURPLE},
-    hierarchy::Parent,
-    prelude::{Color, Gizmos, GlobalTransform, Query, Res},
+    prelude::{ChildOf, Color, Gizmos, GlobalTransform, Query, Res},
     render::mesh::skinning::SkinnedMesh,
 };
 
@@ -10,7 +9,7 @@ use crate::resources::DebugRenderConfig;
 pub fn debug_render_skeleton_system(
     debug_render_config: Res<DebugRenderConfig>,
     query_skeleton: Query<&SkinnedMesh>,
-    query_bone: Query<(&GlobalTransform, Option<&Parent>)>,
+    query_bone: Query<(&GlobalTransform, Option<&ChildOf>)>,
     mut gizmos: Gizmos,
 ) {
     if !debug_render_config.skeleton && !debug_render_config.bone_up {

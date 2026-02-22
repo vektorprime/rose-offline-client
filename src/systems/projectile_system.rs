@@ -1,5 +1,4 @@
 use bevy::{
-    hierarchy::DespawnRecursiveExt,
     math::{Quat, Vec3},
     prelude::{Commands, Entity, EventWriter, GlobalTransform, Query, Res, Time, Transform},
     render::mesh::skinning::SkinnedMesh,
@@ -41,7 +40,7 @@ pub fn projectile_system(
 
         if target_translation.is_none() {
             // Cannot find target, despawn projectile
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
             continue;
         };
         let mut target_translation = target_translation.unwrap();
@@ -99,12 +98,12 @@ pub fn projectile_system(
             } = projectile.target
             {
                 if let Some(skill_id) = projectile.skill_id {
-                    hit_events.send(
+                    hit_events.write(
                         HitEvent::with_skill_damage(projectile.source, target_entity, skill_id)
                             .apply_damage(projectile.apply_damage),
                     );
                 } else {
-                    hit_events.send(
+                    hit_events.write(
                         HitEvent::with_weapon(
                             projectile.source,
                             target_entity,
@@ -115,7 +114,7 @@ pub fn projectile_system(
                 }
             }
 
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
             continue;
         }
 

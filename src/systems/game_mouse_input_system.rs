@@ -2,13 +2,16 @@ use bevy::{
     input::ButtonInput,
     math::Vec3,
     prelude::{
-        Camera, Camera3d, Entity, EventWriter, GlobalTransform, Local, MouseButton, Query, Res, ResMut,
+        BevyError, Camera, Camera3d, Entity, EventWriter, GlobalTransform, Local, MouseButton, Query, Res, ResMut,
         State, With,
     },
     window::{CursorGrabMode, PrimaryWindow, Window},
 };
 use bevy_egui::EguiContexts;
-use bevy_rapier3d::prelude::{CollisionGroups, QueryFilter, ReadDefaultRapierContext};
+use bevy_rapier3d::{
+    plugin::context::systemparams::ReadRapierContext,
+    prelude::{CollisionGroups, QueryFilter},
+};
 
 use rose_game_common::components::{ItemDrop, Team};
 
@@ -30,7 +33,7 @@ pub fn game_mouse_input_system(
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     query_window: Query<&Window, With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    rapier_context: ReadDefaultRapierContext,
+    rapier_context: ReadRapierContext,
     mut egui_ctx: EguiContexts,
     query_hit_entity: Query<(
         Option<&Team>,
@@ -43,38 +46,42 @@ pub fn game_mouse_input_system(
     query_collider_parent: Query<&ColliderParent>,
     mut player_command_events: EventWriter<PlayerCommandEvent>,
     mut selected_target: ResMut<SelectedTarget>,
-) {
+) -> Result<(), BevyError> {
+    let Ok(rapier_context) = rapier_context.single() else {
+        return Ok(());
+    };
+    
     // Check if we're in the game state
     if *app_state.get() != AppState::Game {
-        return;
+        return Ok(());
     }
     selected_target.hover = None;
 
     let Ok(window) = query_window.get_single() else {
-        return;
+        return Ok(());
     };
 
     if !matches!(window.cursor_options.grab_mode, CursorGrabMode::None) {
         // Cursor is currently grabbed
-        return;
+        return Ok(());
     }
 
     let Some(cursor_position) = window.cursor_position() else {
         // Failed to get cursor position
-        return;
+        return Ok(());
     };
 
     if egui_ctx.ctx_mut().wants_pointer_input() {
-        return;
+        return Ok(());
     }
 
     let (_player_entity, player_team) = if let Ok(result) = query_player.get_single() {
         result
     } else {
-        return;
+        return Ok(());
     };
     let Ok((camera, camera_transform)) = query_camera.get_single() else {
-        return;
+        return Ok(());
     };
 
     if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
@@ -128,7 +135,7 @@ pub fn game_mouse_input_system(
 
                 if hit_zone_object.is_some() {
                     if mouse_button_input.just_pressed(MouseButton::Left) {
-                        player_command_events.send(PlayerCommandEvent::Move(
+                        player_command_events.write(PlayerCommandEvent::Move(
                             Position::new(Vec3::new(
                                 hit_position.x * 100.0,
                                 -hit_position.z * 100.0,
@@ -144,7 +151,7 @@ pub fn game_mouse_input_system(
                         if let Some(hit_entity_position) = hit_entity_position {
                             // Move to target item drop, once we are close enough the command_system
                             // will send the pickup client message to perform the actual pickup
-                            player_command_events.send(PlayerCommandEvent::Move(
+                            player_command_events.write(PlayerCommandEvent::Move(
                                 hit_entity_position.clone(),
                                 Some(hit_entity),
                             ));
@@ -162,13 +169,13 @@ pub fn game_mouse_input_system(
                                 || hit_team.id == player_team.id
                             {
                                 if let Some(hit_entity_position) = hit_entity_position {
-                                    player_command_events.send(PlayerCommandEvent::Move(
+                                    player_command_events.write(PlayerCommandEvent::Move(
                                         hit_entity_position.clone(),
                                         Some(hit_entity),
                                     ));
                                 }
                             } else {
-                                player_command_events.send(PlayerCommandEvent::Attack(hit_entity));
+                                player_command_events.write(PlayerCommandEvent::Attack(hit_entity));
                             }
                         } else {
                             selected_target.selected = Some(hit_entity);
@@ -178,4 +185,5 @@ pub fn game_mouse_input_system(
             }
         }
     }
+    Ok(())
 }

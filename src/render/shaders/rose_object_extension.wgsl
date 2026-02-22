@@ -81,7 +81,8 @@ fn fragment(
     
     // Apply specular to PBR material reflectance before lighting
     // This affects how strong the specular highlights appear
-    pbr_input.material.reflectance = specular_value;
+    // Note: In Bevy 0.16, reflectance changed from f32 to vec3<f32>
+    pbr_input.material.reflectance = vec3<f32>(specular_value);
     
     // Sample lightmap texture if UV_B is available
     // Lightmap uses the second UV channel with offset/scale transformation

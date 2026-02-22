@@ -9,7 +9,7 @@
 use std::num::NonZeroU32;
 
 use bevy::{
-    asset::{load_internal_asset, Asset, Assets, AssetApp, Handle},
+    asset::{load_internal_asset, Asset, Assets, AssetApp, Handle, weak_handle},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     pbr::{
         Material, MaterialPipeline, MaterialPipelineKey, MeshPipelineKey,
@@ -31,7 +31,7 @@ use crate::render::{MESH_ATTRIBUTE_UV_1, TERRAIN_MESH_ATTRIBUTE_TILE_INFO};
 
 /// Shader handle for the terrain material shader
 pub const TERRAIN_MATERIAL_SHADER_HANDLE: Handle<Shader> =
-    Handle::weak_from_u128(0x3d7939250aff89cb);
+    weak_handle!("3d793925-0aff-89cb-0000-000000000000");
 
 /// Maximum number of terrain tile textures supported
 pub const TERRAIN_MATERIAL_MAX_TEXTURES: usize = 100;
@@ -195,7 +195,7 @@ impl AsBindGroup for TerrainMaterial {
         let bind_group = render_device.create_bind_group(Self::label(), layout, &entries);
 
         Ok(PreparedBindGroup {
-            bindings: vec![],  // No individual bindings tracked for texture arrays
+            bindings: BindingResources(vec![]),
             bind_group,
             data: TerrainMaterialKey {
                 texture_count: self.textures.len() as u32,
@@ -209,13 +209,15 @@ impl AsBindGroup for TerrainMaterial {
         _layout: &BindGroupLayout,
         _render_device: &RenderDevice,
         _param: &mut SystemParamItem<'_, '_, Self::Param>,
+        _bindless: bool,
     ) -> Result<UnpreparedBindGroup<Self::Data>, AsBindGroupError> {
-        // This should never be called since we override as_bind_group
-        Err(AsBindGroupError::RetryNextUpdate)
+        // Signal that we want as_bind_group to be called instead
+        Err(AsBindGroupError::CreateBindGroupDirectly)
     }
 
     fn bind_group_layout_entries(
         _render_device: &RenderDevice,
+        _bindless: bool,
     ) -> Vec<BindGroupLayoutEntry> {
         vec![
             // Texture array binding

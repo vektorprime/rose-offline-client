@@ -1,7 +1,7 @@
 use bevy::{
     pbr::MeshMaterial3d,
     prelude::{
-        AssetServer, Assets, BuildChildren, Commands, ViewVisibility, InheritedVisibility, GlobalTransform, Handle,
+        AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, GlobalTransform, Handle,
         Mesh3d, Resource, Transform, Vec3, Visibility, Mesh, Vec4, Vec2, Image, Component,
     },
     render::{primitives::Aabb, view::NoFrustumCulling},
@@ -30,10 +30,10 @@ impl DamageDigitsSpawner {
         meshes: &mut Assets<Mesh>,
     ) -> Self {
         Self {
-            texture_damage: asset_server.load("3DDATA/EFFECT/SPECIAL/DIGITNUMBER01.DDS"),
-            texture_damage_player: asset_server.load("3DDATA/EFFECT/SPECIAL/DIGITNUMBER02.DDS"),
-            texture_miss: asset_server.load("3DDATA/EFFECT/SPECIAL/DIGITNUMBERMISS.DDS"),
-            motion: asset_server.load("3DDATA/EFFECT/SPECIAL/HIT_FIGURE_01.ZMO"),
+            texture_damage: asset_server.load("3ddata/effect/special/digitnumber01.dds"),
+            texture_damage_player: asset_server.load("3ddata/effect/special/digitnumber02.dds"),
+            texture_miss: asset_server.load("3ddata/effect/special/digitnumbermiss.dds"),
+            motion: asset_server.load("3ddata/effect/special/hit_figure_01.zmo"),
             mesh: meshes.add(Mesh::from(bevy::prelude::Rectangle::new(1.0, 1.0))),
         }
     }

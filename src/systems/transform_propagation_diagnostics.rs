@@ -4,7 +4,7 @@ use bevy::transform::TransformSystem;
 /// Diagnostic system to check if transform propagation is running
 /// This helps diagnose why GlobalTransform is not being computed from Transform
 pub fn transform_propagation_diagnostics(
-    transforms: Query<(Entity, &Transform, &GlobalTransform, Option<&Parent>, Option<&Name>)>,
+    transforms: Query<(Entity, &Transform, &GlobalTransform, Option<&ChildOf>, Option<&Name>)>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;

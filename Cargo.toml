@@ -9,9 +9,9 @@ anyhow = "1.0.4"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 arrayvec = "0.7"
 async-trait = "0.1"
-bevy_egui = "0.32"
-bevy-inspector-egui = "0.29"
-bevy_rapier3d = "0.28"
+bevy_egui = "0.34"
+bevy-inspector-egui = "0.33"
+bevy_rapier3d = "0.31"
 bitflags = "2.3"
 bytemuck = { version = "1.7.0", features = [ "derive" ] }
 chrono = "0.4"
@@ -22,8 +22,8 @@ dashmap = "5.5"
 directories = "5.0"
 encase = "0.8"
 dolly = "0.6.0"
-egui = "0.30"
-egui_extras = "0.30"
+egui = "0.31"
+egui_extras = "0.31"
 enum-map = { version = "2.0", features = ["serde"] }
 glam = "0.29"
 hound = "3.4"
@@ -57,9 +57,12 @@ rose-network-common = { path = "C:/Users/vicha/RustroverProjects/rose-offline/ro
 rose-network-irose = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-network-irose" }
 
 [dependencies.bevy]
-version = "0.15"
+version = "0.16"
 default-features = false
 features = [
+    "std",
+    "async_executor",
+    "bevy_log",            # Required for logging macros in Bevy 0.16
     "bevy_asset",
     "bevy_winit",
     "bevy_core_pipeline",
@@ -74,7 +77,7 @@ features = [
     # "trace_tracy",        # Enable Tracy profiler integration for CPU profiling
     # "trace_tracy_memory", # Enable memory allocation tracking (high overhead)
     # "trace_chrome",       # Export to Chrome tracing format (alternative to Tracy)
-] 
+]
 
 # To use memory profiling with Tracy:
 # 1. Install Tracy profiler from: https://github.com/wolfpld/tracy/releases

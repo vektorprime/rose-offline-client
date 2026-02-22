@@ -226,7 +226,7 @@ pub fn ui_create_clan_system(
 
     if response_confirm_button.map_or(false, |r| r.clicked()) {
         if ui_state.clan_name.is_empty() {
-            message_box_events.send(MessageBoxEvent::Show {
+            message_box_events.write(MessageBoxEvent::Show {
                 message: game_data.client_strings.invalid_name.into(),
                 modal: true,
                 ok: None,
@@ -236,7 +236,7 @@ pub fn ui_create_clan_system(
         }
 
         if ui_state.clan_slogan.is_empty() {
-            message_box_events.send(MessageBoxEvent::Show {
+            message_box_events.write(MessageBoxEvent::Show {
                 message: game_data.client_strings.clan_create_error_slogan.into(),
                 modal: true,
                 ok: None,
@@ -249,7 +249,7 @@ pub fn ui_create_clan_system(
             NonZeroU16::new(ui_state.selected_mark_background as u16),
             NonZeroU16::new(ui_state.selected_mark_foreground as u16),
         ) else {
-            message_box_events.send(MessageBoxEvent::Show {
+            message_box_events.write(MessageBoxEvent::Show {
                 message: game_data.client_strings.clan_create_error.into(),
                 modal: true,
                 ok: None,

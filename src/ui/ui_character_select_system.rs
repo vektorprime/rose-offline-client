@@ -66,20 +66,26 @@ pub fn ui_character_select_system(
         .ctx_mut()
         .input(|input| input.screen_rect().size());
 
+    // Position buttons at bottom of screen - adjust both X and Y coordinates
+    // Y is set to8.0 to give a small margin from the bottom of the window
     if let Some(Widget::Button(button)) = dialog.get_widget_mut(IID_BTN_CANCEL) {
         button.x = screen_size.x / 5.0 - button.width / 2.0;
+        button.y = 8.0;
     }
 
     if let Some(Widget::Button(button)) = dialog.get_widget_mut(IID_BTN_CREATE) {
         button.x = screen_size.x * 2.0 / 5.0 - button.width / 2.0;
+        button.y = 8.0;
     }
 
     if let Some(Widget::Button(button)) = dialog.get_widget_mut(IID_BTN_DELETE) {
         button.x = screen_size.x * 3.0 / 5.0 - button.width / 2.0;
+        button.y = 8.0;
     }
 
     if let Some(Widget::Button(button)) = dialog.get_widget_mut(IID_BTN_OK) {
         button.x = screen_size.x * 4.0 / 5.0 - button.width / 2.0;
+        button.y = 8.0;
     }
 
     let mut response_create_button = None;
@@ -116,24 +122,26 @@ pub fn ui_character_select_system(
             character_list.characters.len() < game_data.character_select_positions.len()
         })
     {
-        commands
-            .entity(query_camera.single())
-            .insert(CameraAnimation::once(
-                asset_server.load("3DDATA/TITLE/CAMERA01_CREATE01.ZMO"),
-            ));
+        if let Ok(camera_entity) = query_camera.get_single() {
+            commands
+                .entity(camera_entity)
+                .insert(CameraAnimation::once(
+                    asset_server.load("3DDATA/TITLE/CAMERA01_CREATE01.ZMO"),
+                ));
+        }
 
         *character_select_state = CharacterSelectState::CharacterCreate;
     }
 
     if response_delete_button.map_or(false, |r| r.clicked()) {
-        character_select_events.send(CharacterSelectEvent::DeleteSelected);
+        character_select_events.write(CharacterSelectEvent::DeleteSelected);
     }
 
     if response_ok_button.map_or(false, |r| r.clicked()) {
-        character_select_events.send(CharacterSelectEvent::PlaySelected);
+        character_select_events.write(CharacterSelectEvent::PlaySelected);
     }
 
     if response_cancel_button.map_or(false, |r| r.clicked()) {
-        character_select_events.send(CharacterSelectEvent::Disconnect);
+        character_select_events.write(CharacterSelectEvent::Disconnect);
     }
 }

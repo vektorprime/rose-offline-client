@@ -1,6 +1,5 @@
 use bevy::{
     color::{Srgba, Alpha},
-    hierarchy::BuildChildren,
     math::Vec3,
     prelude::{
         AlphaMode, Assets, ButtonInput, Camera, Camera3d, Color, Commands, GlobalTransform,
@@ -78,7 +77,9 @@ pub fn ui_debug_physics_system(
     if !ui_state_debug_windows.debug_ui_open {
         return;
     }
-    let window = query_primary_window.single();
+    let Ok(window) = query_primary_window.get_single() else {
+        return;
+    };
 
     egui::Window::new("Physics")
         .open(&mut ui_state_debug_windows.physics_open)
@@ -152,7 +153,9 @@ pub fn ui_debug_physics_system(
 
         let cursor_position = window.cursor_position();
         if let Some(cursor_position) = cursor_position {
-            let (camera, camera_transform) = query_camera.single();
+            let Ok((camera, camera_transform)) = query_camera.get_single() else {
+                return;
+            };
 
             if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
                 if let Some((_, distance)) = rapier_context.cast_ray(

@@ -87,7 +87,7 @@ fn ui_add_store_item_slot(
     if is_sell_item && response.double_clicked() {
         let item = item.clone();
 
-        message_box_events.send(MessageBoxEvent::Show {
+        message_box_events.write(MessageBoxEvent::Show {
             message: format!(
                 "Are you sure you want to buy {} for {} Zuly?",
                 item_data.as_ref().map(|x| x.name).unwrap_or(""),

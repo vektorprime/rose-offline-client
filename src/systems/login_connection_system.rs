@@ -93,7 +93,7 @@ pub fn login_connection_system(
                 port,
             }) => {
                 if let Some(account) = account.as_ref() {
-                    network_events.send(NetworkEvent::ConnectWorld {
+                    network_events.write(NetworkEvent::ConnectWorld {
                         ip,
                         port,
                         packet_codec_seed,

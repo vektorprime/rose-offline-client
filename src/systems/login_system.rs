@@ -47,7 +47,7 @@ pub fn login_state_enter_system(
     commands.insert_resource(LoginState::Input);
     // log::info!("[LOGIN SYSTEM] LoginState::Input inserted");
 
-    loaded_zone.send(LoadZoneEvent::new(ZoneId::new(4).unwrap()));
+    loaded_zone.write(LoadZoneEvent::new(ZoneId::new(4).unwrap()));
     // log::info!("[LOGIN SYSTEM] LoadZoneEvent sent for zone 4");
 }
 
@@ -120,7 +120,7 @@ pub fn login_event_system(
                         password: password.clone(),
                     });
 
-                    network_events.send(NetworkEvent::ConnectLogin {
+                    network_events.write(NetworkEvent::ConnectLogin {
                         ip: server_configuration.ip.clone(),
                         port: server_configuration.port.parse::<u16>().unwrap_or(29000),
                     });

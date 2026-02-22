@@ -2,7 +2,7 @@ use bevy::{
     math::Vec3,
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Changed, Commands, DespawnRecursiveExt, Entity, Query, Res, ResMut,
+        AssetServer, Assets, Changed, Commands, Entity, Query, Res, ResMut,
         Transform,
     },
     render::{
@@ -64,13 +64,13 @@ pub fn npc_model_update_system(
 
             // Despawn model parts
             for part_entity in previous_npc_model.model_parts.drain(..) {
-                commands.entity(part_entity).despawn_recursive();
+                commands.entity(part_entity).despawn();
             }
 
             // Despawn model skeleton
             if let Some(current_skinned_mesh) = current_skinned_mesh.as_mut() {
                 for bone_entity in current_skinned_mesh.joints.drain(..) {
-                    commands.entity(bone_entity).despawn_recursive();
+                    commands.entity(bone_entity).despawn();
                 }
             }
 

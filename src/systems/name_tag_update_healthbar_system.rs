@@ -1,12 +1,12 @@
-use bevy::prelude::{Entity, Parent, Query};
+use bevy::prelude::{ChildOf, Entity, Query};
 
 use rose_game_common::components::{AbilityValues, HealthPoints};
 
 use crate::{components::NameTagHealthbarForeground, render::WorldUiRect};
 
 pub fn name_tag_update_healthbar_system(
-    mut query_nametag_healthbar: Query<(&Parent, &NameTagHealthbarForeground, &mut WorldUiRect)>,
-    query_parent: Query<&Parent>,
+    mut query_nametag_healthbar: Query<(&ChildOf, &NameTagHealthbarForeground, &mut WorldUiRect)>,
+    query_parent: Query<&ChildOf>,
     query_health: Query<(&HealthPoints, &AbilityValues)>,
 ) {
     for (parent, name_tag_healthbar_fg, mut rect) in query_nametag_healthbar.iter_mut() {

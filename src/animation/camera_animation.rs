@@ -40,8 +40,9 @@ pub fn camera_animation_system(
 
         let zmo_handle = camera_animation.motion();
         let Some(zmo_asset) = motion_assets.get(zmo_handle) else {
+            let load_state = asset_server.get_load_state(zmo_handle);
             if matches!(
-                asset_server.get_load_state(zmo_handle),
+                load_state,
                 Some(LoadState::Failed(_))
             ) {
                 // If the asset has failed to load, mark the animation as completed
@@ -57,6 +58,7 @@ pub fn camera_animation_system(
         let (Some(mut transform), Some(mut projection)) = (transform, projection) else {
             continue;
         };
+        
         let current_frame_fract = animation.current_frame_fract();
         let current_frame_index = animation.current_frame_index();
         let next_frame_index = animation.next_frame_index();
@@ -90,7 +92,8 @@ pub fn camera_animation_system(
         );
 
         if let (Some(eye), Some(center), Some(up)) = (eye, center, up) {
-            *transform = Transform::from_translation(eye).looking_at(center, up);
+            let new_transform = Transform::from_translation(eye).looking_at(center, up);
+            *transform = new_transform;
         }
 
         if let Some(fov_near_far) = fov_near_far {

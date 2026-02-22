@@ -4,8 +4,10 @@ use bevy::{
         Assets, Commands, Entity, EventWriter, Query, Res, State, Time, Transform, With,
     },
 };
-use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter, ReadDefaultRapierContext};
+use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter};
+use bevy_rapier3d::plugin::context::systemparams::ReadRapierContext;
 use bevy_rapier3d::geometry::ShapeCastOptions;
+use bevy_rapier3d::rapier::prelude::Shape;
 
 use rose_game_common::messages::client::ClientMessage;
 
@@ -27,11 +29,14 @@ pub fn collision_height_only_system(
         (Entity, &mut Position, &mut Transform),
         With<CollisionHeightOnly>,
     >,
-    rapier_context: ReadDefaultRapierContext,
+    rapier_context: ReadRapierContext,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     time: Res<Time>,
 ) {
+    let Ok(rapier_context) = rapier_context.single() else {
+        return;
+    };
     let current_zone = if let Some(current_zone) = current_zone {
         current_zone
     } else {
@@ -46,10 +51,10 @@ pub fn collision_height_only_system(
             log::warn!("[NPC_TERRAIN_DIAG] collision_height_only_system: Zone data not loaded yet!");
             return;
         };
-
+    
     for (entity, mut position, mut transform) in query_collision_entity.iter_mut() {
         // Get terrain height from heightmap
-        let terrain_height = current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
+        let terrain_height: f32 = current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
         
         // Cast ray downward to detect collision objects (bridges, platforms, etc.)
         let ray_origin = Vec3::new(
@@ -60,7 +65,7 @@ pub fn collision_height_only_system(
         let ray_direction = Vec3::new(0.0, -1.0, 0.0);
         let max_fall_distance = 100.0; // Reduced from 10000.0 since entities now spawn at terrain height
         
-        let collision_height = if let Some((_hit_entity, distance)) = rapier_context.cast_ray(
+        let collision_height: Option<f32> = if let Some((_hit_entity, distance)) = rapier_context.cast_ray(
             ray_origin,
             ray_direction,
             max_fall_distance,
@@ -110,7 +115,7 @@ pub fn collision_player_system_join_zone(
         (&mut Position, &mut Transform),
         With<CollisionPlayer>,
     >,
-    _rapier_context: ReadDefaultRapierContext,
+    _rapier_context: ReadRapierContext,
     _current_zone: Option<Res<CurrentZone>>,
     _zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     _app_state_current: Res<State<AppState>>,
@@ -142,10 +147,13 @@ pub fn collision_player_system(
     query_collider_parent: Query<&ColliderParent>,
     current_zone: Option<Res<CurrentZone>>,
     game_connection: Option<Res<GameConnection>>,
-    rapier_context: ReadDefaultRapierContext,
+    rapier_context: ReadRapierContext,
     time: Res<Time>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
 ) {
+    let Ok(rapier_context) = rapier_context.single() else {
+        return;
+    };
     let current_zone = if let Some(current_zone) = current_zone {
         current_zone
     } else {
@@ -172,12 +180,13 @@ pub fn collision_player_system(
         if translation_delta.length() > 0.00001 {
             let cast_origin = transform.translation + Vec3::new(0.0, 1.2, 0.0);
             let cast_direction = translation_delta.normalize();
+            let ball_collider = Collider::ball(collider_radius);
 
             if let Some((_, distance)) = rapier_context.cast_shape(
                 cast_origin + cast_direction * collider_radius,
                 Quat::default(),
                 cast_direction,
-                &Collider::ball(collider_radius),
+                <&dyn Shape>::from(&ball_collider),
                 ShapeCastOptions {
                     max_time_of_impact: translation_delta.length(),
                     target_distance: 0.0,
@@ -219,7 +228,7 @@ pub fn collision_player_system(
         let ray_direction = Vec3::new(0.0, -1.0, 0.0);
         let max_fall_distance = 10000.0;
         
-        let collision_height = if let Some((_hit_entity, distance)) = rapier_context.cast_ray(
+        let collision_height: Option<f32> = if let Some((_hit_entity, distance)) = rapier_context.cast_ray(
             ray_origin,
             ray_direction,
             max_fall_distance,
@@ -259,14 +268,15 @@ pub fn collision_player_system(
         position.z = transform.translation.y * 100.0;
 
         // Check if we are now colliding with any warp / event object
-        rapier_context.intersections_with_shape(
+        let ball_collider = Collider::ball(1.0);
+        rapier_context.intersect_shape(
             Vec3::new(
                 position.x / 100.0,
                 position.z / 100.0 + 1.0,
                 -position.y / 100.0,
             ),
             Quat::default(),
-            &Collider::ball(1.0),
+            <&dyn Shape>::from(&ball_collider),
             QueryFilter::new().groups(CollisionGroups::new(
                 Group::all(),
                 COLLISION_GROUP_ZONE_EVENT_OBJECT | COLLISION_GROUP_ZONE_WARP_OBJECT,
@@ -279,7 +289,7 @@ pub fn collision_player_system(
                 if let Ok(mut hit_event_object) = query_event_object.get_mut(hit_entity) {
                     if time.elapsed().as_secs_f64() - hit_event_object.last_collision > 5.0 {
                         if !hit_event_object.quest_trigger_name.is_empty() {
-                            quest_trigger_events.send(QuestTriggerEvent::DoTrigger(
+                            quest_trigger_events.write(QuestTriggerEvent::DoTrigger(
                                 hit_event_object.quest_trigger_name.as_str().into(),
                             ));
                         }

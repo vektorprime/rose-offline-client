@@ -334,7 +334,7 @@ pub fn update_bird_movement_system(
         
         // Apply to child mesh
         if let Ok(children) = children_query.get(bird_entity) {
-            for &child in children.iter() {
+            for child in children.iter() {
                 if let Ok(mut mesh_transform) = mesh_query.get_mut(child) {
                     mesh_transform.scale.y = flap_scale;
                     mesh_transform.translation.y = bob_offset;

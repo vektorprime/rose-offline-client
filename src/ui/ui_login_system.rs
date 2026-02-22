@@ -57,21 +57,21 @@ pub fn ui_login_system(
     //);
 
     let dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_login) {
-        //log::debug!("[UI LOGIN] Dialog found, loaded: {}, widget count: {}", dialog.loaded, dialog.widgets.len());
+        //log::info!("[UI LOGIN] Dialog found, loaded: {}, widget count: {}", dialog.loaded, dialog.widgets.len());
         
         // Only render if dialog is fully loaded (widgets have been processed)
         // This requires ui_resources.loaded_all_textures to be true first
         if !dialog.loaded {
-            //log::warn!(
-            //    "[UI LOGIN] Dialog not loaded yet - waiting for textures (loaded_all_textures: {})",
-            //    ui_resources.loaded_all_textures
-            //);
+            log::warn!(
+                "[UI LOGIN] Dialog not loaded yet - waiting for textures (loaded_all_textures: {})",
+                ui_resources.loaded_all_textures
+            );
             return;
         }
         
         dialog
     } else {
-        //log::warn!("[UI LOGIN] Dialog asset not found - UI will not render!");
+        log::warn!("[UI LOGIN] Dialog asset not found - UI will not render!");
         return;
     };
 
@@ -162,7 +162,7 @@ pub fn ui_login_system(
             }
         } else {
             //log::debug!("[UI LOGIN] Sending LoginEvent");
-            login_events.send(LoginEvent::Login {
+            login_events.write(LoginEvent::Login {
                 username: ui_state.username.clone(),
                 password: ui_state.password.clone(),
             });
@@ -170,6 +170,6 @@ pub fn ui_login_system(
     }
 
     if response_cancel.map_or(false, |r| r.clicked()) {
-        exit_events.send(AppExit::Success);
+        exit_events.write(AppExit::Success);
     }
 }

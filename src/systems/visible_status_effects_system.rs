@@ -1,5 +1,4 @@
 use bevy::{
-    hierarchy::{BuildChildren, DespawnRecursiveExt},
     prelude::{
         Changed, Commands, ViewVisibility, InheritedVisibility, Entity, EventWriter, GlobalTransform, Query, Res,
         Transform, Visibility,
@@ -36,7 +35,7 @@ pub fn visible_status_effects_system(
 
                     commands
                         .entity(*visible_status_effect_entity)
-                        .despawn_recursive();
+                        .despawn();
                     *visible_status_effect = None;
                 }
 
@@ -57,7 +56,7 @@ pub fn visible_status_effects_system(
                             ))
                             .id();
 
-                        spawn_effect_events.send(SpawnEffectEvent::InEntity(
+                        spawn_effect_events.write(SpawnEffectEvent::InEntity(
                             effect_entity,
                             SpawnEffectData::with_file_id(effect_file_id).manual_despawn(true),
                         ));
@@ -69,7 +68,7 @@ pub fn visible_status_effects_system(
             } else if let Some((_, visible_status_effect_entity)) = visible_status_effect.take() {
                 commands
                     .entity(visible_status_effect_entity)
-                    .despawn_recursive();
+                    .despawn();
             }
         }
     }

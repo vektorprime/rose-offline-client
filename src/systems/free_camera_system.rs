@@ -5,7 +5,7 @@ use bevy::{
     },
     math::{Quat, Vec2, Vec3},
     prelude::{
-        Component, EventReader, KeyCode, Local, MouseButton, Query, Res, Time, Transform, With,
+        BevyError, Component, EventReader, KeyCode, Local, MouseButton, Query, Res, Time, Transform, With,
     },
     window::{CursorGrabMode, PrimaryWindow, Window},
 };
@@ -55,13 +55,13 @@ pub fn free_camera_system(
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut query_window: Query<&mut Window, With<PrimaryWindow>>,
     mut egui_ctx: EguiContexts,
-) {
+) -> Result<(), BevyError> {
     // Log camera system execution once per second to avoid spam
     //if time.elapsed().as_secs_f32() % 1.0 < time.delta().as_secs_f32() {
     //    log::info!("[CAMERA] Free camera system running");
     //}
     let Ok(mut window) = query_window.get_single_mut() else {
-        return;
+        return Ok(());
     };
 
     let (mut free_camera, mut camera_transform) = if let Ok((a, b)) = query.get_single_mut() {
@@ -78,7 +78,7 @@ pub fn free_camera_system(
             control_state.is_dragging = false;
         }
 
-        return;
+        return Ok(());
     };
 
     let allow_mouse_input = control_state.is_dragging || !egui_ctx.ctx_mut().wants_pointer_input();
@@ -215,4 +215,5 @@ pub fn free_camera_system(
     //        yaw_pitch.yaw_degrees,
     //        yaw_pitch.pitch_degrees);
     //}
+    Ok(())
 }

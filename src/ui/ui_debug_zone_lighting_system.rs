@@ -1,5 +1,5 @@
 use bevy::{
-    core_pipeline::bloom::BloomSettings,
+    core_pipeline::bloom::Bloom,
     prelude::{Camera, Query, ResMut},
 };
 use bevy_egui::{egui, EguiContexts};
@@ -10,7 +10,7 @@ pub fn ui_debug_zone_lighting_system(
     mut egui_context: EguiContexts,
     mut ui_state_debug_windows: ResMut<UiStateDebugWindows>,
     mut zone_lighting: ResMut<ZoneLighting>,
-    mut query_camera: Query<(&mut Camera, &mut BloomSettings)>,
+    mut query_camera: Query<(&mut Camera, Option<&mut Bloom>)>,
 ) {
     if !ui_state_debug_windows.debug_ui_open {
         return;
@@ -113,7 +113,8 @@ pub fn ui_debug_zone_lighting_system(
 
             ui.separator();
 
-            if let Ok((mut camera, mut bloom_settings)) = query_camera.get_single_mut() {
+            if let Ok((mut camera, bloom_settings_opt)) = query_camera.get_single_mut() {
+                if let Some(mut bloom_settings) = bloom_settings_opt {
                 egui::Grid::new("bloom_settings")
                     .num_columns(2)
                     .show(ui, |ui| {
@@ -206,6 +207,7 @@ pub fn ui_debug_zone_lighting_system(
                         );
                         ui.end_row();
                     });
+                }
             }
         });
 }

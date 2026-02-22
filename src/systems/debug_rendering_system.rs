@@ -13,6 +13,8 @@ use crate::render::{
 };
 use crate::resources::RenderExtractionDiagnostics;
 
+use log::{info, warn, error};
+
 /// Debug system to log entity visibility information
 pub fn debug_entity_visibility(
     query: Query<(
@@ -618,7 +620,7 @@ pub fn visibility_state_diagnostics(
         &ViewVisibility,
         &Visibility,
     )>,
-    parents: Query<&Parent>,
+    parents: Query<&ChildOf>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
@@ -1173,7 +1175,7 @@ pub fn zone_entity_visibility_diagnostics(
         let has_no_frustum_culling = world.get::<bevy::render::view::NoFrustumCulling>(entity).is_some();
         let aabb = world.get::<Aabb>(entity);
         let has_aabb = aabb.is_some();
-        let parent = world.get::<Parent>(entity);
+        let parent = world.get::<ChildOf>(entity);
         let render_layers = world.get::<bevy::render::view::RenderLayers>(entity);
         let has_mesh = world.get::<Mesh3d>(entity).is_some();
         let has_computed_visibility = world.get::<bevy::render::view::ViewVisibility>(entity).is_some();
@@ -1182,7 +1184,7 @@ pub fn zone_entity_visibility_diagnostics(
         info!("[ZONE ENTITY] Zone entity {:?}:", entity);
         info!("[ZONE ENTITY]   Has ViewVisibility component: {}", has_computed_visibility);
         info!("[ZONE ENTITY]   Has Mesh: {}", has_mesh);
-        info!("[ZONE ENTITY]   Parent: {:?}", parent.map(|p: &Parent| p.get()));
+        info!("[ZONE ENTITY]   Parent: {:?}", parent.map(|p: &ChildOf| p.get()));
         info!("[ZONE ENTITY]   Zone ID: {}", zone.id.get());
         info!("[ZONE ENTITY]   Local Position: ({:.2}, {:.2}, {:.2})", position.x, position.y, position.z);
         info!("[ZONE ENTITY]   Global Position: ({:.2}, {:.2}, {:.2})", global_position.x, global_position.y, global_position.z);
@@ -1246,7 +1248,7 @@ pub fn parent_child_visibility_diagnostics(
     )>,
     children: Query<(
         Entity,
-        &Parent,
+        &ChildOf,
         &ViewVisibility,
         &Visibility,
         &InheritedVisibility,
@@ -1440,7 +1442,7 @@ pub fn diagnose_render_world_extraction(
 /// Checks if render queues (Transparent3d) have items queued for rendering
 /// Empty render queues indicate extraction failure or culling issues
 pub fn diagnose_render_phase(
-    views: Query<Entity>,
+    views: Query<&bevy::render::view::ExtractedView>,
     transparent_3d: Res<ViewSortedRenderPhases<Transparent3d>>,
     mut frame_count: Local<u32>,
 ) {
@@ -1458,8 +1460,8 @@ pub fn diagnose_render_phase(
     let mut transparent_count = 0;
     
     // Count items in each view's render phases
-    for view_entity in views.iter() {
-        if let Some(transparent_phase) = transparent_3d.get(&view_entity) {
+    for view in views.iter() {
+        if let Some(transparent_phase) = transparent_3d.get(&view.retained_view_entity) {
             transparent_count += transparent_phase.items.len();
         }
     }

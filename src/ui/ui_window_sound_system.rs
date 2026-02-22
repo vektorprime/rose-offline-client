@@ -24,7 +24,7 @@ pub fn ui_window_sound_system(
                     };
 
                     if let Some(sound_id) = sound_id {
-                        ui_sound_events.send(UiSoundEvent::new(sound_id));
+                        ui_sound_events.write(UiSoundEvent::new(sound_id));
                     }
                 }
 

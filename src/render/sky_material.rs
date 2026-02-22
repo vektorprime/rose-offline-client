@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{Asset, Handle, load_internal_asset},
+    asset::{Asset, Handle, load_internal_asset, weak_handle},
     pbr::{MaterialPipeline, MeshPipelineKey, MeshMaterial3d},
     prelude::{App, Image, Material, MaterialPlugin, Mesh, Plugin, Assets, Res, ResMut, Query},
     reflect::TypePath,
@@ -14,7 +14,7 @@ use bevy::{
 use crate::resources::{ZoneTime, ZoneTimeState};
 
 pub const SKY_MATERIAL_SHADER_HANDLE_TYPED: Handle<Shader> =
-    Handle::weak_from_u128(0xadc5cbbc7a53fe);
+    weak_handle!("0adc5cbb-c7a5-3fe0-0000-000000000000");
 
 #[derive(Default)]
 pub struct SkyMaterialPlugin {

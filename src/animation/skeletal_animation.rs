@@ -43,8 +43,15 @@ pub fn skeletal_animation_system(
     game_data: Res<GameData>,
     time: Res<Time>,
 ) {
+    let mut anim_count = 0;
+    let mut completed_count = 0;
+    let mut no_skinned_mesh_count = 0;
+    
     for (entity, mut skeletal_animation, skinned_mesh) in query_animations.iter_mut() {
+        anim_count += 1;
+        
         if skeletal_animation.completed() {
+            completed_count += 1;
             continue;
         }
 
@@ -69,14 +76,16 @@ pub fn skeletal_animation_system(
         animation.iter_animation_events(zmo_asset, |event_id| {
             if let Some(flags) = game_data.animation_event_flags.get(event_id as usize) {
                 if !flags.is_empty() {
-                    animation_frame_events.send(AnimationFrameEvent::new(entity, *flags));
+                    animation_frame_events.write(AnimationFrameEvent::new(entity, *flags));
                 }
             }
         });
 
         let Some(skinned_mesh) = skinned_mesh else {
+            no_skinned_mesh_count += 1;
             continue;
         };
+        
         let current_frame_fract = animation.current_frame_fract();
         let current_frame_index = animation.current_frame_index();
         let next_frame_index = animation.next_frame_index();

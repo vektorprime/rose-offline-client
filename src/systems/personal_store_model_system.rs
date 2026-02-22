@@ -1,5 +1,4 @@
 use bevy::{
-    hierarchy::DespawnRecursiveExt,
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{AssetServer, Assets, Changed, Commands, Entity, Query, Res, ResMut},
 };
@@ -37,7 +36,7 @@ pub fn personal_store_model_system(
                 // Despawn previous model
                 commands
                     .entity(personal_store_model.model)
-                    .despawn_recursive();
+                    .despawn();
             }
 
             // Spawn new model
@@ -61,7 +60,7 @@ pub fn personal_store_model_system(
             // Despawn and remove model
             commands
                 .entity(personal_store_model.model)
-                .despawn_recursive();
+                .despawn();
             commands
                 .entity(entity)
                 .remove::<PersonalStoreModel>()
