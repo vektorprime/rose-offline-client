@@ -55,16 +55,19 @@ pub fn spawn_birds_on_zone_system(
         
         event_count += 1;
         
-        // Get zone center from query - zone should exist now since ZoneEvent::Loaded
+        // Get zone entity from query - zone should exist now since ZoneEvent::Loaded
         // is sent AFTER the zone entity is spawned
-        let (zone_entity, zone_transform) = zone_query.iter().next()
-            .map(|(e, t)| (e, t.translation))
-            .unwrap_or((Entity::PLACEHOLDER, Vec3::ZERO));
+        // NOTE: We use Vec3::ZERO as the spawn center because birds will be parented
+        // to the zone entity. If we used zone_transform.translation, birds would be
+        // positioned at double the offset (zone pos + local pos) after parenting.
+        let zone_entity = zone_query.iter().next()
+            .map(|(e, _)| e)
+            .unwrap_or(Entity::PLACEHOLDER);
         
         log::info!(
-            "[BIRD] Received ZoneEvent::Loaded for zone {}, spawning birds at zone center {:?}",
+            "[BIRD] Received ZoneEvent::Loaded for zone {}, spawning birds parented to zone entity {:?}",
             zone_id.get(),
-            zone_transform
+            zone_entity
         );
         
         spawn_birds(
@@ -72,7 +75,7 @@ pub fn spawn_birds_on_zone_system(
             &mut meshes,
             &mut materials,
             &settings,
-            zone_transform,
+            Vec3::ZERO,  // Use zero since birds are parented to zone (zone-local coordinates)
             zone_entity,
         );
     }
@@ -199,53 +202,71 @@ fn spawn_birds(
     log::info!("[BIRD] Spawned {} birds total", settings.birds_per_zone);
 }
 
-/// Creates a simple V-shaped bird mesh
+/// Creates a simple V-shaped bird mesh with 3D volume
 fn create_bird_mesh(meshes: &mut ResMut<Assets<Mesh>>) -> Handle<Mesh> {
-    // Simple triangular bird shape
+    // Simple triangular bird shape with 3D volume
     // Vertices form a V-shape (bird silhouette from below)
     // Bird body is along Z axis, with nose at +Z
+    // NOTE: Added Y variation to create 3D volume for visibility from all angles
     
     let vertices: Vec<[f32; 3]> = vec![
-        // Body center
-        [0.0, 0.0, 0.0],
+        // Body center (slightly raised)
+        [0.0, 0.05, 0.0],
         // Left wing tip
         [-0.3, 0.0, -0.15],
-        // Left wing mid
-        [-0.15, 0.0, 0.05],
-        // Nose
-        [0.0, 0.0, 0.2],
-        // Right wing mid
-        [0.15, 0.0, 0.05],
+        // Left wing mid (raised)
+        [-0.15, 0.08, 0.05],
+        // Nose (raised)
+        [0.0, 0.1, 0.2],
+        // Right wing mid (raised)
+        [0.15, 0.08, 0.05],
         // Right wing tip
         [0.3, 0.0, -0.15],
+        // Bottom body center (for volume)
+        [0.0, -0.03, 0.0],
+        // Bottom nose
+        [0.0, -0.02, 0.15],
     ];
     
-    // Simple upward normals
+    // Normals for each vertex (calculated for proper lighting)
     let normals: Vec<[f32; 3]> = vec![
-        [0.0, 1.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],   // Body center
+        [0.0, 0.5, -0.5],  // Left wing tip
+        [0.0, 1.0, 0.0],   // Left wing mid
+        [0.0, 1.0, 0.5],   // Nose
+        [0.0, 1.0, 0.0],   // Right wing mid
+        [0.0, 0.5, -0.5],  // Right wing tip
+        [0.0, -1.0, 0.0],  // Bottom body center
+        [0.0, -1.0, 0.5],  // Bottom nose
     ];
     
     // UV coordinates
     let uvs: Vec<[f32; 2]> = vec![
-        [0.5, 0.5],
-        [0.0, 0.0],
-        [0.25, 0.5],
-        [0.5, 1.0],
-        [0.75, 0.5],
-        [1.0, 0.0],
+        [0.5, 0.5],   // Body center
+        [0.0, 0.0],   // Left wing tip
+        [0.25, 0.5],  // Left wing mid
+        [0.5, 1.0],   // Nose
+        [0.75, 0.5],  // Right wing mid
+        [1.0, 0.0],   // Right wing tip
+        [0.5, 0.3],   // Bottom body center
+        [0.5, 0.7],   // Bottom nose
     ];
     
-    // Triangle indices
+    // Triangle indices - top surface and bottom surface for 3D volume
     let indices: Vec<u32> = vec![
+        // Top surface
         0, 1, 2,  // Left wing
         0, 2, 3,  // Left body
         0, 3, 4,  // Right body
         0, 4, 5,  // Right wing
+        // Bottom surface
+        6, 2, 1,  // Left wing bottom
+        6, 3, 2,  // Left body bottom
+        6, 4, 3,  // Right body bottom
+        6, 5, 4,  // Right wing bottom
+        // Nose cone (connect top to bottom)
+        3, 7, 6,  // Nose top to bottom
+        6, 7, 3,  // Reverse for back face
     ];
     
     let mut mesh = Mesh::new(

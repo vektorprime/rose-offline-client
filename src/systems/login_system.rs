@@ -1,6 +1,6 @@
 use bevy::{
     prelude::{
-        AssetServer, Camera3d, Commands, Entity, EventReader, EventWriter, Query, Res, ResMut, With,
+        AssetServer, Camera3d, Commands, Entity, EventReader, EventWriter, Handle, Query, Res, ResMut, With,
     },
     window::{CursorGrabMode, PrimaryWindow, Window},
 };
@@ -10,9 +10,9 @@ use rose_data::ZoneId;
 use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
-    animation::CameraAnimation,
+    animation::{CameraAnimation, ZmoAsset},
     events::{LoadZoneEvent, LoginEvent, NetworkEvent},
-    resources::{Account, LoginConnection, LoginState, ServerConfiguration, ServerList},
+    resources::{Account, LoginCameraAnimation, LoginConnection, LoginState, ServerConfiguration, ServerList},
     systems::{FreeCamera, OrbitCamera},
 };
 
@@ -21,6 +21,7 @@ pub fn login_state_enter_system(
     mut loaded_zone: EventWriter<LoadZoneEvent>,
     mut query_window: Query<&mut Window, With<PrimaryWindow>>,
     query_cameras: Query<Entity, With<Camera3d>>,
+    login_camera_animation: Option<Res<LoginCameraAnimation>>,
     asset_server: Res<AssetServer>,
 ) {
     // log::info!("[LOGIN SYSTEM] login_state_enter_system running");
@@ -31,14 +32,22 @@ pub fn login_state_enter_system(
         window.cursor_options.visible = true;
     }
 
-    // Reset camera
+    // Get the camera animation handle - either from the preloaded resource or load it directly
+    let camera_animation_handle: Handle<ZmoAsset> = login_camera_animation
+        .map(|res| res.handle.clone())
+        .unwrap_or_else(|| {
+            log::warn!("[LOGIN SYSTEM] LoginCameraAnimation resource not found, loading camera animation directly");
+            asset_server.load("3DDATA/TITLE/CAMERA01_INTRO01.ZMO")
+        });
+
+    // Reset camera using animation handle
     for entity in query_cameras.iter() {
         commands
             .entity(entity)
             .remove::<FreeCamera>()
             .remove::<OrbitCamera>()
             .insert(CameraAnimation::repeat(
-                asset_server.load("3DDATA/TITLE/CAMERA01_INTRO01.ZMO"),
+                camera_animation_handle.clone(),
                 None,
             ));
     }

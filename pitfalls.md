@@ -505,6 +505,39 @@ When porting custom shaders between Bevy versions, check the WGSL struct definit
 
 ---
 
+## Water Not Rendering After Bevy 0.16.1 Migration (Fixed 2026-02-22)
+
+### Problem
+Water was not loading/rendering at all in the game after upgrading from Bevy 0.15.4 to Bevy 0.16.1.
+
+### Root Cause
+Breaking API change in Bevy 0.16's `AsBindGroup` trait. The migration guide states:
+> "Bevy will now unconditionally call `AsBindGroup::unprepared_bind_group` for your materials, so you must no longer panic in that function. Instead, return the new `AsBindGroupError::CreateBindGroupDirectly` error, and Bevy will fall back to calling `AsBindGroup::as_bind_group` as before."
+
+### Solution
+Changed the return value in `unprepared_bind_group()` at [`src/render/water_material.rs:325`](src/render/water_material.rs:325):
+
+```rust
+// Before (broken - infinite retry loop):
+Err(AsBindGroupError::RetryNextUpdate)
+
+// After (fixed):
+Err(AsBindGroupError::CreateBindGroupDirectly)
+```
+
+### Why It Works
+`CreateBindGroupDirectly` tells Bevy "I implement `as_bind_group()` directly, call that instead." This allows the water material's custom bind group creation with texture arrays to work properly.
+
+### Files Modified
+- `src/render/water_material.rs` (line 325) - Changed `RetryNextUpdate` to `CreateBindGroupDirectly`
+
+### Lesson Learned
+When implementing custom materials with `AsBindGroup::as_bind_group()` override in Bevy 0.16+:
+1. Always return `Err(AsBindGroupError::CreateBindGroupDirectly)` from `unprepared_bind_group()` - this signals Bevy to use your custom `as_bind_group()` implementation
+2. Never return `RetryNextUpdate` from `unprepared_bind_group()` in Bevy 0.16+ - it causes an infinite retry loop since Bevy now calls this method unconditionally
+
+---
+
 ## Fish Not Appearing in Water (Fixed 2026-02-19)
 
 ### Problem

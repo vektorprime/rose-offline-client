@@ -21,23 +21,21 @@ impl NetworkThread {
 pub fn run_network_thread(
     mut control_rx: tokio::sync::mpsc::UnboundedReceiver<NetworkThreadMessage>,
 ) {
-    loop {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                loop {
-                    match control_rx.recv().await {
-                        Some(NetworkThreadMessage::RunProtocolClient(mut client)) => {
-                            tokio::spawn(async move {
-                                client.run_connection().await.ok();
-                            });
-                        }
-                        Some(NetworkThreadMessage::Exit) => return,
-                        None => return,
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            loop {
+                match control_rx.recv().await {
+                    Some(NetworkThreadMessage::RunProtocolClient(mut client)) => {
+                        tokio::spawn(async move {
+                            client.run_connection().await.ok();
+                        });
                     }
+                    Some(NetworkThreadMessage::Exit) => return,
+                    None => return,
                 }
-            })
-    }
+            }
+        })
 }

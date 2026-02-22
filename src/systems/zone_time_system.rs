@@ -1,7 +1,9 @@
 use bevy::{
+    ecs::change_detection::DetectChanges,
     ecs::prelude::{Res, ResMut},
     math::{Vec3, Vec4Swizzles},
     prelude::{Children, Entity, Query, Visibility, With},
+    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
 };
 
 use rose_data::{SkyboxState, WORLD_TICK_DURATION};
@@ -40,11 +42,12 @@ const VOLUMETRIC_EVENING_COLOR: Vec3 = Vec3::new(1.0, 0.7, 0.8);
 const VOLUMETRIC_NIGHT_COLOR: Vec3 = Vec3::new(0.3, 0.35, 0.5);
 
 // Volumetric fog density factors for time of day
-// Keep these LOW - volumetric fog should be subtle atmosphere, not heavy fog
-const VOLUMETRIC_MORNING_DENSITY: f32 = 0.03;
-const VOLUMETRIC_DAY_DENSITY: f32 = 0.02;
-const VOLUMETRIC_EVENING_DENSITY: f32 = 0.03;
-const VOLUMETRIC_NIGHT_DENSITY: f32 = 0.01; // Very light for clear night air
+// Tuned for visible light shafts while maintaining gameplay visibility
+// Higher values create more prominent god rays, lower values are more subtle
+const VOLUMETRIC_MORNING_DENSITY: f32 = 0.06;   // Enhanced morning mist effect
+const VOLUMETRIC_DAY_DENSITY: f32 = 0.05;       // Balanced for daytime atmosphere
+const VOLUMETRIC_EVENING_DENSITY: f32 = 0.06;   // Enhanced evening dust particles
+const VOLUMETRIC_NIGHT_DENSITY: f32 = 0.03;     // Subtle night haze
 
 // TODO: Now that we have Visibility::Inherited, this probably does not need to be recursive ?
 fn set_visible_recursive(
@@ -351,4 +354,101 @@ pub fn zone_time_system(
     }
 
     zone_time.time = day_time;
+}
+
+// Color grading temperature values for time-of-day
+// Positive = warmer (redder), Negative = cooler (bluer)
+const COLOR_GRADING_MORNING_TEMPERATURE: f32 = 0.15;  // Warm sunrise tones
+const COLOR_GRADING_DAY_TEMPERATURE: f32 = 0.0;       // Neutral daylight
+const COLOR_GRADING_EVENING_TEMPERATURE: f32 = 0.2;   // Warm sunset tones
+const COLOR_GRADING_NIGHT_TEMPERATURE: f32 = -0.1;    // Cool moonlight
+
+// Saturation values for time-of-day
+const COLOR_GRADING_MORNING_SATURATION: f32 = 1.15;   // Vibrant morning colors
+const COLOR_GRADING_DAY_SATURATION: f32 = 1.1;        // Slightly vibrant daytime
+const COLOR_GRADING_EVENING_SATURATION: f32 = 1.2;    // Rich sunset colors
+const COLOR_GRADING_NIGHT_SATURATION: f32 = 0.9;      // Muted night colors
+
+/// System to update color grading based on time-of-day
+/// This creates dynamic color adjustments for warmer tones at sunrise/sunset
+/// and cooler tones at night
+pub fn color_grading_time_of_day_system(
+    zone_time: Res<ZoneTime>,
+    mut query: Query<&mut ColorGrading>,
+) {
+    // Only update if zone_time has changed
+    if !zone_time.is_changed() {
+        return;
+    }
+
+    for mut color_grading in query.iter_mut() {
+        let (temperature, saturation) = match zone_time.state {
+            ZoneTimeState::Morning => {
+                // Transition from night to morning to day
+                let t = zone_time.state_percent_complete;
+                if t < 0.5 {
+                    // Night to morning
+                    let lerp_t = t * 2.0;
+                    (
+                        COLOR_GRADING_NIGHT_TEMPERATURE.lerp(COLOR_GRADING_MORNING_TEMPERATURE, lerp_t),
+                        COLOR_GRADING_NIGHT_SATURATION.lerp(COLOR_GRADING_MORNING_SATURATION, lerp_t),
+                    )
+                } else {
+                    // Morning to day
+                    let lerp_t = (t - 0.5) * 2.0;
+                    (
+                        COLOR_GRADING_MORNING_TEMPERATURE.lerp(COLOR_GRADING_DAY_TEMPERATURE, lerp_t),
+                        COLOR_GRADING_MORNING_SATURATION.lerp(COLOR_GRADING_DAY_SATURATION, lerp_t),
+                    )
+                }
+            }
+            ZoneTimeState::Day => {
+                (
+                    COLOR_GRADING_DAY_TEMPERATURE,
+                    COLOR_GRADING_DAY_SATURATION,
+                )
+            }
+            ZoneTimeState::Evening => {
+                // Transition from day to evening to night
+                let t = zone_time.state_percent_complete;
+                if t < 0.5 {
+                    // Day to evening
+                    let lerp_t = t * 2.0;
+                    (
+                        COLOR_GRADING_DAY_TEMPERATURE.lerp(COLOR_GRADING_EVENING_TEMPERATURE, lerp_t),
+                        COLOR_GRADING_DAY_SATURATION.lerp(COLOR_GRADING_EVENING_SATURATION, lerp_t),
+                    )
+                } else {
+                    // Evening to night
+                    let lerp_t = (t - 0.5) * 2.0;
+                    (
+                        COLOR_GRADING_EVENING_TEMPERATURE.lerp(COLOR_GRADING_NIGHT_TEMPERATURE, lerp_t),
+                        COLOR_GRADING_EVENING_SATURATION.lerp(COLOR_GRADING_NIGHT_SATURATION, lerp_t),
+                    )
+                }
+            }
+            ZoneTimeState::Night => {
+                (
+                    COLOR_GRADING_NIGHT_TEMPERATURE,
+                    COLOR_GRADING_NIGHT_SATURATION,
+                )
+            }
+        };
+
+        // Apply the time-of-day color grading adjustments
+        color_grading.global.temperature = temperature;
+        color_grading.global.post_saturation = saturation;
+
+        // Also adjust shadow lift based on time of day
+        // At night, lift shadows slightly to prevent crushed blacks
+        // During day, keep shadows more contrasty
+        let shadow_lift = match zone_time.state {
+            ZoneTimeState::Night => 0.05,
+            ZoneTimeState::Morning | ZoneTimeState::Evening => {
+                0.02.lerp(0.05, zone_time.state_percent_complete)
+            }
+            ZoneTimeState::Day => 0.02,
+        };
+        color_grading.shadows.lift = shadow_lift;
+    }
 }

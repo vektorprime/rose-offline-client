@@ -48,6 +48,14 @@ var<uniform> ambient_color: vec4<f32>;
 @group(2) @binding(4)
 var<uniform> diffuse_color: vec4<f32>;
 
+// Fog uniforms (passed from WaterMaterial struct, synced with zone lighting)
+struct FogUniforms {
+    fog_color: vec4<f32>,
+    fog_params: vec4<f32>,  // x = density, y = min_density, z = max_density, w = unused
+}
+@group(2) @binding(6)
+var<uniform> fog_uniforms: FogUniforms;
+
 // Water settings uniform (passed from WaterMaterial struct)
 // Layout matches WaterSettings struct in water_settings.rs
 struct WaterSettingsUniform {
@@ -335,6 +343,31 @@ fn apply_refraction(uv: vec2<f32>, normal: vec3<f32>, time: f32, refraction_stre
     return uv + animated_distortion;
 }
 
+// === ZONE FOG APPLICATION ===
+// Apply exponential fog from zone lighting to integrate water with the scene
+fn apply_zone_fog(fragment_color: vec3<f32>, world_position: vec4<f32>) -> vec3<f32> {
+    // Calculate view-space Z distance for fog
+    // view.position is camera position, so we compute distance from camera
+    let camera_to_fragment = world_position.xyz - view.world_position.xyz;
+    let view_z = length(camera_to_fragment);
+    
+    // Get fog parameters from uniforms (synced with zone lighting)
+    let fog_density = fog_uniforms.fog_params.x;
+    let fog_min_density = fog_uniforms.fog_params.y;
+    let fog_max_density = fog_uniforms.fog_params.z;
+    let fog_color = fog_uniforms.fog_color.rgb;
+    
+    // Calculate exponential fog amount
+    // Using the same formula as zone_lighting.wgsl for consistency
+    var fog_amount: f32 = clamp(1.0 - exp2(-fog_density * fog_density * view_z * view_z * 1.442695), 0.0, 1.0);
+    
+    // Clamp fog amount between min and max density
+    fog_amount = clamp(fog_amount, fog_min_density, fog_max_density);
+    
+    // Blend fragment color with fog color
+    return mix(fragment_color, fog_color, fog_amount);
+}
+
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
@@ -483,6 +516,10 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Use foam_intensity from settings
     final_color = mix(final_color, foam_color, total_foam * water_settings.foam_intensity);
     
+    // === APPLY ZONE FOG ===
+    // Apply fog from zone lighting to integrate water with the scene
+    final_color = apply_zone_fog(final_color, in.world_position);
+    
     // Base alpha from water texture
     let base_alpha = water_color.a;
     
@@ -495,6 +532,6 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let final_alpha = mix(clamped_base_alpha, 1.0, fresnel * 0.5) + total_foam * 0.2;
     
     // Final color with additive blending (handled by blend state in material)
-    // Note: Zone fog is not available since we can't access bind group 3
+    // Fog is now applied via fog_uniforms (binding 6)
     return vec4<f32>(final_color, saturate(final_alpha));
 }

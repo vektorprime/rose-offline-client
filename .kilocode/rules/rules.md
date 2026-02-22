@@ -38,3 +38,8 @@ If something is too difficult, break it down into as many steps as needed steps.
 ## Lessons Learned in pitfalls.md
 
 When you fix an issue AND the user confirms it's resolved, note the interaction and details in pitfalls.md so that future work can benefit from the lessons learned. Do not edit pitfalls.md until the user confirms the issue is fixed. Your notes should be short and concise.
+
+
+## Issue Tracking
+
+When working on an issue, note what you attempted in a .md file dedicated to the issue. This should be reviewed everytime context is compressed to prevent repeatedly trying the same thing. The file should be cleaned up when the issue is confirmed as fixed.

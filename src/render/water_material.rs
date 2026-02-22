@@ -91,6 +91,14 @@ pub struct WaterMaterial {
     pub diffuse_color: Vec4,
     /// Water rendering settings
     pub settings: WaterSettings,
+    /// Fog color for distance blending (from zone lighting)
+    pub fog_color: Vec4,
+    /// Fog density for exponential fog (from zone lighting)
+    pub fog_density: f32,
+    /// Fog minimum density (from zone lighting)
+    pub fog_min_density: f32,
+    /// Fog maximum density (from zone lighting)
+    pub fog_max_density: f32,
 }
 
 /// Default implementation for WaterMaterial
@@ -106,6 +114,11 @@ impl Default for WaterMaterial {
             diffuse_color: Vec4::new(0.8, 0.75, 0.7, 1.0),
             // Default water settings
             settings: WaterSettings::default(),
+            // Default fog settings (will be overridden by zone lighting)
+            fog_color: Vec4::new(0.2, 0.2, 0.2, 1.0),
+            fog_density: 0.0018,
+            fog_min_density: 0.0,
+            fog_max_density: 0.75,
         }
     }
 }
@@ -273,6 +286,20 @@ impl AsBindGroup for WaterMaterial {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
+        // Fog settings uniform buffer
+        // Layout: fog_color (vec4), fog_params (vec4: density, min_density, max_density, padding)
+        let fog_params = Vec4::new(
+            self.fog_density,
+            self.fog_min_density,
+            self.fog_max_density,
+            0.0, // padding
+        );
+        let fog_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("water_fog_buffer"),
+            contents: bytemuck::cast_slice(&[self.fog_color, fog_params]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
         // Create bind group entries
         let entries = vec![
             BindGroupEntry {
@@ -299,6 +326,10 @@ impl AsBindGroup for WaterMaterial {
                 binding: 5,
                 resource: settings_buffer.as_entire_binding(),
             },
+            BindGroupEntry {
+                binding: 6,
+                resource: fog_buffer.as_entire_binding(),
+            },
         ];
 
         // Create bind group
@@ -322,7 +353,7 @@ impl AsBindGroup for WaterMaterial {
         _bindless: bool,
     ) -> Result<UnpreparedBindGroup<Self::Data>, AsBindGroupError> {
         // This should never be called since we override as_bind_group
-        Err(AsBindGroupError::RetryNextUpdate)
+        Err(AsBindGroupError::CreateBindGroupDirectly)
     }
 
     fn bind_group_layout_entries(
@@ -384,6 +415,17 @@ impl AsBindGroup for WaterMaterial {
             // Water settings uniform (2x vec4 for 7 parameters + padding)
             BindGroupLayoutEntry {
                 binding: 5,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            // Fog settings uniform (2x vec4: fog_color + fog_params)
+            BindGroupLayoutEntry {
+                binding: 6,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,

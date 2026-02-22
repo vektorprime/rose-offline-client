@@ -7,9 +7,10 @@ use bevy::{
         asset::AssetApp,
         core_pipeline::bloom::Bloom,
         core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
-        core_pipeline::experimental::taa::{TemporalAntiAliasPlugin, TemporalAntiAliasing},
         core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
+        core_pipeline::smaa::Smaa,
         pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial, MeshMaterial3d, VolumetricFog, VolumetricLight, FogVolume, ShadowFilteringMethod, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel},
+        render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
         prelude::{
             apply_deferred, default, in_state, not, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
             ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoScheduleConfigs,
@@ -96,7 +97,7 @@ use render::{
 };
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
-    AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, GameData, NameTagSettings,
+    AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, GameData, LoginCameraAnimation, NameTagSettings,
     NetworkThread, NetworkThreadMessage, RenderConfiguration, RenderExtractionDiagnostics, SelectedTarget, ServerConfiguration,
     SoundCache, SoundSettings, SpecularTexture, VfsResource, WaterSettings, WorldTime, ZoneTime,
 };
@@ -127,7 +128,8 @@ use systems::{
     status_effect_system, system_func_event_system, update_position_system, use_item_event_system,
     vehicle_model_system, vehicle_sound_system, visible_status_effects_system,
     world_connection_system, world_time_system, zone_time_system, zone_viewer_enter_system,
-    DebugInspectorPlugin, FishPlugin, BirdPlugin,
+    color_grading_time_of_day_system,
+    DebugInspectorPlugin, FishPlugin, BirdPlugin, DirtDashPlugin,
 };
 use ui::{
     load_dialog_sprites_system, ui_bank_system, ui_character_create_system,
@@ -799,9 +801,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             // OPTIONAL: RenderDiagnosticsPlugin is for debugging rendering issues - keep disabled to reduce log noise
             // RenderDiagnosticsPlugin,
 
-            // TAA plugin for temporal anti-aliasing and temporal shadow filtering
-            TemporalAntiAliasPlugin,
-
             // Fish in water feature
             FishPlugin,
 
@@ -810,6 +809,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
             // Weather season system
             systems::season::SeasonPlugin,
+
+            // Dirt/dash effect when characters run
+            DirtDashPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -964,6 +966,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             system_func_event_system,
             load_dialog_sprites_system,
             zone_time_system,
+            color_grading_time_of_day_system,
             directional_light_system,
         ),
     );
@@ -1556,6 +1559,14 @@ fn load_common_game_data(
         image: asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS"),
     });
 
+    // Preload the login screen camera animation to prevent race condition
+    // where camera shows wrong angle on initial load
+    let login_camera_animation_handle = asset_server.load("3DDATA/TITLE/CAMERA01_INTRO01.ZMO");
+    commands.insert_resource(LoginCameraAnimation {
+        handle: login_camera_animation_handle,
+    });
+    info!("[load_common_game_data] Preloaded login camera animation asset");
+
     commands.insert_resource(
         ModelLoader::new(
             vfs_resource.vfs.clone(),
@@ -1592,13 +1603,12 @@ fn load_common_game_data(
         bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
         // Add Bloom - enhances the depth of field effect visibility
         bevy::core_pipeline::bloom::Bloom::NATURAL,
-        // Shadow filtering - best quality with temporal filtering
-        ShadowFilteringMethod::Temporal,
-        // TAA for temporal stability and smoother shadow edges
-        TemporalAntiAliasing::default(),
-        // Prepasses required for TAA (automatically added by #[require] attribute, but explicit for clarity)
+        // Shadow filtering - Gaussian (non-temporal, works with SMAA)
+        ShadowFilteringMethod::Gaussian,
+        // SMAA for high-quality anti-aliasing without ghosting artifacts
+        Smaa::default(),
+        // Prepasses for depth (required for some effects)
         DepthPrepass,
-        MotionVectorPrepass,
     )).id();
     // Insert additional components separately to avoid tuple size limit
     commands.entity(camera_entity).insert((
@@ -1625,12 +1635,46 @@ fn load_common_game_data(
             quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium,
             constant_object_thickness: 0.25,  // Adjust if AO is too strong/weak
         },
+        // Color Grading - filmic color correction for improved visual tone mapping
+        // Provides exposure, contrast, saturation, and color tint controls
+        ColorGrading {
+            global: ColorGradingGlobal {
+                exposure: 0.0,            // EV offset (0.0 = no change)
+                temperature: 0.0,         // Warm/cooler (positive = warmer/redder)
+                tint: 0.0,                // Green/magenta shift
+                hue: 0.0,                 // Hue rotation in radians
+                post_saturation: 1.1,     // Slightly increased saturation for vibrant colors
+                midtones_range: 0.2..0.7, // Default midtone range
+            },
+            shadows: ColorGradingSection {
+                saturation: 1.0,          // Keep shadow saturation
+                contrast: 1.1,            // Slightly increased shadow contrast
+                gamma: 1.0,               // No gamma adjustment
+                gain: 1.0,                // No gain adjustment
+                lift: 0.02,               // Slight lift to prevent crushed blacks
+            },
+            midtones: ColorGradingSection {
+                saturation: 1.1,          // Increased midtone saturation
+                contrast: 1.05,           // Slightly increased contrast
+                gamma: 1.0,               // No gamma adjustment
+                gain: 1.0,                // No gain adjustment
+                lift: 0.0,                // No lift
+            },
+            highlights: ColorGradingSection {
+                saturation: 0.95,         // Slightly reduced highlight saturation
+                contrast: 1.0,            // Default contrast
+                gamma: 1.0,               // No gamma adjustment
+                gain: 1.05,               // Slight gain for brighter highlights
+                lift: 0.0,                // No lift
+            },
+        },
     ));
     info!("[CAMERA] Camera entity spawned with id: {:?}", camera_entity);
     info!("[CAMERA] VolumetricFog settings: ambient_intensity=0.1, step_count=64");
-    info!("[CAMERA] Shadow filtering: Temporal (best quality with TAA)");
-    info!("[CAMERA] TAA enabled for temporal stability");
+    info!("[CAMERA] Shadow filtering: Gaussian (non-temporal)");
+    info!("[CAMERA] SMAA enabled for anti-aliasing (no ghosting)");
     info!("[CAMERA] SSAO enabled with Medium quality for contact shadows");
+    info!("[CAMERA] ColorGrading enabled with filmic color correction");
     info!("[CAMERA] Camera position: ~5120.0, 100.0, -5120.0 (game world center)");
 
     commands.insert_resource(DamageDigitsSpawner::load(
@@ -1780,16 +1824,23 @@ fn apply_depth_of_field_settings(
 
 /// System to apply water settings from the resource to water materials
 /// This allows live adjustment of water parameters via the Settings UI
+/// Also syncs fog parameters from ZoneLighting to integrate water with scene fog
 fn apply_water_settings(
     water_settings: Res<WaterSettings>,
+    zone_lighting: Res<render::ZoneLighting>,
     mut water_materials: ResMut<Assets<WaterMaterial>>,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
     
-    // Only update if settings have changed
-    if water_settings.is_changed() {
+    // Update if water settings or zone lighting have changed
+    if water_settings.is_changed() || zone_lighting.is_changed() {
         for (_, material) in water_materials.iter_mut() {
             material.settings = water_settings.clone();
+            // Sync fog parameters from ZoneLighting for water-scene integration
+            material.fog_color = zone_lighting.fog_color.extend(1.0);
+            material.fog_density = zone_lighting.fog_density;
+            material.fog_min_density = zone_lighting.fog_min_density;
+            material.fog_max_density = zone_lighting.fog_max_density;
         }
     }
 }

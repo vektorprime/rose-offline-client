@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
     render::mesh::Mesh3d,
 };
-use crate::components::{Season, SeasonMarker, WeatherParticle};
+use crate::components::{PlayerCharacter, Season, SeasonMarker, WeatherParticle};
 use crate::resources::{SeasonMaterials, SeasonSettings, FallSettings};
 
 /// Spawns falling leaf particles for fall season
@@ -78,13 +78,15 @@ pub fn fall_particle_spawn_system(
 }
 
 /// Spawns and updates fall leaf particles
+/// Particles use billboard behavior to always face the camera
 pub fn fall_particle_system(
     mut commands: Commands,
     settings: Res<SeasonSettings>,
     fall_settings: Res<FallSettings>,
     season_materials: Res<SeasonMaterials>,
-    camera_query: Query<&Transform, With<Camera3d>>,
-    mut query: Query<(Entity, &mut Transform, &mut WeatherParticle), Without<Camera3d>>,
+    player_query: Query<&GlobalTransform, With<PlayerCharacter>>,
+    camera_query: Query<&GlobalTransform, With<Camera3d>>,
+    mut query: Query<(Entity, &mut Transform, &mut WeatherParticle), (Without<PlayerCharacter>, Without<Camera3d>)>,
     time: Res<Time>,
 ) {
     if !settings.enabled || settings.current_season != Season::Fall {
@@ -93,27 +95,30 @@ pub fn fall_particle_system(
 
     let dt = time.delta_secs();
 
-    // Get camera position for camera-relative spawning
-    let Ok(camera_transform) = camera_query.get_single() else {
+    // Get player position for player-relative spawning
+    let Ok(player_transform) = player_query.get_single() else {
         return;
     };
-    let camera_pos = camera_transform.translation;
+    let player_pos = player_transform.translation();
 
     // Spawn new leaf particles
     let current_count = query.iter().len();
     if current_count < settings.max_particles {
         let particles_this_frame = ((settings.spawn_rate * dt) as usize).max(10);
         for _ in 0..particles_this_frame {
-            // Spawn in large radius around camera (500 unit radius = 1000 unit diameter)
-            let large_radius = 500.0;
-            let offset_x = (rand::random::<f32>() - 0.5) * large_radius * 2.0;
-            let offset_z = (rand::random::<f32>() - 0.5) * large_radius * 2.0;
-            let spawn_y = camera_pos.y + 30.0 + rand::random::<f32>() * 30.0; // Spawn above camera (30-60 units)
+            // Spawn in a circle around player using radius
+            let spawn_radius = 100.0; // Distance from player
+            let angle = rand::random::<f32>() * std::f32::consts::TAU;
+            let radius_offset = rand::random::<f32>() * spawn_radius;
+            let offset_x = angle.cos() * radius_offset;
+            let offset_z = angle.sin() * radius_offset;
+            // Spawn 15-25 units above player
+            let spawn_y = player_pos.y + 15.0 + rand::random::<f32>() * 10.0;
 
             let position = Vec3::new(
-                camera_pos.x + offset_x,
+                player_pos.x + offset_x,
                 spawn_y,
-                camera_pos.z + offset_z,
+                player_pos.z + offset_z,
             );
 
             let size_range = fall_settings.leaf_size_range;
@@ -153,6 +158,12 @@ pub fn fall_particle_system(
         }
     }
 
+    // Get camera transform for billboard behavior
+    let Ok(camera_transform) = camera_query.get_single() else {
+        return;
+    };
+    let camera_pos = camera_transform.translation();
+
     for (entity, mut transform, mut particle) in query.iter_mut() {
         particle.age += dt;
 
@@ -161,8 +172,8 @@ pub fn fall_particle_system(
             continue;
         }
 
-        // Despawn if below ground level (relative to camera)
-        if transform.translation.y < camera_pos.y - 50.0 {
+        // Despawn if below ground level (ground is at y=0 in most zones)
+        if transform.translation.y < 0.5 {
             commands.entity(entity).despawn();
             continue;
         }
@@ -182,9 +193,26 @@ pub fn fall_particle_system(
         transform.translation +=
             (particle.velocity + wind + Vec3::new(wobble, 0.0, wobble * 0.5)) * dt;
 
-        // Update rotation
-        particle.rotation += particle.rotation_speed * dt;
-        transform.rotation = Quat::from_rotation_z(particle.rotation);
+        // Billboard: Make particle face the camera
+        // Calculate direction from particle to camera
+        let to_camera = camera_pos - transform.translation;
+        if to_camera.length_squared() > 0.001 {
+            let forward = to_camera.normalize();
+            // Create a rotation that faces the camera (billboard look-at)
+            // Use up vector (0, 1, 0) to maintain consistent orientation
+            let up = Vec3::Y;
+            let right = up.cross(forward).normalize();
+            let corrected_up = forward.cross(right).normalize();
+            
+            // Build rotation matrix and convert to quaternion
+            let look_rotation = Quat::from_mat3(&Mat3::from_cols(right, corrected_up, forward));
+            
+            // Apply particle's own rotation on top (for visual variety)
+            particle.rotation += particle.rotation_speed * dt;
+            let particle_rotation = Quat::from_rotation_z(particle.rotation);
+            
+            transform.rotation = look_rotation * particle_rotation;
+        }
 
         // Note: Fade-out effect removed to avoid ResMut<Assets<StandardMaterial>> conflict
         // Particles will simply disappear at end of lifetime

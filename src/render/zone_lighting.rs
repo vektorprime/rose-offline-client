@@ -120,7 +120,7 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
     // or kept as a resource. Using as resource for global ambient light.
     commands.insert_resource(AmbientLight {
         color: Color::srgb(0.9, 0.9, 1.0),  // Slightly cool ambient for better atmosphere
-        brightness: 150.0,  // Reduced for better shadow contrast (was 500.0)
+        brightness: 350.0,  // Increased to provide fill light on shadowed character faces (was 150.0, originally 500.0)
         affects_lightmapped_meshes: true,
     });
     
@@ -275,13 +275,13 @@ impl Default for ZoneLighting {
             time_of_day: 0.5, // 0.0 = night, 1.0 = day
             day_color: Vec3::new(0.7, 0.8, 1.0), // Day fog color (blueish)
             night_color: Vec3::new(0.1, 0.1, 0.3), // Night fog color (dark blue)
-            // Volumetric fog settings
-            volumetric_fog_enabled: false,
-            volumetric_fog_color: Vec3::new(0.9, 0.95, 1.0), // Brighter day color (nearly white with slight blue)
-            volumetric_density_factor: 0.02,  // Reduced from 0.1 to 0.02 for much lighter fog
-            volumetric_absorption: 0.01,  // Reduced from 0.1 to 0.01 - minimal absorption for brighter scene
-            volumetric_scattering: 0.3,  // Standard scattering for light shafts
-            volumetric_scattering_asymmetry: 0.5,
+            // Volumetric fog settings - tuned for atmospheric depth and light shafts
+            volumetric_fog_enabled: true,  // Enable volumetric fog by default for light shafts
+            volumetric_fog_color: Vec3::new(0.85, 0.9, 1.0), // Soft blue-white for atmospheric haze
+            volumetric_density_factor: 0.05,  // Balanced density for visible light shafts without obscuring gameplay
+            volumetric_absorption: 0.1,  // Moderate absorption for depth perception
+            volumetric_scattering: 0.11,  // Scattering coefficient for balanced light shafts (was 0.5 too high)
+            volumetric_scattering_asymmetry: 0.7,  // Higher asymmetry for forward-scattering (Mie scattering)
         }
     }
 }

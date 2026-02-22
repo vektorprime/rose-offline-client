@@ -15,6 +15,7 @@ mod command_system;
 mod conversation_dialog_system;
 mod cooldown_system;
 mod damage_digit_render_system;
+mod dirt_dash_system;
 mod debug_inspector_system;
 mod debug_render_collider_system;
 mod debug_render_directional_light_system;
@@ -91,6 +92,7 @@ pub use command_system::command_system;
 pub use conversation_dialog_system::conversation_dialog_system;
 pub use cooldown_system::cooldown_system;
 pub use damage_digit_render_system::{damage_digit_render_system, create_damage_digit_material_system};
+pub use dirt_dash_system::{DirtDashPlugin, dirt_dash_spawn_system, dirt_dash_particle_update_system};
 pub use debug_inspector_system::DebugInspectorPlugin;
 pub use debug_render_collider_system::debug_render_collider_system;
 pub use debug_render_directional_light_system::debug_render_directional_light_system;
@@ -169,7 +171,7 @@ pub use vehicle_sound_system::vehicle_sound_system;
 pub use visible_status_effects_system::visible_status_effects_system;
 pub use world_connection_system::world_connection_system;
 pub use world_time_system::world_time_system;
-pub use zone_time_system::zone_time_system;
+pub use zone_time_system::{color_grading_time_of_day_system, zone_time_system};
 pub use zone_viewer_system::zone_viewer_enter_system;
 pub use transform_propagation_diagnostics::{
     transform_propagation_diagnostics,
