@@ -8,17 +8,29 @@ This is a fork modified with an LLM. I take no credit for this and can't speak t
 
 
 ## Features added by AI
+
 -Bevy has been upgraded to 0.16.1.
+
 -expanded settings for most of the new features
+
 leaves and grass swaying in the wind
+
 -volumetric fog (disabled by default)
+
 -depth of field (disabled by default)
+
 -SSAO
+
 -better shadows
+
 -water quality changes
+
 -animated fish in water
+
 -animated birds in sky
+
 -seasons/weather (leaves falling, snow, rain, thunder and lightning)
+
 -character dashes (dirt kicked up or cloud of dust when running) when running
 
 
