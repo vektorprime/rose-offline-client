@@ -11,7 +11,7 @@ This is a fork modified with an LLM. I take no credit for this and can't speak t
 
 -Bevy has been upgraded to 0.16.1.
 
--expanded settings for most of the new features
+-modify in game graphics or systems with settings from in-game menu
 
 leaves and grass swaying in the wind
 
