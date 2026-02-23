@@ -10,6 +10,7 @@ This is a fork modified with an LLM. I take no credit for this and can't speak t
 ## Features added by AI
 -Bevy has been upgraded to 0.16.1.
 -expanded settings for most of the new features
+leaves and grass swaying in the wind
 -volumetric fog (disabled by default)
 -depth of field (disabled by default)
 -SSAO
@@ -22,7 +23,11 @@ This is a fork modified with an LLM. I take no credit for this and can't speak t
 
 
 # Screenshots
-Bird flying around
+
+## Leaves and grass swaying in wind
+
+
+## Bird flying around
 <img width="1775" height="998" alt="rose-birds" src="https://github.com/user-attachments/assets/dea30a9d-a154-4ded-9d80-804c89d7cf26" />
 
 ## Depth of Field
