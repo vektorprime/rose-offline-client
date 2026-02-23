@@ -104,10 +104,32 @@ fn spawn_fish_in_water(
     let materials_vec = vec![fish_material, fish_material_blue, fish_material_silver];
     
     for i in 0..settings.fish_count_per_water {
-        // Random position within water bounds
-        let x_offset = rng.gen_range(-water_half_extents.x..water_half_extents.x) * settings.boundary_margin;
-        let z_offset = rng.gen_range(-water_half_extents.y..water_half_extents.y) * settings.boundary_margin;
-        let depth = rng.gen_range(settings.min_depth..settings.max_depth);
+        // Random position within water bounds - use stratified sampling to ensure better spread
+        // Divide the water area into a grid and spawn fish in random cells
+        let grid_cells_x = 8; // Number of cells along X axis
+        let grid_cells_z = 8; // Number of cells along Z axis
+        let cell_x = i % grid_cells_x;
+        let cell_z = (i / grid_cells_x) % grid_cells_z;
+        
+        // Calculate cell size
+        let cell_width = (water_half_extents.x * 2.0 * settings.boundary_margin) / grid_cells_x as f32;
+        let cell_height = (water_half_extents.y * 2.0 * settings.boundary_margin) / grid_cells_z as f32;
+        
+        // Base position for this cell (centered in cell)
+        let cell_base_x = -water_half_extents.x * settings.boundary_margin + cell_x as f32 * cell_width + cell_width * 0.5;
+        let cell_base_z = -water_half_extents.y * settings.boundary_margin + cell_z as f32 * cell_height + cell_height * 0.5;
+        
+        // Add random offset within the cell (70% of cell size for some overlap)
+        let random_offset_x = rng.gen_range(-0.35..0.35) * cell_width;
+        let random_offset_z = rng.gen_range(-0.35..0.35) * cell_height;
+        
+        let x_offset = cell_base_x + random_offset_x;
+        let z_offset = cell_base_z + random_offset_z;
+        
+        // Clamp min/max to prevent crash if settings are invalid
+        let min_depth = settings.min_depth.min(settings.max_depth);
+        let max_depth = settings.max_depth.max(settings.min_depth);
+        let depth = rng.gen_range(min_depth..max_depth);
         
         let position = Vec3::new(
             water_center.x + x_offset,
@@ -115,8 +137,10 @@ fn spawn_fish_in_water(
             water_center.z + z_offset,
         );
         
-        // Random speed
-        let speed = rng.gen_range(settings.min_speed..settings.max_speed);
+        // Random speed - clamp min/max to prevent crash
+        let min_speed = settings.min_speed.min(settings.max_speed);
+        let max_speed = settings.max_speed.max(settings.min_speed);
+        let speed = rng.gen_range(min_speed..max_speed);
         
         // Random initial target
         let target = pick_new_target(water_center, water_half_extents, settings.boundary_margin, depth);
@@ -307,11 +331,13 @@ pub fn update_fish_movement_system(
     settings: Res<FishSettings>,
     mut query: Query<(&mut Transform, &mut Fish)>,
 ) {
+    let mut rng = rand::thread_rng();
+    
     for (mut transform, mut fish) in query.iter_mut() {
         let delta = time.delta_secs();
         
-        // Update wobble time for swimming animation
-        fish.wobble_time += delta * fish.speed * 3.0;
+        // Update wobble time for swimming animation - each fish has unique wobble speed
+        fish.wobble_time += delta * fish.speed * (2.5 + rng.gen_range(0.0..1.0));
         
         // Calculate direction to target
         let direction = fish.target_position - transform.translation;
@@ -319,7 +345,9 @@ pub fn update_fish_movement_system(
         
         // Check if we reached the target
         if distance < settings.target_reach_distance {
-            // Pick a new random target
+            // Pick a new random target with some randomness in depth
+            let new_depth = fish.depth + rng.gen_range(-0.3..0.3);
+            fish.depth = new_depth.clamp(settings.min_depth, settings.max_depth);
             fish.target_position = pick_new_target(
                 fish.water_center,
                 fish.water_half_extents,
@@ -333,24 +361,32 @@ pub fn update_fish_movement_system(
         let direction_normalized = direction / distance;
         
         // Calculate target rotation (face direction of movement)
+        // Add slight random variation to prevent perfect alignment
+        let rotation_noise = rng.gen_range(-0.05..0.05);
         let target_rotation = Quat::from_rotation_y(
-            direction_normalized.z.atan2(direction_normalized.x) - std::f32::consts::FRAC_PI_2
+            direction_normalized.z.atan2(direction_normalized.x) - std::f32::consts::FRAC_PI_2 + rotation_noise
         );
         
-        // Smoothly rotate towards target
+        // Smoothly rotate towards target with slight speed variation
+        let turn_speed_variation = fish.turn_speed * rng.gen_range(0.9..1.1);
         transform.rotation = transform.rotation.slerp(
             target_rotation,
-            fish.turn_speed * delta
+            turn_speed_variation * delta
         );
         
-        // Move forward in facing direction
+        // Move forward in facing direction with slight speed variation
+        let speed_variation = fish.speed * rng.gen_range(0.95..1.05);
         let forward = transform.forward();
-        transform.translation += forward * fish.speed * delta;
+        transform.translation += forward * speed_variation * delta;
         
-        // Add swimming wobble (side-to-side motion)
-        let wobble = (fish.wobble_time.sin() * 0.02 * fish.speed);
+        // Add swimming wobble (side-to-side motion) with unique amplitude per fish
+        let wobble_amplitude = 0.015 + (fish.wobble_time.sin() * 0.005).abs(); // Varies between 0.01 and 0.02
+        let wobble = (fish.wobble_time.sin() * wobble_amplitude * fish.speed);
+        let wobble_z = (fish.wobble_time.cos() * wobble_amplitude * 0.5 * fish.speed); // Secondary wobble
         transform.translation.x += transform.left().x * wobble;
         transform.translation.z += transform.left().z * wobble;
+        // Add slight vertical wobble for more natural movement
+        transform.translation.y += wobble_z * 0.3;
         
         // Keep fish within water bounds (clamp position)
         let min_x = fish.water_center.x - fish.water_half_extents.x * settings.boundary_margin;
@@ -360,7 +396,9 @@ pub fn update_fish_movement_system(
         
         transform.translation.x = transform.translation.x.clamp(min_x, max_x);
         transform.translation.z = transform.translation.z.clamp(min_z, max_z);
-        transform.translation.y = fish.water_center.y - fish.depth; // Maintain depth
+        // Maintain depth with slight variation
+        let target_y = fish.water_center.y - fish.depth;
+        transform.translation.y = transform.translation.y.clamp(target_y - 0.1, target_y + 0.1);
         
         // If fish hit boundary, pick new target away from boundary
         if transform.translation.x <= min_x + 0.5

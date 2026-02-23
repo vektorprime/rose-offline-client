@@ -358,16 +358,18 @@ pub fn zone_time_system(
 
 // Color grading temperature values for time-of-day
 // Positive = warmer (redder), Negative = cooler (bluer)
-const COLOR_GRADING_MORNING_TEMPERATURE: f32 = 0.15;  // Warm sunrise tones
-const COLOR_GRADING_DAY_TEMPERATURE: f32 = 0.0;       // Neutral daylight
-const COLOR_GRADING_EVENING_TEMPERATURE: f32 = 0.2;   // Warm sunset tones
-const COLOR_GRADING_NIGHT_TEMPERATURE: f32 = -0.1;    // Cool moonlight
+// Values significantly reduced for subtle effect
+const COLOR_GRADING_MORNING_TEMPERATURE: f32 = 0.03;  // Subtle warm sunrise tones
+const COLOR_GRADING_DAY_TEMPERATURE: f32 = 0.0;        // Neutral daylight
+const COLOR_GRADING_EVENING_TEMPERATURE: f32 = 0.04;   // Subtle warm sunset tones
+const COLOR_GRADING_NIGHT_TEMPERATURE: f32 = -0.02;    // Subtle cool moonlight
 
 // Saturation values for time-of-day
-const COLOR_GRADING_MORNING_SATURATION: f32 = 1.15;   // Vibrant morning colors
-const COLOR_GRADING_DAY_SATURATION: f32 = 1.1;        // Slightly vibrant daytime
-const COLOR_GRADING_EVENING_SATURATION: f32 = 1.2;    // Rich sunset colors
-const COLOR_GRADING_NIGHT_SATURATION: f32 = 0.9;      // Muted night colors
+// Values significantly reduced for subtle effect
+const COLOR_GRADING_MORNING_SATURATION: f32 = 1.02;    // Subtle vibrant morning colors
+const COLOR_GRADING_DAY_SATURATION: f32 = 1.01;         // Very subtle vibrant daytime
+const COLOR_GRADING_EVENING_SATURATION: f32 = 1.03;     // Subtle rich sunset colors
+const COLOR_GRADING_NIGHT_SATURATION: f32 = 0.98;       // Subtle muted night colors
 
 /// System to update color grading based on time-of-day
 /// This creates dynamic color adjustments for warmer tones at sunrise/sunset

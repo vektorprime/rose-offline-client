@@ -39,7 +39,7 @@ use crate::{
     components::{
         Bank, Clan, ClanMember, ClanMembership, ClientEntity, ClientEntityName, ClientEntityType,
         CollisionHeightOnly, CollisionPlayer, Command, CommandCastSkillTarget, Cooldowns, Dead,
-        FacingDirection, NextCommand, PartyInfo, PartyOwner, PassiveRecoveryTime, PendingDamage,
+        DirtDashEffect, FacingDirection, NextCommand, PartyInfo, PartyOwner, PassiveRecoveryTime, PendingDamage,
         PendingDamageList, PendingSkillEffect, PendingSkillEffectList, PendingSkillTarget,
         PendingSkillTargetList, PersonalStore, PlayerCharacter, Position, VisibleStatusEffects,
     },
@@ -243,6 +243,7 @@ pub fn game_connection_system(
                     PendingSkillEffectList::default(),
                     Position::new(character_data.position),
                     VisibleStatusEffects::default(),
+                    DirtDashEffect::default(),
                 ));
 
                 // Add transform components (CollisionPlayer added during JoinZone, matching Bevy 0.11 behavior)
@@ -397,6 +398,7 @@ pub fn game_connection_system(
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
                         VisibleStatusEffects::default(),
+                        DirtDashEffect::default(),
                     ));
 
                     if let Some((skin, title)) = personal_store_info {

@@ -19,6 +19,14 @@ pub struct SeasonMaterials {
     pub snow_mesh: Handle<Mesh>,
     /// Snow material for winter
     pub snow_material: Handle<StandardMaterial>,
+    /// Grass blade mesh for summer (thin tall rectangle)
+    pub grass_mesh: Handle<Mesh>,
+    /// Grass materials for summer (various green shades)
+    pub grass_materials: Vec<Handle<StandardMaterial>>,
+    /// Summer flower head mesh (circle)
+    pub summer_flower_mesh: Handle<Mesh>,
+    /// Summer flower materials (bright warm colors)
+    pub summer_flower_materials: Vec<Handle<StandardMaterial>>,
 }
 
 /// Setup system to create season materials once at startup
@@ -83,6 +91,49 @@ pub fn setup_season_materials(
         ..default()
     });
 
+    // Create grass materials for summer (various shades of green)
+    let grass_colors = vec![
+        Color::srgb(0.2, 0.6, 0.1),  // Dark green
+        Color::srgb(0.3, 0.7, 0.2),  // Medium green
+        Color::srgb(0.4, 0.8, 0.2),  // Light green
+        Color::srgb(0.35, 0.65, 0.15), // Forest green
+        Color::srgb(0.5, 0.75, 0.3),  // Yellow-green
+    ];
+
+    let grass_materials: Vec<_> = grass_colors
+        .into_iter()
+        .map(|color| {
+            materials.add(StandardMaterial {
+                base_color: color,
+                alpha_mode: AlphaMode::Opaque,
+                unlit: true,
+                ..default()
+            })
+        })
+        .collect();
+
+    // Create summer flower materials (bright warm colors)
+    let summer_flower_colors = vec![
+        Color::srgb(1.0, 0.9, 0.2),  // Bright yellow
+        Color::srgb(1.0, 0.5, 0.1),  // Orange
+        Color::srgb(0.9, 0.2, 0.3),  // Red
+        Color::srgb(0.8, 0.3, 0.8),  // Purple
+        Color::srgb(0.3, 0.5, 1.0),  // Blue
+        Color::srgb(1.0, 0.3, 0.5),  // Pink
+    ];
+
+    let summer_flower_materials: Vec<_> = summer_flower_colors
+        .into_iter()
+        .map(|color| {
+            materials.add(StandardMaterial {
+                base_color: color,
+                alpha_mode: AlphaMode::Opaque,
+                unlit: true,
+                ..default()
+            })
+        })
+        .collect();
+
     // Create custom meshes for each particle type
     // Leaf mesh: Rhombus (diamond shape) for pointed leaf appearance (not circular)
     let leaf_mesh = meshes.add(Mesh::from(Rhombus::new(0.4, 0.8)));
@@ -96,6 +147,12 @@ pub fn setup_season_materials(
     // Snow mesh: Hexagon for snowflake appearance
     let snow_mesh = meshes.add(Mesh::from(RegularPolygon::new(0.25, 6)));
 
+    // Grass mesh: Thin tall rectangle for grass blades
+    let grass_mesh = meshes.add(Mesh::from(Rectangle::new(0.1, 0.6)));
+
+    // Summer flower mesh: Circle for flower heads
+    let summer_flower_mesh = meshes.add(Mesh::from(Circle::new(0.15)));
+
     commands.insert_resource(SeasonMaterials {
         leaf_mesh,
         leaf_materials,
@@ -105,5 +162,9 @@ pub fn setup_season_materials(
         flower_materials,
         snow_mesh,
         snow_material,
+        grass_mesh,
+        grass_materials,
+        summer_flower_mesh,
+        summer_flower_materials,
     });
 }

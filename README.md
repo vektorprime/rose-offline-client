@@ -1,8 +1,24 @@
 # rose-offline-client
+
+The original version is made by exjam, all credits to him.
 An open source client for ROSE Online, compatible with the official 129_129en irose server or [rose-offline](https://github.com/exjam/rose-offline/).
 
 # Running
 Run rose-offline-client from your installed official client directory (the folder containing data.idx), or you can use the `--data-idx` or `--data-path` arguments as described below.
+
+
+## Features added by AI
+-expanded settings for most of the new features
+-volumetric fog (disabled by default)
+-depth of field (disabled by default)
+-SSAO
+-better shadows
+-water quality changes
+-animated fish in water
+-animated birds in sky
+-seasons/weather (leaves falling, snow, rain, thunder and lightning)
+-character dashes (dirt kicked up or cloud of dust when running) when running
+
 
 ## Optional arguments:
 - `--data-idx=<path/to/data.idx>` Path to irose 129en data.idx

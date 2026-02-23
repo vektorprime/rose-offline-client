@@ -602,3 +602,74 @@ When spawning entities that should appear within a transformed parent (like a zo
 3. **Event data must include parent reference** - Events that trigger entity spawning should include the parent entity reference
 4. **Debug with world positions** - When debugging visibility issues, check both local and world positions to identify transform inheritance problems
 
+---
+
+## Game Freezes on Window Close Instead of Exiting (Fixed 2026-02-22)
+
+### Problem
+When the user closes the game window (clicks the X button), the game freezes instead of exiting cleanly. The process hangs indefinitely and must be force-killed.
+
+### Root Cause
+The network thread function `run_network_thread()` in [`src/resources/network_thread.rs`](src/resources/network_thread.rs) had an **extra outer `loop`** that prevented the thread from ever exiting:
+
+```rust
+// BROKEN CODE - outer loop causes infinite loop on exit
+pub fn run_network_thread(mut control_rx: ...) {
+    loop {  // <-- BUG: This outer loop should NOT exist!
+        tokio::runtime::Builder::new_current_thread()
+            .block_on(async {
+                loop {  // <-- Inner loop
+                    match control_rx.recv().await {
+                        Some(NetworkThreadMessage::Exit) => return,  // Only exits inner block!
+                        None => return,  // Only exits inner block!
+                        // ...
+                    }
+                }
+            })
+        // After return from async block, outer loop continues!
+    }
+}
+```
+
+**What happens on exit:**
+1. Window close → Bevy sends `AppExit` event
+2. [`lib.rs:1425`](src/lib.rs:1425) sends `NetworkThreadMessage::Exit` to network thread
+3. [`lib.rs:1426`](src/lib.rs:1426) calls `network_thread.join()` to wait for thread
+4. Network thread receives `Exit` message
+5. `return` only exits the inner `block_on` async block, NOT the function
+6. Outer `loop` continues, creates new tokio runtime
+7. Channel is closed (sender dropped), so `recv()` returns `None` immediately
+8. **Infinite busy loop** - thread never exits, `join()` blocks forever = **FREEZE**
+
+### Solution
+Remove the outer `loop`. The function should only have the inner async loop:
+
+```rust
+// FIXED CODE - no outer loop, thread exits properly
+pub fn run_network_thread(mut control_rx: ...) {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            loop {
+                match control_rx.recv().await {
+                    Some(NetworkThreadMessage::RunProtocolClient(client)) => { /* ... */ }
+                    Some(NetworkThreadMessage::Exit) => return,  // Now exits the function!
+                    None => return,  // Now exits the function!
+                }
+            }
+        })
+}
+```
+
+### Files Modified
+- `src/resources/network_thread.rs` - Removed outer `loop` from `run_network_thread()`
+
+### Lesson Learned
+When implementing threaded background tasks that should exit on a signal:
+1. **Be careful with nested loops** - A `return` inside an async block only exits that block, not the outer function
+2. **Test exit paths** - Always verify background threads actually terminate when sent an exit signal
+3. **Avoid unnecessary nesting** - The outer `loop` was unnecessary; the tokio runtime only needs to be created once
+4. **Channel closure handling** - When the sender is dropped, `recv()` returns `None`, which should also trigger exit
+

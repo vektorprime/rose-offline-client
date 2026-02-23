@@ -4,7 +4,7 @@ use bevy_egui::{egui, EguiContexts};
 
 use crate::{
     audio::SoundGain,
-    components::{BirdSettings, FishSettings, Season, SoundCategory},
+    components::{BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory},
     render::ZoneLighting,
     resources::{SeasonSettings, SoundSettings, WaterSettings},
     ui::UiStateWindows,
@@ -19,6 +19,7 @@ enum SettingsPage {
     Fish,
     Birds,
     Seasons,
+    DirtDash,
 }
 
 pub struct UiStateSettings {
@@ -78,6 +79,7 @@ pub fn ui_settings_system(
     mut fish_settings: ResMut<FishSettings>,
     mut bird_settings: ResMut<BirdSettings>,
     mut season_settings: ResMut<SeasonSettings>,
+    mut dirt_dash_settings: ResMut<DirtDashSettings>,
 ) {
     egui::Window::new("Settings")
         .open(&mut ui_state_windows.settings_open)
@@ -114,6 +116,11 @@ pub fn ui_settings_system(
                     &mut ui_state_settings.page,
                     SettingsPage::Seasons,
                     "Seasons",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::DirtDash,
+                    "Dirt Dash",
                 );
             });
 
@@ -362,7 +369,7 @@ pub fn ui_settings_system(
 
                             ui.label("Min Depth:");
                             ui.add(
-                                egui::Slider::new(&mut fish_settings.min_depth, 0.1..=5.0)
+                                egui::Slider::new(&mut fish_settings.min_depth, 0.1..=10.0)
                                     .text("m")
                                     .show_value(true),
                             );
@@ -370,7 +377,7 @@ pub fn ui_settings_system(
 
                             ui.label("Max Depth:");
                             ui.add(
-                                egui::Slider::new(&mut fish_settings.max_depth, 1.0..=10.0)
+                                egui::Slider::new(&mut fish_settings.max_depth, 0.1..=10.0)
                                     .text("m")
                                     .show_value(true),
                             );
@@ -378,14 +385,14 @@ pub fn ui_settings_system(
 
                             ui.label("Min Speed:");
                             ui.add(
-                                egui::Slider::new(&mut fish_settings.min_speed, 0.1..=3.0)
+                                egui::Slider::new(&mut fish_settings.min_speed, 0.1..=5.0)
                                     .show_value(true),
                             );
                             ui.end_row();
 
                             ui.label("Max Speed:");
                             ui.add(
-                                egui::Slider::new(&mut fish_settings.max_speed, 1.0..=5.0)
+                                egui::Slider::new(&mut fish_settings.max_speed, 0.1..=5.0)
                                     .show_value(true),
                             );
                             ui.end_row();
@@ -406,6 +413,10 @@ pub fn ui_settings_system(
                             ui.end_row();
                         });
 
+                    // Clamp min/max values to prevent crashes
+                    fish_settings.max_depth = fish_settings.max_depth.max(fish_settings.min_depth);
+                    fish_settings.max_speed = fish_settings.max_speed.max(fish_settings.min_speed);
+
                     ui.separator();
                     ui.label("Tip: Fish settings apply when entering a new zone. Set fish count to 0 to disable.");
                 }
@@ -419,14 +430,14 @@ pub fn ui_settings_system(
 
                             ui.label("Birds Per Zone:");
                             ui.add(
-                                egui::Slider::new(&mut bird_settings.birds_per_zone, 0..=200)
+                                egui::Slider::new(&mut bird_settings.birds_per_zone, 0..=1000)
                                     .show_value(true),
                             );
                             ui.end_row();
 
                             ui.label("Min Altitude:");
                             ui.add(
-                                egui::Slider::new(&mut bird_settings.min_altitude, 10.0..=100.0)
+                                egui::Slider::new(&mut bird_settings.min_altitude, 10.0..=200.0)
                                     .text("m")
                                     .show_value(true),
                             );
@@ -434,7 +445,7 @@ pub fn ui_settings_system(
 
                             ui.label("Max Altitude:");
                             ui.add(
-                                egui::Slider::new(&mut bird_settings.max_altitude, 20.0..=200.0)
+                                egui::Slider::new(&mut bird_settings.max_altitude, 10.0..=200.0)
                                     .text("m")
                                     .show_value(true),
                             );
@@ -442,7 +453,7 @@ pub fn ui_settings_system(
 
                             ui.label("Min Speed:");
                             ui.add(
-                                egui::Slider::new(&mut bird_settings.min_speed, 1.0..=20.0)
+                                egui::Slider::new(&mut bird_settings.min_speed, 1.0..=30.0)
                                     .show_value(true),
                             );
                             ui.end_row();
@@ -484,6 +495,10 @@ pub fn ui_settings_system(
                             ui.end_row();
                         });
 
+                    // Clamp min/max values to prevent crashes
+                    bird_settings.max_altitude = bird_settings.max_altitude.max(bird_settings.min_altitude);
+                    bird_settings.max_speed = bird_settings.max_speed.max(bird_settings.min_speed);
+
                     ui.separator();
                     ui.label("Note: Bird count changes apply when entering a new zone");
                 }
@@ -498,8 +513,9 @@ pub fn ui_settings_system(
                             ui.label("Season:");
                             let season_text = match season_settings.current_season {
                                 Season::None => "None",
-                                Season::Fall => "Fall",
                                 Season::Spring => "Spring",
+                                Season::Summer => "Summer",
+                                Season::Fall => "Fall",
                                 Season::Winter => "Winter",
                             };
                             egui::ComboBox::from_label("")
@@ -512,13 +528,18 @@ pub fn ui_settings_system(
                                     );
                                     ui.selectable_value(
                                         &mut season_settings.current_season,
-                                        Season::Fall,
-                                        "Fall",
+                                        Season::Spring,
+                                        "Spring",
                                     );
                                     ui.selectable_value(
                                         &mut season_settings.current_season,
-                                        Season::Spring,
-                                        "Spring",
+                                        Season::Summer,
+                                        "Summer",
+                                    );
+                                    ui.selectable_value(
+                                        &mut season_settings.current_season,
+                                        Season::Fall,
+                                        "Fall",
                                     );
                                     ui.selectable_value(
                                         &mut season_settings.current_season,
@@ -553,6 +574,112 @@ pub fn ui_settings_system(
 
                     ui.separator();
                     ui.label("Tip: Season changes apply immediately. Disable to turn off all weather effects.");
+                }
+                SettingsPage::DirtDash => {
+                    egui::Grid::new("dust_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Max Particles:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.max_particles, 50..=1000)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Min Size:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.min_size, 0.0..=0.7)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Size:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.max_size, 0.0..=1.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Min Lifetime:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.min_lifetime, 0.0..=2.0)
+                                    .text("s")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Lifetime:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.max_lifetime, 0.0..=2.0)
+                                    .text("s")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Min Upward Velocity:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.min_upward_velocity, 0.0..=1.0)
+                                    .text("m/s")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Upward Velocity:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.max_upward_velocity, 0.0..=1.0)
+                                    .text("m/s")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Gravity (float if low):");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.gravity, 0.0..=2.0)
+                                    .text("m/s²")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Horizontal Spread:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.horizontal_velocity_factor, 0.0..=0.3)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Drift Speed:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.drift_speed, 0.0..=0.5)
+                                    .text("m/s")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Vertical Oscillation:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.vertical_oscillation, 0.0..=0.1)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Particle Alpha:");
+                            ui.add(
+                                egui::Slider::new(&mut dirt_dash_settings.particle_color.w, 0.05..=0.8)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                        });
+
+                    // Clamp min/max values to prevent crashes
+                    dirt_dash_settings.max_size = dirt_dash_settings.max_size.max(dirt_dash_settings.min_size);
+                    dirt_dash_settings.max_lifetime = dirt_dash_settings.max_lifetime.max(dirt_dash_settings.min_lifetime);
+                    dirt_dash_settings.max_upward_velocity = dirt_dash_settings.max_upward_velocity.max(dirt_dash_settings.min_upward_velocity);
+
+                    ui.separator();
+                    ui.label("Tip: Dust particles float near the player when running. Low gravity + low velocity = hovering smoke effect.");
                 }
             }
         });

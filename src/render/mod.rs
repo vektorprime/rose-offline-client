@@ -53,6 +53,10 @@ pub use damage_digit_render_data::*;
 pub mod sky_material;
 pub use sky_material::{SkyMaterial, SkyMaterialPlugin};
 
+// Angelic wing material with glow effects
+pub mod wing_material;
+pub use wing_material::{WingMaterial, WingMaterialPlugin};
+
 pub mod object_material_extension;
 pub use object_material_extension::*;
 

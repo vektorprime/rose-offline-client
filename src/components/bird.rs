@@ -62,12 +62,12 @@ impl Default for BirdSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            birds_per_zone: 50,
-            min_altitude: 30.0,
-            max_altitude: 80.0,
+            birds_per_zone: 400,       // Default 400 birds per zone
+            min_altitude: 20.0,       // Lower altitude for better visibility
+            max_altitude: 50.0,       // Lower max altitude
             min_speed: 3.0,
             max_speed: 8.0,
-            roam_radius: 500.0,
+            roam_radius: 200.0,       // Smaller roam radius so birds are more concentrated
             flap_speed: 12.0,
             bob_amplitude: 0.5,
             bob_speed: 2.0,

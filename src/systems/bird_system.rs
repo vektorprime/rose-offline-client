@@ -106,13 +106,13 @@ fn spawn_birds(
     // Create bird mesh (simple V-shape)
     let bird_mesh = create_bird_mesh(meshes);
     
-    // Bird colors for variety
+    // Bird colors for variety - made more vibrant for visibility
     let bird_colors = [
-        Color::srgb(0.4, 0.3, 0.2),  // Brown
-        Color::srgb(0.3, 0.3, 0.35), // Gray
-        Color::srgb(0.15, 0.15, 0.12), // Dark
-        Color::srgb(0.5, 0.4, 0.3),  // Light brown
-        Color::srgb(0.35, 0.35, 0.4), // Light gray
+        Color::srgb(0.6, 0.4, 0.2),  // Brighter brown
+        Color::srgb(0.5, 0.5, 0.6),  // Lighter gray
+        Color::srgb(0.2, 0.2, 0.25), // Dark but visible
+        Color::srgb(0.7, 0.5, 0.3),  // Light brown
+        Color::srgb(0.6, 0.6, 0.7),  // Light gray
     ];
     
     // Create materials for each color
@@ -129,13 +129,20 @@ fn spawn_birds(
         // Random position within roam radius
         let angle = rng.gen::<f32>() * std::f32::consts::TAU;
         let distance = rng.gen::<f32>() * settings.roam_radius;
-        let altitude = rng.gen_range(settings.min_altitude..settings.max_altitude);
+        
+        // Clamp min/max to prevent crash if settings are invalid
+        let min_alt = settings.min_altitude.min(settings.max_altitude);
+        let max_alt = settings.max_altitude.max(settings.min_altitude);
+        let altitude = rng.gen_range(min_alt..max_alt);
         
         let x = zone_center.x + angle.cos() * distance;
         let z = zone_center.z + angle.sin() * distance;
         let y = zone_center.y + altitude;
         
-        let speed = rng.gen_range(settings.min_speed..settings.max_speed);
+        // Clamp min/max to prevent crash
+        let min_spd = settings.min_speed.min(settings.max_speed);
+        let max_spd = settings.max_speed.max(settings.min_speed);
+        let speed = rng.gen_range(min_spd..max_spd);
         let initial_phase = rng.gen::<f32>() * std::f32::consts::TAU;
         
         // Random color material
@@ -165,7 +172,7 @@ fn spawn_birds(
             },
             Transform::from_xyz(x, y, z)
                 .with_rotation(initial_rotation)
-                .with_scale(Vec3::splat(0.5)), // Scale birds appropriately
+                .with_scale(Vec3::splat(2.0)), // Increased scale from 0.5 to 2.0 for better visibility
             GlobalTransform::default(),
             Visibility::Visible,
             InheritedVisibility::default(),
@@ -287,7 +294,8 @@ fn get_new_target(center: Vec3, radius: f32, min_alt: f32, max_alt: f32) -> Vec3
     let mut rng = rand::thread_rng();
     let angle = rng.gen::<f32>() * std::f32::consts::TAU;
     let distance = rng.gen::<f32>() * radius;
-    let altitude = rng.gen_range(min_alt..max_alt);
+    // Clamp min/max to prevent crash
+    let altitude = rng.gen_range(min_alt.min(max_alt)..max_alt.max(min_alt));
     
     Vec3::new(
         center.x + angle.cos() * distance,

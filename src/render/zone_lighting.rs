@@ -276,7 +276,7 @@ impl Default for ZoneLighting {
             day_color: Vec3::new(0.7, 0.8, 1.0), // Day fog color (blueish)
             night_color: Vec3::new(0.1, 0.1, 0.3), // Night fog color (dark blue)
             // Volumetric fog settings - tuned for atmospheric depth and light shafts
-            volumetric_fog_enabled: true,  // Enable volumetric fog by default for light shafts
+            volumetric_fog_enabled: false,  // Disabled by default - can be enabled in settings
             volumetric_fog_color: Vec3::new(0.85, 0.9, 1.0), // Soft blue-white for atmospheric haze
             volumetric_density_factor: 0.05,  // Balanced density for visible light shafts without obscuring gameplay
             volumetric_absorption: 0.1,  // Moderate absorption for depth perception

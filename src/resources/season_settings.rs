@@ -17,8 +17,8 @@ impl Default for SeasonSettings {
         Self {
             enabled: true,
             current_season: Season::None,
-            max_particles: 10000,  // Increased 20x from 500 for more particles
-            spawn_rate: 2000.0,    // Increased 20x from 100.0 for more particles
+            max_particles: 2000,   // Maximum particles for season weather effects
+            spawn_rate: 100.0,     // Particles per second
             wind_strength: 1.0,
             wind_direction: Vec2::X,
         }
@@ -101,6 +101,60 @@ impl Default for WinterSettings {
             turbulence: 0.5,
             snow_color: Color::srgba(1.0, 1.0, 1.0, 0.9),
             lifetime_range: (10.0, 20.0),
+        }
+    }
+}
+
+/// Summer-specific settings
+#[derive(Resource, Debug, Clone, Reflect)]
+pub struct SummerSettings {
+    /// Maximum number of grass blades to spawn
+    pub max_grass_blades: usize,
+    /// Maximum number of flowers to spawn
+    pub max_flowers: usize,
+    /// Spawn radius around player for vegetation
+    pub spawn_radius: f32,
+    /// Grass blade height range
+    pub grass_height_range: (f32, f32),
+    /// Grass blade width
+    pub grass_width: f32,
+    /// Grass sway speed
+    pub grass_sway_speed: f32,
+    /// Grass sway amplitude (radians)
+    pub grass_sway_amplitude: f32,
+    /// Flower spawn chance per frame
+    pub flower_spawn_chance: f32,
+    /// Flower colors
+    pub flower_colors: Vec<Color>,
+    /// Flower stem height range
+    pub flower_stem_height_range: (f32, f32),
+    /// Flower head size
+    pub flower_head_size: f32,
+    /// Wind intensity for vegetation sway
+    pub wind_intensity: f32,
+}
+
+impl Default for SummerSettings {
+    fn default() -> Self {
+        Self {
+            max_grass_blades: 50000,    // Increased to 50000
+            max_flowers: 1000,          // Increased 10x from 100 for visibility
+            spawn_radius: 50.0,
+            grass_height_range: (0.6, 1.6),  // 2x original (0.3, 0.8)
+            grass_width: 0.2,           // 2x original (0.1)
+            grass_sway_speed: 1.5,
+            grass_sway_amplitude: 0.1,
+            flower_spawn_chance: 0.02,
+            flower_colors: vec![
+                Color::srgb(1.0, 0.9, 0.3),  // Yellow (sunflower-like)
+                Color::srgb(1.0, 0.5, 0.2),  // Orange
+                Color::srgb(0.9, 0.3, 0.3),  // Red
+                Color::srgb(0.8, 0.4, 0.8),  // Purple
+                Color::srgb(0.3, 0.6, 1.0),  // Blue
+            ],
+            flower_stem_height_range: (4.0, 7.0),  // Increased 10x from (0.4, 0.7) for visibility
+            flower_head_size: 1.5,       // Increased 10x from 0.15 for visibility
+            wind_intensity: 1.0,
         }
     }
 }

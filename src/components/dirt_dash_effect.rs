@@ -24,15 +24,15 @@ impl Default for DirtDashEffect {
         Self {
             min_speed: 100.0,          // Minimum speed to trigger effect
             spawn_timer: 0.0,
-            spawn_interval: 0.05,      // Spawn every 50ms when running
-            particles_per_burst: 2,    // Spawn 2 particles per burst
+            spawn_interval: 0.08,      // Spawn every 80ms when running (less frequent)
+            particles_per_burst: 1,    // Spawn 1 particle per burst (more subtle)
             feet_offset: 0.0,          // At feet level
-            spread_radius: 10.0,       // Small spread around feet
+            spread_radius: 0.15,       // Slightly larger spread for dust cloud effect
         }
     }
 }
 
-/// Component for individual dirt/dash particles
+/// Component for individual dust/smoke particles
 #[derive(Component, Debug, Clone, Reflect)]
 #[reflect(Component)]
 pub struct DirtDashParticle {
@@ -50,6 +50,12 @@ pub struct DirtDashParticle {
     pub gravity: f32,
     /// Initial opacity
     pub initial_alpha: f32,
+    /// Random drift direction (for wandering motion)
+    pub drift_direction: Vec3,
+    /// Random phase offset for vertical oscillation
+    pub oscillation_phase: f32,
+    /// Initial Y position (to calculate oscillation from)
+    pub base_y: f32,
 }
 
 impl DirtDashParticle {
@@ -59,6 +65,9 @@ impl DirtDashParticle {
         size: f32,
         gravity: f32,
         initial_alpha: f32,
+        drift_direction: Vec3,
+        oscillation_phase: f32,
+        base_y: f32,
     ) -> Self {
         Self {
             age: 0.0,
@@ -68,6 +77,9 @@ impl DirtDashParticle {
             current_size: size,
             gravity,
             initial_alpha,
+            drift_direction,
+            oscillation_phase,
+            base_y,
         }
     }
 
@@ -79,20 +91,21 @@ impl DirtDashParticle {
     /// Returns current alpha based on age (fades out over lifetime)
     pub fn current_alpha(&self) -> f32 {
         let t = self.normalized_age();
-        // Fade out in the second half of lifetime
-        if t > 0.5 {
-            self.initial_alpha * (1.0 - (t - 0.5) * 2.0)
+        // Smooth fade out - start fading earlier for more subtle effect
+        if t > 0.3 {
+            self.initial_alpha * (1.0 - (t - 0.3) / 0.7)
         } else {
-            self.initial_alpha
+            // Fade in slightly at the start
+            self.initial_alpha * (t / 0.3).min(1.0)
         }
     }
 }
 
-/// Resource for dirt dash effect settings
+/// Resource for dust effect settings (smoke/fog that hovers near player)
 #[derive(Resource, Debug, Clone, Reflect)]
 #[reflect(Resource)]
 pub struct DirtDashSettings {
-    /// Base color for dirt particles (brownish)
+    /// Base color for dust particles (light gray/white for smoke effect)
     pub particle_color: Vec4,
     /// Minimum particle lifetime
     pub min_lifetime: f32,
@@ -102,32 +115,38 @@ pub struct DirtDashSettings {
     pub min_size: f32,
     /// Maximum particle size
     pub max_size: f32,
-    /// Minimum upward velocity
+    /// Minimum upward velocity (very low for hovering effect)
     pub min_upward_velocity: f32,
-    /// Maximum upward velocity
+    /// Maximum upward velocity (very low for hovering effect)
     pub max_upward_velocity: f32,
-    /// Horizontal velocity multiplier (based on character speed)
+    /// Horizontal velocity multiplier (minimal to stay near player)
     pub horizontal_velocity_factor: f32,
-    /// Gravity applied to particles
+    /// Gravity applied to particles (negative = float up slightly, positive = fall)
     pub gravity: f32,
-    /// Maximum number of active dirt particles (performance limit)
+    /// Maximum number of active dust particles (performance limit)
     pub max_particles: usize,
+    /// Horizontal drift speed (random wandering motion)
+    pub drift_speed: f32,
+    /// Vertical oscillation amplitude (for floating effect)
+    pub vertical_oscillation: f32,
 }
 
 impl Default for DirtDashSettings {
     fn default() -> Self {
         Self {
-            // Brownish dirt color with some transparency
-            particle_color: Vec4::new(0.45, 0.35, 0.25, 0.8),
-            min_lifetime: 0.2,
-            max_lifetime: 0.4,
-            min_size: 3.0,
-            max_size: 8.0,
-            min_upward_velocity: 20.0,
-            max_upward_velocity: 50.0,
-            horizontal_velocity_factor: 0.3,
-            gravity: 150.0,
-            max_particles: 500,
+            // Light gray dust/smoke color with low opacity for subtlety
+            particle_color: Vec4::new(0.7, 0.68, 0.65, 0.25),
+            min_lifetime: 0.0,          // Can be instant
+            max_lifetime: 0.8,          // Up to 0.8 seconds
+            min_size: 0.01,             // Very small particles
+            max_size: 0.7,              // Can grow larger for smoke effect
+            min_upward_velocity: 0.05,  // Very low upward velocity (hovering)
+            max_upward_velocity: 0.15,  // Very low upward velocity (hovering)
+            horizontal_velocity_factor: 0.0, // No horizontal spread - stays near player
+            gravity: 0.1,               // Very low gravity for floating effect
+            max_particles: 300,
+            drift_speed: 0.1,           // Gentle random drift
+            vertical_oscillation: 0.02, // Subtle bobbing motion
         }
     }
 }

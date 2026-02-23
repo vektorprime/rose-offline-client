@@ -70,7 +70,7 @@ use audio::OddioPlugin;
 use diagnostics::RenderDiagnosticsPlugin;
 use events::{
     BankEvent, CharacterSelectEvent, ChatboxEvent, ClanDialogEvent, ClientEntityEvent,
-    ConversationDialogEvent, GameConnectionEvent, HitEvent, LoadZoneEvent, LoginEvent,
+    ConversationDialogEvent, FlightToggleEvent, GameConnectionEvent, HitEvent, LoadZoneEvent, LoginEvent,
     MessageBoxEvent, MoveDestinationEffectEvent, NetworkEvent, NpcStoreEvent,
     NumberInputDialogEvent, PartyEvent, PersonalStoreEvent, PlayerCommandEvent, QuestTriggerEvent,
     SpawnEffectEvent, SpawnProjectileEvent, SystemFuncEvent, UseItemEvent, WorldConnectionEvent,
@@ -97,7 +97,7 @@ use render::{
 };
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
-    AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, GameData, LoginCameraAnimation, NameTagSettings,
+    AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, FlightSettings, GameData, LoginCameraAnimation, NameTagSettings,
     NetworkThread, NetworkThreadMessage, RenderConfiguration, RenderExtractionDiagnostics, SelectedTarget, ServerConfiguration,
     SoundCache, SoundSettings, SpecularTexture, VfsResource, WaterSettings, WorldTime, ZoneTime,
 };
@@ -113,6 +113,7 @@ use systems::{
     conversation_dialog_system, cooldown_system, damage_digit_render_system,
     create_damage_digit_material_system,
     directional_light_system, effect_system, facing_direction_system,
+    flight_movement_system, flight_toggle_system, ensure_flight_state_system,
     free_camera_system, game_connection_system, game_mouse_input_system, game_state_enter_system,
     game_zone_change_system, hit_event_system, item_drop_model_add_collider_system,
     item_drop_model_system, login_connection_system, login_event_system, login_state_enter_system,
@@ -129,7 +130,7 @@ use systems::{
     vehicle_model_system, vehicle_sound_system, visible_status_effects_system,
     world_connection_system, world_time_system, zone_time_system, zone_viewer_enter_system,
     color_grading_time_of_day_system,
-    DebugInspectorPlugin, FishPlugin, BirdPlugin, DirtDashPlugin,
+    DebugInspectorPlugin, FishPlugin, BirdPlugin, DirtDashPlugin, WingSpawnPlugin, WindEffectPlugin,
 };
 use ui::{
     load_dialog_sprites_system, ui_bank_system, ui_character_create_system,
@@ -812,6 +813,12 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
             // Dirt/dash effect when characters run
             DirtDashPlugin,
+
+            // Angelic wing spawning for flight system
+            WingSpawnPlugin,
+
+            // Wind particle effect for flying
+            WindEffectPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -833,6 +840,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_event::<ClanDialogEvent>()
         .add_event::<ClientEntityEvent>()
         .add_event::<ConversationDialogEvent>()
+        .add_event::<FlightToggleEvent>()
         .add_event::<GameConnectionEvent>()
         .add_event::<HitEvent>()
         .add_event::<LoginEvent>()
@@ -1222,7 +1230,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<SelectedTarget>()
         .init_resource::<NameTagSettings>()
         .init_resource::<DepthOfFieldSettings>()
-        .init_resource::<WaterSettings>();
+        .init_resource::<WaterSettings>()
+        .init_resource::<FlightSettings>();
 
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
 
@@ -1253,6 +1262,11 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, collision_player_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, cooldown_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, client_entity_event_system.run_if(in_state(AppState::Game)));
+    
+    // Flight systems - ensure_flight_state_system runs before flight_toggle_system
+    app.add_systems(Update, ensure_flight_state_system.run_if(in_state(AppState::Game)));
+    app.add_systems(Update, flight_toggle_system.run_if(in_state(AppState::Game)).after(ensure_flight_state_system));
+    app.add_systems(Update, flight_movement_system.run_if(in_state(AppState::Game)).after(flight_toggle_system));
 
     // Game systems - part 2
     app.add_systems(Update, (use_item_event_system.run_if(in_state(AppState::Game)),));

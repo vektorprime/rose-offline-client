@@ -1,11 +1,13 @@
-use bevy::prelude::{Assets, EventReader, EventWriter, Local, Res};
+use bevy::prelude::{Assets, Entity, EventReader, EventWriter, Local, Query, Res, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
-    events::ChatboxEvent,
+    components::PlayerCharacter,
+    events::{ChatboxEvent, FlightToggleEvent},
     resources::{GameConnection, UiResources},
+    systems::is_fly_command,
     ui::{
         widgets::{DataBindings, Dialog},
         UiSoundEvent,
@@ -83,6 +85,8 @@ pub fn ui_chatbox_system(
     ui_resources: Res<UiResources>,
     mut ui_sound_events: EventWriter<UiSoundEvent>,
     dialog_assets: Res<Assets<Dialog>>,
+    mut flight_toggle_events: EventWriter<FlightToggleEvent>,
+    player_query: Query<Entity, With<PlayerCharacter>>,
 ) {
     let ui_state_chatbox = &mut *ui_state_chatbox;
     let dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_chatbox) {
@@ -295,15 +299,27 @@ pub fn ui_chatbox_system(
         {
             if response.lost_focus() {
                 if !ui_state_chatbox.textbox_text.is_empty() {
-                    // TODO: Parse text line to decide whether its chat, shout, etc
-                    if let Some(game_connection) = game_connection.as_ref() {
-                        game_connection
-                            .client_message_tx
-                            .send(ClientMessage::Chat {
-                                text: ui_state_chatbox.textbox_text.clone(),
-                            })
-                            .ok();
+                    // Check if this is a "/fly" command before sending to server
+                    if is_fly_command(&ui_state_chatbox.textbox_text) {
+                        // Get the player entity and send flight toggle event
+                        if let Ok(player_entity) = player_query.get_single() {
+                            flight_toggle_events.write(FlightToggleEvent {
+                                entity: player_entity,
+                            });
+                        }
+                        // Clear the textbox without sending to server
                         ui_state_chatbox.textbox_text.clear();
+                    } else {
+                        // TODO: Parse text line to decide whether its chat, shout, etc
+                        if let Some(game_connection) = game_connection.as_ref() {
+                            game_connection
+                                .client_message_tx
+                                .send(ClientMessage::Chat {
+                                    text: ui_state_chatbox.textbox_text.clone(),
+                                })
+                                .ok();
+                            ui_state_chatbox.textbox_text.clear();
+                        }
                     }
                 }
             } else {
