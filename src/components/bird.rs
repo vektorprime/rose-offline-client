@@ -38,8 +38,12 @@ impl Default for Bird {
 pub struct BirdSettings {
     /// Whether birds are enabled
     pub enabled: bool,
-    /// Number of birds per zone
-    pub birds_per_zone: usize,
+    /// Base number of birds per 1000x1000 unit area (used for zone-relative counting)
+    pub birds_per_1000_units: f32,
+    /// Minimum number of birds per zone (even for small zones)
+    pub min_birds_per_zone: usize,
+    /// Maximum number of birds per zone (even for huge zones)
+    pub max_birds_per_zone: usize,
     /// Minimum flying altitude
     pub min_altitude: f32,
     /// Maximum flying altitude
@@ -48,8 +52,8 @@ pub struct BirdSettings {
     pub min_speed: f32,
     /// Maximum movement speed
     pub max_speed: f32,
-    /// Roam radius from spawn point
-    pub roam_radius: f32,
+    /// Roam radius multiplier (relative to zone size)
+    pub roam_radius_multiplier: f32,
     /// Wing flap speed (radians per second)
     pub flap_speed: f32,
     /// Vertical bobbing amplitude
@@ -62,12 +66,14 @@ impl Default for BirdSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            birds_per_zone: 400,       // Default 400 birds per zone
-            min_altitude: 20.0,       // Lower altitude for better visibility
-            max_altitude: 50.0,       // Lower max altitude
+            birds_per_1000_units: 50.0,  // 50 birds per 1000x1000 unit area
+            min_birds_per_zone: 20,      // At least 20 birds even in small zones
+            max_birds_per_zone: 300,     // At most 300 birds even in huge zones
+            min_altitude: 20.0,          // Lower altitude for better visibility
+            max_altitude: 50.0,          // Lower max altitude
             min_speed: 3.0,
             max_speed: 8.0,
-            roam_radius: 200.0,       // Smaller roam radius so birds are more concentrated
+            roam_radius_multiplier: 0.4, // Roam radius is 40% of zone size
             flap_speed: 12.0,
             bob_amplitude: 0.5,
             bob_speed: 2.0,
@@ -75,6 +81,14 @@ impl Default for BirdSettings {
     }
 }
 
-/// Marker component for the bird mesh child entity
+/// Marker component for the bird body mesh child entity
 #[derive(Component)]
 pub struct BirdMesh;
+
+/// Marker component for the left wing mesh child entity
+#[derive(Component)]
+pub struct BirdWingLeft;
+
+/// Marker component for the right wing mesh child entity
+#[derive(Component)]
+pub struct BirdWingRight;

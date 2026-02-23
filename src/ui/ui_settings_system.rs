@@ -428,9 +428,23 @@ pub fn ui_settings_system(
                             ui.checkbox(&mut bird_settings.enabled, "Enabled");
                             ui.end_row();
 
-                            ui.label("Birds Per Zone:");
+                            ui.label("Birds Per 1000 Units:");
                             ui.add(
-                                egui::Slider::new(&mut bird_settings.birds_per_zone, 0..=1000)
+                                egui::Slider::new(&mut bird_settings.birds_per_1000_units, 0.0..=200.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Min Birds Per Zone:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.min_birds_per_zone, 0..=100)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Birds Per Zone:");
+                            ui.add(
+                                egui::Slider::new(&mut bird_settings.max_birds_per_zone, 50..=500)
                                     .show_value(true),
                             );
                             ui.end_row();
@@ -465,10 +479,9 @@ pub fn ui_settings_system(
                             );
                             ui.end_row();
 
-                            ui.label("Roam Radius:");
+                            ui.label("Roam Radius Multiplier:");
                             ui.add(
-                                egui::Slider::new(&mut bird_settings.roam_radius, 50.0..=2000.0)
-                                    .text("m")
+                                egui::Slider::new(&mut bird_settings.roam_radius_multiplier, 0.1..=1.0)
                                     .show_value(true),
                             );
                             ui.end_row();
@@ -498,9 +511,10 @@ pub fn ui_settings_system(
                     // Clamp min/max values to prevent crashes
                     bird_settings.max_altitude = bird_settings.max_altitude.max(bird_settings.min_altitude);
                     bird_settings.max_speed = bird_settings.max_speed.max(bird_settings.min_speed);
+                    bird_settings.max_birds_per_zone = bird_settings.max_birds_per_zone.max(bird_settings.min_birds_per_zone);
 
                     ui.separator();
-                    ui.label("Note: Bird count changes apply when entering a new zone");
+                    ui.label("Note: Bird count is now relative to zone size. Birds have cartoon appearance with flapping wings.");
                 }
                 SettingsPage::Seasons => {
                     egui::Grid::new("season_settings")

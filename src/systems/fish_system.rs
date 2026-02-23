@@ -361,10 +361,12 @@ pub fn update_fish_movement_system(
         let direction_normalized = direction / distance;
         
         // Calculate target rotation (face direction of movement)
+        // Fish mesh has nose at +X, so we rotate to make +X face the target direction
+        // atan2(z, x) gives the angle from +X axis to the direction
         // Add slight random variation to prevent perfect alignment
         let rotation_noise = rng.gen_range(-0.05..0.05);
         let target_rotation = Quat::from_rotation_y(
-            direction_normalized.z.atan2(direction_normalized.x) - std::f32::consts::FRAC_PI_2 + rotation_noise
+            direction_normalized.z.atan2(direction_normalized.x) + rotation_noise
         );
         
         // Smoothly rotate towards target with slight speed variation
@@ -375,8 +377,9 @@ pub fn update_fish_movement_system(
         );
         
         // Move forward in facing direction with slight speed variation
+        // Fish mesh faces +X, so use right() instead of forward()
         let speed_variation = fish.speed * rng.gen_range(0.95..1.05);
-        let forward = transform.forward();
+        let forward = transform.right();
         transform.translation += forward * speed_variation * delta;
         
         // Add swimming wobble (side-to-side motion) with unique amplitude per fish

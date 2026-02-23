@@ -47,7 +47,7 @@ mod skinning_target;
 mod skinned_mesh_target_bone;
 
 pub use bank::Bank;
-pub use bird::{Bird, BirdMesh, BirdSettings};
+pub use bird::{Bird, BirdMesh, BirdSettings, BirdWingLeft, BirdWingRight};
 pub use character_model::{CharacterModel, CharacterModelPart, CharacterModelPartIndex};
 pub use character_model_blink_timer::CharacterBlinkTimer;
 pub use clan::{Clan, ClanMember};

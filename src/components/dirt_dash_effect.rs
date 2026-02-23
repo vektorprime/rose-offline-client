@@ -136,10 +136,10 @@ impl Default for DirtDashSettings {
         Self {
             // Light gray dust/smoke color with low opacity for subtlety
             particle_color: Vec4::new(0.7, 0.68, 0.65, 0.25),
-            min_lifetime: 0.0,          // Can be instant
-            max_lifetime: 0.8,          // Up to 0.8 seconds
+            min_lifetime: 0.1,          // Can be instant
+            max_lifetime: 0.6,          // Up to 0.8 seconds
             min_size: 0.01,             // Very small particles
-            max_size: 0.7,              // Can grow larger for smoke effect
+            max_size: 0.1,              // Can grow larger for smoke effect
             min_upward_velocity: 0.05,  // Very low upward velocity (hovering)
             max_upward_velocity: 0.15,  // Very low upward velocity (hovering)
             horizontal_velocity_factor: 0.0, // No horizontal spread - stays near player
