@@ -11,6 +11,8 @@ This is a fork modified with an LLM. I take no credit for this and can't speak t
 
 -Bevy has been upgraded to 0.16.1.
 
+-Flying
+
 -modify in game graphics or systems with settings from in-game menu
 
 leaves and grass swaying in the wind
@@ -34,7 +36,18 @@ leaves and grass swaying in the wind
 -character dashes (dirt kicked up or cloud of dust when running) when running
 
 
+
 # Screenshots
+
+## Flying
+
+type /fly and hold space bar while moving the camera around (with holding right click)
+
+(animation tbd)
+
+https://github.com/user-attachments/assets/b48b9fa7-e321-494b-8938-d1b8948bde1b
+
+
 
 ## Leaves and grass swaying in wind
 
