@@ -35,12 +35,16 @@ fn setup_wind_effect_assets(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Create an elongated mesh for wind streaks (stretched sphere)
-    let mesh = meshes.add(Mesh::from(bevy::math::primitives::Sphere { radius: 1.0 }));
+    // Create a thin capsule mesh for horizontal wind streaks
+    // Capsule3d is oriented along the Y axis by default, we'll rotate it when spawning
+    let mesh = meshes.add(Mesh::from(bevy::math::primitives::Capsule3d {
+        radius: 0.1,      // Thin radius for streamlined look
+        half_length: 0.9, // Long body for streak effect
+    }));
 
     // Create semi-transparent white/light-blue material for wind streaks
     let material = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.85, 0.92, 1.0, 0.6), // Light blue, semi-transparent
+        base_color: Color::srgba(0.85, 0.92, 1.0, 0.5), // Light blue, semi-transparent
         emissive: LinearRgba::new(0.3, 0.5, 0.7, 1.0),   // Soft blue glow
         alpha_mode: AlphaMode::Blend,
         perceptual_roughness: 0.2,
@@ -119,8 +123,13 @@ pub fn wind_particle_spawn_system(
     }
 
     for (flight_state, position, facing_direction) in flight_query.iter() {
-        // Only spawn particles when flying
+        // Only spawn particles when flying AND moving
         if !flight_state.is_flying {
+            continue;
+        }
+
+        // Don't spawn particles when stopped (no speed)
+        if flight_state.current_speed < 0.1 {
             continue;
         }
 
@@ -171,11 +180,13 @@ pub fn wind_particle_spawn_system(
                 -position.y / 100.0,
             );
 
-            // Spawn particles around the character's body
-            let body_offset = rng.gen_range(-0.5..0.5); // Random height offset
-            let side_offset = rng.gen_range(-0.3..0.3); // Random side offset
+            // Spawn particles around the character's body (torso/chest area, not feet)
+            // Player height is approximately 1.8m, so torso is around 0.8-1.2m above feet
+            let body_offset = rng.gen_range(0.8..1.4); // Torso/chest height offset
+            let side_offset = rng.gen_range(-0.5..0.5); // Random side offset
+            let front_back_offset = rng.gen_range(-0.3..0.3); // Random front/back offset
 
-            let spawn_position = player_pos + Vec3::new(side_offset, body_offset, side_offset);
+            let spawn_position = player_pos + Vec3::new(side_offset, body_offset, front_back_offset);
 
             // Calculate backward direction based on facing direction
             // FacingDirection stores angle in radians
@@ -200,20 +211,40 @@ pub fn wind_particle_spawn_system(
             // Random lifetime (0.5 to 1.0 seconds)
             let lifetime = rng.gen_range(0.5..1.0);
 
-            // Particle size - elongated for streak effect
-            let size = rng.gen_range(0.03..0.08);
+            // Particle size - thin for streamlined streak effect
+            let size = rng.gen_range(0.02..0.05);
 
-            // Spawn the particle entity
+            // Calculate rotation to align particle with velocity direction
+            // The capsule mesh is oriented along Y-axis by default
+            // We need to rotate it to align with the backward (velocity) direction
+            let velocity_normalized = velocity.normalize();
+            let up = Vec3::Y;
+            
+            // Calculate rotation from Y-axis to velocity direction
+            let rotation = if velocity_normalized.abs().dot(up) > 0.999 {
+                // Nearly parallel or anti-parallel to Y axis
+                if velocity_normalized.y > 0.0 {
+                    Quat::IDENTITY
+                } else {
+                    Quat::from_rotation_x(std::f32::consts::PI)
+                }
+            } else {
+                // Use rotation from Y-axis to velocity direction
+                Quat::from_rotation_arc(up, velocity_normalized)
+            };
+
+            // Spawn the particle entity with horizontal orientation
             commands.spawn((
                 WindEffectParticle {
                     velocity,
                     lifetime: Timer::from_seconds(lifetime, TimerMode::Once),
-                    initial_alpha: 0.6,
+                    initial_alpha: 0.5,
                 },
                 Mesh3d(assets.mesh.clone()),
                 MeshMaterial3d(assets.material.clone()),
                 Transform::from_translation(spawn_position)
-                    .with_scale(Vec3::new(size * 0.5, size * 2.0, size * 0.5)), // Elongated for streak
+                    .with_rotation(rotation)
+                    .with_scale(Vec3::new(size, size * 3.0, size)), // Elongated along velocity
                 GlobalTransform::default(),
                 Visibility::Visible,
                 InheritedVisibility::default(),
@@ -228,12 +259,11 @@ pub fn wind_particle_spawn_system(
 pub fn wind_particle_update_system(
     time: Res<Time>,
     mut commands: Commands,
-    mut query: Query<(Entity, &mut WindEffectParticle, &mut Transform, &mut MeshMaterial3d<StandardMaterial>)>,
-    materials: Res<Assets<StandardMaterial>>,
+    mut query: Query<(Entity, &mut WindEffectParticle, &mut Transform)>,
 ) {
     let delta_time = time.delta_secs();
 
-    for (entity, mut particle, mut transform, mut material_handle) in query.iter_mut() {
+    for (entity, mut particle, mut transform) in query.iter_mut() {
         // Tick lifetime timer
         particle.lifetime.tick(time.delta());
 
@@ -248,20 +278,15 @@ pub fn wind_particle_update_system(
 
         // Calculate fade based on remaining lifetime
         let remaining_ratio = particle.lifetime.remaining_secs() / particle.lifetime.duration().as_secs_f32();
-        let alpha = particle.initial_alpha * remaining_ratio;
 
-        // Update material alpha for fading effect
-        if let Some(material) = materials.get(material_handle.id()) {
-            // We need to modify the material - since StandardMaterial is not easily mutable
-            // per-instance, we'll just scale down the particle as it fades
-            let scale_factor = 0.3 + 0.7 * remaining_ratio;
-            let base_scale = transform.scale.x / transform.scale.y.max(0.001).sqrt(); // Approximate base size
-            transform.scale = Vec3::new(
-                base_scale * 0.5 * scale_factor,
-                base_scale * 2.0 * scale_factor,
-                base_scale * 0.5 * scale_factor,
-            );
-        }
+        // Scale down the particle as it fades for a shrinking effect
+        let scale_factor = 0.3 + 0.7 * remaining_ratio;
+        let base_size = transform.scale.x.max(0.001);
+        transform.scale = Vec3::new(
+            base_size * scale_factor,
+            base_size * 3.0 * scale_factor, // Maintain elongation ratio
+            base_size * scale_factor,
+        );
 
         // Slow down slightly over time (air resistance effect)
         particle.velocity *= 0.98;

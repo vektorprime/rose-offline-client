@@ -10,6 +10,8 @@ pub struct FlightState {
     pub is_thrusting: bool,
     /// Current flight speed
     pub current_speed: f32,
+    /// Last flight direction (normalized) - used for momentum when stopping thrust
+    pub last_flight_direction: Vec3,
     /// Entity ID of the left wing
     pub wing_entity_left: Option<Entity>,
     /// Entity ID of the right wing

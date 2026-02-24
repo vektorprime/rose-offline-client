@@ -94,6 +94,9 @@ use render::{
     WaterMaterial,
     debug_particle_rendering,
     particle_performance_monitor,
+    UnderwaterEffectPlugin,
+    UnderwaterSettings,
+    CameraUnderwaterState,
 };
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
@@ -155,7 +158,7 @@ use vfs_asset_io::{VfsAssetIo, VfsAssetReaderPlugin};
 use zms_asset_loader::{ZmsAssetLoader, ZmsMaterialNumFaces, ZmsNoSkinAssetLoader};
 use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, force_zone_visibility_system, ZoneLoader, ZoneLoaderAsset, ZoneLoadChannelReceiver, ZoneLoadChannelSender, MemoryTrackingResource};
 
-use crate::components::{CollisionPlayer, SoundCategory, Zone};
+use crate::components::{CollisionPlayer, SoundCategory, Zone, VegetationSwayPlugin};
 
 #[derive(Default, Deserialize)]
 #[serde(default)]
@@ -784,17 +787,18 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_plugins(ExtensionMaterialPlugin);
     log::info!("[MATERIAL PLUGIN] ExtensionMaterialPlugin registered successfully");
 
+    // Optional: Add these for full rendering support
     app.add_plugins((
-            // Optional: Add these for full rendering support
             SkyMaterialPlugin { prepass_enabled: false },
             TrailEffectRenderPlugin,
             ZoneLightingPlugin,
             WorldUiRenderPlugin,
-
             RoseRenderPlugin,
             RoseScriptingPlugin,
             DebugInspectorPlugin,
+        ));
 
+    app.add_plugins((
             // REQUIRED: SkinnedMeshFixPlugin deferred-inserts SkinnedMesh components after mesh loading.
             // Without this, skinned meshes won't render correctly (bind group layout mismatch).
             render::SkinnedMeshFixPlugin,
@@ -807,7 +811,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
             // Birds in sky feature
             BirdPlugin,
+        ));
 
+    app.add_plugins((
             // Weather season system
             systems::season::SeasonPlugin,
 
@@ -819,6 +825,12 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
             // Wind particle effect for flying
             WindEffectPlugin,
+
+            // Vegetation wind sway effect (grass, trees, leaves)
+            VegetationSwayPlugin,
+
+            // Underwater rendering effect
+            UnderwaterEffectPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -1623,6 +1635,8 @@ fn load_common_game_data(
         Smaa::default(),
         // Prepasses for depth (required for some effects)
         DepthPrepass,
+        // Underwater state tracking for underwater rendering effect
+        CameraUnderwaterState::default(),
     )).id();
     // Insert additional components separately to avoid tuple size limit
     commands.entity(camera_entity).insert((

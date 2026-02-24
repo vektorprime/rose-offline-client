@@ -193,14 +193,9 @@ pub fn game_connection_system(
                 let move_mode = MoveMode::Run;
                 let move_speed = MoveSpeed::new(ability_values.get_move_speed(&move_mode));
 
-                // DIAGNOSTIC: Log player spawn position
-                log::info!("[PLAYER SPAWN DIAGNOSTIC] Spawning player character:");
-                log::info!("[PLAYER SPAWN DIAGNOSTIC]   Server position: x={:.2}, y={:.2}, z={:.2}",
-                    character_data.position.x, character_data.position.y, character_data.position.z);
-                log::info!("[PLAYER SPAWN DIAGNOSTIC]   Bevy Transform: x={:.2}, y={:.2}, z={:.2}",
-                    character_data.position.x / 100.0, character_data.position.z / 100.0 + 100.0, -character_data.position.y / 100.0);
-                log::info!("[PLAYER SPAWN DIAGNOSTIC]   Y offset applied: +100.0 (FIXED: using CollisionPlayer for player character)");
-
+                // Store position for deferred spawning
+                let position = character_data.position;
+                
                 // Spawn character - split into multiple spawns to avoid Bundle limit
                 let player_entity = commands
                     .spawn((
@@ -241,23 +236,35 @@ pub fn game_connection_system(
                     PendingSkillTargetList::default(),
                     PendingDamageList::default(),
                     PendingSkillEffectList::default(),
-                    Position::new(character_data.position),
+                    Position::new(position),
                     VisibleStatusEffects::default(),
                     DirtDashEffect::default(),
                 ));
 
-                // Add transform components (CollisionPlayer added during JoinZone, matching Bevy 0.11 behavior)
-                commands.entity(player_entity).insert((
-                    Transform::from_xyz(
-                        character_data.position.x / 100.0,
-                        character_data.position.z / 100.0 + 100.0,
-                        -character_data.position.y / 100.0,
-                    ),
-                    GlobalTransform::default(),
-                    Visibility::default(),
-                    InheritedVisibility::default(),
-                    ViewVisibility::default(),
-                ));
+                // Defer transform creation to get terrain height from loaded zone
+                // This ensures the player spawns just above terrain (1.5m offset for subtle fall)
+                let player_entity_for_closure = player_entity;
+                commands.queue(move |world: &mut World| {
+                    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
+                    let final_spawn_y = spawn_y + 1.5; // Add 1.5m offset for subtle fall effect
+                    
+                    log::info!("[PLAYER SPAWN] Spawning at terrain height: {:.2}m + 1.5m offset = {:.2}m (server z was: {:.2})", 
+                        spawn_y, final_spawn_y, position.z / 100.0);
+                    
+                    if let Ok(mut player) = world.get_entity_mut(player_entity_for_closure) {
+                        player.insert((
+                            Transform::from_xyz(
+                                position.x / 100.0,
+                                final_spawn_y,
+                                -position.y / 100.0,
+                            ),
+                            GlobalTransform::default(),
+                            Visibility::default(),
+                            InheritedVisibility::default(),
+                            ViewVisibility::default(),
+                        ));
+                    }
+                });
 
                 client_entity_list.player_entity = Some(player_entity);
 
@@ -723,15 +730,22 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::Teleport { entity_id: _, zone_id, x, y, run_mode: _, ride_mode: _ }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
-                    // Update player position
-                    commands
-                        .entity(player_entity)
-                        .insert((
-                            Position::new(Vec3::new(x, y, 0.0)),
-                            Transform::from_xyz(x / 100.0, 100.0, -y / 100.0),
-                        ))
-                        .remove::<ClientEntity>()
-                        .remove::<CollisionPlayer>();
+                    // Update player position - defer to get terrain height
+                    let player_entity_for_closure = player_entity;
+                    commands.queue(move |world: &mut World| {
+                        let spawn_y = get_spawn_height_from_world(world, x, y);
+                        let final_spawn_y = spawn_y + 1.5; // Add 1.5m offset for subtle fall effect
+                        
+                        log::info!("[TELEPORT] Spawning at terrain height: {:.2}m + 1.5m offset = {:.2}m", 
+                            spawn_y, final_spawn_y);
+                        
+                        if let Ok(mut player) = world.get_entity_mut(player_entity_for_closure) {
+                            player.insert((
+                                Position::new(Vec3::new(x, y, 0.0)),
+                                Transform::from_xyz(x / 100.0, final_spawn_y, -y / 100.0),
+                            )).remove::<ClientEntity>().remove::<CollisionPlayer>();
+                        }
+                    });
 
                     // Despawn all non-player entities
                     for (client_entity_id, client_entity) in

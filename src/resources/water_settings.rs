@@ -22,18 +22,22 @@ pub struct WaterSettings {
     pub fresnel_strength: f32,
     /// Specular intensity (0.0-1.0) - sun highlight brightness
     pub specular_intensity: f32,
+    /// Y coordinate of the water surface in world space
+    /// Used for underwater detection and effects
+    pub water_surface_y: f32,
 }
 
 impl Default for WaterSettings {
     fn default() -> Self {
         Self {
-            foam_intensity: 0.4,
-            foam_threshold: 0.3,
+            foam_intensity: 0.5,
+            foam_threshold: 0.8,
             sss_intensity: 1.0,
             refraction_strength: 0.05,
             wave_speed: 1.0,
             fresnel_strength: 0.5,
             specular_intensity: 0.5,
+            water_surface_y: 0.0,
         }
     }
 }

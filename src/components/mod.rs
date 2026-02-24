@@ -1,6 +1,7 @@
 mod angelic_wings;
 mod bank;
 mod bird;
+mod blood_effect;
 mod character_model;
 mod character_model_blink_timer;
 mod clan;
@@ -67,6 +68,7 @@ pub use command::{
     CommandEmote, CommandMove, CommandSit, NextCommand,
 };
 pub use cooldowns::{ConsumableCooldownGroup, Cooldowns};
+pub use blood_effect::{BloodSpatter, BloodSpatterConfig, GashWounds, WoundVisual};
 pub use damage_digits::DamageDigits;
 pub use dead::Dead;
 pub use dirt_dash_effect::{DirtDashEffect, DirtDashParticle, DirtDashSettings};
@@ -110,4 +112,4 @@ pub use skinned_mesh_target_bone::SkinnedMeshTargetBone;
 pub use skinning_target::SkinningTarget;
 pub use angelic_wings::{AngelicWings, WingSide};
 pub use flight::FlightState;
-pub use wind_effect::{WindEffectEmitter, WindEffectParticle};
+pub use wind_effect::{VegetationSwayPlugin, WindEffectEmitter, WindEffectParticle, WindSway, WindSwaySettings};

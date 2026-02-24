@@ -13,7 +13,7 @@ use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
     components::{
-        ColliderParent, CollisionHeightOnly, CollisionPlayer, EventObject, NextCommand, Position,
+        ColliderParent, CollisionHeightOnly, CollisionPlayer, EventObject, FlightState, NextCommand, Position,
         WarpObject, COLLISION_FILTER_COLLIDABLE, COLLISION_FILTER_MOVEABLE,
         COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_ZONE_EVENT_OBJECT,
         COLLISION_GROUP_ZONE_TERRAIN, COLLISION_GROUP_ZONE_WARP_OBJECT,
@@ -138,7 +138,7 @@ pub fn collision_player_system_join_zone(
 pub fn collision_player_system(
     mut commands: Commands,
     mut query_collision_entity: Query<
-        (Entity, &mut Position, &mut Transform),
+        (Entity, &mut Position, &mut Transform, Option<&FlightState>),
         With<CollisionPlayer>,
     >,
     mut query_event_object: Query<&mut EventObject>,
@@ -168,7 +168,20 @@ pub fn collision_player_system(
             return;
         };
 
-    for (entity, mut position, mut transform) in query_collision_entity.iter_mut() {
+    for (entity, mut position, mut transform, flight_state) in query_collision_entity.iter_mut() {
+        // Check if player is flying - if so, skip ground collision and use position directly
+        let is_flying = flight_state.map_or(false, |fs| fs.is_flying);
+        
+        if is_flying {
+            // When flying, sync transform directly from position (including Y/height)
+            // Position is in centimeters: x=right, y=forward, z=up
+            // Transform is in meters: x=right, y=up, z=back
+            transform.translation.x = position.x / 100.0;
+            transform.translation.y = position.z / 100.0;  // Use position.z for height
+            transform.translation.z = -position.y / 100.0;
+            continue; // Skip ground collision when flying
+        }
+        
         // Cast ray forward to collide with walls
         let new_translation = Vec3::new(
             position.x / 100.0,

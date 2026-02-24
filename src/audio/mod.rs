@@ -2,6 +2,7 @@ use bevy::prelude::{App, AssetApp, Component, IntoScheduleConfigs, Last, Plugin,
 
 mod audio_source;
 mod global_sound;
+mod monster_sound_cap;
 mod ogg;
 mod spatial_sound;
 mod streaming_sound;
@@ -38,6 +39,7 @@ pub struct OddioContext {
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use global_sound::global_sound_system;
+use monster_sound_cap::process_monster_sound_queue_system;
 use ogg::OggLoader;
 use spatial_sound::spatial_sound_system;
 use streaming_sound::StreamingSound;
@@ -45,6 +47,7 @@ use wav::WavLoader;
 
 pub use audio_source::{AudioSource, StreamingAudioSource};
 pub use global_sound::GlobalSound;
+pub use monster_sound_cap::{queue_monster_sound, MonsterSoundQueue, PendingMonsterSound, PendingMonsterSoundData};
 pub use spatial_sound::SpatialSound;
 
 use self::{
@@ -92,6 +95,7 @@ impl Plugin for OddioPlugin {
                 spatial: scene_handle,
                 sample_rate: sample_rate.0,
             })
+            .init_resource::<MonsterSoundQueue>()
             .init_asset::<AudioSource>()
             .register_asset_loader(OggLoader::default())
             .register_asset_loader(WavLoader::default())
@@ -99,6 +103,8 @@ impl Plugin for OddioPlugin {
                 Last,
                 (
                     spatial_sound_gain_changed_system.before(spatial_sound_system),
+                    // Process monster sound queue before spatial sound system
+                    process_monster_sound_queue_system.before(spatial_sound_system),
                     spatial_sound_system,
                     global_sound_gain_changed_system.before(global_sound_system),
                     global_sound_system,

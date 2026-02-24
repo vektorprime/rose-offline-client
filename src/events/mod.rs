@@ -1,4 +1,5 @@
 mod bank_event;
+mod blood_effect_event;
 mod character_select_event;
 mod chatbox_event;
 mod clan_dialog_event;

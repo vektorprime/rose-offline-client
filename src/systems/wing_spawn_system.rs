@@ -13,6 +13,7 @@ use bevy::prelude::*;
 use bevy::render::mesh::{Mesh, Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::pbr::MeshMaterial3d;
+use bevy::render::alpha::AlphaMode;
 
 use crate::components::{FlightState, PlayerCharacter, AngelicWings, WingSide};
 use crate::events::FlightToggleEvent;
@@ -75,23 +76,23 @@ fn spawn_wings(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<WingMaterial>>,
-    _owner_entity: Entity,
+    owner_entity: Entity,
 ) -> (Entity, Entity) {
     // Create wing meshes
     let left_wing_mesh = create_angel_wing_mesh(meshes, WingSide::Left);
     let right_wing_mesh = create_angel_wing_mesh(meshes, WingSide::Right);
     
-    // Create wing material with default ethereal appearance
+    // Create wing material with default ethereal appearance using StandardMaterial
     let wing_material = materials.add(WingMaterial {
-        base_color: LinearRgba::new(0.95, 0.95, 1.0, 1.0),  // White/silver
-        glow_color: LinearRgba::new(0.6, 0.8, 1.0, 1.0),    // Soft blue glow
-        glow_intensity: 0.8,
-        time: 0.0,
-        shimmer_speed: 1.0,
-        alpha: 0.9,
+        base_color: Color::srgba(0.95, 0.95, 1.0, 0.85),  // White/silver, semi-transparent
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None, // Double-sided
+        perceptual_roughness: 0.3,
+        metallic: 0.1,
+        ..Default::default()
     });
     
-    // Spawn left wing entity
+    // Spawn left wing entity as child of player
     let left_wing = commands.spawn((
         AngelicWings {
             side: WingSide::Left,
@@ -111,7 +112,10 @@ fn spawn_wings(
         ViewVisibility::default(),
     )).id();
     
-    // Spawn right wing entity
+    // Attach left wing to player
+    commands.entity(owner_entity).add_child(left_wing);
+    
+    // Spawn right wing entity as child of player
     let right_wing = commands.spawn((
         AngelicWings {
             side: WingSide::Right,
@@ -130,6 +134,9 @@ fn spawn_wings(
         InheritedVisibility::default(),
         ViewVisibility::default(),
     )).id();
+    
+    // Attach right wing to player
+    commands.entity(owner_entity).add_child(right_wing);
     
     (left_wing, right_wing)
 }

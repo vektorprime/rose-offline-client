@@ -4,7 +4,7 @@ use bevy_egui::{egui, EguiContexts};
 
 use crate::{
     audio::SoundGain,
-    components::{BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory},
+    components::{BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory, WindSwaySettings},
     render::ZoneLighting,
     resources::{SeasonSettings, SoundSettings, WaterSettings},
     ui::UiStateWindows,
@@ -20,6 +20,7 @@ enum SettingsPage {
     Birds,
     Seasons,
     DirtDash,
+    WindSway,
 }
 
 pub struct UiStateSettings {
@@ -80,6 +81,7 @@ pub fn ui_settings_system(
     mut bird_settings: ResMut<BirdSettings>,
     mut season_settings: ResMut<SeasonSettings>,
     mut dirt_dash_settings: ResMut<DirtDashSettings>,
+    wind_sway_settings: Option<ResMut<WindSwaySettings>>,
 ) {
     egui::Window::new("Settings")
         .open(&mut ui_state_windows.settings_open)
@@ -121,6 +123,11 @@ pub fn ui_settings_system(
                     &mut ui_state_settings.page,
                     SettingsPage::DirtDash,
                     "Dirt Dash",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::WindSway,
+                    "Wind Sway",
                 );
             });
 
@@ -694,6 +701,65 @@ pub fn ui_settings_system(
 
                     ui.separator();
                     ui.label("Tip: Dust particles float near the player when running. Low gravity + low velocity = hovering smoke effect.");
+                }
+                SettingsPage::WindSway => {
+                    if let Some(mut settings) = wind_sway_settings {
+                        egui::Grid::new("wind_sway_settings")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Wind Sway:");
+                                ui.checkbox(&mut settings.enabled, "Enabled");
+                                ui.end_row();
+
+                                ui.label("Global Intensity:");
+                                ui.add(
+                                    egui::Slider::new(&mut settings.global_intensity, 0.0..=3.0)
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+
+                                ui.label("Grass Speed:");
+                                ui.add(
+                                    egui::Slider::new(&mut settings.grass_speed, 0.1..=10.0)
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+
+                                ui.label("Grass Amplitude:");
+                                ui.add(
+                                    egui::Slider::new(&mut settings.grass_amplitude, 0.0..=0.5)
+                                        .text("rad")
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+
+                                ui.label("Tree Speed:");
+                                ui.add(
+                                    egui::Slider::new(&mut settings.tree_speed, 0.1..=10.0)
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+
+                                ui.label("Tree Amplitude:");
+                                ui.add(
+                                    egui::Slider::new(&mut settings.tree_amplitude, 0.0..=0.5)
+                                        .text("rad")
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+
+                                ui.label("Debug Log Count:");
+                                ui.checkbox(&mut settings.debug_log_count, "Log entity count");
+                                ui.end_row();
+                            });
+
+                        ui.separator();
+                        ui.label("Tip: Wind sway applies to grass, leaves, bushes, and trees. Amplitude is in radians (0.1 ≈ 5.7°, 0.5 ≈ 28.6°).");
+                        ui.label("If no sway is visible, enable 'Debug Log Count' to check if entities have the WindSway component.");
+                    } else {
+                        ui.label("Wind Sway settings not available.");
+                        ui.label("The WindEffectPlugin may not be loaded yet.");
+                    }
                 }
             }
         });

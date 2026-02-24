@@ -315,7 +315,7 @@ use crate::{
     animation::{MeshAnimation, TransformAnimation, ZmoTextureAssetLoader},
     audio::{SoundRadius, SpatialSound},
     components::{
-        ColliderParent, EventObject, NightTimeEffect, WarpObject, Zone, ZoneObject,
+        ColliderParent, EventObject, NightTimeEffect, WarpObject, WindSway, Zone, ZoneObject,
         ZoneObjectAnimatedObject, ZoneObjectId, ZoneObjectPart, ZoneObjectTerrain,
         COLLISION_FILTER_CLICKABLE, COLLISION_FILTER_COLLIDABLE, COLLISION_FILTER_INSPECTABLE,
         COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_ZONE_EVENT_OBJECT,
@@ -2835,6 +2835,67 @@ fn spawn_object(
             });
             if let Some(active_motion) = active_motion {
                 commands.entity(part_entity).insert(active_motion);
+            }
+
+            // Add wind sway effect to grass and tree leaf models based on mesh path
+            let mesh_path_lower = zsc.meshes[mesh_id].path().to_string_lossy().to_lowercase();
+            
+            // Store the part's rotation to use as base_rotation for wind sway
+            let part_base_rotation = part_transform.rotation;
+            
+            // Generate a random phase offset based on object position for natural variation
+            let phase_offset = (object_instance.position.x * 0.1 + object_instance.position.y * 0.13).fract() * std::f32::consts::TAU;
+            
+            // Check for grass models (identified by "grass" in the mesh name)
+            if mesh_path_lower.contains("grass") {
+                commands.entity(part_entity).insert(
+                    WindSway::for_grass()
+                        .with_base_rotation(part_base_rotation)
+                        .with_phase_offset(phase_offset)
+                );
+            }
+            // Check for tree leaf models (identified by "leaf" or "leaves" in the mesh name)
+            else if mesh_path_lower.contains("leaf") || mesh_path_lower.contains("leaves") {
+                commands.entity(part_entity).insert(
+                    WindSway::for_tree_leaves()
+                        .with_base_rotation(part_base_rotation)
+                        .with_phase_offset(phase_offset)
+                );
+            }
+            // Check for tree foliage (alternative naming conventions)
+            else if mesh_path_lower.contains("foliage") || mesh_path_lower.contains("canopy") {
+                commands.entity(part_entity).insert(
+                    WindSway::for_tree_leaves()
+                        .with_base_rotation(part_base_rotation)
+                        .with_phase_offset(phase_offset)
+                );
+            }
+            // Check for bush/shrub models (similar swaying behavior to grass)
+            else if mesh_path_lower.contains("bush") || mesh_path_lower.contains("shrub") || mesh_path_lower.contains("plant") {
+                commands.entity(part_entity).insert(
+                    WindSway::for_grass()
+                        .with_base_rotation(part_base_rotation)
+                        .with_phase_offset(phase_offset)
+                );
+            }
+            // Check for tree models - apply wind sway to tree tops (leaves) but NOT trunks
+            // Tree naming convention: TREE004.ZMS = top/leaves (sway), TREE004B.ZMS = trunk (no sway)
+            // The "B" suffix indicates the trunk/base part which should remain static
+            else if mesh_path_lower.contains("tree") {
+                // Check if this is a trunk file (ends with "b.zms" or contains "b." before extension)
+                let is_trunk = mesh_path_lower.ends_with("b.zms") ||
+                               mesh_path_lower.ends_with("b") ||
+                               mesh_path_lower.rsplit_once('.').map_or(false, |(name, _ext)| name.ends_with('b'));
+                
+                if !is_trunk {
+                    // This is the tree top/leaves - apply wind sway
+                    commands.entity(part_entity).insert(
+                        WindSway::for_tree_leaves()
+                            .with_base_rotation(part_base_rotation)
+                            .with_phase_offset(phase_offset)
+                    );
+                }
+                // If it's a trunk (ends with B), don't apply wind sway - trunk stays static
             }
 
             commands.entity(object_entity).add_child(part_entity);

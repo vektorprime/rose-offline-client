@@ -77,6 +77,12 @@ pub use extension_material_plugin::RoseObjectMaterialPlugin;
 pub mod skinned_mesh_fix;
 pub use skinned_mesh_fix::SkinnedMeshFixPlugin;
 
+// Underwater rendering effect
+pub mod underwater_effect;
+pub use underwater_effect::{
+    UnderwaterEffectPlugin, UnderwaterSettings, CameraUnderwaterState,
+};
+
 pub const MESH_ATTRIBUTE_UV_1: MeshVertexAttribute =
     MeshVertexAttribute::new("Vertex_Uv2", 280035324, VertexFormat::Float32x2);
 

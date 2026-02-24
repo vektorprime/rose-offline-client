@@ -2,7 +2,7 @@ use bevy::{
     asset::Assets,
     ecs::query::QueryData,
     math::Vec3,
-    prelude::{AssetServer, Commands, Entity, EventReader, GlobalTransform, Query, Res, Transform},
+    prelude::{AssetServer, Commands, Entity, EventReader, GlobalTransform, Query, Res, ResMut, Transform, With},
     render::mesh::skinning::SkinnedMesh,
 };
 
@@ -15,8 +15,8 @@ use crate::components::{Command, DummyBoneOffset, PlayerCharacter};
 
 use crate::{
     animation::AnimationFrameEvent,
-    audio::SpatialSound,
-    components::{SoundCategory},
+    audio::{queue_monster_sound, MonsterSoundQueue, SpatialSound},
+    components::SoundCategory,
     resources::{CurrentZone, GameData, SoundCache, SoundSettings},
     zone_loader::ZoneLoaderAsset,
 };
@@ -41,6 +41,41 @@ pub struct TargetEntity<'w> {
     player: Option<&'w PlayerCharacter>,
 }
 
+/// Helper function to spawn a sound - either directly for player sounds or via queue for monster sounds
+fn spawn_sound(
+    commands: &mut Commands,
+    sound_queue: &mut ResMut<MonsterSoundQueue>,
+    player_position: Vec3,
+    audio_source: bevy::asset::Handle<crate::audio::AudioSource>,
+    position: Vec3,
+    sound_category: SoundCategory,
+    gain: crate::audio::SoundGain,
+    is_player_sound: bool,
+) {
+    if is_player_sound {
+        // Player sounds are always spawned directly (no cap)
+        commands.spawn((
+            sound_category,
+            gain,
+            SpatialSound::new(audio_source),
+            Transform::from_translation(position),
+            GlobalTransform::from_translation(position),
+        ));
+    } else {
+        // Monster sounds go through the queue for capping
+        queue_monster_sound(
+            commands,
+            sound_queue,
+            player_position,
+            audio_source,
+            position,
+            None, // Use default sound radius
+            gain,
+            sound_category,
+        );
+    }
+}
+
 pub fn animation_sound_system(
     mut commands: Commands,
     mut animation_frame_events: EventReader<AnimationFrameEvent>,
@@ -53,7 +88,15 @@ pub fn animation_sound_system(
     query_target_entity: Query<TargetEntity>,
     query_global_transform: Query<&GlobalTransform>,
     sound_cache: Res<SoundCache>,
+    mut sound_queue: ResMut<MonsterSoundQueue>,
+    query_player: Query<&GlobalTransform, With<PlayerCharacter>>,
 ) {
+    // Get player position for sound prioritization
+    let player_position = query_player
+        .get_single()
+        .map(|transform| transform.translation())
+        .unwrap_or(Vec3::ZERO);
+
     for event in animation_frame_events.read() {
         let event_entity_full = if let Ok(event_entity_full) = query_event_entity_full.get(event.entity) {
             event_entity_full
@@ -102,19 +145,22 @@ pub fn animation_sound_system(
             };
 
             if let Some(sound_data) = step_sound_data {
-                let sound_category = if event_entity_full.player.is_some() {
+                let sound_category = if event_entity_is_player {
                     SoundCategory::PlayerFootstep
                 } else {
                     SoundCategory::OtherFootstep
                 };
 
-                commands.spawn((
+                spawn_sound(
+                    &mut commands,
+                    &mut sound_queue,
+                    player_position,
+                    sound_cache.load(sound_data, &asset_server),
+                    event_entity_full.global_transform.translation(),
                     sound_category,
                     sound_settings.gain(sound_category),
-                    SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                    Transform::from_translation(event_entity_full.global_transform.translation()),
-                    GlobalTransform::from_translation(event_entity_full.global_transform.translation()),
-                ));
+                    event_entity_is_player,
+                );
             }
         }
 
@@ -132,7 +178,7 @@ pub fn animation_sound_system(
                 .and_then(|vehicle_item_data| vehicle_item_data.move_sound_id)
                 .and_then(|sound_id| game_data.sounds.get_sound(sound_id))
             {
-                let sound_category = if event_entity_full.player.is_some() {
+                let sound_category = if event_entity_is_player {
                     SoundCategory::PlayerFootstep
                 } else {
                     SoundCategory::OtherFootstep
@@ -149,13 +195,16 @@ pub fn animation_sound_system(
                         })
                         .and_then(|dummy_entity| query_global_transform.get(*dummy_entity).ok())
                     {
-                        commands.spawn((
+                        spawn_sound(
+                            &mut commands,
+                            &mut sound_queue,
+                            player_position,
+                            sound_cache.load(sound_data, &asset_server),
+                            dummy_transform.translation(),
                             sound_category,
                             sound_settings.gain(sound_category),
-                            SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                            Transform::from_translation(dummy_transform.translation()),
-                            GlobalTransform::from_translation(dummy_transform.translation()),
-                        ));
+                            event_entity_is_player,
+                        );
                     }
                 }
 
@@ -170,13 +219,16 @@ pub fn animation_sound_system(
                         })
                         .and_then(|dummy_entity| query_global_transform.get(*dummy_entity).ok())
                     {
-                        commands.spawn((
+                        spawn_sound(
+                            &mut commands,
+                            &mut sound_queue,
+                            player_position,
+                            sound_cache.load(sound_data, &asset_server),
+                            dummy_transform.translation(),
                             sound_category,
                             sound_settings.gain(sound_category),
-                            SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                            Transform::from_translation(dummy_transform.translation()),
-                            GlobalTransform::from_translation(dummy_transform.translation()),
-                        ));
+                            event_entity_is_player,
+                        );
                     }
                 }
             }
@@ -208,13 +260,18 @@ pub fn animation_sound_system(
                     SoundCategory::OtherCombat
                 };
 
-                commands.spawn((
+                let is_player_sound = event_entity_is_player || target_entity_is_player;
+
+                spawn_sound(
+                    &mut commands,
+                    &mut sound_queue,
+                    player_position,
+                    sound_cache.load(sound_data, &asset_server),
+                    event_entity_full.global_transform.translation(),
                     sound_category,
                     sound_settings.gain(sound_category),
-                    SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                    Transform::from_translation(event_entity_full.global_transform.translation()),
-                    GlobalTransform::from_translation(event_entity_full.global_transform.translation()),
-                ));
+                    is_player_sound,
+                );
             }
         }
 
@@ -262,21 +319,24 @@ pub fn animation_sound_system(
 
                 if let Some(sound_data) = sound_data {
                     let sound_category =
-                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_is_player || target_entity_is_player {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
                         };
 
-                    commands.spawn((
+                    let is_player_sound = event_entity_is_player || target_entity_is_player;
+
+                    spawn_sound(
+                        &mut commands,
+                        &mut sound_queue,
+                        player_position,
+                        sound_cache.load(sound_data, &asset_server),
+                        target_entity.global_transform.translation(),
                         sound_category,
                         sound_settings.gain(sound_category),
-                        SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                        Transform::from_translation(target_entity.global_transform.translation()),
-                        GlobalTransform::from_translation(
-                            target_entity.global_transform.translation(),
-                        ),
-                    ));
+                        is_player_sound,
+                    );
                 }
             }
         }
@@ -338,21 +398,24 @@ pub fn animation_sound_system(
                     fire_sound_id.and_then(|id| game_data.sounds.get_sound(id))
                 {
                     let sound_category =
-                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_is_player || target_entity_is_player {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
                         };
 
-                    commands.spawn((
+                    let is_player_sound = event_entity_is_player || target_entity_is_player;
+
+                    spawn_sound(
+                        &mut commands,
+                        &mut sound_queue,
+                        player_position,
+                        sound_cache.load(sound_data, &asset_server),
+                        event_entity_full.global_transform.translation(),
                         sound_category,
                         sound_settings.gain(sound_category),
-                        SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                        Transform::from_translation(event_entity_full.global_transform.translation()),
-                        GlobalTransform::from_translation(
-                            event_entity_full.global_transform.translation(),
-                        ),
-                    ));
+                        is_player_sound,
+                    );
                 }
             }
         }
@@ -370,21 +433,24 @@ pub fn animation_sound_system(
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
                     let sound_category =
-                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_is_player || target_entity_is_player {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
                         };
 
-                    commands.spawn((
+                    let is_player_sound = event_entity_is_player || target_entity_is_player;
+
+                    spawn_sound(
+                        &mut commands,
+                        &mut sound_queue,
+                        player_position,
+                        sound_cache.load(sound_data, &asset_server),
+                        event_entity_full.global_transform.translation(),
                         sound_category,
                         sound_settings.gain(sound_category),
-                        SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                        Transform::from_translation(event_entity_full.global_transform.translation()),
-                        GlobalTransform::from_translation(
-                            event_entity_full.global_transform.translation(),
-                        ),
-                    ));
+                        is_player_sound,
+                    );
                 }
             }
         }
@@ -399,21 +465,24 @@ pub fn animation_sound_system(
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
                     let sound_category =
-                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_is_player || target_entity_is_player {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
                         };
 
-                    commands.spawn((
+                    let is_player_sound = event_entity_is_player || target_entity_is_player;
+
+                    spawn_sound(
+                        &mut commands,
+                        &mut sound_queue,
+                        player_position,
+                        sound_cache.load(sound_data, &asset_server),
+                        target_entity.global_transform.translation(),
                         sound_category,
                         sound_settings.gain(sound_category),
-                        SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                        Transform::from_translation(target_entity.global_transform.translation()),
-                        GlobalTransform::from_translation(
-                            target_entity.global_transform.translation(),
-                        ),
-                    ));
+                        is_player_sound,
+                    );
                 }
             }
         }
@@ -431,21 +500,24 @@ pub fn animation_sound_system(
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
                     let sound_category =
-                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_is_player || target_entity_is_player {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
                         };
 
-                    commands.spawn((
+                    let is_player_sound = event_entity_is_player || target_entity_is_player;
+
+                    spawn_sound(
+                        &mut commands,
+                        &mut sound_queue,
+                        player_position,
+                        sound_cache.load(sound_data, &asset_server),
+                        target_entity.global_transform.translation(),
                         sound_category,
                         sound_settings.gain(sound_category),
-                        SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                        Transform::from_translation(target_entity.global_transform.translation()),
-                        GlobalTransform::from_translation(
-                            target_entity.global_transform.translation(),
-                        ),
-                    ));
+                        is_player_sound,
+                    );
                 }
             }
         }
@@ -463,21 +535,24 @@ pub fn animation_sound_system(
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
                     let sound_category =
-                        if event_entity_full.player.is_some() || target_entity.player.is_some() {
+                        if event_entity_is_player || target_entity_is_player {
                             SoundCategory::PlayerCombat
                         } else {
                             SoundCategory::OtherCombat
                         };
 
-                    commands.spawn((
+                    let is_player_sound = event_entity_is_player || target_entity_is_player;
+
+                    spawn_sound(
+                        &mut commands,
+                        &mut sound_queue,
+                        player_position,
+                        sound_cache.load(sound_data, &asset_server),
+                        target_entity.global_transform.translation(),
                         sound_category,
                         sound_settings.gain(sound_category),
-                        SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                        Transform::from_translation(target_entity.global_transform.translation()),
-                        GlobalTransform::from_translation(
-                            target_entity.global_transform.translation(),
-                        ),
-                    ));
+                        is_player_sound,
+                    );
                 }
             }
         }

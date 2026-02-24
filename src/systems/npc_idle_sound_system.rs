@@ -1,5 +1,6 @@
 use bevy::{
-    prelude::{AssetServer, ChildSpawnerCommands, Commands, Component, Entity, GlobalTransform, Query, Res, Transform},
+    prelude::{AssetServer, ChildSpawnerCommands, Commands, Component, Entity, GlobalTransform, Query, Res, ResMut, Transform, With},
+    math::Vec3,
 };
 use rand::Rng;
 
@@ -7,9 +8,10 @@ use rose_game_common::components::Npc;
 
 use crate::{
     animation::SkeletalAnimation,
-    audio::{SoundRadius, SpatialSound},
+    audio::{queue_monster_sound, MonsterSoundQueue, SpatialSound},
     components::{Command, SoundCategory},
     resources::{GameData, SoundCache, SoundSettings},
+    components::PlayerCharacter,
 };
 
 #[derive(Component, Default)]
@@ -31,9 +33,17 @@ pub fn npc_idle_sound_system(
     game_data: Res<GameData>,
     sound_settings: Res<SoundSettings>,
     sound_cache: Res<SoundCache>,
+    mut sound_queue: ResMut<MonsterSoundQueue>,
+    query_player: Query<&GlobalTransform, With<PlayerCharacter>>,
 ) {
     let mut rng = rand::thread_rng();
     let gain = sound_settings.gain(SoundCategory::NpcSounds);
+
+    // Get player position for sound prioritization
+    let player_position = query_player
+        .get_single()
+        .map(|transform| transform.translation())
+        .unwrap_or(Vec3::ZERO);
 
     for (entity, npc, skeletal_animation, command, global_transform, idle_sound_state) in
         query.iter_mut()
@@ -66,16 +76,17 @@ pub fn npc_idle_sound_system(
                 .and_then(|npc_data| npc_data.normal_effect_sound_id)
                 .and_then(|sound_id| game_data.sounds.get_sound(sound_id))
             {
-                commands.entity(entity).with_children(|builder| {
-                    builder.spawn((
-                        SpatialSound::new(sound_cache.load(sound_data, &asset_server)),
-                        SoundRadius::new(4.0),
-                        SoundCategory::NpcSounds,
-                        gain,
-                        Transform::default(),
-                        *global_transform,
-                    ));
-                });
+                // Use the monster sound queue for capping
+                queue_monster_sound(
+                    &mut commands,
+                    &mut sound_queue,
+                    player_position,
+                    sound_cache.load(sound_data, &asset_server),
+                    global_transform.translation(),
+                    Some(4.0), // Sound radius
+                    gain,
+                    SoundCategory::NpcSounds,
+                );
             }
         }
     }

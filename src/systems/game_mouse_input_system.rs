@@ -17,14 +17,14 @@ use rose_game_common::components::{ItemDrop, Team};
 
 use crate::{
     components::{
-        ColliderParent, ClientEntity, ClientEntityType, PlayerCharacter, Position, ZoneObject,
+        ColliderParent, ClientEntity, ClientEntityType, FlightState, PlayerCharacter, Position, ZoneObject,
         COLLISION_FILTER_CLICKABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_PLAYER,
     },
     events::{MoveDestinationEffectEvent, PlayerCommandEvent},
     resources::{AppState, SelectedTarget, UiCursorType},
 };
 
-pub type PlayerQuery<'w> = (Entity, &'w Team);
+pub type PlayerQuery<'w> = (Entity, &'w Team, Option<&'w FlightState>);
 
 /// Game mouse input system - handles mouse clicks for movement, attacking, and interaction
 /// This system has been refactored to reduce the number of parameters to 10
@@ -75,11 +75,16 @@ pub fn game_mouse_input_system(
         return Ok(());
     }
 
-    let (_player_entity, player_team) = if let Ok(result) = query_player.get_single() {
+    let (_player_entity, player_team, player_flight_state) = if let Ok(result) = query_player.get_single() {
         result
     } else {
         return Ok(());
     };
+    
+    // Check if player is flying - if so, skip terrain click-to-move
+    // but still allow interaction with UI and entities
+    let is_flying = player_flight_state.map_or(false, |fs| fs.is_flying);
+    
     let Ok((camera, camera_transform)) = query_camera.get_single() else {
         return Ok(());
     };
@@ -134,7 +139,8 @@ pub fn game_mouse_input_system(
                 }
 
                 if hit_zone_object.is_some() {
-                    if mouse_button_input.just_pressed(MouseButton::Left) {
+                    // Only allow terrain click-to-move when NOT flying
+                    if !is_flying && mouse_button_input.just_pressed(MouseButton::Left) {
                         player_command_events.write(PlayerCommandEvent::Move(
                             Position::new(Vec3::new(
                                 hit_position.x * 100.0,
@@ -168,11 +174,14 @@ pub fn game_mouse_input_system(
                             if hit_team.id == Team::DEFAULT_NPC_TEAM_ID
                                 || hit_team.id == player_team.id
                             {
-                                if let Some(hit_entity_position) = hit_entity_position {
-                                    player_command_events.write(PlayerCommandEvent::Move(
-                                        hit_entity_position.clone(),
-                                        Some(hit_entity),
-                                    ));
+                                // Only allow click-to-move to friendly units when NOT flying
+                                if !is_flying {
+                                    if let Some(hit_entity_position) = hit_entity_position {
+                                        player_command_events.write(PlayerCommandEvent::Move(
+                                            hit_entity_position.clone(),
+                                            Some(hit_entity),
+                                        ));
+                                    }
                                 }
                             } else {
                                 player_command_events.write(PlayerCommandEvent::Attack(hit_entity));
