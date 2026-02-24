@@ -11,6 +11,8 @@ This is a fork modified with an LLM. I take no credit for this and can't speak t
 
 -Bevy has been upgraded to 0.16.1.
 
+-Flying
+
 -modify in game graphics or systems with settings from in-game menu
 
 leaves and grass swaying in the wind
@@ -34,7 +36,18 @@ leaves and grass swaying in the wind
 -character dashes (dirt kicked up or cloud of dust when running) when running
 
 
+
 # Screenshots
+
+## Flying
+
+type /fly and hold space bar while moving the camera around (with holding right click)
+
+(animation tbd)
+
+https://github.com/user-attachments/assets/b48b9fa7-e321-494b-8938-d1b8948bde1b
+
+
 
 ## Leaves and grass swaying in wind
 
@@ -87,10 +100,3 @@ Run rose-offline-client from your installed official client directory (the folde
 - `--server-id=<N>` Server ID for auto login (defaults to 0)
 - `--channel-id=<N>` Channel ID for auto login (defaults to 0)
 - `--character-name=<name>` Character name for auto login (optional, auto login can be username/password only)
-
-# Screenshots
-
-<img alt="Fighting Jellybeans"  src="https://user-images.githubusercontent.com/1302758/218569716-d7c131e0-bc5b-4474-b060-745755202c95.jpg">
-
-<img alt="Castlegear" src="https://user-images.githubusercontent.com/1302758/218569729-11887740-2205-4730-a420-c21b2e8a83f2.jpg">
-
