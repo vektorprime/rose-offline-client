@@ -5,9 +5,9 @@ use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
     components::PlayerCharacter,
-    events::{ChatboxEvent, FlightToggleEvent},
+    events::{ChatboxEvent, FlightToggleEvent, MoveSpeedSetEvent},
     resources::{GameConnection, UiResources},
-    systems::is_fly_command,
+    systems::{is_fly_command, parse_move_speed_command},
     ui::{
         widgets::{DataBindings, Dialog},
         UiSoundEvent,
@@ -86,6 +86,7 @@ pub fn ui_chatbox_system(
     mut ui_sound_events: EventWriter<UiSoundEvent>,
     dialog_assets: Res<Assets<Dialog>>,
     mut flight_toggle_events: EventWriter<FlightToggleEvent>,
+    mut move_speed_set_events: EventWriter<MoveSpeedSetEvent>,
     player_query: Query<Entity, With<PlayerCharacter>>,
 ) {
     let ui_state_chatbox = &mut *ui_state_chatbox;
@@ -305,6 +306,16 @@ pub fn ui_chatbox_system(
                         if let Ok(player_entity) = player_query.get_single() {
                             flight_toggle_events.write(FlightToggleEvent {
                                 entity: player_entity,
+                            });
+                        }
+                        // Clear the textbox without sending to server
+                        ui_state_chatbox.textbox_text.clear();
+                    } else if let Some(speed) = parse_move_speed_command(&ui_state_chatbox.textbox_text) {
+                        // Check if this is a "/mspeed <value>" command
+                        if let Ok(player_entity) = player_query.get_single() {
+                            move_speed_set_events.write(MoveSpeedSetEvent {
+                                entity: player_entity,
+                                speed,
                             });
                         }
                         // Clear the textbox without sending to server

@@ -1017,13 +1017,13 @@ async fn load_block_files_direct(
         }
     };
 
-    log::info!("[LOAD BLOCK DIRECT] Successfully loaded block {}_{} (HIM: yes, TIL: {}, IFO: {}, LIT_CNST: {}, LIT_DECO: {})",
-        block_x, block_y,
-        til.is_some(),
-        ifo.is_some(),
-        lit_cnst.is_some(),
-        lit_deco.is_some()
-    );
+    // log::info!("[LOAD BLOCK DIRECT] Successfully loaded block {}_{} (HIM: yes, TIL: {}, IFO: {}, LIT_CNST: {}, LIT_DECO: {})",
+    //     block_x, block_y,
+    //     til.is_some(),
+    //     ifo.is_some(),
+    //     lit_cnst.is_some(),
+    //     lit_deco.is_some()
+    // );
 
     Ok(Box::new(ZoneLoaderBlock {
         block_x,
@@ -1293,20 +1293,20 @@ pub fn zone_loader_system(
             // Spawn async task to load zone using AsyncComputeTaskPool
             // This is more appropriate for computational tasks like loading zones
             let task = pool.spawn(async move {
-                log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
-                log::info!("[ZONE LOADER DIRECT TASK] Async task started for zone_id: {}", zone_id.get());
-                log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
+                // log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
+                // log::info!("[ZONE LOADER DIRECT TASK] Async task started for zone_id: {}", zone_id.get());
+                // log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
                 
                 match load_zone_direct(zone_id, &vfs).await {
                     Ok(zone_asset) => {
-                        log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
-                        log::info!("[ZONE LOADER DIRECT TASK] Zone loaded successfully: {}", zone_id.get());
-                        log::info!("[ZONE LOADER DIRECT TASK] Sending zone through channel...");
-                        log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
+                        // log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
+                        // log::info!("[ZONE LOADER DIRECT TASK] Zone loaded successfully: {}", zone_id.get());
+                        // log::info!("[ZONE LOADER DIRECT TASK] Sending zone through channel...");
+                        // log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
                         
                         match tx.send((zone_id, Ok(zone_asset))) {
                             Ok(_) => {
-                                log::info!("[ZONE LOADER DIRECT TASK] Zone sent through channel successfully!");
+                                // log::info!("[ZONE LOADER DIRECT TASK] Zone sent through channel successfully!");
                             }
                             Err(e) => {
                                 log::error!("[ZONE LOADER DIRECT TASK] Failed to send zone through channel: {:?}", e);
@@ -1317,7 +1317,7 @@ pub fn zone_loader_system(
                         log::error!("[ZONE LOADER DIRECT TASK] Failed to load zone {}: {:?}", zone_id.get(), e);
                         match tx.send((zone_id, Err(e))) {
                             Ok(_) => {
-                                log::info!("[ZONE LOADER DIRECT TASK] Error sent through channel successfully!");
+                                // log::info!("[ZONE LOADER DIRECT TASK] Error sent through channel successfully!");
                             }
                             Err(send_err) => {
                                 log::error!("[ZONE LOADER DIRECT TASK] Failed to send error through channel: {:?}", send_err);
@@ -1652,11 +1652,11 @@ pub fn zone_loaded_from_vfs_system(
         .collect();
     
     if !already_loaded.is_empty() {
-        log::info!("[ZONE LOADED FROM VFS] Currently loaded zones: {:?}",
-            already_loaded.iter().collect::<Vec<_>>());
+        // log::info!("[ZONE LOADED FROM VFS] Currently loaded zones: {:?}",
+        //    already_loaded.iter().collect::<Vec<_>>());
     }
     
-    log::info!("[ZONE LOADED FROM VFS] Processing {} zone events this frame", event_count);
+    // log::info!("[ZONE LOADED FROM VFS] Processing {} zone events this frame", event_count);
     spawn_zone_params.memory_tracking.log_summary();
     
     let mut processed_count = 0;
@@ -1669,11 +1669,11 @@ pub fn zone_loaded_from_vfs_system(
     
     // Process events directly, skipping duplicates
     // DIAGNOSTIC: Track ZoneLoadedFromVfsEvent processing
-    log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] Processing {} ZoneLoadedFromVfsEvent(s)", events.len());
+    // log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] Processing {} ZoneLoadedFromVfsEvent(s)", events.len());
     
     for event in events.read() {
         // DIAGNOSTIC: Individual event details
-        log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] Processing event: zone_id={}", event.zone_id.get());
+        // log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] Processing event: zone_id={}", event.zone_id.get());
         
         // Deduplicate: Skip duplicate zone IDs in the same batch
         if !seen_zone_ids.insert(event.zone_id.get()) {
@@ -1692,10 +1692,10 @@ pub fn zone_loaded_from_vfs_system(
         }
         
         processed_count += 1;
-        log::info!("[ZONE LOADED FROM VFS] ===========================================");
-        log::info!("[ZONE LOADED FROM VFS] Spawning zone {} from VFS (event {}/{})"
-            , event.zone_id.get(), processed_count, event_count);
-        log::info!("[ZONE LOADED FROM VFS] ===========================================");
+        // log::info!("[ZONE LOADED FROM VFS] ===========================================");
+        // log::info!("[ZONE LOADED FROM VFS] Spawning zone {} from VFS (event {}/{})"
+        //    , event.zone_id.get(), processed_count, event_count);
+        // log::info!("[ZONE LOADED FROM VFS] ===========================================");
         
         let zone_index = event.zone_id.get() as usize;
 
@@ -1704,7 +1704,7 @@ pub fn zone_loaded_from_vfs_system(
         let despawn_other_zones = true;
         
         if despawn_other_zones {
-            log::info!("[ZONE LOADED FROM VFS] Despawning other zones");
+            // log::info!("[ZONE LOADED FROM VFS] Despawning other zones");
             for cached_zone in zone_loader_cache
                 .cache
                 .iter_mut()
@@ -1727,12 +1727,12 @@ pub fn zone_loaded_from_vfs_system(
         // CRITICAL FIX: The zone asset was already added to the Assets collection in zone_loader_system
         // We just need to use the handle from the event to spawn the zone
         let zone_handle = event.zone_handle.clone();
-        log::info!("[ZONE LOADED FROM VFS] Using zone handle from event: {:?}", zone_handle);
+        // log::info!("[ZONE LOADED FROM VFS] Using zone handle from event: {:?}", zone_handle);
         
         // Spawn the zone using the asset from the collection (via handle)
         // DIAGNOSTIC: About to call spawn_zone
-        log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] About to call spawn_zone for zone_id={}",
-            event.zone_id.get());
+        // log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] About to call spawn_zone for zone_id={}",
+        //    event.zone_id.get());
         
         // Use raw pointer to work around borrow checker (same pattern as zone_loader_system line 1510-1516)
         // This is safe because spawn_zone doesn't modify zone_loader_assets
@@ -1756,12 +1756,12 @@ pub fn zone_loaded_from_vfs_system(
         match spawn_result {
             Ok((entity, _zone_assets)) => {
                 success_count += 1;
-                log::info!("[ZONE LOADED FROM VFS] Zone {} spawned successfully! entity={:?}",
-                    event.zone_id.get(), entity);
+                // log::info!("[ZONE LOADED FROM VFS] Zone {} spawned successfully! entity={:?}",
+                //    event.zone_id.get(), entity);
                 
                 // DIAGNOSTIC: Zone entity successfully created and returned
-                log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] ✓ Zone entity created in zone_loaded_from_vfs_system: entity={:?}, zone_id={}",
-                    entity, event.zone_id.get());
+                // log::info!("[ZONE LOADED FROM VFS DIAGNOSTIC] ✓ Zone entity created in zone_loaded_from_vfs_system: entity={:?}, zone_id={}",
+                //    entity, event.zone_id.get());
 
                 // CRITICAL FIX: Cache VFS-loaded zones with the REAL handle (not placeholder)
                 // The spawned_entity is what matters for despawning; handle is used for terrain height lookups
@@ -1799,9 +1799,9 @@ pub fn zone_loaded_from_vfs_system(
         }
     }
     
-    log::info!("[ZONE LOADED FROM VFS] ===========================================");
-    log::info!("[ZONE LOADED FROM VFS] Processing complete: {} success, {} failed, {} skipped (duplicates) out of {}",
-        success_count, failed_count, skipped_count, processed_count);
+    // log::info!("[ZONE LOADED FROM VFS] ===========================================");
+    // log::info!("[ZONE LOADED FROM VFS] Processing complete: {} success, {} failed, {} skipped (duplicates) out of {}",
+    //    success_count, failed_count, skipped_count, processed_count);
     spawn_zone_params.memory_tracking.log_summary();
     
     // MEMORY MONITOR: Log final memory status after all VFS zone processing
@@ -1809,7 +1809,7 @@ pub fn zone_loaded_from_vfs_system(
         log_memory_status("Zone loading batch complete");
     }
     
-    log::info!("[ZONE LOADED FROM VFS] ===========================================");
+    // log::info!("[ZONE LOADED FROM VFS] ===========================================");
 }
 
 pub fn force_zone_visibility_system(
@@ -1932,12 +1932,17 @@ pub fn spawn_zone(
         .and_then(|skybox_id| game_data.skybox.get_skybox_data(skybox_id))
     {
         log::info!("[SPAWN ZONE] Spawning skybox");
-        let skybox_entity = spawn_skybox(commands, asset_server, standard_materials, skybox_data);
+        let (skybox_entity, skybox_assets) = spawn_skybox(commands, asset_server, standard_materials, skybox_data);
        // info!("[ASSET LIFECYCLE] Skybox entity spawned: {:?}", skybox_entity);
-        memory_tracking.log_entity_spawned("Skybox", 2);
-        log::info!("[SPAWN ZONE] Skybox entity spawned: {:?}", skybox_entity);
+        memory_tracking.log_entity_spawned("Skybox", skybox_assets.len());
+        log::info!("[SPAWN ZONE] Skybox entity spawned: {:?} with {} loading assets", skybox_entity, skybox_assets.len());
         log::info!("[MEMORY] Skybox entity created: {:?}", skybox_entity);
         commands.entity(zone_entity).add_child(skybox_entity);
+        
+        // CRITICAL FIX: Add skybox assets to zone_loading_assets so the zone loader waits for them
+        // This prevents the intermittent sky color/missing sky bug on the login screen
+        zone_loading_assets.extend(skybox_assets);
+        log::info!("[SPAWN ZONE] Added skybox assets to zone_loading_assets, total assets now: {}", zone_loading_assets.len());
     } else {
         log::warn!("[SPAWN ZONE] No skybox data found for zone {}", zone_data.zone_id.get());
     }
@@ -1985,8 +1990,8 @@ pub fn spawn_zone(
                         water_count += 1;
                         
                         // Send event to spawn fish in this water
-                        log::info!("[FISH DEBUG] Sending WaterSpawnedEvent from zone_loader: water_entity={:?}, zone_entity={:?}, center={:?}, extents={:?}",
-                            water_entity, zone_entity, water_center, water_half_extents);
+                        // log::info!("[FISH DEBUG] Sending WaterSpawnedEvent from zone_loader: water_entity={:?}, zone_entity={:?}, center={:?}, extents={:?}",
+                        //     water_entity, zone_entity, water_center, water_half_extents);
                         water_spawned_events.write(WaterSpawnedEvent {
                             water_entity,
                             zone_entity,
@@ -2179,37 +2184,58 @@ pub fn spawn_zone(
 
 const SKYBOX_MODEL_SCALE: f32 = 10.0;
 
+/// Spawns a skybox entity and returns the entity along with asset handles that need to be tracked for loading.
+/// CRITICAL: The returned handles must be added to zone_loading_assets to ensure the zone waits for skybox
+/// assets to load before being marked as ready. This prevents the intermittent sky color/missing sky bug.
 fn spawn_skybox(
     commands: &mut Commands,
     asset_server: &AssetServer,
     standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
     skybox_data: &SkyboxData,
-) -> Entity {
+) -> (Entity, Vec<UntypedHandle>) {
     let mesh_path = skybox_data.mesh.path().to_string_lossy().into_owned();
     let texture_day_path = skybox_data.texture_day.path().to_string_lossy().into_owned();
     let texture_night_path = skybox_data.texture_night.path().to_string_lossy().into_owned();
 
+    // Collect asset handles that need to be tracked for loading
+    let mut loading_assets: Vec<UntypedHandle> = Vec::new();
+
     // Skip loading NULL textures for skybox - use fallback instead of None
     let texture_day_handle = if texture_day_path.is_empty() || texture_day_path == "NULL" {
         log::warn!("[SPAWN SKYBOX] NULL or empty day texture path, using fallback");
-        asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS")
+        let handle = asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS");
+        loading_assets.push(handle.clone().untyped());
+        handle
     } else {
-        asset_server.load::<Image>(&texture_day_path)
+        log::info!("[SPAWN SKYBOX] Loading day texture: {}", texture_day_path);
+        let handle = asset_server.load::<Image>(&texture_day_path);
+        loading_assets.push(handle.clone().untyped());
+        handle
     };
-    let texture_night_handle = if texture_night_path.is_empty() || texture_night_path == "NULL" {
+    
+    // Note: texture_night is loaded but not currently used (day/night cycle not implemented)
+    // We still track it for loading to ensure it's ready when needed
+    let _texture_night_handle = if texture_night_path.is_empty() || texture_night_path == "NULL" {
         log::warn!("[SPAWN SKYBOX] NULL or empty night texture path, using fallback");
-        asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS")
+        let handle = asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS");
+        loading_assets.push(handle.clone().untyped());
+        handle
     } else {
-        asset_server.load::<Image>(&texture_night_path)
+        log::info!("[SPAWN SKYBOX] Loading night texture: {}", texture_night_path);
+        let handle = asset_server.load::<Image>(&texture_night_path);
+        loading_assets.push(handle.clone().untyped());
+        handle
     };
 
     let mesh_handle = asset_server.load::<Mesh>(&mesh_path);
+    log::info!("[SPAWN SKYBOX] Loading skybox mesh: {}", mesh_path);
+    loading_assets.push(mesh_handle.clone().untyped());
 
     //info!("[MEMORY TRACKING] Skybox mesh handle created: {}", mesh_path);
     //info!("[MEMORY TRACKING] Skybox texture day handle created: {}", texture_day_path);
     //info!("[MEMORY TRACKING] Skybox texture night handle created: {}", texture_night_path);
 
-    commands
+    let entity = commands
         .spawn((
             Mesh3d(mesh_handle),
             MeshMaterial3d(standard_materials.add(bevy::pbr::StandardMaterial {
@@ -2226,7 +2252,11 @@ fn spawn_skybox(
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
         ))
-        .id()
+        .id();
+    
+    log::info!("[SPAWN SKYBOX] Skybox entity spawned: {:?} with {} loading assets", entity, loading_assets.len());
+    
+    (entity, loading_assets)
 }
 
 #[allow(clippy::too_many_arguments)]

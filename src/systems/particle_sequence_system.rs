@@ -2,6 +2,7 @@ use std::ops::RangeInclusive;
 
 use bevy::{
     asset::{Assets, AssetServer, Handle, LoadState},
+    image::ImageSampler,
     log::{debug, error, info, warn},
     math::{Quat, Vec2, Vec3, Vec4},
     prelude::{Commands, Component, Entity, GlobalTransform, Image, Mesh3d, MeshMaterial3d, Query, Res, ResMut, Resource, Time, Transform},
@@ -35,7 +36,7 @@ pub fn create_default_particle_texture(
     mut images: ResMut<Assets<Image>>,
 ) {
     // Create a 2x2 white texture (small, efficient)
-    let image = Image::new_fill(
+    let mut image = Image::new_fill(
         Extent3d {
             width: 2,
             height: 2,
@@ -46,6 +47,7 @@ pub fn create_default_particle_texture(
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::RENDER_WORLD,
     );
+    image.sampler = ImageSampler::linear();
     
     let handle = images.add(image);
     commands.insert_resource(DefaultParticleTexture { handle });
@@ -541,40 +543,48 @@ pub fn particle_storage_buffer_update_system(
             ShaderStorageBuffer::from(render_data.textures.clone())
         );
         
-        // Use default white texture (created at startup)
-        let texture = default_texture.handle.clone();
-        
-        // Create material
-        let material = ParticleMaterial {
-            positions: positions_buffer,
-            sizes: sizes_buffer,
-            colors: colors_buffer,
-            textures: textures_buffer,
-            texture,
-            blend_op: render_data.blend_op as u32,
-            src_blend_factor: render_data.src_blend_factor as u32,
-            dst_blend_factor: render_data.dst_blend_factor as u32,
-            billboard_type: render_data.billboard_type as u32,
-        };
-        
-        // Create or update mesh
-        let vertex_count = particle_count * 6; // 6 vertices per quad
-        let mut mesh = Mesh::new(
-            PrimitiveTopology::TriangleList,
-            RenderAssetUsages::RENDER_WORLD,
-        );
-        mesh.insert_indices(bevy::render::mesh::Indices::U32(
-            (0..vertex_count as u32).collect()
-        ));
-        
         // Update or create mesh + material components
-        if let Some(existing_material) = material_handle {
-            // Update existing material
-            if let Some(mat) = materials.get_mut(&existing_material.0) {
-                *mat = material;
+        if let Some(existing_material_handle) = material_handle {
+            // Update existing material - preserve the original texture!
+            if let Some(mat) = materials.get_mut(&existing_material_handle.0) {
+                // Only update the storage buffers and blend settings, preserve the texture
+                mat.positions = positions_buffer;
+                mat.sizes = sizes_buffer;
+                mat.colors = colors_buffer;
+                mat.textures = textures_buffer;
+                mat.blend_op = render_data.blend_op as u32;
+                mat.src_blend_factor = render_data.src_blend_factor as u32;
+                mat.dst_blend_factor = render_data.dst_blend_factor as u32;
+                mat.billboard_type = render_data.billboard_type as u32;
+                // NOTE: texture is preserved from original material (loaded in effect_loader.rs)
             }
         } else {
-            // Add new components
+            // Create new material - use default white texture as fallback
+            // (This path should rarely be used - most particles are created in effect_loader.rs)
+            let texture = default_texture.handle.clone();
+            
+            let material = ParticleMaterial {
+                positions: positions_buffer,
+                sizes: sizes_buffer,
+                colors: colors_buffer,
+                textures: textures_buffer,
+                texture,
+                blend_op: render_data.blend_op as u32,
+                src_blend_factor: render_data.src_blend_factor as u32,
+                dst_blend_factor: render_data.dst_blend_factor as u32,
+                billboard_type: render_data.billboard_type as u32,
+            };
+            
+            // Create mesh with proper vertex count
+            let vertex_count = particle_count * 6; // 6 vertices per quad
+            let mut mesh = Mesh::new(
+                PrimitiveTopology::TriangleList,
+                RenderAssetUsages::RENDER_WORLD,
+            );
+            mesh.insert_indices(bevy::render::mesh::Indices::U32(
+                (0..vertex_count as u32).collect()
+            ));
+            
             let material_handle = materials.add(material);
             let mesh_handle = meshes.add(mesh);
             

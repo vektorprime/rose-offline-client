@@ -93,6 +93,14 @@ pub fn skeletal_animation_system(
             .interpolate_weight()
             .map(|w| (w * FRAC_PI_2).sin());
 
+        // Debug logging for first frame only
+        let should_log = current_frame_index == 0 && current_frame_fract < 0.1;
+        if should_log {
+            // log::info!("=== Rust Animation Debug (Frame 0) ===");
+            // log::info!("Number of bones: {}", skinned_mesh.joints.len());
+            // log::info!("ZMO num_frames: {}, fps: {}", zmo_asset.num_frames, zmo_asset.fps);
+        }
+
         for (bone_id, bone_entity) in skinned_mesh.joints.iter().enumerate() {
             let Ok(mut bone_transform) = query_transform.get_mut(*bone_entity) else {
                 continue;
@@ -104,6 +112,12 @@ pub fn skeletal_animation_system(
                 current_frame_index,
                 next_frame_index,
             ) {
+                // Debug logging for first frame
+                if should_log && bone_id < 5 {
+                    //log::info!("Bone {}: translation = ({:.4}, {:.4}, {:.4})",
+                    //    bone_id, translation.x, translation.y, translation.z);
+                }
+                
                 if let Some(blend_weight) = interpolate_weight {
                     bone_transform.translation =
                         bone_transform.translation.lerp(translation, blend_weight);
@@ -118,12 +132,22 @@ pub fn skeletal_animation_system(
                 current_frame_index,
                 next_frame_index,
             ) {
+                // Debug logging for first frame
+                if should_log && bone_id < 5 {
+                    //log::info!("Bone {}: rotation = ({:.4}, {:.4}, {:.4}, {:.4})",
+                    //    bone_id, rotation.w, rotation.x, rotation.y, rotation.z);
+                }
+                
                 if let Some(blend_weight) = interpolate_weight {
                     bone_transform.rotation = bone_transform.rotation.slerp(rotation, blend_weight);
                 } else {
                     bone_transform.rotation = rotation;
                 }
             }
+        }
+        
+        if should_log {
+        //    log::info!("=== End Rust Animation Debug ===");
         }
     }
 }

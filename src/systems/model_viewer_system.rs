@@ -292,7 +292,6 @@ pub fn model_viewer_system(
                             Visibility::default(),
                             InheritedVisibility::default(),
                             ViewVisibility::default(),
-                            InheritedVisibility::default(),
                             GlobalTransform::default(),
                             Transform::default().with_translation(Vec3::new(
                                 -2.5 + (count / 25) as f32 * -CHARACTER_SPACING,

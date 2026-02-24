@@ -1,5 +1,6 @@
 use bevy::{
     asset::{io::Reader, AssetLoader, LoadContext},
+    image::ImageSampler,
     prelude::Image,
     render::{
         render_asset::RenderAssetUsages,
@@ -97,7 +98,9 @@ impl AssetLoader for DdsImageLoader {
     }
 
     fn extensions(&self) -> &[&str] {
-        &["dds"]
+        // Use uppercase .DDS extension to avoid conflict with Bevy's built-in image loader
+        // which handles lowercase .dds through the image crate
+        &["DDS", "dds"]
     }
 }
 
@@ -323,7 +326,7 @@ fn read_u32(data: &[u8], offset: usize) -> u32 {
 }
 
 fn create_rgba_image(width: u32, height: u32, rgba_data: Vec<u8>) -> Image {
-    Image::new(
+    let mut image = Image::new(
         Extent3d {
             width,
             height,
@@ -333,7 +336,9 @@ fn create_rgba_image(width: u32, height: u32, rgba_data: Vec<u8>) -> Image {
         rgba_data,
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::default(),
-    )
+    );
+    image.sampler = ImageSampler::linear();
+    image
 }
 
 fn convert_rgb_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {

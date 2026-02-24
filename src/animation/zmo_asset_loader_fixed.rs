@@ -176,6 +176,16 @@ impl AssetLoader for ZmoAssetLoader {
                                     Vec3::new(position.x, position.z, -position.y) / 100.0
                                 })
                                 .collect();
+                            
+                            // Debug: Log first frame position for first few bones
+                            if bone_id <= &3 && !positions.is_empty() {
+                                    log::info!(
+                                    "ZMO Load: Bone {} raw position = ({:.4}, {:.4}, {:.4}), transformed = ({:.4}, {:.4}, {:.4})",
+                                    bone_id,
+                                    positions[0].x, positions[0].y, positions[0].z,
+                                    positions[0].x / 100.0, positions[0].z / 100.0, -positions[0].y / 100.0
+                                );
+                            }
                         }
                         ZmoChannel::Rotation(rotations) => {
                             bone_animation.rotation = rotations
@@ -189,6 +199,20 @@ impl AssetLoader for ZmoAssetLoader {
                                     )
                                 })
                                 .collect();
+                            
+                            // Debug: Log first frame rotation for first few bones
+                            if bone_id <= &3 && !rotations.is_empty() {
+                                log::info!(
+                                    "ZMO Load: Bone {} raw rotation = (w={:.4}, x={:.4}, y={:.4}, z={:.4})",
+                                    bone_id,
+                                    rotations[0].w, rotations[0].x, rotations[0].y, rotations[0].z
+                                );
+                                log::info!(
+                                    "ZMO Load: Bone {} transformed rotation = (w={:.4}, x={:.4}, y={:.4}, z={:.4})",
+                                    bone_id,
+                                    rotations[0].w, rotations[0].x, rotations[0].z, -rotations[0].y
+                                );
+                            }
                         }
                         ZmoChannel::Scale(scales) => {
                             bone_animation.scale = scales.clone();

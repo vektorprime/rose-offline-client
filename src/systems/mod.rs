@@ -4,10 +4,15 @@ mod animation_sound_system;
 mod auto_login_system;
 mod background_music_system;
 mod bird_system;
+mod blood_spatter_system;
 mod character_model_add_collider_system;
+mod gash_wound_system;
 mod character_model_blink_system;
 mod character_model_system;
 mod character_select_system;
+mod chat_bubble_spawn_system;
+mod chat_bubble_update_system;
+mod chat_bubble_cleanup_system;
 mod clan_system;
 mod client_entity_event_system;
 mod collision_system;
@@ -40,7 +45,10 @@ mod item_drop_model_system;
 mod login_connection_system;
 mod login_system;
 mod model_viewer_system;
+mod monster_chatter_system;
 mod move_destination_effect_system;
+mod move_speed_command_system;
+mod move_speed_set_system;
 mod name_tag_system;
 mod name_tag_update_color_system;
 mod name_tag_update_healthbar_system;
@@ -90,6 +98,9 @@ pub use character_select_system::{
     character_select_input_system, character_select_models_system, character_select_system,
     CharacterSelectInputState,
 };
+pub use chat_bubble_spawn_system::chat_bubble_spawn_system;
+pub use chat_bubble_update_system::chat_bubble_update_system;
+pub use chat_bubble_cleanup_system::{chat_bubble_cleanup_system, chat_bubble_orphan_cleanup_system};
 pub use clan_system::clan_system;
 pub use client_entity_event_system::client_entity_event_system;
 pub use collision_system::{
@@ -130,6 +141,8 @@ pub use effect_system::effect_system;
 pub use facing_direction_system::facing_direction_system;
 pub use fish_system::{FishPlugin, spawn_fish_on_water_system, update_fish_movement_system};
 pub use bird_system::{BirdPlugin, spawn_birds_on_zone_system, update_bird_movement_system};
+pub use blood_spatter_system::{BloodSpatterPlugin, blood_spatter_on_death_system, blood_spatter_spawn_system, blood_spatter_fade_system};
+pub use gash_wound_system::{GashWoundPlugin, wound_visibility_system, wound_spawn_system, wound_cleanup_system};
 pub use flight_command_system::{is_fly_command, flight_command_system};
 pub use flight_movement_system::flight_movement_system;
 pub use flight_toggle_system::{flight_toggle_system, ensure_flight_state_system};
@@ -147,7 +160,10 @@ pub use login_system::{
 pub use model_viewer_system::{
     model_viewer_enter_system, model_viewer_exit_system, model_viewer_system,
 };
+pub use monster_chatter_system::{monster_chatter_system, add_monster_chatter_system};
 pub use move_destination_effect_system::move_destination_effect_system;
+pub use move_speed_command_system::{parse_move_speed_command, move_speed_command_system};
+pub use move_speed_set_system::move_speed_set_system;
 pub use name_tag_system::name_tag_system;
 pub use name_tag_update_color_system::name_tag_update_color_system;
 pub use name_tag_update_healthbar_system::name_tag_update_healthbar_system;

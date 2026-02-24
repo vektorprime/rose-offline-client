@@ -8,4 +8,5 @@ pub enum AppState {
     Game,
     ModelViewer,
     ZoneViewer,
+    MapEditor,
 }

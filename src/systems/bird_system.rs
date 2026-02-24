@@ -257,10 +257,10 @@ fn spawn_birds(
         }
         
         if i < 3 {
-            log::info!(
-                "[BIRD DEBUG] Spawned bird {} at position {:?} with speed {}, parented to zone {:?}",
-                i, Vec3::new(x, y, z), speed, zone_entity
-            );
+            // log::info!(
+            //     "[BIRD DEBUG] Spawned bird {} at position {:?} with speed {}, parented to zone {:?}",
+            //     i, Vec3::new(x, y, z), speed, zone_entity
+            // );
         }
     }
     

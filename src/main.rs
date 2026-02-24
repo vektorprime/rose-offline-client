@@ -4,7 +4,7 @@ use std::path::Path;
 
 use rose_data::ZoneId;
 use rose_offline_client::{
-    load_config, run_game, run_model_viewer, run_zone_viewer, Config, FilesystemDeviceConfig,
+    load_config, run_game, run_map_editor, run_model_viewer, run_zone_viewer, Config, FilesystemDeviceConfig,
     SystemsConfig,
 };
 
@@ -63,6 +63,11 @@ fn main() {
             clap::Arg::new("model-viewer")
                 .long("model-viewer")
                 .help("Run model viewer"),
+        )
+        .arg(
+            clap::Arg::new("map-editor")
+                .long("map-editor")
+                .help("Run map editor mode"),
         )
         .arg(
             clap::Arg::new("disable-vsync")
@@ -269,6 +274,15 @@ fn main() {
     } else if matches.is_present("zone-viewer") {
         println!("Running in zone viewer mode");
         run_zone_viewer(
+            &config,
+            matches
+                .value_of("zone")
+                .and_then(|str| str.parse::<u16>().ok())
+                .and_then(ZoneId::new),
+        );
+    } else if matches.is_present("map-editor") {
+        println!("Running in map editor mode");
+        run_map_editor(
             &config,
             matches
                 .value_of("zone")

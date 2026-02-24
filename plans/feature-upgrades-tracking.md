@@ -72,7 +72,7 @@ Make underwater view realistic - not just a blue top layer. The water should hav
 
 ## 2. Blood System
 
-### Status: Not Started
+### Status: Implemented (Pending Testing)
 
 ### Goal
 Add visual blood effects to combat:
@@ -85,23 +85,70 @@ Add visual blood effects to combat:
 | Task | Status | Notes |
 |------|--------|-------|
 | **Blood Spatter** | | |
-| Design blood spatter particle/decals system | [ ] | |
-| Create blood spatter material/shader | [ ] | |
-| Implement spatter on terrain collision | [ ] | |
-| Implement spatter on nearby objects | [ ] | |
-| Add fade/dissolve over time | [ ] | |
+| Design blood spatter particle/decals system | [x] | Using Bevy 0.16.1 ForwardDecal |
+| Create blood spatter material/shader | [x] | StandardMaterial with depth fade |
+| Implement spatter on terrain collision | [x] | ForwardDecal projects onto terrain |
+| Implement spatter on nearby objects | [x] | ForwardDecal handles all surfaces |
+| Add fade/dissolve over time | [x] | Alpha fade with configurable lifetime |
 | **Gash Wounds** | | |
-| Design wound visual system | [ ] | |
-| Create wound texture/decals | [ ] | |
-| Track HP percentage on monsters | [ ] | |
-| Apply wounds when HP < 50% | [ ] | |
+| Design wound visual system | [x] | WoundVisual marker + GashWounds component |
+| Create wound texture/decals | [x] | Procedural red ellipse textures |
+| Track HP percentage on monsters | [x] | Via AbilityValues component |
+| Apply wounds when HP < 50% | [x] | wound_visibility_system monitors HP |
 | **Corpse Wounds** | | |
-| Ensure wounds persist on death | [ ] | |
-| Handle corpse despawn timing | [ ] | |
+| Ensure wounds persist on death | [x] | Wounds attached to parent entity |
+| Handle corpse despawn timing | [x] | wound_cleanup_system handles despawn |
 | **Integration** | | |
-| Integrate with hit detection system | [ ] | |
-| Performance testing with multiple monsters | [ ] | |
-| Configure blood settings (optional: disable option) | [ ] | |
+| Integrate with hit detection system | [x] | Listens for Added<Dead> event |
+| Performance testing with multiple monsters | [ ] | Needs runtime testing |
+| Configure blood settings (optional: disable option) | [x] | BloodEffectConfig resource |
+
+### Implementation Details
+
+**Created Files:**
+- [`src/components/blood_effect.rs`](src/components/blood_effect.rs) - Components
+  - `BloodSpatter` - Tracks lifetime, alpha, size for spatter decals
+  - `GashWounds` - Tracks wound count and parent entity
+  - `WoundVisual` - Marker for wound child entities
+  - `BloodSpatterConfig` - Configuration for spatter pool
+
+- [`src/events/blood_effect_event.rs`](src/events/blood_effect_event.rs) - Events
+  - `BloodEffectEvent` enum with variants:
+    - `SpawnSpatter` - Spawn blood spatter at position
+    - `ShowWound` - Show wounds on entity
+    - `UpdateWoundVisibility` - Update wound visibility based on HP
+    - `CleanupWounds` - Remove wound visuals
+
+- [`src/resources/blood_effect_config.rs`](src/resources/blood_effect_config.rs) - Configuration
+  - `BloodEffectConfig` resource with:
+    - `enable_blood` - Toggle blood effects
+    - `max_spatters` - Pool size limit (default: 100)
+    - `spatter_lifetime` - Duration before fade
+    - `spatter_fade_duration` - Fade out time
+    - `wound_hp_threshold` - HP% for wounds (default: 0.5)
+
+- [`src/systems/blood_spatter_system.rs`](src/systems/blood_spatter_system.rs) - Blood spatter logic
+  - `blood_spatter_on_death_system` - Listens for `Added<Dead>`, spawns events
+  - `blood_spatter_spawn_system` - Processes events, creates ForwardDecal entities
+  - `blood_spatter_fade_system` - Fades and removes expired spatters
+  - `create_blood_texture()` - Procedural blood texture generation
+
+- [`src/systems/gash_wound_system.rs`](src/systems/gash_wound_system.rs) - Wound logic
+  - `wound_visibility_system` - Monitors HP via AbilityValues, shows wounds at threshold
+  - `wound_spawn_system` - Processes ShowWound events
+  - `wound_cleanup_system` - Cleans up wound visuals when parent despawns
+
+- [`src/blood_effect_plugin.rs`](src/blood_effect_plugin.rs) - Plugin registration
+  - `BloodEffectPlugin` - Registers config, events, and sub-plugins
+  - `BloodSpatterPlugin` - Registers spatter systems
+  - `GashWoundPlugin` - Registers wound systems
+
+**Modified Files:**
+- [`src/components/mod.rs`](src/components/mod.rs) - Added blood_effect module
+- [`src/events/mod.rs`](src/events/mod.rs) - Added blood_effect_event module
+- [`src/resources/mod.rs`](src/resources/mod.rs) - Added blood_effect_config module
+- [`src/systems/mod.rs`](src/systems/mod.rs) - Added blood_spatter_system and gash_wound_system
+- [`src/lib.rs`](src/lib.rs) - Added BloodEffectPlugin registration
 
 ### Relevant Files
 - [`src/events/hit_event.rs`](src/events/hit_event.rs)
@@ -111,15 +158,17 @@ Add visual blood effects to combat:
 - [`src/render/shaders/particle.wgsl`](src/render/shaders/particle.wgsl)
 - [`src/render/terrain_material.rs`](src/render/terrain_material.rs)
 - [`src/render/shaders/terrain_material.wgsl`](src/render/shaders/terrain_material.wgsl)
+- [`plans/blood-effect-system.md`](plans/blood-effect-system.md) - Detailed architecture plan
 
 ### Issues/Findings
-- 
-- 
+- ForwardDecal requires camera to have `DepthPrepass` component (already added)
+- Bevy 0.16.1 uses `RenderAssetUsages` parameter for Image::new()
+- Procedural textures created at runtime for blood spatters
 
 ### Design Decisions
-- [ ] Decide: Decals vs particles for blood spatter
-- [ ] Decide: How many wound overlays per monster
-- [ ] Decide: Blood persistence duration
+- [x] Decals vs particles for blood spatter → **ForwardDecal** (projects onto all surfaces)
+- [x] How many wound overlays per monster → **Configurable** (default 3)
+- [x] Blood persistence duration → **Configurable** (default 30 seconds)
 
 ---
 
@@ -162,7 +211,7 @@ Make birds face the direction they are flying. Currently birds may not orient co
 | Feature | Status | Completion |
 |---------|--------|------------|
 | Water Rendering Fix | Implemented (Pending Testing) | 85% |
-| Blood System | Not Started | 0% |
+| Blood System | Implemented (Pending Testing) | 90% |
 | Bird Fix | Not Started | 0% |
 
 ---
@@ -173,3 +222,15 @@ Make birds face the direction they are flying. Currently birds may not orient co
 - Mark tasks with `[x]` when complete, `[-]` when in progress
 - Add any blocking issues or dependencies in the Issues/Findings section
 - Reference any PRs or commits in the relevant sections
+
+---
+
+## Changelog
+
+### 2026-02-24
+- **Blood System**: Completed full implementation
+  - Created blood effect components, events, and resources
+  - Implemented blood spatter system using ForwardDecal
+  - Implemented gash wound system with HP monitoring
+  - Integrated BloodEffectPlugin into lib.rs
+  - Build verified successful

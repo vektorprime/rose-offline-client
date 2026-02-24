@@ -53,6 +53,7 @@ pub mod diagnostics;
 pub mod effect_loader;
 pub mod events;
 pub mod exe_resource_loader;
+pub mod map_editor;
 pub mod model_loader;
 pub mod protocol;
 pub mod render;
@@ -65,13 +66,14 @@ pub mod dds_image_loader;
 pub mod vfs_asset_io;
 pub mod zms_asset_loader;
 pub mod zone_loader;
+pub mod blood_effect_plugin;
 
 use audio::OddioPlugin;
 use diagnostics::RenderDiagnosticsPlugin;
 use events::{
-    BankEvent, CharacterSelectEvent, ChatboxEvent, ClanDialogEvent, ClientEntityEvent,
+    BankEvent, CharacterSelectEvent, ChatBubbleEvent, ChatboxEvent, ClanDialogEvent, ClientEntityEvent,
     ConversationDialogEvent, FlightToggleEvent, GameConnectionEvent, HitEvent, LoadZoneEvent, LoginEvent,
-    MessageBoxEvent, MoveDestinationEffectEvent, NetworkEvent, NpcStoreEvent,
+    MessageBoxEvent, MoveDestinationEffectEvent, MoveSpeedSetEvent, NetworkEvent, NpcStoreEvent,
     NumberInputDialogEvent, PartyEvent, PersonalStoreEvent, PlayerCommandEvent, QuestTriggerEvent,
     SpawnEffectEvent, SpawnProjectileEvent, SystemFuncEvent, UseItemEvent, WorldConnectionEvent,
     ZoneEvent, ZoneLoadedFromVfsEvent,
@@ -100,7 +102,7 @@ use render::{
 };
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
-    AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, FlightSettings, GameData, LoginCameraAnimation, NameTagSettings,
+    AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, FlightSettings, GameData, LoginCameraAnimation, MonsterChatterPhrases, NameTagSettings,
     NetworkThread, NetworkThreadMessage, RenderConfiguration, RenderExtractionDiagnostics, SelectedTarget, ServerConfiguration,
     SoundCache, SoundSettings, SpecularTexture, VfsResource, WaterSettings, WorldTime, ZoneTime,
 };
@@ -111,6 +113,8 @@ use systems::{
     character_model_update_system, character_select_enter_system, character_select_event_system,
     character_select_exit_system, character_select_input_system,
     character_select_models_system, character_select_system, CharacterSelectInputState,
+    chat_bubble_spawn_system, chat_bubble_update_system, chat_bubble_cleanup_system, chat_bubble_orphan_cleanup_system,
+    add_monster_chatter_system, monster_chatter_system,
     clan_system, client_entity_event_system, collision_height_only_system,
     collision_player_system, collision_player_system_join_zone, command_system,
     conversation_dialog_system, cooldown_system, damage_digit_render_system,
@@ -121,7 +125,7 @@ use systems::{
     game_zone_change_system, hit_event_system, item_drop_model_add_collider_system,
     item_drop_model_system, login_connection_system, login_event_system, login_state_enter_system,
     login_state_exit_system, login_system, model_viewer_enter_system, model_viewer_exit_system,
-    model_viewer_system, move_destination_effect_system, name_tag_system,
+    model_viewer_system, move_destination_effect_system, move_speed_set_system, name_tag_system,
     name_tag_update_color_system, name_tag_update_healthbar_system, name_tag_visibility_system,
     network_thread_system, npc_idle_sound_system, npc_model_add_collider_system,
     npc_model_update_system, orbit_camera_system, particle_sequence_system,
@@ -463,6 +467,26 @@ pub fn run_zone_viewer(config: &Config, zone_id: Option<ZoneId>) {
     );
 }
 
+/// Run the map editor mode
+///
+/// This launches the application in map editor mode, which allows editing
+/// zone objects, terrain, and entity properties through an egui-based interface.
+pub fn run_map_editor(config: &Config, zone_id: Option<ZoneId>) {
+    run_client(
+        config,
+        AppState::MapEditor,
+        SystemsConfig {
+            add_custom_systems: Some(Box::new(move |app| {
+                app.world_mut()
+                    .send_event(LoadZoneEvent::new(
+                        zone_id.unwrap_or_else(|| ZoneId::new(1).unwrap()),
+                    ));
+            })),
+            ..Default::default()
+        },
+    );
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, SystemSet)]
 enum GameStages {
     ZoneChange,
@@ -684,8 +708,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                     ..Default::default()
                 })
                 .set(bevy::log::LogPlugin {
-                    level: bevy::log::Level::DEBUG,
-                    filter: "wgpu=error,naga=error,bevy_render=debug,bevy_pbr=debug,bevy_asset=debug,rose_offline_client=trace,offset_allocator=warn".to_string(),
+                    level: bevy::log::Level::WARN,
+                    filter: "wgpu=error,naga=error,offset_allocator=warn".to_string(),
                     ..default()
                 })
                 .set(bevy::pbr::PbrPlugin::default()),
@@ -831,6 +855,12 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
             // Underwater rendering effect
             UnderwaterEffectPlugin,
+
+            // Blood effect system (spatter decals, gash wounds)
+            blood_effect_plugin::BloodEffectPlugin,
+
+            // Map editor system
+            map_editor::MapEditorPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -844,9 +874,10 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     log::info!("[MATERIAL PLUGIN] SkyMaterialPlugin registered");
 
     // Setup state
-    app.init_state::<AppState>();
+    app.insert_state(app_state);
 
     app.add_event::<BankEvent>()
+        .add_event::<ChatBubbleEvent>()
         .add_event::<ChatboxEvent>()
         .add_event::<CharacterSelectEvent>()
         .add_event::<ClanDialogEvent>()
@@ -859,6 +890,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_event::<LoadZoneEvent>()
         .add_event::<MessageBoxEvent>()
         .add_event::<MoveDestinationEffectEvent>()
+        .add_event::<MoveSpeedSetEvent>()
         .add_event::<NetworkEvent>()
         .add_event::<NumberInputDialogEvent>()
         .add_event::<NpcStoreEvent>()
@@ -952,6 +984,28 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(
         Update,
         name_tag_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+    );
+    // chat_bubble_spawn_system uses EguiContexts for text rendering
+    app.add_systems(
+        Update,
+        chat_bubble_spawn_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+    );
+    // chat bubble update and cleanup systems
+    app.add_systems(
+        Update,
+        (
+            chat_bubble_update_system,
+            chat_bubble_cleanup_system,
+            chat_bubble_orphan_cleanup_system,
+        ),
+    );
+    // monster chatter system for random NPC phrases
+    app.add_systems(
+        Update,
+        (
+            add_monster_chatter_system,
+            monster_chatter_system,
+        ),
     );
     app.add_systems(
         Update,
@@ -1104,6 +1158,10 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // Zone Viewer
     app.add_systems(OnEnter(AppState::ZoneViewer), zone_viewer_enter_system);
 
+    // Map Editor
+    app.add_systems(OnEnter(AppState::MapEditor), map_editor::map_editor_enter_system);
+    app.add_systems(OnExit(AppState::MapEditor), map_editor::map_editor_exit_system);
+
     // CRITICAL DIAGNOSTIC: Check if transform and visibility propagation sets are running
     app.add_systems(
         PostUpdate,
@@ -1243,7 +1301,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<NameTagSettings>()
         .init_resource::<DepthOfFieldSettings>()
         .init_resource::<WaterSettings>()
-        .init_resource::<FlightSettings>();
+        .init_resource::<FlightSettings>()
+        .init_resource::<MonsterChatterPhrases>();
 
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
 
@@ -1279,6 +1338,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, ensure_flight_state_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, flight_toggle_system.run_if(in_state(AppState::Game)).after(ensure_flight_state_system));
     app.add_systems(Update, flight_movement_system.run_if(in_state(AppState::Game)).after(flight_toggle_system));
+    
+    // Move speed command system
+    app.add_systems(Update, move_speed_set_system.run_if(in_state(AppState::Game)));
 
     // Game systems - part 2
     app.add_systems(Update, (use_item_event_system.run_if(in_state(AppState::Game)),));

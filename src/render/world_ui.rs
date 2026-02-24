@@ -123,15 +123,22 @@ fn extract_world_ui_rects(
     query: Extract<Query<(&InheritedVisibility, &GlobalTransform, &WorldUiRect)>>,
 ) {
     extracted_world_ui.rects.clear();
+    let mut visible_count = 0;
+    let mut hidden_count = 0;
+    let mut missing_image_count = 0;
+    
     for (inherited_visibility, global_transform, rect) in query.iter() {
         if !inherited_visibility.get() {
+            hidden_count += 1;
             continue;
         }
 
         if !images.contains(rect.image.id()) {
+            missing_image_count += 1;
             continue;
         }
 
+        visible_count += 1;
         extracted_world_ui.rects.push(ExtractedRect {
             world_position: global_transform.translation(),
             screen_offset: rect.screen_offset,
@@ -142,6 +149,10 @@ fn extract_world_ui_rects(
             color: rect.color,
             order: rect.order,
         });
+    }
+    
+    if visible_count > 0 || hidden_count > 0 || missing_image_count > 0 {
+        //log::info!("[WORLD_UI_EXTRACT] visible={}, hidden={}, missing_image={}", visible_count, hidden_count, missing_image_count);
     }
 }
 
@@ -557,6 +568,7 @@ pub fn queue_world_ui_meshes(
         let mut frustum_culled_count = 0;
         let mut screen_culled_count = 0;
         let mut queued_count = 0;
+        let extracted_count = extracted_world_ui.rects.len();
         
         for rect in extracted_world_ui.rects.iter() {
             let gpu_image =
@@ -569,13 +581,21 @@ pub fn queue_world_ui_meshes(
                 };
 
             let clip_pos = view_proj.project_point3(rect.world_position);
+            //log::info!("[WORLD_UI_QUEUE] Projection: world_pos={:?}, clip_pos={:?}, clip_from_world={}",
+             //   rect.world_position, clip_pos, view.clip_from_world.is_some());
             if clip_pos.z < 0.0 || clip_pos.z > 1.0 {
                 // Outside frustum depth, ignore
                 frustum_culled_count += 1;
+                //log::info!("[WORLD_UI_QUEUE] Frustum culled: world_pos={:?}, clip_z={}", rect.world_position, clip_pos.z);
                 continue;
             }
-            let screen_pos =
-                (clip_pos.truncate() + Vec2::ONE) / 2.0 * Vec2::new(view_width, view_height);
+            // Convert from NDC to screen coordinates
+            // NDC: X and Y range from -1 to 1, Y=1 is top
+            // Screen: Y=0 is top, so we need to flip Y
+            let screen_pos = Vec2::new(
+                (clip_pos.x + 1.0) / 2.0 * view_width,
+                (1.0 - clip_pos.y) / 2.0 * view_height,
+            );
 
             let min_screen_pos = screen_pos + rect.screen_offset;
             let max_screen_pos = screen_pos + rect.screen_offset + rect.screen_size;
@@ -586,6 +606,8 @@ pub fn queue_world_ui_meshes(
             {
                 // Not visible on screen
                 screen_culled_count += 1;
+                //log::info!("[WORLD_UI_QUEUE] Screen culled: world_pos={:?}, screen_pos={:?}, min={:?}, max={:?}, offset={:?}, size={:?}, view={}x{}",
+                //    rect.world_position, screen_pos, min_screen_pos, max_screen_pos, rect.screen_offset, rect.screen_size, view_width, view_height);
                 continue;
             }
             queued_count += 1;
@@ -662,6 +684,14 @@ pub fn queue_world_ui_meshes(
                 extra_index: PhaseItemExtraIndex::None,
                 indexed: false,
             });
+        }
+        
+        // Write vertex buffer to GPU
+        world_ui_meta.vertices.write_buffer(&render_device, &render_queue);
+        
+        if extracted_count > 0 {
+            //log::info!("[WORLD_UI_QUEUE] extracted={}, gpu_missing={}, frustum_culled={}, screen_culled={}, queued={}",
+            //    extracted_count, gpu_image_missing_count, frustum_culled_count, screen_culled_count, queued_count);
         }
     }
 }

@@ -343,7 +343,7 @@ fn load_ui_spritesheet(
     for (tsi_texture_index, tsi_texture) in tsi_file.textures.iter().enumerate() {
         // Convert path to lowercase to ensure extension matching works with Bevy's asset loader
         let texture_path = format!("3ddata/control/res/{}", tsi_texture.filename).to_lowercase();
-        log::info!("[UI RESOURCES] Loading texture index {}: filename = {}, path = {}", tsi_texture_index, tsi_texture.filename, texture_path);
+        // log::info!("[UI RESOURCES] Loading texture index {}: filename = {}, path = {}", tsi_texture_index, tsi_texture.filename, texture_path);
         let handle = asset_server.load(&texture_path);
         let texture_id = egui_context.add_image(handle.clone());
         loaded_textures.push(UiTexture {
@@ -397,7 +397,7 @@ pub fn update_ui_resources(
                 let size = image.size().as_vec2();
                 if size.x > 0.0 && size.y > 0.0 {
                     texture.size = Some(size);
-                    log::info!("[UI RESOURCES] Texture loaded successfully: texture_index={}, handle={:?}", texture_index, texture.handle);
+                    // log::info!("[UI RESOURCES] Texture loaded successfully: texture_index={}, handle={:?}", texture_index, texture.handle);
                 } else {
                     // Image exists but has zero size - still loading
                     log::warn!("[UI RESOURCES] Texture has zero size: texture_index={}, size={:?}", texture_index, size);
@@ -499,13 +499,13 @@ pub fn update_ui_resources(
     load_skill_tree(&ui_resources.skill_tree_dealer);
 
     if loaded_all {
-        log::info!("[UI RESOURCES] All textures loaded successfully, setting loaded_all_textures = true");
+        // log::info!("[UI RESOURCES] All textures loaded successfully, setting loaded_all_textures = true");
     } else {
         log::debug!("[UI RESOURCES] Not all textures loaded yet, loaded_all_textures remains false");
     }
 
     if loaded_required {
-        log::info!("[UI RESOURCES] All required textures (sprite sheets and cursors) loaded successfully, setting loaded_required_textures = true");
+        // log::info!("[UI RESOURCES] All required textures (sprite sheets and cursors) loaded successfully, setting loaded_required_textures = true");
     } else {
         log::debug!("[UI RESOURCES] Not all required textures loaded yet, loaded_required_textures remains false");
     }

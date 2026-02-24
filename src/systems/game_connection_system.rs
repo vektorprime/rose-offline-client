@@ -44,7 +44,7 @@ use crate::{
         PendingSkillTargetList, PersonalStore, PlayerCharacter, Position, VisibleStatusEffects,
     },
     events::{
-        BankEvent, ChatboxEvent, ClientEntityEvent, GameConnectionEvent, LoadZoneEvent,
+        BankEvent, ChatBubbleEvent, ChatBubbleType, ChatboxEvent, ClientEntityEvent, GameConnectionEvent, LoadZoneEvent,
         MessageBoxEvent, PartyEvent, PersonalStoreEvent, QuestTriggerEvent, UseItemEvent,
     },
     resources::{AppState, ClientEntityList, CurrentZone, GameConnection, GameData, WorldRates, WorldTime},
@@ -157,6 +157,7 @@ pub fn game_connection_system(
     mut app_state_next: ResMut<NextState<AppState>>,
     mut client_entity_list: ResMut<ClientEntityList>,
     mut chatbox_events: EventWriter<ChatboxEvent>,
+    mut chat_bubble_events: EventWriter<ChatBubbleEvent>,
     mut game_connection_events: EventWriter<GameConnectionEvent>,
     mut load_zone_events: EventWriter<LoadZoneEvent>,
     mut use_item_events: EventWriter<UseItemEvent>,
@@ -508,10 +509,10 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::SpawnEntityMonster { entity_id, npc, position, team, health, spawn_command_state, move_mode, status_effects }) => {
                 // DIAGNOSTIC: Log monster spawning information
-                log::info!("[DIAG_MONSTER_SPAWN] Spawning monster:");
-                log::info!("[DIAG_MONSTER_SPAWN]   entity_id: {:?}", entity_id);
-                log::info!("[DIAG_MONSTER_SPAWN]   npc_id: {:?}", npc.id);
-                log::info!("[DIAG_MONSTER_SPAWN]   initial position (server): x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
+                //log::info!("[DIAG_MONSTER_SPAWN] Spawning monster:");
+                //log::info!("[DIAG_MONSTER_SPAWN]   entity_id: {:?}", entity_id);
+                //log::info!("[DIAG_MONSTER_SPAWN]   npc_id: {:?}", npc.id);
+                //log::info!("[DIAG_MONSTER_SPAWN]   initial position (server): x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
 
                 let status_effects = StatusEffects {
                     active: status_effects,
@@ -564,7 +565,7 @@ pub fn game_connection_system(
                 commands.queue(move |world: &mut World| {
                     // Get terrain height at spawn position
                     let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
-                    log::info!("[DIAG_MONSTER_SPAWN] Spawning at terrain height: {:.2}m (server z was: {:.2})", spawn_y, position.z / 100.0);
+                    //log::info!("[DIAG_MONSTER_SPAWN] Spawning at terrain height: {:.2}m (server z was: {:.2})", spawn_y, position.z / 100.0);
 
                     // Spawn with core components first
                     let entity = world.spawn((
@@ -775,15 +776,29 @@ pub fn game_connection_system(
                     commands.queue(move |world: &mut World| {
                         if let Some(name) = world.entity(chat_entity).get::<ClientEntityName>() {
                             let name = name.to_string();
+                            let text_for_bubble = text.clone();
                             let _ = world
                                 .resource_mut::<Events<ChatboxEvent>>()
-                                .send(ChatboxEvent::Say(name, text));
+                                .send(ChatboxEvent::Say(name.clone(), text));
+                            
+                            // Also send chat bubble event
+                            let _ = world
+                                .resource_mut::<Events<ChatBubbleEvent>>()
+                                .send(ChatBubbleEvent::new(name, text_for_bubble)
+                                    .with_entity(chat_entity)
+                                    .with_duration(5.0)
+                                    .with_bubble_type(ChatBubbleType::Normal));
                         }
                     });
                 }
             }
             Ok(ServerMessage::ShoutChat { name, text }) => {
-                let _ = chatbox_events.write(ChatboxEvent::Shout(name, text));
+                let _ = chatbox_events.write(ChatboxEvent::Shout(name.clone(), text.clone()));
+                // Also send chat bubble event for shout
+                let _ = chat_bubble_events.write(ChatBubbleEvent::new(name, text)
+                    .with_duration(6.0)
+                    .with_color(bevy::prelude::Color::srgb(1.0, 0.8, 0.4))
+                    .with_bubble_type(ChatBubbleType::Shout));
             }
             Ok(ServerMessage::Whisper { from, text }) => {
                 let _ = chatbox_events.write(ChatboxEvent::Whisper(from, text));

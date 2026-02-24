@@ -2,7 +2,7 @@ use bevy::{prelude::Component, reflect::Reflect};
 
 use rose_file_readers::ZscCollisionShape;
 
-#[derive(Clone, Reflect)]
+#[derive(Clone, PartialEq, Eq, Reflect)]
 pub enum ZoneObjectPartCollisionShape {
     None,
     Sphere,

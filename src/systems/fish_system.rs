@@ -23,12 +23,21 @@ pub fn spawn_fish_on_water_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     settings: Res<FishSettings>,
+    zone_query: Query<Entity, With<crate::components::Zone>>,
 ) {
     let mut event_count = 0;
     for event in events.read() {
         event_count += 1;
-        log::info!("[FISH DEBUG] Received WaterSpawnedEvent #{}: water_entity={:?}, zone_entity={:?}, center={:?}, extents={:?}",
-            event_count, event.water_entity, event.zone_entity, event.water_center, event.water_half_extents);
+        //log::info!("[FISH DEBUG] Received WaterSpawnedEvent #{}: water_entity={:?}, zone_entity={:?}, center={:?}, extents={:?}",
+        //    event_count, event.water_entity, event.zone_entity, event.water_center, event.water_half_extents);
+        
+        // Check if zone_entity still exists before spawning fish
+        let zone_exists = zone_query.get(event.zone_entity).is_ok();
+        if !zone_exists {
+            log::warn!("[FISH] Zone entity {:?} no longer exists, skipping fish spawn", event.zone_entity);
+            continue;
+        }
+        
         spawn_fish_in_water(
             event.water_entity,
             event.zone_entity,
@@ -42,7 +51,7 @@ pub fn spawn_fish_on_water_system(
     }
     
     if event_count > 0 {
-        log::info!("[FISH DEBUG] Processed {} WaterSpawnedEvent(s) this frame", event_count);
+        //log::info!("[FISH DEBUG] Processed {} WaterSpawnedEvent(s) this frame", event_count);
     }
 }
 
@@ -188,12 +197,15 @@ fn spawn_fish_in_water(
         commands.entity(fish_entity).add_child(mesh_entity);
         
         // Parent fish to zone entity so it inherits zone transform
-        commands.entity(zone_entity).add_child(fish_entity);
+        // Only add as child if zone_entity is valid (not PLACEHOLDER)
+        if zone_entity != Entity::PLACEHOLDER {
+            commands.entity(zone_entity).add_child(fish_entity);
+        }
         
-        log::info!(
-            "[FISH DEBUG] Spawned fish {} at position {:?} (water_center={:?}, depth={}), parented to zone {:?}",
-            i, position, water_center, depth, zone_entity
-        );
+        // log::info!(
+        //     "[FISH DEBUG] Spawned fish {} at position {:?} (water_center={:?}, depth={}), parented to zone {:?}",
+        //     i, position, water_center, depth, zone_entity
+        // );
     }
     
     log::info!(
@@ -424,7 +436,7 @@ pub struct FishPlugin;
 
 impl Plugin for FishPlugin {
     fn build(&self, app: &mut App) {
-        log::info!("[FISH DEBUG] FishPlugin::build() called - registering fish systems");
+        //log::info!("[FISH DEBUG] FishPlugin::build() called - registering fish systems");
         app
             // Register types for reflection
             .register_type::<Fish>()

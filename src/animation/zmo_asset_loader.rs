@@ -145,8 +145,8 @@ impl AssetLoader for ZmoAssetLoader {
         async move {
             let asset_path = load_context.path().to_string_lossy();
         // CRITICAL: Use log::error to ensure visibility
-        log::error!("[ZMO_LOADER] ========== LOAD CALLED ==========");
-        log::error!("[ZMO_LOADER] Loading ZMO animation asset: {}", asset_path);
+        //log::error!("[ZMO_LOADER] ========== LOAD CALLED ==========");
+        //log::error!("[ZMO_LOADER] Loading ZMO animation asset: {}", asset_path);
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
         //log::info!("[ZMO_LOADER] ZMO asset size: {} bytes", bytes.len());
@@ -208,8 +208,8 @@ impl AssetLoader for ZmoAssetLoader {
                             bone_animation.scale = scales.clone();
                         }
                         other => {
-                            log::warn!("[ZMO_LOADER] Channel {} (bone_id={}): Unknown channel type: {:?}",
-                                channel_id, bone_id, std::mem::discriminant(other));
+                            // log::warn!("[ZMO_LOADER] Channel {} (bone_id={}): Unknown channel type: {:?}",
+                            //     channel_id, bone_id, std::mem::discriminant(other));
                         }
                     }
                 }

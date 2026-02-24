@@ -27,26 +27,26 @@ pub fn summer_vegetation_system(
     
     // Debug log every 60 frames to avoid spam
     if *frame_counter % 60 == 0 {
-        info!(
-            "[SummerSystem] enabled={}, season={:?}, has_player={}, grass_count={}, flower_count={}",
-            settings.enabled,
-            settings.current_season,
-            player_query.get_single().is_ok(),
-            grass_query.iter().len(),
-            flower_query.iter().len()
-        );
+        // info!(
+        //     "[SummerSystem] enabled={}, season={:?}, has_player={}, grass_count={}, flower_count={}",
+        //     settings.enabled,
+        //     settings.current_season,
+        //     player_query.get_single().is_ok(),
+        //     grass_query.iter().len(),
+        //     flower_query.iter().len()
+        // );
     }
     
     if !settings.enabled {
         if *frame_counter % 60 == 0 {
-            info!("[SummerSystem] Returning early - season system disabled");
+            //info!("[SummerSystem] Returning early - season system disabled");
         }
         return;
     }
     
     if settings.current_season != Season::Summer {
         if *frame_counter % 60 == 0 {
-            info!("[SummerSystem] Returning early - current season is {:?}, not Summer", settings.current_season);
+            //info!("[SummerSystem] Returning early - current season is {:?}, not Summer", settings.current_season);
         }
         return;
     }
@@ -54,7 +54,7 @@ pub fn summer_vegetation_system(
     // Get player position for player-relative spawning
     let Ok(player_transform) = player_query.get_single() else {
         if *frame_counter % 60 == 0 {
-            info!("[SummerSystem] Returning early - no player found");
+            //info!("[SummerSystem] Returning early - no player found");
         }
         return;
     };
