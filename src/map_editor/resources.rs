@@ -416,6 +416,10 @@ pub struct SelectedModel {
     pub selected_category: ModelCategory,
     /// Scroll position in the model list
     pub scroll_position: f32,
+    /// Search filter text for the model list
+    pub search_filter: String,
+    /// Flag to indicate that a placement is pending (user clicked "Add to Zone")
+    pub pending_placement: bool,
 }
 
 impl SelectedModel {
@@ -426,6 +430,8 @@ impl SelectedModel {
             browser_visible: true,
             selected_category: ModelCategory::Deco,
             scroll_position: 0.0,
+            search_filter: String::new(),
+            pending_placement: false,
         }
     }
     
@@ -447,6 +453,13 @@ impl SelectedModel {
     /// Toggle browser visibility
     pub fn toggle_browser(&mut self) {
         self.browser_visible = !self.browser_visible;
+    }
+    
+    /// Check if there's a pending placement and clear the flag
+    pub fn take_pending_placement(&mut self) -> bool {
+        let pending = self.pending_placement;
+        self.pending_placement = false;
+        pending
     }
 }
 

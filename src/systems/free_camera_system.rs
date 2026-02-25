@@ -115,8 +115,8 @@ pub fn free_camera_system(
                 KeyCode::KeyS => move_vec.z += 1.0,      // Backward
                 KeyCode::KeyA => move_vec.x -= 1.0,      // Left
                 KeyCode::KeyD => move_vec.x += 1.0,      // Right
-                KeyCode::KeyQ => translate_vec.y -= 1.0, // Down
-                KeyCode::KeyE => translate_vec.y += 1.0, // Up
+                // Note: Q and E are NOT used for camera up/down to avoid conflict
+                // with map editor mode switching (Q=Select, E=Rotate)
                 KeyCode::ShiftLeft => speed_boost_multiplier = 4.0,
                 _ => {}
             }

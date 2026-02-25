@@ -179,14 +179,17 @@ impl std::io::Seek for CursorWrapper {
 #[derive(Resource)]
 pub struct VfsAssetIo {
     vfs: Arc<VirtualFilesystem>,
+    /// Base path for real filesystem fallback - files here take priority over VFS
+    base_path: PathBuf,
     read_stats: std::sync::Mutex<VfsReadStats>,
 }
 
 impl VfsAssetIo {
-    pub fn new(vfs: Arc<VirtualFilesystem>) -> Self {
-        log::info!("[VFS ASSET IO] Creating new VfsAssetIo instance");
+    pub fn new(vfs: Arc<VirtualFilesystem>, base_path: PathBuf) -> Self {
+        log::info!("[VFS ASSET IO] Creating new VfsAssetIo instance with base_path: {:?}", base_path);
         Self {
             vfs,
+            base_path,
             read_stats: std::sync::Mutex::new(VfsReadStats::default()),
         }
     }
@@ -256,7 +259,28 @@ impl AssetReader for VfsAssetIo {
                 log::warn!("[VFS DEBUG] Failed to read shader from local filesystem: \"{}\"", path_str);
             }
 
-            // Try to read from VFS
+            // PRIORITY: Real filesystem takes priority over VFS
+            // This allows saved map editor modifications to be loaded instead of original VFS files
+            let real_filesystem_path = self.base_path.join(path_str);
+            if real_filesystem_path.exists() {
+                match std::fs::read(&real_filesystem_path) {
+                    Ok(data) => {
+                        log::info!("[VFS] Loaded from real filesystem (priority): {} (size: {})", path_str, format_bytes(data.len()));
+                        
+                        // Track read statistics
+                        if let Ok(mut stats) = self.read_stats.lock() {
+                            stats.log_file_read(path_str, data.len());
+                        }
+                        
+                        return Ok(VecReader::new(data));
+                    }
+                    Err(e) => {
+                        log::warn!("[VFS] File exists at {:?} but failed to read: {}", real_filesystem_path, e);
+                    }
+                }
+            }
+
+            // Try to read from VFS as fallback
             //log::info!("[VFS DEBUG] Requesting path: \"{}\"", path_str);
             match self.vfs.open_file(path_str) {
                 Ok(file) => {
@@ -287,7 +311,7 @@ impl AssetReader for VfsAssetIo {
                     }
                 }
                 Err(e) => {
-                    // Fallback to local filesystem if not found in VFS
+                    // Fallback to local filesystem if not found in VFS (for non-base_path files)
                     if let Ok(data) = std::fs::read(path) {
                         //log::info!("[VFS DEBUG] File not in VFS, but found on local filesystem: \"{}\"", path_str);
                         return Ok(VecReader::new(data));
@@ -397,58 +421,67 @@ impl Default for VfsAssetReaderPlugin {
 
 impl Plugin for VfsAssetReaderPlugin {
     fn build(&self, app: &mut App) {
-        log::info!("[VFS ASSET READER PLUGIN] ===========================================");
-        log::info!("[VFS ASSET READER PLUGIN] build() called, registering VFS as default asset source");
+        //log::info!("[VFS ASSET READER PLUGIN] ===========================================");
+        //log::info!("[VFS ASSET READER PLUGIN] build() called, registering VFS as default asset source");
 
-        // Get the VFS from VfsResource instead of holding our own Arc.
-        // This eliminates the need for a separate Arc clone for the plugin.
+        // Get the VFS and base_path from VfsResource
         let vfs = app.world().get_resource::<VfsResource>()
             .expect("VfsResource must be inserted before VfsAssetReaderPlugin is built")
             .vfs
             .clone();
+        let base_path = app.world().get_resource::<VfsResource>()
+            .expect("VfsResource must be inserted before VfsAssetReaderPlugin is built")
+            .base_path
+            .clone();
         
-        log::info!("[VFS ASSET READER PLUGIN] VFS retrieved from VfsResource, Arc pointer: {:p}", vfs.as_ref());
-        log::info!("[VFS ASSET READER PLUGIN] About to call register_asset_source()");
+        //log::info!("[VFS ASSET READER PLUGIN] VFS retrieved from VfsResource, Arc pointer: {:p}", vfs.as_ref());
+        //log::info!("[VFS ASSET READER PLUGIN] About to call register_asset_source()");
 
         // Register VFS as the default asset source
         app.register_asset_source(
             AssetSourceId::Default,
             AssetSource::build().with_reader(move || {
-                log::info!("[VFS ASSET READER PLUGIN] Creating new VfsAssetIo instance");
+                //log::info!("[VFS ASSET READER PLUGIN] Creating new VfsAssetIo instance");
                 let vfs_clone = vfs.clone();
-                Box::new(VfsAssetIo::new(vfs_clone))
+                let base_path_clone = base_path.clone();
+                Box::new(VfsAssetIo::new(vfs_clone, base_path_clone))
             }),
         );
 
-        log::info!("[VFS ASSET READER PLUGIN] register_asset_source() completed successfully");
-        log::info!("[VFS ASSET READER PLUGIN] ===========================================");
+        //log::info!("[VFS ASSET READER PLUGIN] register_asset_source() completed successfully");
+        //log::info!("[VFS ASSET READER PLUGIN] ===========================================");
 
         // FIX: Register a custom asset source specifically for .zone_loader files
         // This bypasses the file existence check that prevents .zone_loader files from being loaded
-        // We need to get the VFS again for this second registration since the first closure captured it
+        // We need to get the VFS and base_path again for this second registration since the first closure captured them
         let vfs_for_zone_loader = app.world().get_resource::<VfsResource>()
             .expect("VfsResource must be inserted before VfsAssetReaderPlugin is built")
             .vfs
             .clone();
+        let base_path_for_zone_loader = app.world().get_resource::<VfsResource>()
+            .expect("VfsResource must be inserted before VfsAssetReaderPlugin is built")
+            .base_path
+            .clone();
         app.register_asset_source(
             AssetSourceId::from("zone_loader"),
             AssetSource::build().with_reader(move || {
-                log::info!("[VFS ASSET READER PLUGIN] Creating VfsAssetIo for zone_loader source");
+                //log::info!("[VFS ASSET READER PLUGIN] Creating VfsAssetIo for zone_loader source");
                 let vfs_clone = vfs_for_zone_loader.clone();
-                Box::new(VfsAssetIo::new(vfs_clone))
+                let base_path_clone = base_path_for_zone_loader.clone();
+                Box::new(VfsAssetIo::new(vfs_clone, base_path_clone))
             }),
         );
-        log::info!("[VFS ASSET READER PLUGIN] zone_loader asset source registered");
+        //log::info!("[VFS ASSET READER PLUGIN] zone_loader asset source registered");
 
         // Add a Startup system to verify the asset source was registered
         app.add_systems(bevy::app::Startup, |asset_server: Res<AssetServer>| {
-            log::info!("[VFS ASSET READER PLUGIN] Verifying asset source registration...");
+            //log::info!("[VFS ASSET READER PLUGIN] Verifying asset source registration...");
             match asset_server.get_source(AssetSourceId::Default) {
                 Ok(source) => {
-                    log::info!("[VFS ASSET READER PLUGIN] Default asset source found!");
+                    //log::info!("[VFS ASSET READER PLUGIN] Default asset source found!");
                     let reader = source.reader();
                     let reader_type = std::any::type_name_of_val(reader);
-                    log::info!("[VFS ASSET READER PLUGIN] Reader type: {}", reader_type);
+                    //log::info!("[VFS ASSET READER PLUGIN] Reader type: {}", reader_type);
                 }
                 Err(e) => {
                     log::error!("[VFS ASSET READER PLUGIN] Failed to get default asset source: {:?}", e);
@@ -456,10 +489,10 @@ impl Plugin for VfsAssetReaderPlugin {
             }
             match asset_server.get_source(AssetSourceId::from("zone_loader")) {
                 Ok(source) => {
-                    log::info!("[VFS ASSET READER PLUGIN] zone_loader asset source found!");
+                    //log::info!("[VFS ASSET READER PLUGIN] zone_loader asset source found!");
                     let reader = source.reader();
                     let reader_type = std::any::type_name_of_val(reader);
-                    log::info!("[VFS ASSET READER PLUGIN] zone_loader Reader type: {}", reader_type);
+                    //log::info!("[VFS ASSET READER PLUGIN] zone_loader Reader type: {}", reader_type);
                 }
                 Err(e) => {
                     log::error!("[VFS ASSET READER PLUGIN] Failed to get zone_loader asset source: {:?}", e);

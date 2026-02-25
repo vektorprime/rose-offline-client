@@ -1,18 +1,22 @@
 //! Keyboard Shortcuts System for the Map Editor
-//! 
+//!
 //! Handles keyboard shortcuts for common editor operations:
 //! - Delete: Delete selected entities
 //! - Ctrl+D: Duplicate selected entities
 //! - Ctrl+Z: Undo
 //! - Ctrl+Y: Redo
 //! - Escape: Deselect all
-//! - W/E/R: Switch to Translate/Rotate/Scale mode
+//! - E/R: Switch to Rotate/Scale mode (Q for Select, V for Add, X for Delete)
+//! - Tab: Toggle free camera on/off
+//! - Note: W is reserved for FreeCamera forward movement
 
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
+use std::collections::HashSet;
 
-use crate::map_editor::components::SelectedInEditor;
+use crate::map_editor::components::{EditorSelectable, SelectedInEditor};
 use crate::map_editor::resources::{EditorAction, EditorMode, MapEditorState};
+use crate::systems::{FreeCamera, OrbitCamera};
 
 /// System to handle keyboard shortcuts for the map editor
 pub fn keyboard_shortcuts_system(
@@ -22,6 +26,9 @@ pub fn keyboard_shortcuts_system(
     mut egui_contexts: EguiContexts,
     selected_entities: Query<Entity, With<SelectedInEditor>>,
     transforms: Query<&Transform>,
+    names: Query<&Name>,
+    camera_query: Query<Entity, With<Camera3d>>,
+    free_camera_query: Query<&FreeCamera>,
 ) {
     // Don't process if editor is disabled
     if !map_editor_state.enabled {
@@ -42,15 +49,26 @@ pub fn keyboard_shortcuts_system(
         handle_deselect_all(&mut map_editor_state, &mut commands, &selected_entities);
     }
     
+    // Handle Tab - Toggle free camera
+    if keyboard.just_pressed(KeyCode::Tab) {
+        handle_toggle_free_camera(&mut commands, &camera_query, &free_camera_query);
+    }
+    
     // Handle Delete - Delete selected entities
-    if keyboard.just_pressed(KeyCode::Delete) || 
+    if keyboard.just_pressed(KeyCode::Delete) ||
        (keyboard.just_pressed(KeyCode::Backspace) && keyboard.pressed(KeyCode::ControlLeft)) {
         handle_delete_selected(&mut commands, &mut map_editor_state, &selected_entities, &transforms);
     }
     
     // Handle Ctrl+D - Duplicate selected entities
     if keyboard.just_pressed(KeyCode::KeyD) && is_ctrl_pressed(&keyboard) {
-        handle_duplicate_selected(&mut map_editor_state, &selected_entities);
+        handle_duplicate_selected(
+            commands.reborrow(),
+            &mut map_editor_state,
+            &selected_entities,
+            &transforms,
+            &names,
+        );
     }
     
     // Handle Ctrl+A - Select all
@@ -74,10 +92,8 @@ pub fn keyboard_shortcuts_system(
         log::info!("[KeyboardShortcuts] Snap to grid: {}", map_editor_state.snap_to_grid);
     }
     
-    // Handle Ctrl+S - Save (log for now, actual save would be implemented separately)
-    if keyboard.just_pressed(KeyCode::KeyS) && is_ctrl_pressed(&keyboard) {
-        log::info!("[KeyboardShortcuts] Save requested (not implemented yet)");
-    }
+    // Note: Ctrl+S save functionality is handled via the menu bar UI
+    // The keyboard input S (without modifiers) is used for FreeCamera movement
     
     // Handle Ctrl+N - New map (log for now)
     if keyboard.just_pressed(KeyCode::KeyN) && is_ctrl_pressed(&keyboard) {
@@ -87,6 +103,29 @@ pub fn keyboard_shortcuts_system(
     // Handle Ctrl+O - Open map (log for now)
     if keyboard.just_pressed(KeyCode::KeyO) && is_ctrl_pressed(&keyboard) {
         log::info!("[KeyboardShortcuts] Open map requested (not implemented yet)");
+    }
+}
+
+/// Handle Tab - Toggle free camera on/off
+fn handle_toggle_free_camera(
+    commands: &mut Commands,
+    camera_query: &Query<Entity, With<Camera3d>>,
+    free_camera_query: &Query<&FreeCamera>,
+) {
+    for camera_entity in camera_query.iter() {
+        if free_camera_query.get(camera_entity).is_ok() {
+            // FreeCamera exists, remove it and add OrbitCamera
+            commands.entity(camera_entity)
+                .remove::<FreeCamera>()
+                .insert(OrbitCamera::new(camera_entity, Vec3::ZERO, 10.0));
+            log::info!("[KeyboardShortcuts] Switched to OrbitCamera");
+        } else {
+            // No FreeCamera, add it and remove OrbitCamera
+            commands.entity(camera_entity)
+                .remove::<OrbitCamera>()
+                .insert(FreeCamera::new(Vec3::new(5120.0, 50.0, -5120.0), -45.0, -20.0));
+            log::info!("[KeyboardShortcuts] Switched to FreeCamera");
+        }
     }
 }
 
@@ -106,14 +145,9 @@ fn is_alt_pressed(keyboard: &ButtonInput<KeyCode>) -> bool {
     keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight)
 }
 
-/// Handle mode switching with W/E/R/Q keys
+/// Handle mode switching with E/R/Q/V/X keys
+/// Note: W is NOT used for Translate mode to avoid conflict with FreeCamera WASD movement
 fn handle_mode_switches(map_editor_state: &mut MapEditorState, keyboard: &ButtonInput<KeyCode>) {
-    // W for Translate mode
-    if keyboard.just_pressed(KeyCode::KeyW) {
-        map_editor_state.editor_mode = EditorMode::Translate;
-        log::info!("[KeyboardShortcuts] Switched to Translate mode");
-    }
-    
     // E for Rotate mode
     if keyboard.just_pressed(KeyCode::KeyE) {
         map_editor_state.editor_mode = EditorMode::Rotate;
@@ -219,26 +253,70 @@ fn handle_delete_selected(
 
 /// Handle Ctrl+D - Duplicate selected entities
 fn handle_duplicate_selected(
+    mut commands: Commands,
     map_editor_state: &mut MapEditorState,
-    _selected_entities: &Query<Entity, With<SelectedInEditor>>,
+    selected_entities: &Query<Entity, With<SelectedInEditor>>,
+    transforms: &Query<&Transform>,
+    names: &Query<&Name>,
 ) {
-    let count = map_editor_state.selection_count();
+    let entities: Vec<Entity> = selected_entities.iter().collect();
     
-    if count == 0 {
+    if entities.is_empty() {
         return;
     }
     
-    // For a full implementation, we would:
-    // 1. Get all selected entities
-    // 2. Clone each entity with its components
-    // 3. Offset the position slightly
-    // 4. Select the new entities
-    // 5. Record the action for undo
+    // Offset for duplicated entities
+    let duplicate_offset = Vec3::new(1.0, 0.0, 1.0);
     
-    log::info!("[KeyboardShortcuts] Duplicate {} entities (not fully implemented)", count);
+    // Remove selection from current entities
+    for entity in &entities {
+        commands.entity(*entity).remove::<SelectedInEditor>();
+    }
     
-    // Placeholder: Record the action
-    // map_editor_state.push_action(EditorAction::AddEntities { entities: new_entities });
+    // Create duplicated entities
+    let mut new_entities = Vec::new();
+    let mut new_selection = HashSet::new();
+    
+    for entity in &entities {
+        // Get the original transform
+        if let Ok(transform) = transforms.get(*entity) {
+            let new_transform = Transform::from_translation(transform.translation + duplicate_offset)
+                .with_rotation(transform.rotation)
+                .with_scale(transform.scale);
+            
+            // Get the original name
+            let name = names.get(*entity).ok()
+                .map(|n| format!("{}_copy", n.as_str()))
+                .unwrap_or_else(|| "DuplicatedEntity".to_string());
+            
+            // Create the duplicated entity
+            let new_entity = commands.spawn((
+                new_transform,
+                GlobalTransform::default(),
+                Name::new(name),
+                EditorSelectable,
+                SelectedInEditor,
+            )).id();
+            
+            new_entities.push(new_entity);
+            new_selection.insert(new_entity);
+        }
+    }
+    
+    // Clear old selection and set new selection
+    map_editor_state.clear_selection();
+    for entity in &new_selection {
+        map_editor_state.select_entity(*entity);
+    }
+    
+    // Record the action for undo
+    if !new_entities.is_empty() {
+        map_editor_state.push_action(EditorAction::AddEntities {
+            entities: new_entities.clone(),
+        });
+    }
+    
+    log::info!("[KeyboardShortcuts] Duplicated {} entities", new_entities.len());
 }
 
 /// Handle Ctrl+A - Select all entities
@@ -296,6 +374,9 @@ pub fn keyboard_shortcuts_help_system(
             ui.label("  W - Translate mode");
             ui.label("  E - Rotate mode");
             ui.label("  R - Scale mode");
+            ui.label("");
+            ui.label("Camera:");
+            ui.label("  Tab - Toggle free/orbit camera");
             ui.label("");
             ui.label("Actions:");
             ui.label("  Delete - Delete selected");

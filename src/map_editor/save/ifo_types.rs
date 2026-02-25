@@ -84,6 +84,17 @@ impl IfoObject {
         );
         (translation, rotation, scale)
     }
+
+    /// Create an IfoObject from rose_file_readers::IfoObject
+    /// This copies the IFO data directly without coordinate conversion (data is already in IFO format)
+    pub fn from_rose_ifo_object(ifo_object: &rose_file_readers::IfoObject) -> Self {
+        Self {
+            object_id: ifo_object.object_id,
+            position: [ifo_object.position.x, ifo_object.position.y, ifo_object.position.z],
+            rotation: [ifo_object.rotation.x, ifo_object.rotation.y, ifo_object.rotation.z, ifo_object.rotation.w],
+            scale: [ifo_object.scale.x, ifo_object.scale.y, ifo_object.scale.z],
+        }
+    }
 }
 
 /// Event object with additional quest/script data
@@ -320,5 +331,100 @@ impl ZoneExportData {
     /// Count blocks with data
     pub fn populated_block_count(&self) -> usize {
         self.blocks.iter().filter(|b| b.is_some()).count()
+    }
+
+    /// Create ZoneExportData from existing ZoneLoaderAsset blocks
+    /// This pre-populates the export data with existing IFO data to preserve
+    /// objects that weren't modified in the editor
+    pub fn from_existing_blocks(
+        zone_id: u16,
+        blocks: &[Option<std::boxed::Box<crate::zone_loader::ZoneLoaderBlock>>],
+        base_path: String,
+    ) -> Self {
+        let mut export_data = Self::new(zone_id, base_path);
+        
+        for (block_idx, block_opt) in blocks.iter().enumerate() {
+            let Some(block) = block_opt else {
+                continue;
+            };
+            
+            let Some(ifo) = &block.ifo else {
+                continue;
+            };
+            
+            // Calculate block coordinates from index (64x64 grid)
+            let block_x = (block_idx % 64) as u32;
+            let block_y = (block_idx / 64) as u32;
+            
+            // Get or create the export block
+            let export_block = export_data.get_or_create_block(block_x, block_y);
+            
+            // Convert deco objects from IFO
+            for ifo_object in &ifo.deco_objects {
+                export_block.block.deco_objects.push(IfoObject::from_rose_ifo_object(ifo_object));
+            }
+            
+            // Convert cnst objects from IFO
+            for ifo_object in &ifo.cnst_objects {
+                export_block.block.cnst_objects.push(IfoObject::from_rose_ifo_object(ifo_object));
+            }
+            
+            // Convert event objects from IFO
+            for ifo_event in &ifo.event_objects {
+                let mut event_obj = IfoEventObject::new(ifo_event.object.object_id);
+                event_obj.object = IfoObject::from_rose_ifo_object(&ifo_event.object);
+                event_obj.quest_trigger_name = ifo_event.quest_trigger_name.clone();
+                event_obj.script_function_name = ifo_event.script_function_name.clone();
+                export_block.block.event_objects.push(event_obj);
+            }
+            
+            // Convert warp objects from IFO
+            // Note: In rose_file_readers, warps are IfoObject with warp_id as a direct field
+            for ifo_warp in &ifo.warps {
+                let mut warp_obj = IfoWarpObject::new(ifo_warp.object_id, ifo_warp.warp_id);
+                warp_obj.object = IfoObject::from_rose_ifo_object(ifo_warp);
+                export_block.block.warp_objects.push(warp_obj);
+            }
+            
+            // Convert sound objects from IFO
+            for ifo_sound in &ifo.sound_objects {
+                let mut sound_obj = IfoSoundObject::new(0);
+                sound_obj.object = IfoObject::from_rose_ifo_object(&ifo_sound.object);
+                sound_obj.sound_path = ifo_sound.sound_path.path().to_string_lossy().to_string();
+                sound_obj.range = ifo_sound.range as f32;
+                export_block.block.sound_objects.push(sound_obj);
+            }
+            
+            // Convert effect objects from IFO
+            for ifo_effect in &ifo.effect_objects {
+                let mut effect_obj = IfoEffectObject::new(0);
+                effect_obj.object = IfoObject::from_rose_ifo_object(&ifo_effect.object);
+                effect_obj.effect_path = ifo_effect.effect_path.path().to_string_lossy().to_string();
+                export_block.block.effect_objects.push(effect_obj);
+            }
+            
+            // Convert animated objects from IFO
+            for ifo_object in &ifo.animated_objects {
+                export_block.block.animated_objects.push(IfoObject::from_rose_ifo_object(ifo_object));
+            }
+            
+            // Convert water planes from IFO
+            for (start, end) in &ifo.water_planes {
+                export_block.block.water_planes.push(IfoWaterPlane {
+                    start: [start.x, start.y, start.z],
+                    end: [end.x, end.y, end.z],
+                });
+            }
+            
+            // Set water size
+            export_block.block.water_size = ifo.water_size;
+            
+            // Convert NPCs from IFO
+            for ifo_npc in &ifo.npcs {
+                export_block.block.npcs.push(IfoObject::from_rose_ifo_object(&ifo_npc.object));
+            }
+        }
+        
+        export_data
     }
 }

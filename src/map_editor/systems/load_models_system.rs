@@ -1,17 +1,18 @@
 //! Model Loading System for Map Editor
-//! 
+//!
 //! This system loads model information from ZSC files and populates the AvailableModels resource.
 
 use bevy::prelude::*;
-use rose_file_readers::{ZscFile, VfsPath, VirtualFilesystem};
+use rose_file_readers::{ZscFile, VfsPath, VirtualFilesystem, VfsFile, RoseFile, RoseFileReader};
 use crate::resources::GameData;
 use crate::VfsResource;
 use crate::resources::CurrentZone;
 use crate::zone_loader::ZoneLoaderAsset;
+use crate::events::ZoneEvent;
 use super::super::resources::{AvailableModels, ModelInfo, ModelCategory};
 
 /// System to load available models from ZSC files on startup
-/// 
+///
 /// This reads the ZSC files (event_object, special_object) from GameData and
 /// (deco, cnst) from the current zone when available.
 pub fn load_available_models_system(
@@ -71,12 +72,12 @@ pub fn load_available_models_system(
             );
         } else {
             log::debug!("[LOAD MODELS] Zone asset not yet loaded, loading defaults from VFS");
-            load_default_deco_cnst_from_vfs(&vfs_resource.vfs, &mut models);
+            load_default_deco_cnst_from_vfs(&vfs_resource.vfs, &vfs_resource.base_path, &mut models);
         }
     } else {
         // No zone loaded yet, try to load from VFS defaults
         log::debug!("[LOAD MODELS] No zone loaded, loading defaults from VFS");
-        load_default_deco_cnst_from_vfs(&vfs_resource.vfs, &mut models);
+        load_default_deco_cnst_from_vfs(&vfs_resource.vfs, &vfs_resource.base_path, &mut models);
     }
     
     log::info!(
@@ -125,8 +126,10 @@ fn load_models_from_zsc(
 }
 
 /// Load default deco and cnst models from VFS (fallback when no zone is loaded)
+/// IMPORTANT: Real filesystem takes priority over VFS to support map editor modifications.
 fn load_default_deco_cnst_from_vfs(
     vfs: &VirtualFilesystem,
+    base_path: &std::path::Path,
     models: &mut AvailableModels,
 ) {
     // Try common paths for ZSC files
@@ -136,24 +139,101 @@ fn load_default_deco_cnst_from_vfs(
     ];
     
     let cnst_paths = [
-        "3DDATA/ZSC_CNST.TXT", 
+        "3DDATA/ZSC_CNST.TXT",
         "3DDATA/ZONES/JUNON/ZSC_CNST.TXT",
     ];
     
     for path in deco_paths {
-        if try_load_zsc_from_vfs(vfs, path, ModelCategory::Deco, &mut models.deco_models, "Deco") {
+        if try_load_zsc_with_priority(vfs, base_path, path, ModelCategory::Deco, &mut models.deco_models, "Deco") {
             break;
         }
     }
     
     for path in cnst_paths {
-        if try_load_zsc_from_vfs(vfs, path, ModelCategory::Cnst, &mut models.cnst_models, "Cnst") {
+        if try_load_zsc_with_priority(vfs, base_path, path, ModelCategory::Cnst, &mut models.cnst_models, "Cnst") {
             break;
         }
     }
 }
 
-/// Try to load a ZSC file from VFS
+/// Try to load a ZSC file with real filesystem priority
+/// Checks real filesystem first, then falls back to VFS
+fn try_load_zsc_with_priority(
+    vfs: &VirtualFilesystem,
+    base_path: &std::path::Path,
+    path: &str,
+    category: ModelCategory,
+    models: &mut Vec<ModelInfo>,
+    category_name: &str,
+) -> bool {
+    let vfs_path = VfsPath::from(std::path::PathBuf::from(path));
+    
+    // PRIORITY: Check real filesystem first
+    let real_filesystem_path = base_path.join(path);
+    if real_filesystem_path.exists() {
+        match std::fs::read(&real_filesystem_path) {
+            Ok(data) => {
+                match RoseFile::read(RoseFileReader::from(&data), &Default::default()) {
+                    Ok(zsc) => {
+                        load_models_from_zsc(&zsc, category, models, category_name);
+                        log::info!(
+                            "[LOAD MODELS] Loaded {} {} models from real filesystem (priority): {}",
+                            models.len(),
+                            category_name,
+                            path
+                        );
+                        return true;
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "[LOAD MODELS] Failed to parse ZSC from real filesystem {}: {:?}, trying VFS",
+                            path, e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "[LOAD MODELS] Failed to read ZSC from real filesystem {}: {:?}, trying VFS",
+                    path, e
+                );
+            }
+        }
+    }
+    
+    // FALLBACK: Load from VFS
+    match vfs.open_file(&vfs_path) {
+        Ok(file) => {
+            let data: Vec<u8> = match file {
+                VfsFile::Buffer(buffer) => buffer,
+                VfsFile::View(view) => view.into(),
+            };
+            match RoseFile::read(RoseFileReader::from(&data), &Default::default()) {
+                Ok(zsc) => {
+                    load_models_from_zsc(&zsc, category, models, category_name);
+                    log::info!(
+                        "[LOAD MODELS] Loaded {} {} models from VFS: {}",
+                        models.len(),
+                        category_name,
+                        path
+                    );
+                    true
+                }
+                Err(e) => {
+                    log::debug!("[LOAD MODELS] Could not parse ZSC {}: {:?}", path, e);
+                    false
+                }
+            }
+        }
+        Err(e) => {
+            log::debug!("[LOAD MODELS] Could not load {}: {:?}", path, e);
+            false
+        }
+    }
+}
+
+/// Try to load a ZSC file from VFS (legacy - use try_load_zsc_with_priority instead)
+#[allow(dead_code)]
 fn try_load_zsc_from_vfs(
     vfs: &VirtualFilesystem,
     path: &str,
@@ -203,6 +283,68 @@ fn create_model_name(mesh_path: &str, object_id: usize, category_name: &str) -> 
     };
     
     name.to_string()
+}
+
+/// System to update AvailableModels when a zone is loaded
+///
+/// This listens for ZoneEvent::Loaded events and updates the deco/cnst models
+/// from the newly loaded zone's ZSC files.
+pub fn update_models_on_zone_load_system(
+    mut events: EventReader<ZoneEvent>,
+    current_zone: Option<Res<CurrentZone>>,
+    zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
+    mut available_models: Option<ResMut<AvailableModels>>,
+) {
+    // Check if any zone was loaded
+    let mut zone_loaded = false;
+    for event in events.read() {
+        if let ZoneEvent::Loaded(_) = event {
+            zone_loaded = true;
+            break;
+        }
+    }
+    
+    if !zone_loaded {
+        return;
+    }
+    
+    // Get the current zone's asset
+    let Some(current_zone) = current_zone else {
+        log::debug!("[UPDATE MODELS] Zone loaded but no CurrentZone resource");
+        return;
+    };
+    
+    let Some(zone_asset) = zone_loader_assets.get(&current_zone.handle) else {
+        log::debug!("[UPDATE MODELS] Zone loaded but asset not yet available");
+        return;
+    };
+    
+    // Update or create AvailableModels
+    if let Some(mut models) = available_models {
+        // Clear existing deco/cnst models and reload from zone
+        models.deco_models.clear();
+        models.cnst_models.clear();
+        
+        load_models_from_zsc(
+            &zone_asset.zsc_deco,
+            ModelCategory::Deco,
+            &mut models.deco_models,
+            "Deco",
+        );
+        
+        load_models_from_zsc(
+            &zone_asset.zsc_cnst,
+            ModelCategory::Cnst,
+            &mut models.cnst_models,
+            "Cnst",
+        );
+        
+        log::info!(
+            "[UPDATE MODELS] Updated models from loaded zone: {} deco, {} cnst",
+            models.deco_models.len(),
+            models.cnst_models.len()
+        );
+    }
 }
 
 #[cfg(test)]

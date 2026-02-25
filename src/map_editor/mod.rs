@@ -91,7 +91,11 @@ use systems::property_update_system::PropertyUpdatePlugin;
 use systems::selection_highlight_system::SelectionHighlightPlugin;
 use systems::selection_system::EditorSelectionPlugin;
 use systems::transform_gizmo_system::TransformGizmoPlugin;
+use systems::undo_system::UndoRedoPlugin;
 use ui::EditorUiPlugin;
+use ui::zone_list_panel::ZoneListPanelState;
+use crate::systems::{FreeCamera, OrbitCamera};
+use crate::animation::CameraAnimation;
 
 /// Plugin for the map editor system
 ///
@@ -115,6 +119,7 @@ impl Plugin for MapEditorPlugin {
             .add_plugins(TransformGizmoPlugin)
             .add_plugins(PropertyUpdatePlugin)
             .add_plugins(KeyboardShortcutsPlugin)
+            .add_plugins(UndoRedoPlugin)
             // Phase 2.5: Model management plugins
             .add_plugins(ModelPlacementPlugin)
             // Phase 2.6: Save functionality
@@ -123,17 +128,44 @@ impl Plugin for MapEditorPlugin {
         // Phase 2.5: Load available models on startup (after GameData is loaded)
         app.add_systems(Update, load_models_system::load_available_models_system);
         
+        // Update models when a zone is loaded (fixes empty CNST/DECO tabs)
+        app.add_systems(Update, load_models_system::update_models_on_zone_load_system);
+        
         // Log plugin initialization
         log::info!("[MapEditorPlugin] Map editor plugin initialized with property editing, model management, and save support");
     }
 }
 
 /// System to initialize the map editor when entering MapEditor state
+///
+/// This system:
+/// - Sets the editor state to enabled
+/// - Configures the camera for free-cam editing mode
 pub fn map_editor_enter_system(
+    mut commands: Commands,
     mut map_editor_state: ResMut<MapEditorState>,
+    mut zone_list_state: ResMut<ZoneListPanelState>,
+    query_cameras: Query<Entity, With<Camera3d>>,
 ) {
     log::info!("[MapEditor] Entering map editor mode");
     map_editor_state.enabled = true;
+    
+    // Open zone list panel by default
+    zone_list_state.is_open = true;
+    
+    // Set up camera for map editing - position at zone center
+    let camera_position = Vec3::new(5120.0, 50.0, -5120.0);
+    let camera_yaw: f32 = -45.0;
+    let camera_pitch: f32 = -20.0;
+    
+    for entity in query_cameras.iter() {
+        commands.entity(entity)
+            .remove::<OrbitCamera>()  // Remove OrbitCamera to prevent conflict with FreeCamera
+            .remove::<CameraAnimation>()
+            .insert(FreeCamera::new(camera_position, camera_yaw, camera_pitch));
+        
+        log::info!("[MapEditor] Camera configured for editing at position {:?}", camera_position);
+    }
 }
 
 /// System to clean up when exiting MapEditor state

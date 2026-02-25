@@ -325,6 +325,7 @@ use crate::{
     },
     effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect},
     events::{LoadZoneEvent, ZoneEvent, ZoneLoadedFromVfsEvent},
+    map_editor::components::EditorSelectable,
     render::{
         MESH_ATTRIBUTE_UV_1, ParticleMaterial, RoseEffectExtension, RoseObjectExtension, TerrainMaterial,
         WaterMaterial,
@@ -723,7 +724,50 @@ async fn load_zone<'a, 'b>(
 
 /// WORKAROUND: Load zone directly from VFS without using Bevy's AssetServer
 /// This bypasses the broken asset loading pipeline in Bevy 0.13.2
-async fn load_zone_direct(zone_id: ZoneId, vfs: &VirtualFilesystem) -> Result<ZoneLoaderAsset, anyhow::Error> {
+///
+/// IMPORTANT: Real filesystem takes priority over VFS to support map editor modifications.
+/// Files are checked at base_path first, then VFS is used as fallback.
+/// Helper function to read raw bytes with real filesystem priority for use in load_zone_direct
+/// Returns the raw file data either from real filesystem or VFS
+fn read_bytes_with_priority_sync(
+    vfs: &VirtualFilesystem,
+    base_path: &Path,
+    vfs_path: &VfsPath,
+) -> Result<Vec<u8>, anyhow::Error> {
+    use rose_file_readers::VfsFile;
+    
+    let path_str = vfs_path.path().to_string_lossy().replace('\\', "/");
+    
+    // PRIORITY: Check real filesystem first
+    let real_filesystem_path = base_path.join(&path_str);
+    if real_filesystem_path.exists() {
+        match std::fs::read(&real_filesystem_path) {
+            Ok(data) => {
+                log::info!("[VFS PRIORITY] Loaded from real filesystem: {} ({} bytes)",
+                    path_str, memory_monitor::format_bytes(data.len() as u64));
+                return Ok(data);
+            }
+            Err(e) => {
+                log::warn!("[VFS PRIORITY] File exists on real filesystem but failed to read {}: {}, falling back to VFS",
+                    path_str, e);
+            }
+        }
+    }
+    
+    // FALLBACK: Load from VFS using open_file
+    match vfs.open_file(vfs_path) {
+        Ok(file) => {
+            let data = match file {
+                VfsFile::Buffer(buffer) => buffer,
+                VfsFile::View(view) => view.into(),
+            };
+            Ok(data)
+        }
+        Err(e) => Err(anyhow::anyhow!("Failed to open VFS file {}: {:?}", path_str, e)),
+    }
+}
+
+async fn load_zone_direct(zone_id: ZoneId, vfs: &VirtualFilesystem, base_path: &Path) -> Result<ZoneLoaderAsset, anyhow::Error> {
     //log::info!("[ZONE LOADER DIRECT] ===========================================");
     //log::info!("[ZONE LOADER DIRECT] load_zone_direct called for zone_id: {}", zone_id.get());
     //log::info!("[ZONE LOADER DIRECT] ===========================================");
@@ -738,21 +782,42 @@ async fn load_zone_direct(zone_id: ZoneId, vfs: &VirtualFilesystem) -> Result<Zo
     let zsc_deco_path = VfsPath::from(zone_list_entry.zsc_deco_path.path().to_path_buf());
 
     //log::info!("[ZONE LOADER DIRECT] Loading ZON file: {:?}", zon_file_path);
-    let zon: ZonFile = vfs
-        .read_file(&zon_file_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load ZON file: {:?}", e))?;
+    // PRIORITY: Real filesystem takes priority over VFS
+    let zon: ZonFile = match read_bytes_with_priority_sync(vfs, base_path, &zon_file_path) {
+        Ok(data) => {
+            RoseFile::read(RoseFileReader::from(&data), &Default::default())
+                .map_err(|e| anyhow::anyhow!("Failed to parse ZON file: {:?}", e))?
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("Failed to load ZON file: {:?}", e));
+        }
+    };
     //log::info!("[ZONE LOADER DIRECT] ZON file loaded successfully");
 
     //log::info!("[ZONE LOADER DIRECT] Loading ZSC constant file: {:?}", zsc_cnst_path);
-    let zsc_cnst: ZscFile = vfs
-        .read_file(&zsc_cnst_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load ZSC constant file: {:?}", e))?;
+    // PRIORITY: Real filesystem takes priority over VFS
+    let zsc_cnst: ZscFile = match read_bytes_with_priority_sync(vfs, base_path, &zsc_cnst_path) {
+        Ok(data) => {
+            RoseFile::read(RoseFileReader::from(&data), &Default::default())
+                .map_err(|e| anyhow::anyhow!("Failed to parse ZSC constant file: {:?}", e))?
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("Failed to load ZSC constant file: {:?}", e));
+        }
+    };
     //log::info!("[ZONE LOADER DIRECT] ZSC constant file loaded successfully");
 
     //log::info!("[ZONE LOADER DIRECT] Loading ZSC deco file: {:?}", zsc_deco_path);
-    let zsc_deco: ZscFile = vfs
-        .read_file(&zsc_deco_path)
-        .map_err(|e| anyhow::anyhow!("Failed to load ZSC deco file: {:?}", e))?;
+    // PRIORITY: Real filesystem takes priority over VFS
+    let zsc_deco: ZscFile = match read_bytes_with_priority_sync(vfs, base_path, &zsc_deco_path) {
+        Ok(data) => {
+            RoseFile::read(RoseFileReader::from(&data), &Default::default())
+                .map_err(|e| anyhow::anyhow!("Failed to parse ZSC deco file: {:?}", e))?
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("Failed to load ZSC deco file: {:?}", e));
+        }
+    };
     //log::info!("[ZONE LOADER DIRECT] ZSC deco file loaded successfully");
 
     let zone_path = zon_file_path_buf
@@ -772,7 +837,7 @@ async fn load_zone_direct(zone_id: ZoneId, vfs: &VirtualFilesystem) -> Result<Zo
 
     for block_y in 0..64 {
         for block_x in 0..64 {
-            match load_block_files_direct(vfs, zone_path, block_x, block_y).await {
+            match load_block_files_direct(vfs, base_path, zone_path, block_x, block_y).await {
                 Ok(block) => {
                     zone_blocks.push(block);
                     blocks_loaded += 1;
@@ -926,33 +991,73 @@ async fn load_block_files<'a>(
 }
 
 /// WORKAROUND: Load block files directly from VFS without using Bevy's LoadContext
+///
+/// IMPORTANT: Real filesystem takes priority over VFS to support map editor modifications.
+/// Files are checked at base_path first, then VFS is used as fallback.
 async fn load_block_files_direct(
     vfs: &VirtualFilesystem,
+    base_path: &Path,
     zone_path: &Path,
     block_x: usize,
     block_y: usize,
 ) -> Result<Box<ZoneLoaderBlock>, anyhow::Error> {
+    /// Helper function to read raw bytes with real filesystem priority
+    /// Returns the raw file data either from real filesystem or VFS
+    fn read_bytes_with_priority(
+        vfs: &VirtualFilesystem,
+        base_path: &Path,
+        vfs_path: &VfsPath,
+    ) -> Result<Vec<u8>, anyhow::Error> {
+        use rose_file_readers::VfsFile;
+        
+        let path_str = vfs_path.path().to_string_lossy().replace('\\', "/");
+        
+        // PRIORITY: Check real filesystem first
+        let real_filesystem_path = base_path.join(&path_str);
+        if real_filesystem_path.exists() {
+            match std::fs::read(&real_filesystem_path) {
+                Ok(data) => {
+                    log::info!("[VFS PRIORITY] Loaded from real filesystem: {} ({} bytes)", 
+                        path_str, memory_monitor::format_bytes(data.len() as u64));
+                    return Ok(data);
+                }
+                Err(e) => {
+                    log::warn!("[VFS PRIORITY] File exists on real filesystem but failed to read {}: {}, falling back to VFS", 
+                        path_str, e);
+                }
+            }
+        }
+        
+        // FALLBACK: Load from VFS using open_file
+        match vfs.open_file(vfs_path) {
+            Ok(file) => {
+                let data = match file {
+                    VfsFile::Buffer(buffer) => buffer,
+                    VfsFile::View(view) => view.into(),
+                };
+                Ok(data)
+            }
+            Err(e) => Err(anyhow::anyhow!("Failed to open VFS file {}: {:?}", path_str, e)),
+        }
+    }
+    
     let him_path_buf = zone_path.join(format!("{}_{}.HIM", block_x, block_y));
     let him_path_str = him_path_buf.to_string_lossy().replace('\\', "/");
     let him_path = VfsPath::from(PathBuf::from(&him_path_str));
-    //log::trace!("[ZONE LOADER DEBUG] Constructed HIM path: \"{}\"", him_path_str);
-   //  log::trace!("[LOAD BLOCK DIRECT] Loading block {}_{} from: {:?}", block_x, block_y, him_path);
 
     // Check if HIM file exists before attempting to load it
     match vfs.open_file(&him_path) {
-        Ok(_) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] HIM file exists for block {}_{}", block_x, block_y);
-        }
+        Ok(_) => {}
         Err(_) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] HIM file does not exist for block {}_{} - skipping this block", block_x, block_y);
             return Err(anyhow::anyhow!("HIM file not found for block {}_{}", block_x, block_y));
         }
     }
 
-    let him = match vfs.read_file(&him_path) {
+    // Load and parse HIM file
+    let him: HimFile = match read_bytes_with_priority(vfs, base_path, &him_path) {
         Ok(data) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] Successfully loaded HIM file for block {}_{}", block_x, block_y);
-            data
+            RoseFile::read(RoseFileReader::from(&data), &Default::default())
+                .map_err(|e| anyhow::anyhow!("Failed to parse HIM file for block {}_{}: {:?}", block_x, block_y, e))?
         }
         Err(e) => {
             log::warn!("[LOAD BLOCK DIRECT] Failed to load HIM file for block {}_{}: {:?}. Skipping this block.", block_x, block_y, e);
@@ -960,70 +1065,50 @@ async fn load_block_files_direct(
         }
     };
 
+    // Load and parse TIL file (optional)
     let til_path_str = zone_path.join(format!("{}_{}.TIL", block_x, block_y)).to_string_lossy().replace('\\', "/");
     let til_path = VfsPath::from(PathBuf::from(&til_path_str));
-    let til = match vfs.read_file(&til_path) {
+    let til: Option<TilFile> = match read_bytes_with_priority(vfs, base_path, &til_path) {
         Ok(data) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] Successfully loaded TIL file for block {}_{}", block_x, block_y);
-            Some(data)
+            RoseFile::read(RoseFileReader::from(&data), &Default::default()).ok()
         }
-        Err(e) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] TIL file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
-            None
-        }
+        Err(_) => None
     };
 
+    // Load and parse IFO file (optional)
     let ifo_path = VfsPath::from(zone_path.join(format!("{}_{}.IFO", block_x, block_y)));
-    let ifo = match vfs.read_file(&ifo_path) {
+    let ifo: Option<IfoFile> = match read_bytes_with_priority(vfs, base_path, &ifo_path) {
         Ok(data) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] Successfully loaded IFO file for block {}_{}", block_x, block_y);
-            Some(data)
+            RoseFile::read(RoseFileReader::from(&data), &Default::default()).ok()
         }
-        Err(e) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] IFO file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
-            None
-        }
+        Err(_) => None
     };
 
+    // Load and parse LIT constant file (optional)
     let lit_cnst_path_str = zone_path.join(format!(
         "{}_{}/LIGHTMAP/BUILDINGLIGHTMAPDATA.LIT",
         block_x, block_y
     )).to_string_lossy().replace('\\', "/");
     let lit_cnst_path = VfsPath::from(PathBuf::from(&lit_cnst_path_str));
-    let lit_cnst = match vfs.read_file(&lit_cnst_path) {
+    let lit_cnst: Option<LitFile> = match read_bytes_with_priority(vfs, base_path, &lit_cnst_path) {
         Ok(data) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] Successfully loaded LIT constant file for block {}_{}", block_x, block_y);
-            Some(data)
+            RoseFile::read(RoseFileReader::from(&data), &Default::default()).ok()
         }
-        Err(e) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] LIT constant file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
-            None
-        }
+        Err(_) => None
     };
 
+    // Load and parse LIT deco file (optional)
     let lit_deco_path_str = zone_path.join(format!(
         "{}_{}/LIGHTMAP/OBJECTLIGHTMAPDATA.LIT",
         block_x, block_y
     )).to_string_lossy().replace('\\', "/");
     let lit_deco_path = VfsPath::from(PathBuf::from(&lit_deco_path_str));
-    let lit_deco = match vfs.read_file(&lit_deco_path) {
+    let lit_deco: Option<LitFile> = match read_bytes_with_priority(vfs, base_path, &lit_deco_path) {
         Ok(data) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] Successfully loaded LIT deco file for block {}_{}", block_x, block_y);
-            Some(data)
+            RoseFile::read(RoseFileReader::from(&data), &Default::default()).ok()
         }
-        Err(e) => {
-           //  log::trace!("[LOAD BLOCK DIRECT] LIT deco file not found for block {}_{}: {:?}. This is optional.", block_x, block_y, e);
-            None
-        }
+        Err(_) => None
     };
-
-    // log::info!("[LOAD BLOCK DIRECT] Successfully loaded block {}_{} (HIM: yes, TIL: {}, IFO: {}, LIT_CNST: {}, LIT_DECO: {})",
-    //     block_x, block_y,
-    //     til.is_some(),
-    //     ifo.is_some(),
-    //     lit_cnst.is_some(),
-    //     lit_deco.is_some()
-    // );
 
     Ok(Box::new(ZoneLoaderBlock {
         block_x,
@@ -1268,6 +1353,7 @@ pub fn zone_loader_system(
             // This bypasses the broken asset loading pipeline in Bevy 0.13.2
             let zone_id = event.id;
             let vfs = spawn_zone_params.vfs_resource.vfs.clone();
+            let base_path = spawn_zone_params.vfs_resource.base_path.clone();
             let tx = zone_load_sender.0.clone();
             
             // log::info!("[ZONE LOADER SYSTEM] ===========================================");
@@ -1297,7 +1383,7 @@ pub fn zone_loader_system(
                 // log::info!("[ZONE LOADER DIRECT TASK] Async task started for zone_id: {}", zone_id.get());
                 // log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
                 
-                match load_zone_direct(zone_id, &vfs).await {
+                match load_zone_direct(zone_id, &vfs, &base_path).await {
                     Ok(zone_asset) => {
                         // log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
                         // log::info!("[ZONE LOADER DIRECT TASK] Zone loaded successfully: {}", zone_id.get());
@@ -2467,6 +2553,7 @@ fn spawn_terrain(
     // Split spawn to avoid Bundle tuple limit (15+ components not supported)
     let terrain_entity = commands
         .spawn((
+            EditorSelectable,
             ZoneObject::Terrain(ZoneObjectTerrain {
                 block_x: block_data.block_x as u32,
                 block_y: block_data.block_y as u32,
@@ -2565,6 +2652,7 @@ fn spawn_water(
     // Split spawn to avoid Bundle tuple limit (15+ components not supported)
     let water_entity = commands
         .spawn((
+            EditorSelectable,
             ZoneObject::Water,
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(water_material.clone()),
@@ -2634,6 +2722,7 @@ fn spawn_object(
 
     let mut part_entities: ArrayVec<Entity, 256> = ArrayVec::new();
     let mut object_entity_commands = commands.spawn((
+        EditorSelectable,
         object_type(ZoneObjectId {
             ifo_object_id,
             zsc_object_id,
@@ -2820,6 +2909,7 @@ fn spawn_object(
             let is_transparent = zsc_material.alpha_enabled && zsc_material.alpha_test.is_none();
             
             let part_entity = commands.spawn((
+                EditorSelectable,
                 part_object_type(ZoneObjectPart {
                     ifo_object_id,
                     zsc_object_id,
@@ -3093,6 +3183,7 @@ fn spawn_animated_object(
 
     let animated_entity = commands
         .spawn((
+            EditorSelectable,
             ZoneObject::AnimatedObject(ZoneObjectAnimatedObject {
                 mesh_path: mesh_path.to_string(),
                 motion_path: motion_path.to_string(),
@@ -3153,6 +3244,7 @@ fn spawn_effect_object(
 
     let effect_object_entity = commands
         .spawn((
+            EditorSelectable,
             ZoneObject::EffectObject {
                 ifo_object_id,
                 effect_path: effect_object
@@ -3216,6 +3308,7 @@ fn spawn_sound_object(
        log::warn!("[SPAWN SOUND OBJECT] NULL or empty sound path, skipping sound loading");
        let effect_object_entity = commands
            .spawn((
+               EditorSelectable,
                ZoneObject::SoundObject {
                    ifo_object_id,
                    sound_path: sound_path_str.clone(),
@@ -3235,6 +3328,7 @@ fn spawn_sound_object(
 
     let effect_object_entity = commands
         .spawn((
+            EditorSelectable,
             ZoneObject::SoundObject {
                 ifo_object_id,
                 sound_path: sound_path_str.clone(),

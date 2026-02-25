@@ -62,6 +62,12 @@ pub fn editor_picking_system(
         return;
     }
 
+    // Skip selection when in Add mode - let the placement system handle clicks
+    if map_editor_state.editor_mode == crate::map_editor::resources::EditorMode::Add {
+        log::debug!("[SELECTION] Skipping selection in Add mode - placement system handles clicks");
+        return;
+    }
+
     // Get rapier context
     let Ok(rapier_context) = rapier_context.single() else {
         return;

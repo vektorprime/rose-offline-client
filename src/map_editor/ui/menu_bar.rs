@@ -1,77 +1,103 @@
 //! Menu Bar for the Map Editor
-//! 
-//! Provides the top menu bar with File, Edit, View, and Object menus.
+//!
+//! Provides the top menu bar with File, Edit, View, Zone, Object, and Help menus.
 
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use crate::map_editor::resources::{MapEditorState, EditorMode};
+use crate::map_editor::resources::{MapEditorState, EditorMode, SelectedModel};
 use crate::map_editor::save::{SaveZoneEvent, SaveStatus};
+use crate::map_editor::ui::NewZoneEvent;
+use crate::map_editor::ui::zone_list_panel::ZoneListPanelState;
+
+/// Resource to track help window state
+#[derive(Resource, Default)]
+pub struct HelpWindowState {
+    pub show_shortcuts: bool,
+    pub show_about: bool,
+}
 
 /// Render the editor menu bar
 pub fn editor_menu_bar(
-    ctx: &egui::Context, 
-    map_editor_state: &MapEditorState,
-    save_status: &SaveStatus,
-    current_zone_id: Option<u16>,
-    mut save_events: &mut EventWriter<SaveZoneEvent>,
-) {
-    egui::TopBottomPanel::top("editor_menu_bar").show(ctx, |ui| {
-        egui::menu::bar(ui, |ui| {
-            file_menu(ui, map_editor_state, save_status, current_zone_id, &mut save_events);
-            edit_menu(ui, map_editor_state);
-            view_menu(ui, map_editor_state);
-            object_menu(ui);
-        });
-    });
-}
-
-/// File menu with New, Open, Save, Save As, Exit options
-fn file_menu(
-    ui: &mut egui::Ui, 
+    ctx: &egui::Context,
     map_editor_state: &MapEditorState,
     save_status: &SaveStatus,
     current_zone_id: Option<u16>,
     save_events: &mut EventWriter<SaveZoneEvent>,
+    zone_list_state: &mut ZoneListPanelState,
+    new_zone_events: &mut EventWriter<NewZoneEvent>,
+    help_state: &mut HelpWindowState,
+    selected_model: &mut SelectedModel,
+) {
+    egui::TopBottomPanel::top("editor_menu_bar").show(ctx, |ui| {
+        egui::menu::bar(ui, |ui| {
+            file_menu(ui, map_editor_state, save_status, current_zone_id, save_events, new_zone_events, zone_list_state);
+            edit_menu(ui, map_editor_state);
+            view_menu(ui, map_editor_state, selected_model);
+            zone_menu(ui, zone_list_state);
+            object_menu(ui);
+            help_menu(ui, &mut help_state.show_shortcuts, &mut help_state.show_about);
+        });
+    });
+    
+    // Show help windows
+    show_keyboard_shortcuts_window(ctx, &mut help_state.show_shortcuts);
+    show_about_window(ctx, &mut help_state.show_about);
+}
+
+/// File menu with New, Open, Save, Save As, Exit options
+fn file_menu(
+    ui: &mut egui::Ui,
+    map_editor_state: &MapEditorState,
+    save_status: &SaveStatus,
+    current_zone_id: Option<u16>,
+    save_events: &mut EventWriter<SaveZoneEvent>,
+    new_zone_events: &mut EventWriter<NewZoneEvent>,
+    zone_list_state: &mut ZoneListPanelState,
 ) {
     ui.menu_button("File", |ui| {
         if ui.button("New Zone").clicked() {
             log::info!("[MapEditor] File > New Zone clicked");
+            new_zone_events.write(NewZoneEvent::new());
             ui.close_menu();
         }
         
         if ui.button("Open Zone...").clicked() {
             log::info!("[MapEditor] File > Open Zone clicked");
+            zone_list_state.is_open = true;
             ui.close_menu();
         }
         
         ui.separator();
         
-        // Save button with Ctrl+S shortcut
+        // Save button
         let save_button = ui.add_enabled(
             current_zone_id.is_some() && !save_status.is_saving,
-            egui::Button::new("Save").shortcut_text("Ctrl+S"),
+            egui::Button::new("Save"),
         );
         
         if save_button.clicked() {
             if let Some(zone_id) = current_zone_id {
                 log::info!("[MapEditor] File > Save clicked for zone {}", zone_id);
+                log::info!("[MapEditor] Writing SaveZoneEvent to event writer");
                 save_events.write(SaveZoneEvent::new(zone_id));
+                log::info!("[MapEditor] SaveZoneEvent written successfully");
+            } else {
+                log::warn!("[MapEditor] Save clicked but no current_zone_id available!");
             }
             ui.close_menu();
         }
         
-        // Save As button
+        // Save As button (creates timestamped backup)
         let save_as_button = ui.add_enabled(
             current_zone_id.is_some() && !save_status.is_saving,
-            egui::Button::new("Save As...").shortcut_text("Ctrl+Shift+S"),
+            egui::Button::new("Save Version..."),
         );
         
         if save_as_button.clicked() {
             if let Some(zone_id) = current_zone_id {
-                log::info!("[MapEditor] File > Save As clicked for zone {}", zone_id);
-                // For now, just trigger a regular save
-                // TODO: Implement file dialog for Save As
+                log::info!("[MapEditor] File > Save Version clicked for zone {}", zone_id);
+                // This will create a timestamped backup via the save system
                 save_events.write(SaveZoneEvent::new(zone_id));
             }
             ui.close_menu();
@@ -164,8 +190,22 @@ fn edit_menu(ui: &mut egui::Ui, _map_editor_state: &MapEditorState) {
 }
 
 /// View menu with grid and camera options
-fn view_menu(ui: &mut egui::Ui, map_editor_state: &MapEditorState) {
+fn view_menu(ui: &mut egui::Ui, map_editor_state: &MapEditorState, selected_model: &mut SelectedModel) {
     ui.menu_button("View", |ui| {
+        // Model Browser toggle
+        let browser_text = if selected_model.browser_visible {
+            "✓ Model Browser"
+        } else {
+            "  Model Browser"
+        };
+        if ui.add(egui::Button::new(browser_text).shortcut_text("Ctrl+M")).clicked() {
+            selected_model.toggle_browser();
+            log::info!("[MapEditor] View > Model Browser clicked (visible: {})", selected_model.browser_visible);
+            ui.close_menu();
+        }
+        
+        ui.separator();
+        
         // Toggle Grid
         let grid_text = if map_editor_state.show_grid {
             "✓ Toggle Grid"
@@ -214,6 +254,29 @@ fn view_menu(ui: &mut egui::Ui, map_editor_state: &MapEditorState) {
     });
 }
 
+/// Zone menu with zone switching options
+fn zone_menu(ui: &mut egui::Ui, zone_list_state: &mut ZoneListPanelState) {
+    ui.menu_button("Zone", |ui| {
+        if ui.button("Open Zone...").clicked() {
+            log::info!("[MapEditor] Zone > Open Zone clicked");
+            zone_list_state.is_open = true;
+            ui.close_menu();
+        }
+        
+        ui.separator();
+        
+        if ui.button("Zone Info").clicked() {
+            log::info!("[MapEditor] Zone > Zone Info clicked");
+            ui.close_menu();
+        }
+        
+        if ui.button("Validate Zone").clicked() {
+            log::info!("[MapEditor] Zone > Validate Zone clicked");
+            ui.close_menu();
+        }
+    });
+}
+
 /// Object menu with Add Object, Delete Selected options
 fn object_menu(ui: &mut egui::Ui) {
     ui.menu_button("Object", |ui| {
@@ -251,4 +314,106 @@ fn object_menu(ui: &mut egui::Ui) {
             ui.close_menu();
         }
     });
+}
+
+/// Help menu with keyboard shortcuts and about information
+pub fn help_menu(ui: &mut egui::Ui, show_shortcuts: &mut bool, show_about: &mut bool) {
+    ui.menu_button("Help", |ui| {
+        if ui.button("Keyboard Shortcuts").clicked() {
+            *show_shortcuts = true;
+            ui.close_menu();
+        }
+        
+        ui.separator();
+        
+        if ui.button("About Map Editor").clicked() {
+            *show_about = true;
+            ui.close_menu();
+        }
+    });
+}
+
+/// Show keyboard shortcuts help window
+pub fn show_keyboard_shortcuts_window(ctx: &egui::Context, is_open: &mut bool) {
+    if !*is_open {
+        return;
+    }
+    
+    egui::Window::new("Keyboard Shortcuts")
+        .open(is_open)
+        .collapsible(true)
+        .default_width(350.0)
+        .show(ctx, |ui| {
+            ui.heading("Selection");
+            ui.separator();
+            ui.label("Click - Select object");
+            ui.label("Ctrl+Click - Add to selection");
+            ui.label("Ctrl+A - Select all");
+            ui.label("Escape - Deselect all");
+            
+            ui.add_space(8.0);
+            ui.heading("Transform Modes");
+            ui.separator();
+            ui.label("Q - Select mode");
+            ui.label("E - Rotate mode");
+            ui.label("R - Scale mode");
+            ui.label("V - Add mode");
+            ui.label("X - Delete mode");
+            
+            ui.add_space(8.0);
+            ui.heading("Actions");
+            ui.separator();
+            ui.label("Delete - Delete selected objects");
+            ui.label("Ctrl+D - Duplicate selected objects");
+            ui.label("Ctrl+Z - Undo last action");
+            ui.label("Ctrl+Y - Redo last undone action");
+            ui.label("Ctrl+Shift+Z - Redo (alternative)");
+            ui.label("G - Toggle snap to grid");
+            ui.label("F - Focus on selected object");
+            
+            ui.add_space(8.0);
+            ui.heading("Camera");
+            ui.separator();
+            ui.label("Tab - Toggle free/orbit camera");
+            ui.label("WASD - Move camera (free camera mode)");
+            ui.label("Mouse - Look around (free camera mode)");
+            ui.label("Scroll - Zoom in/out");
+            
+            ui.add_space(8.0);
+            ui.heading("Panels");
+            ui.separator();
+            ui.label("Ctrl+M - Toggle Model Browser");
+            
+            ui.add_space(8.0);
+            ui.heading("File Operations");
+            ui.separator();
+            ui.label("Use File menu for Save/Save Version");
+        });
+}
+
+/// Show about window
+pub fn show_about_window(ctx: &egui::Context, is_open: &mut bool) {
+    if !*is_open {
+        return;
+    }
+    
+    egui::Window::new("About Map Editor")
+        .open(is_open)
+        .collapsible(true)
+        .default_width(300.0)
+        .show(ctx, |ui| {
+            ui.heading("Rose Online Map Editor");
+            ui.label("Version 2.6");
+            ui.add_space(8.0);
+            ui.label("A live map editor for the Rose Online client.");
+            ui.add_space(8.0);
+            ui.label("Features:");
+            ui.label("• Real-time object manipulation");
+            ui.label("• Transform gizmos (translate, rotate, scale)");
+            ui.label("• Model browser with search");
+            ui.label("• Undo/Redo support");
+            ui.label("• Zone save/export functionality");
+            ui.add_space(8.0);
+            ui.label("Use the Help menu for keyboard shortcuts.");
+        });
 }

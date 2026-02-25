@@ -150,23 +150,28 @@ pub fn save_zone_system(
     mut map_editor_state: ResMut<crate::map_editor::resources::MapEditorState>,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
+    vfs_resource: Res<crate::resources::VfsResource>,
     zone_objects_query: Query<(
         Entity,
-        &GlobalTransform,
+        &Transform,
         &ZoneObject,
         Option<&EventObject>,
         Option<&WarpObject>,
     )>,
 ) {
+    // Process all save events
     for event in events.read() {
+        log::info!("[SaveSystem] ====== SAVE ZONE SYSTEM TRIGGERED ======");
         log::info!("[SaveSystem] Processing SaveZoneEvent for zone {}", event.zone_id);
         
         save_status.set_saving("Saving zone...");
 
         // Get the zone data
-        let zone_data = if let Some(current_zone) = &current_zone {
+        let zone_data = if let Some(ref current_zone) = current_zone {
+            log::info!("[SaveSystem] CurrentZone resource exists, zone_id: {}", current_zone.id.get());
             zone_loader_assets.get(&current_zone.handle)
         } else {
+            log::error!("[SaveSystem] CurrentZone resource does NOT exist!");
             None
         };
 
@@ -177,20 +182,37 @@ pub fn save_zone_system(
             continue;
         };
 
-        // Determine output path
-        let output_path = event.path.clone().unwrap_or_else(|| {
-            zone_data.zone_path.clone()
-        });
+        // Determine output path:
+        // - The zone_path is a VFS path like "3DDATA/MAPS/JUNON/JDT01"
+        // - We need to join it with the base_path to get the real filesystem path
+        // - If a custom path is provided, use that instead
+        let output_path = if let Some(ref custom_path) = event.path {
+            custom_path.clone()
+        } else {
+            // Join base_path with zone_path to get the real filesystem path
+            vfs_resource.base_path.join(&zone_data.zone_path)
+        };
 
-        log::info!("[SaveSystem] Output path: {:?}", output_path);
+        log::info!("[SaveSystem] VFS base_path: {:?}", vfs_resource.base_path);
+        log::info!("[SaveSystem] Zone path from zone_data: {:?}", zone_data.zone_path);
+        log::info!("[SaveSystem] Output path for save: {:?}", output_path);
+        log::info!("[SaveSystem] Zone ID: {}", zone_data.zone_id.get());
 
-        // Collect zone objects and group by block
-        let mut export_data = ZoneExportData::new(event.zone_id, output_path.to_string_lossy().to_string());
+        // Count zone objects for logging
+        let zone_object_count = zone_objects_query.iter().count();
+        log::info!("[SaveSystem] Found {} zone objects in query", zone_object_count);
+
+        // Create export_data from existing IFO data, not empty
+        // This preserves objects that exist in the original IFO files but aren't currently spawned
+        let mut export_data = ZoneExportData::from_existing_blocks(
+            event.zone_id,
+            &zone_data.blocks,
+            output_path.to_string_lossy().to_string(),
+        );
+        log::info!("[SaveSystem] Pre-populated export_data with {} objects from existing IFO files", export_data.total_objects());
 
         // Process all zone objects
-        for (_entity, global_transform, zone_object, event_object, warp_object) in zone_objects_query.iter() {
-            let transform = global_transform.compute_transform();
-            
+        for (_entity, transform, zone_object, event_object, warp_object) in zone_objects_query.iter() {
             // Determine block coordinates from position
             // Zone is 64x64 blocks, each block is 160 units
             let (translation, rotation, scale) = (
@@ -202,7 +224,7 @@ pub fn save_zone_system(
             // Calculate block coordinates
             // Zone center is at (5200, 0, -5200), blocks are 160 units each
             let block_x = ((translation.x + 5200.0) / 160.0).floor() as u32;
-            let block_y = ((-translation.z + 5200.0) / 160.0).floor() as u32;
+            let block_y = ((translation.z + 5200.0) / 160.0).floor() as u32;
             
             // Clamp to valid range
             let block_x = block_x.clamp(0, 63);
@@ -297,6 +319,8 @@ pub fn save_zone_system(
             }
         }
 
+        log::info!("[SaveSystem] Total objects in export_data: {}", export_data.total_objects());
+
         // Create backup of original files before overwriting
         if let Err(e) = create_backup(&output_path) {
             log::warn!("[SaveSystem] Failed to create backup: {}", e);
@@ -314,6 +338,8 @@ pub fn save_zone_system(
 
             let file_name = block_data.file_name();
             let file_path = output_path.join(&file_name);
+
+            log::info!("[SaveSystem] Attempting to write: {:?}", file_path);
 
             match export_ifo_block(&block_data.block, &file_path) {
                 Ok(size) => {
@@ -339,7 +365,7 @@ pub fn save_zone_system(
             // Mark zone as unmodified
             map_editor_state.is_modified = false;
         } else if stats.blocks_exported == 0 {
-            let result = SaveResult::failure("No blocks were exported".to_string());
+            let result = SaveResult::failure("No blocks were exported (no objects found or all blocks empty)".to_string());
             log::error!("[SaveSystem] {}", result.message());
             save_status.set_complete(result);
         } else {
@@ -356,6 +382,12 @@ pub fn save_zone_system(
 
 /// Create a backup of the original IFO files
 fn create_backup(zone_path: &PathBuf) -> std::io::Result<()> {
+    // Check if the zone path exists on the real filesystem
+    if !zone_path.exists() {
+        log::warn!("[SaveSystem] Zone path does not exist on filesystem: {:?}", zone_path);
+        return Ok(()); // Skip backup if path doesn't exist
+    }
+
     let backup_dir = zone_path.join("backup");
     
     // Create backup directory if it doesn't exist

@@ -429,7 +429,7 @@ pub fn update_ui_resources(
         let load_state = asset_server.get_load_state(&ui_cursor.handle);
         if let Some(resource_cursor) = cursors.get(&ui_cursor.handle) {
             ui_cursor.cursor = Some(resource_cursor.cursor.clone());
-            log::debug!("[UI RESOURCES] Cursor loaded: {:?}", ui_cursor.handle);
+            //log::debug!("[UI RESOURCES] Cursor loaded: {:?}", ui_cursor.handle);
         } else {
             // Treat any non-successful load state as failed to allow UI to render
             if matches!(load_state, Some(LoadState::Failed(_))) {
@@ -453,14 +453,14 @@ pub fn update_ui_resources(
                         let texture_load_state = asset_server.get_load_state(&texture.handle);
                         if let Some(image) = images.get(&texture.handle) {
                             texture.size = Some(image.size().as_vec2());
-                            log::debug!("[UI RESOURCES] Skill tree texture loaded: {:?}", texture.handle);
+                            //log::debug!("[UI RESOURCES] Skill tree texture loaded: {:?}", texture.handle);
                         } else if matches!(texture_load_state, Some(LoadState::Failed(_))) {
                             texture.size = Some(Vec2::ZERO);
                             log::warn!("[UI RESOURCES] Skill tree texture failed to load: {:?}", texture.handle);
                         } else if matches!(texture_load_state, Some(LoadState::Loading) | Some(LoadState::NotLoaded)) {
                             loaded_all = false;
                             // Note: Skill tree textures are optional, so they don't affect loaded_required
-                            log::debug!("[UI RESOURCES] Skill tree texture still loading: {:?}", texture.handle);
+                            //log::debug!("[UI RESOURCES] Skill tree texture still loading: {:?}", texture.handle);
                         } else {
                             loaded_all = false;
                             // Note: Skill tree textures are optional, so they don't affect loaded_required
@@ -478,7 +478,7 @@ pub fn update_ui_resources(
                         });
                         loaded_all = false;
                         // Note: Skill tree textures are optional, so they don't affect loaded_required
-                        log::debug!("[UI RESOURCES] Loading skill tree texture: {} (handle: {:?})", skill_widget.image, handle);
+                        //log::debug!("[UI RESOURCES] Loading skill tree texture: {} (handle: {:?})", skill_widget.image, handle);
                     }
                 }
             }
@@ -486,7 +486,7 @@ pub fn update_ui_resources(
             log::warn!("[UI RESOURCES] Skill tree dialog failed to load: {:?}", skill_tree);
         } else if matches!(load_state, Some(LoadState::Loading) | Some(LoadState::NotLoaded)) {
             loaded_all = false;
-            log::debug!("[UI RESOURCES] Skill tree dialog still loading: {:?}", skill_tree);
+            //log::debug!("[UI RESOURCES] Skill tree dialog still loading: {:?}", skill_tree);
         } else {
             loaded_all = false;
             log::warn!("[UI RESOURCES] Skill tree dialog load state unknown (None): {:?}", skill_tree);
@@ -501,13 +501,13 @@ pub fn update_ui_resources(
     if loaded_all {
         // log::info!("[UI RESOURCES] All textures loaded successfully, setting loaded_all_textures = true");
     } else {
-        log::debug!("[UI RESOURCES] Not all textures loaded yet, loaded_all_textures remains false");
+        //log::debug!("[UI RESOURCES] Not all textures loaded yet, loaded_all_textures remains false");
     }
 
     if loaded_required {
         // log::info!("[UI RESOURCES] All required textures (sprite sheets and cursors) loaded successfully, setting loaded_required_textures = true");
     } else {
-        log::debug!("[UI RESOURCES] Not all required textures loaded yet, loaded_required_textures remains false");
+        //log::debug!("[UI RESOURCES] Not all required textures loaded yet, loaded_required_textures remains false");
     }
 
     ui_resources.loaded_all_textures = loaded_all;

@@ -35,7 +35,7 @@ pub struct ZoneObjectId {
     pub zsc_object_id: usize,
 }
 
-#[derive(Clone, Default, Reflect)]
+#[derive(Clone, Component, Default, Reflect)]
 pub struct ZoneObjectPart {
     pub ifo_object_id: usize,
     pub zsc_object_id: usize,

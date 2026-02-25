@@ -202,19 +202,36 @@ pub struct FilesystemConfig {
 }
 
 impl FilesystemConfig {
-    pub fn create_virtual_filesystem(&self) -> Option<Arc<VirtualFilesystem>> {
+    /// Creates a virtual filesystem from the configured devices.
+    /// Returns a tuple of (VFS, base_path) where base_path is the real filesystem
+    /// path where game data is stored. This is used for saving files back to disk.
+    pub fn create_virtual_filesystem(&self) -> Option<(Arc<VirtualFilesystem>, PathBuf)> {
         let mut vfs_devices: Vec<Box<dyn VirtualFilesystemDevice + Send + Sync>> = Vec::new();
+        let mut base_path: Option<PathBuf> = None;
+        
         for device_config in self.devices.iter() {
             match device_config {
                 FilesystemDeviceConfig::Directory(path) => {
                     log::info!("Loading game data from host directory {}", path);
                     vfs_devices.push(Box::new(HostFilesystemDevice::new(path.into())));
+                    // For directory-based VFS, the base path is the directory itself
+                    // Only set if path is non-empty
+                    if !path.is_empty() {
+                        base_path = Some(PathBuf::from(path));
+                    }
                 }
                 FilesystemDeviceConfig::AruaVfs(path) => {
+                    // Get the parent directory of the VFS index file
+                    // For relative paths like "data.idx", parent() returns empty string
+                    // In that case, use the current directory
                     let index_root_path = Path::new(path)
                         .parent()
-                        .map(|path| path.into())
-                        .unwrap_or_else(PathBuf::new);
+                        .map(|p| if p.as_os_str().is_empty() {
+                            std::env::current_dir().unwrap_or_default()
+                        } else {
+                            p.to_path_buf()
+                        })
+                        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
                     log::info!("Loading game data from AruaVfs {}", path);
                     vfs_devices.push(Box::new(
@@ -226,13 +243,24 @@ impl FilesystemConfig {
                         "Loading game data from AruaVfs root path {}",
                         index_root_path.to_string_lossy()
                     );
-                    vfs_devices.push(Box::new(HostFilesystemDevice::new(index_root_path)));
+                    vfs_devices.push(Box::new(HostFilesystemDevice::new(index_root_path.clone())));
+                    // Use the VFS root path as base path for saving
+                    if base_path.is_none() {
+                        base_path = Some(index_root_path);
+                    }
                 }
                 FilesystemDeviceConfig::TitanVfs(path) => {
+                    // Get the parent directory of the VFS index file
+                    // For relative paths like "data.idx", parent() returns empty string
+                    // In that case, use the current directory
                     let index_root_path = Path::new(path)
                         .parent()
-                        .map(|path| path.into())
-                        .unwrap_or_else(PathBuf::new);
+                        .map(|p| if p.as_os_str().is_empty() {
+                            std::env::current_dir().unwrap_or_default()
+                        } else {
+                            p.to_path_buf()
+                        })
+                        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
                     log::info!("Loading game data from TitanVfs {}", path);
                     vfs_devices.push(Box::new(
@@ -240,8 +268,12 @@ impl FilesystemConfig {
                             .unwrap_or_else(|_| panic!("Failed to load TitanVfs at {}", path)),
                     ));
 
-                    log::info!("Loading game data from TitanVfs root path {}", path);
-                    vfs_devices.push(Box::new(HostFilesystemDevice::new(index_root_path)));
+                    log::info!("Loading game data from TitanVfs root path {}", index_root_path.to_string_lossy());
+                    vfs_devices.push(Box::new(HostFilesystemDevice::new(index_root_path.clone())));
+                    // Use the VFS root path as base path for saving
+                    if base_path.is_none() {
+                        base_path = Some(index_root_path);
+                    }
                 }
                 FilesystemDeviceConfig::Vfs(path) => {
                     log::info!("Loading game data from Vfs {}", path);
@@ -250,18 +282,37 @@ impl FilesystemConfig {
                             .unwrap_or_else(|_| panic!("Failed to load Vfs at {}", path)),
                     ));
 
+                    // Get the parent directory of the VFS index file
+                    // For relative paths like "data.idx", parent() returns empty string
+                    // In that case, use the current directory
                     let index_root_path = Path::new(path)
                         .parent()
-                        .map(|path| path.into())
-                        .unwrap_or_else(PathBuf::new);
-                    log::info!("Loading game data from Vfs root path {}", path);
-                    vfs_devices.push(Box::new(HostFilesystemDevice::new(index_root_path)));
+                        .map(|p| if p.as_os_str().is_empty() {
+                            std::env::current_dir().unwrap_or_default()
+                        } else {
+                            p.to_path_buf()
+                        })
+                        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+                    
+                    log::info!("Loading game data from Vfs root path {}", index_root_path.to_string_lossy());
+                    vfs_devices.push(Box::new(HostFilesystemDevice::new(index_root_path.clone())));
+                    // Use the VFS root path as base path for saving
+                    if base_path.is_none() {
+                        base_path = Some(index_root_path);
+                    }
                 }
                 FilesystemDeviceConfig::IrosePh(path) => {
+                    // Get the parent directory of the VFS index file
+                    // For relative paths like "data.idx", parent() returns empty string
+                    // In that case, use the current directory
                     let index_root_path = Path::new(path)
                         .parent()
-                        .map(|path| path.into())
-                        .unwrap_or_else(PathBuf::new);
+                        .map(|p| if p.as_os_str().is_empty() {
+                            std::env::current_dir().unwrap_or_default()
+                        } else {
+                            p.to_path_buf()
+                        })
+                        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
                     log::info!("Loading game data from iRosePH {}", path);
                     vfs_devices.push(Box::new(
@@ -273,7 +324,11 @@ impl FilesystemConfig {
                         "Loading game data from iRosePH root path {}",
                         index_root_path.to_string_lossy()
                     );
-                    vfs_devices.push(Box::new(HostFilesystemDevice::new(index_root_path)));
+                    vfs_devices.push(Box::new(HostFilesystemDevice::new(index_root_path.clone())));
+                    // Use the VFS root path as base path for saving
+                    if base_path.is_none() {
+                        base_path = Some(index_root_path);
+                    }
                 }
             }
         }
@@ -281,7 +336,22 @@ impl FilesystemConfig {
         if vfs_devices.is_empty() {
             None
         } else {
-            Some(Arc::new(VirtualFilesystem::new(vfs_devices)))
+            let vfs = Arc::new(VirtualFilesystem::new(vfs_devices));
+            let base = match base_path {
+                Some(path) if !path.as_os_str().is_empty() => path,
+                _ => {
+                    // Fallback to current directory, but log a warning if it fails
+                    match std::env::current_dir() {
+                        Ok(cwd) => cwd,
+                        Err(e) => {
+                            log::error!("[VFS] Failed to get current directory: {}. Save functionality may not work correctly.", e);
+                            PathBuf::new() // Empty path as last resort
+                        }
+                    }
+                }
+            };
+            log::info!("[VFS] Base path for saving: {:?}", base);
+            Some((vfs, base))
         }
     }
 }
@@ -592,10 +662,11 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     log::info!("[VFS INIT] Starting VFS initialization...");
     log::info!("[VFS INIT] Config has {} filesystem devices", config.filesystem.devices.len());
     
-    let virtual_filesystem =
-        if let Some(virtual_filesystem) = config.filesystem.create_virtual_filesystem() {
+    let (virtual_filesystem, base_path) =
+        if let Some((vfs, base)) = config.filesystem.create_virtual_filesystem() {
             log::info!("[VFS INIT] VFS created successfully!");
-            virtual_filesystem
+            log::info!("[VFS INIT] Base path for saving: {:?}", base);
+            (vfs, base)
         } else {
             log::error!("[VFS INIT] No filesystem devices configured, VFS initialization failed!");
             return;
@@ -617,6 +688,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // Now: 1 clone (only for resource, plugin retrieves from resource)
     app.insert_resource(VfsResource {
         vfs: virtual_filesystem.clone(),
+        base_path,
     })
     // Register VFS asset reader BEFORE DefaultPlugins (required by Bevy 0.13)
     // VfsAssetReaderPlugin gets the VFS from VfsResource instead of holding its own Arc
@@ -708,8 +780,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                     ..Default::default()
                 })
                 .set(bevy::log::LogPlugin {
-                    level: bevy::log::Level::WARN,
-                    filter: "wgpu=error,naga=error,offset_allocator=warn".to_string(),
+                    level: bevy::log::Level::INFO,
+                    filter: "wgpu=error,naga=error,offset_allocator=warn,rose_offline_client::map_editor=info".to_string(),
                     ..default()
                 })
                 .set(bevy::pbr::PbrPlugin::default()),
