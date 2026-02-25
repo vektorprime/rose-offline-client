@@ -161,24 +161,37 @@ pub fn model_placement_system(
         // Handle left click for placement
         if mouse_input.just_pressed(MouseButton::Left) {
             log::info!(
-                "[MODEL PLACEMENT] Left click detected! Placing model '{}' (ID: {}) at position {:?}",
+                "[MODEL PLACEMENT] Left click detected! Placing model '{}' (ID: {}) at WORLD position {:?}",
                 model_info.name,
                 model_info.id,
                 placement_position
             );
             
-            // Place the model with full mesh spawning
+            // CRITICAL: The placement_position is in WORLD coordinates from the raycast.
+            // The entity is NOT parented to the zone entity, so it needs WORLD coordinates
+            // for its Transform to render at the correct position.
+            //
+            // The save_system will convert world coordinates to local coordinates when
+            // calculating block positions for saving.
+            //
+            // Zone center is at world position (5200, 0, -5200)
+            // For saving: local = world - zone_center
+            //   block_x = ((local_x + 5200.0) / 160.0).floor()
+            //   block_y = ((local_z + 5200.0) / 160.0).floor()
+            
+            // Place the model with full mesh spawning using WORLD coordinates
+            // (entity is not parented to zone, so transform is in world space)
             place_model_at_position(
                 &mut commands,
                 &asset_server,
                 object_materials.into_inner(),
                 zone_data,
                 model_info,
-                placement_position,
+                placement_position,  // Use WORLD coordinates for rendering
             );
             
             log::info!(
-                "[MODEL PLACEMENT] Successfully placed model '{}' (ID: {}) at position {:?}",
+                "[MODEL PLACEMENT] Successfully placed model '{}' (ID: {}) at WORLD position {:?}",
                 model_info.name,
                 model_info.id,
                 placement_position
@@ -601,32 +614,38 @@ pub fn add_to_zone_system(
     };
     
     // Get camera position to place model in front of it
-    let mut placement_position = Vec3::new(5200.0, 0.0, -5200.0); // Default to zone center
+    // Default to zone center in WORLD coordinates
+    let zone_center_world = Vec3::new(5200.0, 0.0, -5200.0);
+    let mut world_position = zone_center_world;
     
     if let Ok((_camera, camera_transform)) = query_camera.get_single() {
         let camera_pos = camera_transform.translation();
         let camera_forward = camera_transform.forward();
         
         // Place 10 units in front of the camera, at ground level
-        placement_position = camera_pos + camera_forward * 10.0;
-        placement_position.y = 0.0; // Snap to ground level
+        world_position = camera_pos + camera_forward * 10.0;
+        world_position.y = 0.0; // Snap to ground level
     }
     
-    // Place the model with full mesh spawning
+    // CRITICAL: The entity is NOT parented to the zone entity, so it needs WORLD coordinates
+    // for its Transform to render at the correct position.
+    // The save_system will convert world coordinates to local coordinates when saving.
+    
+    log::info!(
+        "[ADD TO ZONE] Placing model '{}' (ID: {}) at WORLD position {:?}",
+        model_info.name,
+        model_info.id,
+        world_position
+    );
+    
+    // Place the model with full mesh spawning using WORLD coordinates
     place_model_at_position(
         &mut commands,
         &asset_server,
         object_materials.into_inner(),
         zone_data,
         model_info,
-        placement_position,
-    );
-    
-    log::info!(
-        "[ADD TO ZONE] Placed model '{}' (ID: {}) at position {:?}",
-        model_info.name,
-        model_info.id,
-        placement_position
+        world_position,  // Use WORLD coordinates for rendering
     );
     
     // Note: The pending_placement flag is already cleared by take_pending_placement()

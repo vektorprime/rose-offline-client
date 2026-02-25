@@ -486,3 +486,48 @@ impl Default for EditorGridSettings {
         }
     }
 }
+
+/// Type of zone object for deletion tracking
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZoneObjectType {
+    Deco,
+    Cnst,
+    Event,
+    Warp,
+    Sound,
+    Effect,
+    Animated,
+}
+
+/// Resource to track deleted zone objects for save system
+/// 
+/// When objects are deleted in the editor, they're removed from the Bevy world.
+/// The save system pre-populates from existing IFO data which still contains the deleted objects.
+/// This resource tracks deletions so the save system can remove them from the export data.
+#[derive(Resource, Default, Debug)]
+pub struct DeletedZoneObjects {
+    /// List of deleted objects: (block_x, block_y, ifo_object_id, object_type)
+    pub objects: Vec<(u32, u32, usize, ZoneObjectType)>,
+}
+
+impl DeletedZoneObjects {
+    /// Add a deleted object to the tracking list
+    pub fn add(&mut self, block_x: u32, block_y: u32, ifo_object_id: usize, object_type: ZoneObjectType) {
+        self.objects.push((block_x, block_y, ifo_object_id, object_type));
+    }
+    
+    /// Clear all tracked deletions (call after successful save)
+    pub fn clear(&mut self) {
+        self.objects.clear();
+    }
+    
+    /// Check if there are any tracked deletions
+    pub fn is_empty(&self) -> bool {
+        self.objects.is_empty()
+    }
+    
+    /// Get the count of tracked deletions
+    pub fn len(&self) -> usize {
+        self.objects.len()
+    }
+}

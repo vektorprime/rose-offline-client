@@ -65,6 +65,7 @@ pub use components::{
 
 pub use resources::{
     AvailableModels,
+    DeletedZoneObjects,
     EditorGridSettings,
     EditorMode,
     HierarchyFilter,
@@ -74,6 +75,7 @@ pub use resources::{
     SelectedModel,
     SelectionMode,
     TransformSpace,
+    ZoneObjectType,
 };
 
 pub use save::{
@@ -108,7 +110,8 @@ impl Plugin for MapEditorPlugin {
         // Register resources
         app.init_resource::<MapEditorState>()
             .init_resource::<EditorGridSettings>()
-            .init_resource::<SelectedModel>();
+            .init_resource::<SelectedModel>()
+            .init_resource::<DeletedZoneObjects>();
         
         // Add subsystem plugins
         app.add_plugins(EditorSelectionPlugin)

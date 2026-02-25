@@ -14,19 +14,22 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 use std::collections::HashSet;
 
+use crate::components::ZoneObject;
 use crate::map_editor::components::{EditorSelectable, SelectedInEditor};
-use crate::map_editor::resources::{EditorAction, EditorMode, MapEditorState};
+use crate::map_editor::resources::{DeletedZoneObjects, EditorAction, EditorMode, MapEditorState, ZoneObjectType};
 use crate::systems::{FreeCamera, OrbitCamera};
 
 /// System to handle keyboard shortcuts for the map editor
 pub fn keyboard_shortcuts_system(
     mut commands: Commands,
     mut map_editor_state: ResMut<MapEditorState>,
+    mut deleted_zone_objects: ResMut<DeletedZoneObjects>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut egui_contexts: EguiContexts,
     selected_entities: Query<Entity, With<SelectedInEditor>>,
-    transforms: Query<&Transform>,
+    transforms: Query<&GlobalTransform>,
     names: Query<&Name>,
+    zone_objects: Query<&ZoneObject>,
     camera_query: Query<Entity, With<Camera3d>>,
     free_camera_query: Query<&FreeCamera>,
 ) {
@@ -57,7 +60,7 @@ pub fn keyboard_shortcuts_system(
     // Handle Delete - Delete selected entities
     if keyboard.just_pressed(KeyCode::Delete) ||
        (keyboard.just_pressed(KeyCode::Backspace) && keyboard.pressed(KeyCode::ControlLeft)) {
-        handle_delete_selected(&mut commands, &mut map_editor_state, &selected_entities, &transforms);
+        handle_delete_selected(&mut commands, &mut map_editor_state, &mut deleted_zone_objects, &selected_entities, &transforms, &zone_objects);
     }
     
     // Handle Ctrl+D - Duplicate selected entities
@@ -204,8 +207,10 @@ fn handle_deselect_all(
 fn handle_delete_selected(
     commands: &mut Commands,
     map_editor_state: &mut MapEditorState,
+    deleted_zone_objects: &mut DeletedZoneObjects,
     selected_entities: &Query<Entity, With<SelectedInEditor>>,
-    transforms: &Query<&Transform>,
+    transforms: &Query<&GlobalTransform>,
+    zone_objects: &Query<&ZoneObject>,
 ) {
     let entities: Vec<Entity> = selected_entities.iter().collect();
     
@@ -217,7 +222,9 @@ fn handle_delete_selected(
     let mut deleted_entities = Vec::new();
     
     for entity in &entities {
-        let transform = transforms.get(*entity).ok().copied().unwrap_or_default();
+        let transform = transforms.get(*entity).ok()
+            .map(|gt| Transform::from_translation(gt.translation()))
+            .unwrap_or_default();
         
         // For a full implementation, we would serialize the entity's components here
         let serialized_data = String::new(); // Placeholder
@@ -240,6 +247,54 @@ fn handle_delete_selected(
         });
     }
     
+    // Track deleted zone objects for save system
+    // Zone center is at world position (5200, 0, -5200)
+    let _zone_center = Vec3::new(5200.0, 0.0, -5200.0);
+    
+    for entity in &entities {
+        // Get transform and ZoneObject component to track deletion
+        if let (Ok(global_transform), Ok(zone_object)) = (transforms.get(*entity), zone_objects.get(*entity)) {
+            let translation = global_transform.translation();
+            
+            // Calculate block coordinates from WORLD coordinates
+            let block_x = (translation.x / 160.0).floor() as u32;
+            let block_y = ((translation.z + 10400.0) / 160.0).floor() as u32;
+            
+            // Clamp to valid range
+            let block_x = block_x.clamp(0, 63);
+            let block_y = block_y.clamp(0, 63);
+            
+            // Get ifo_object_id and object type from ZoneObject
+            let (ifo_object_id, object_type) = match zone_object {
+                ZoneObject::DecoObject(id) => (id.ifo_object_id, ZoneObjectType::Deco),
+                ZoneObject::DecoObjectPart(part) => (part.ifo_object_id, ZoneObjectType::Deco),
+                ZoneObject::CnstObject(id) => (id.ifo_object_id, ZoneObjectType::Cnst),
+                ZoneObject::CnstObjectPart(part) => (part.ifo_object_id, ZoneObjectType::Cnst),
+                ZoneObject::EventObject(id) => (id.ifo_object_id, ZoneObjectType::Event),
+                ZoneObject::EventObjectPart(part) => (part.ifo_object_id, ZoneObjectType::Event),
+                ZoneObject::WarpObject(id) => (id.ifo_object_id, ZoneObjectType::Warp),
+                ZoneObject::WarpObjectPart(part) => (part.ifo_object_id, ZoneObjectType::Warp),
+                ZoneObject::SoundObject { ifo_object_id, .. } => (*ifo_object_id, ZoneObjectType::Sound),
+                ZoneObject::EffectObject { ifo_object_id, .. } => (*ifo_object_id, ZoneObjectType::Effect),
+                ZoneObject::AnimatedObject(_) => {
+                    // Animated objects don't have ifo_object_id, skip tracking
+                    log::debug!("[KeyboardShortcuts] Skipping deletion tracking for AnimatedObject");
+                    continue;
+                }
+                ZoneObject::Water | ZoneObject::Terrain(_) => {
+                    // Water and Terrain are not tracked in IFO object lists
+                    log::debug!("[KeyboardShortcuts] Skipping deletion tracking for Water/Terrain");
+                    continue;
+                }
+            };
+            
+            // Record the deletion
+            deleted_zone_objects.add(block_x, block_y, ifo_object_id, object_type);
+            log::info!("[KeyboardShortcuts] Tracked deletion: block ({}, {}), ifo_id={}, type={:?}", 
+                block_x, block_y, ifo_object_id, object_type);
+        }
+    }
+    
     // Despawn all selected entities
     for entity in &entities {
         commands.entity(*entity).despawn_recursive();
@@ -248,7 +303,8 @@ fn handle_delete_selected(
     // Clear selection
     map_editor_state.clear_selection();
     
-    log::info!("[KeyboardShortcuts] Deleted {} entities", entities.len());
+    log::info!("[KeyboardShortcuts] Deleted {} entities (tracked {} zone objects for save)", 
+        entities.len(), deleted_zone_objects.len());
 }
 
 /// Handle Ctrl+D - Duplicate selected entities
@@ -256,7 +312,7 @@ fn handle_duplicate_selected(
     mut commands: Commands,
     map_editor_state: &mut MapEditorState,
     selected_entities: &Query<Entity, With<SelectedInEditor>>,
-    transforms: &Query<&Transform>,
+    transforms: &Query<&GlobalTransform>,
     names: &Query<&Name>,
 ) {
     let entities: Vec<Entity> = selected_entities.iter().collect();
@@ -279,10 +335,11 @@ fn handle_duplicate_selected(
     
     for entity in &entities {
         // Get the original transform
-        if let Ok(transform) = transforms.get(*entity) {
-            let new_transform = Transform::from_translation(transform.translation + duplicate_offset)
-                .with_rotation(transform.rotation)
-                .with_scale(transform.scale);
+        if let Ok(global_transform) = transforms.get(*entity) {
+            let translation = global_transform.translation();
+            let new_transform = Transform::from_translation(translation + duplicate_offset)
+                .with_rotation(global_transform.rotation())
+                .with_scale(global_transform.scale());
             
             // Get the original name
             let name = names.get(*entity).ok()

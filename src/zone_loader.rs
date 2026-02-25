@@ -1079,9 +1079,40 @@ async fn load_block_files_direct(
     let ifo_path = VfsPath::from(zone_path.join(format!("{}_{}.IFO", block_x, block_y)));
     let ifo: Option<IfoFile> = match read_bytes_with_priority(vfs, base_path, &ifo_path) {
         Ok(data) => {
-            RoseFile::read(RoseFileReader::from(&data), &Default::default()).ok()
+            log::info!("[IFO LOADER] Loading IFO file for block {}_{} ({} bytes)", block_x, block_y, data.len());
+            let result: Result<IfoFile, _> = RoseFile::read(RoseFileReader::from(&data), &Default::default());
+            match result {
+                Ok(ifo_file) => {
+                    log::info!("[IFO LOADER] Block {}_{} loaded: deco={}, cnst={}, event={}, warp={}, sound={}, effect={}, animated={}, npc={}, monster={}, water_planes={}",
+                        block_x, block_y,
+                        ifo_file.deco_objects.len(),
+                        ifo_file.cnst_objects.len(),
+                        ifo_file.event_objects.len(),
+                        ifo_file.warps.len(),
+                        ifo_file.sound_objects.len(),
+                        ifo_file.effect_objects.len(),
+                        ifo_file.animated_objects.len(),
+                        ifo_file.npcs.len(),
+                        ifo_file.monster_spawns.len(),
+                        ifo_file.water_planes.len()
+                    );
+                    // Log first few deco objects for debugging
+                    for (i, obj) in ifo_file.deco_objects.iter().take(3).enumerate() {
+                        log::info!("[IFO LOADER]   Deco[{}]: object_id={}, name='{}', pos=({:.2}, {:.2}, {:.2})",
+                            i, obj.object_id, obj.object_name, obj.position.x, obj.position.y, obj.position.z);
+                    }
+                    Some(ifo_file)
+                }
+                Err(e) => {
+                    log::error!("[IFO LOADER] Failed to parse IFO file for block {}_{}: {:?}", block_x, block_y, e);
+                    None
+                }
+            }
         }
-        Err(_) => None
+        Err(_) => {
+            log::debug!("[IFO LOADER] No IFO file found for block {}_{}", block_x, block_y);
+            None
+        }
     };
 
     // Load and parse LIT constant file (optional)

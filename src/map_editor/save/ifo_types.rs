@@ -13,14 +13,27 @@ pub const IFO_MAGIC: &[u8; 3] = b"IFO";
 pub const IFO_VERSION: u32 = 0x0101;
 
 /// Represents a single object in an IFO file
+/// Fields are in the exact order they appear in the binary format
 #[derive(Clone, Debug)]
 pub struct IfoObject {
+    /// Object name (model path or identifier)
+    pub object_name: String,
+    /// Warp ID for warp objects
+    pub warp_id: u16,
+    /// Event ID for event objects
+    pub event_id: u16,
+    /// Object type (determines behavior)
+    pub object_type: u32,
     /// Object ID from the ZSC file
     pub object_id: u32,
-    /// Position in IFO coordinate space (centimeters)
-    pub position: [f32; 3],
-    /// Rotation as quaternion (x, y, z, w)
+    /// Minimap position X coordinate
+    pub minimap_pos_x: u32,
+    /// Minimap position Y coordinate
+    pub minimap_pos_y: u32,
+    /// Rotation as quaternion (XYZW order)
     pub rotation: [f32; 4],
+    /// Position in IFO coordinate space
+    pub position: [f32; 3],
     /// Scale factors
     pub scale: [f32; 3],
 }
@@ -29,9 +42,15 @@ impl IfoObject {
     /// Create a new IfoObject with default values
     pub fn new(object_id: u32) -> Self {
         Self {
+            object_name: String::new(),
+            warp_id: 0,
+            event_id: 0,
+            object_type: 0,
             object_id,
-            position: [0.0, 0.0, 0.0],
+            minimap_pos_x: 0,
+            minimap_pos_y: 0,
             rotation: [0.0, 0.0, 0.0, 1.0],
+            position: [0.0, 0.0, 0.0],
             scale: [1.0, 1.0, 1.0],
         }
     }
@@ -44,17 +63,23 @@ impl IfoObject {
         // Position: multiply by 100 to convert from meters to centimeters
         // The zone_loader uses: Vec3::new(x, z, -y) for loading, so we reverse it
         Self {
+            object_name: String::new(),
+            warp_id: 0,
+            event_id: 0,
+            object_type: 0,
             object_id,
-            position: [
-                translation.x * 100.0,
-                -translation.z * 100.0,
-                translation.y * 100.0,
-            ],
+            minimap_pos_x: 0,
+            minimap_pos_y: 0,
             rotation: [
                 rotation.x,
                 -rotation.z,
                 rotation.y,
                 rotation.w,
+            ],
+            position: [
+                translation.x * 100.0,
+                -translation.z * 100.0,
+                translation.y * 100.0,
             ],
             scale: [
                 scale.x,
@@ -89,9 +114,15 @@ impl IfoObject {
     /// This copies the IFO data directly without coordinate conversion (data is already in IFO format)
     pub fn from_rose_ifo_object(ifo_object: &rose_file_readers::IfoObject) -> Self {
         Self {
+            object_name: ifo_object.object_name.clone(),
+            warp_id: ifo_object.warp_id,
+            event_id: ifo_object.event_id,
+            object_type: ifo_object.object_type,
             object_id: ifo_object.object_id,
-            position: [ifo_object.position.x, ifo_object.position.y, ifo_object.position.z],
+            minimap_pos_x: ifo_object.minimap_position.x,
+            minimap_pos_y: ifo_object.minimap_position.y,
             rotation: [ifo_object.rotation.x, ifo_object.rotation.y, ifo_object.rotation.z, ifo_object.rotation.w],
+            position: [ifo_object.position.x, ifo_object.position.y, ifo_object.position.z],
             scale: [ifo_object.scale.x, ifo_object.scale.y, ifo_object.scale.z],
         }
     }
@@ -120,21 +151,19 @@ impl IfoEventObject {
 }
 
 /// Warp object with destination warp ID
+/// Note: warp_id is stored in the base IfoObject, this struct is for semantic clarity
 #[derive(Clone, Debug)]
 pub struct IfoWarpObject {
-    /// Base object data
+    /// Base object data (warp_id is stored in object.warp_id)
     pub object: IfoObject,
-    /// Destination warp gate ID
-    pub warp_id: u16,
 }
 
 impl IfoWarpObject {
     /// Create a new IfoWarpObject
     pub fn new(object_id: u32, warp_id: u16) -> Self {
-        Self {
-            object: IfoObject::new(object_id),
-            warp_id,
-        }
+        let mut object = IfoObject::new(object_id);
+        object.warp_id = warp_id;
+        Self { object }
     }
 }
 
@@ -145,8 +174,10 @@ pub struct IfoSoundObject {
     pub object: IfoObject,
     /// Path to the sound file
     pub sound_path: String,
-    /// Sound range/radius
-    pub range: f32,
+    /// Sound range/radius (stored as u32 in file)
+    pub range: u32,
+    /// Sound playback interval in seconds (stored as u32 in file)
+    pub interval: u32,
 }
 
 impl IfoSoundObject {
@@ -155,7 +186,8 @@ impl IfoSoundObject {
         Self {
             object: IfoObject::new(object_id),
             sound_path: String::new(),
-            range: 100.0,
+            range: 100,
+            interval: 0,
         }
     }
 }
@@ -179,6 +211,81 @@ impl IfoEffectObject {
     }
 }
 
+/// NPC object with AI and quest data
+#[derive(Clone, Debug)]
+pub struct IfoNpc {
+    /// Base object data
+    pub object: IfoObject,
+    /// AI ID for this NPC
+    pub ai_id: u32,
+    /// Quest file name
+    pub quest_file_name: String,
+}
+
+impl IfoNpc {
+    /// Create a new IfoNpc
+    pub fn new(object_id: u32) -> Self {
+        Self {
+            object: IfoObject::new(object_id),
+            ai_id: 0,
+            quest_file_name: String::new(),
+        }
+    }
+}
+
+/// Monster spawn entry (basic or tactic)
+#[derive(Clone, Debug)]
+pub struct IfoMonsterSpawn {
+    /// Monster ID
+    pub id: u32,
+    /// Monster count
+    pub count: u32,
+}
+
+impl IfoMonsterSpawn {
+    /// Create a new IfoMonsterSpawn
+    pub fn new(id: u32, count: u32) -> Self {
+        Self { id, count }
+    }
+}
+
+/// Monster spawn point with basic and tactic spawns
+#[derive(Clone, Debug)]
+pub struct IfoMonsterSpawnPoint {
+    /// Base object data
+    pub object: IfoObject,
+    /// Spawn name (stored for round-trip preservation)
+    pub spawn_name: String,
+    /// Basic spawn list
+    pub basic_spawns: Vec<IfoMonsterSpawn>,
+    /// Tactic spawn list
+    pub tactic_spawns: Vec<IfoMonsterSpawn>,
+    /// Spawn interval
+    pub interval: u32,
+    /// Limit count
+    pub limit_count: u32,
+    /// Spawn range
+    pub range: u32,
+    /// Tactic points
+    pub tactic_points: u32,
+}
+
+impl IfoMonsterSpawnPoint {
+    /// Create a new IfoMonsterSpawnPoint
+    pub fn new(object_id: u32) -> Self {
+        Self {
+            object: IfoObject::new(object_id),
+            spawn_name: String::new(),
+            basic_spawns: Vec::new(),
+            tactic_spawns: Vec::new(),
+            interval: 0,
+            limit_count: 0,
+            range: 0,
+            tactic_points: 0,
+        }
+    }
+}
+
 /// Water plane definition
 #[derive(Clone, Debug)]
 pub struct IfoWaterPlane {
@@ -198,13 +305,74 @@ impl IfoWaterPlane {
     }
 }
 
-/// Represents a single block (4x4 grid) in an IFO file
+/// Block type identifiers for preserving original block order
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum IfoBlockType {
+    /// Deprecated map info (type 0)
+    DeprecatedMapInfo = 0,
+    /// Decoration objects (type 1)
+    DecoObject = 1,
+    /// NPCs (type 2)
+    Npc = 2,
+    /// Construction objects (type 3)
+    CnstObject = 3,
+    /// Sound objects (type 4)
+    SoundObject = 4,
+    /// Effect objects (type 5)
+    EffectObject = 5,
+    /// Animated objects (type 6)
+    AnimatedObject = 6,
+    /// Deprecated water (type 7)
+    DeprecatedWater = 7,
+    /// Monster spawns (type 8)
+    MonsterSpawn = 8,
+    /// Water planes (type 9)
+    WaterPlanes = 9,
+    /// Warp objects (type 10)
+    Warp = 10,
+    /// Collision objects (type 11)
+    CollisionObject = 11,
+    /// Event objects (type 12)
+    EventObject = 12,
+}
+
+impl IfoBlockType {
+    /// Convert from u32 to IfoBlockType
+    pub fn from_u32(value: u32) -> Option<Self> {
+        match value {
+            0 => Some(Self::DeprecatedMapInfo),
+            1 => Some(Self::DecoObject),
+            2 => Some(Self::Npc),
+            3 => Some(Self::CnstObject),
+            4 => Some(Self::SoundObject),
+            5 => Some(Self::EffectObject),
+            6 => Some(Self::AnimatedObject),
+            7 => Some(Self::DeprecatedWater),
+            8 => Some(Self::MonsterSpawn),
+            9 => Some(Self::WaterPlanes),
+            10 => Some(Self::Warp),
+            11 => Some(Self::CollisionObject),
+            12 => Some(Self::EventObject),
+            _ => None,
+        }
+    }
+
+    /// Convert to u32
+    pub fn to_u32(self) -> u32 {
+        self as u32
+    }
+}
+
+/// Represents a single block in an IFO file
 #[derive(Clone, Debug, Default)]
 pub struct IfoBlock {
-    /// Block X coordinate (0-3)
+    /// Block X coordinate in the zone (0-63)
     pub block_x: u32,
-    /// Block Z coordinate (0-3)
+    /// Block Z coordinate in the zone (0-63)
     pub block_z: u32,
+    /// Original block order from the loaded file (for preserving file structure)
+    /// Stores the block type IDs in the order they appeared in the original file
+    pub original_block_order: Vec<u32>,
     /// Decoration objects
     pub deco_objects: Vec<IfoObject>,
     /// Construction/building objects
@@ -219,12 +387,16 @@ pub struct IfoBlock {
     pub effect_objects: Vec<IfoEffectObject>,
     /// Animated objects (morph objects)
     pub animated_objects: Vec<IfoObject>,
+    /// Collision objects
+    pub collision_objects: Vec<IfoObject>,
     /// Water planes
     pub water_planes: Vec<IfoWaterPlane>,
     /// Water size
     pub water_size: f32,
     /// NPCs in this block
-    pub npcs: Vec<IfoObject>,
+    pub npcs: Vec<IfoNpc>,
+    /// Monster spawn points in this block
+    pub monster_spawns: Vec<IfoMonsterSpawnPoint>,
 }
 
 impl IfoBlock {
@@ -246,7 +418,9 @@ impl IfoBlock {
             + self.sound_objects.len()
             + self.effect_objects.len()
             + self.animated_objects.len()
+            + self.collision_objects.len()
             + self.npcs.len()
+            + self.monster_spawns.len()
     }
 }
 
@@ -261,17 +435,32 @@ pub struct IfoFileData {
     pub block_y: u32,
     /// Block data
     pub block: IfoBlock,
+    /// Whether this block has been modified and needs to be saved
+    pub modified: bool,
 }
 
 impl IfoFileData {
-    /// Create a new IfoFileData for a specific block
+    /// Create a new IfoFileData for a specific block (marked as unmodified)
     pub fn new(block_x: u32, block_y: u32) -> Self {
         let file_path = format!("{}_{}.IFO", block_x, block_y);
         Self {
             file_path,
             block_x,
             block_y,
-            block: IfoBlock::new(block_x % 4, block_y % 4),
+            block: IfoBlock::new(block_x, block_y),
+            modified: false,
+        }
+    }
+
+    /// Create a new IfoFileData for a specific block (marked as modified)
+    pub fn new_modified(block_x: u32, block_y: u32) -> Self {
+        let file_path = format!("{}_{}.IFO", block_x, block_y);
+        Self {
+            file_path,
+            block_x,
+            block_y,
+            block: IfoBlock::new(block_x, block_y),
+            modified: true,
         }
     }
 
@@ -304,11 +493,24 @@ impl ZoneExportData {
         }
     }
 
-    /// Get or create a block at the specified coordinates
+    /// Get or create a block at the specified coordinates (unmodified)
     pub fn get_or_create_block(&mut self, block_x: u32, block_y: u32) -> &mut IfoFileData {
         let index = (block_x + block_y * 64) as usize;
         if self.blocks[index].is_none() {
             self.blocks[index] = Some(IfoFileData::new(block_x, block_y));
+        }
+        self.blocks[index].as_mut().unwrap()
+    }
+
+    /// Get or create a block at the specified coordinates, marking it as modified
+    /// This should be used when adding new objects from the editor
+    pub fn get_or_create_modified_block(&mut self, block_x: u32, block_y: u32) -> &mut IfoFileData {
+        let index = (block_x + block_y * 64) as usize;
+        if self.blocks[index].is_none() {
+            self.blocks[index] = Some(IfoFileData::new_modified(block_x, block_y));
+        } else {
+            // Mark existing block as modified
+            self.blocks[index].as_mut().unwrap().modified = true;
         }
         self.blocks[index].as_mut().unwrap()
     }
@@ -391,7 +593,8 @@ impl ZoneExportData {
                 let mut sound_obj = IfoSoundObject::new(0);
                 sound_obj.object = IfoObject::from_rose_ifo_object(&ifo_sound.object);
                 sound_obj.sound_path = ifo_sound.sound_path.path().to_string_lossy().to_string();
-                sound_obj.range = ifo_sound.range as f32;
+                sound_obj.range = ifo_sound.range;
+                sound_obj.interval = ifo_sound.interval.as_secs() as u32;
                 export_block.block.sound_objects.push(sound_obj);
             }
             
@@ -421,7 +624,34 @@ impl ZoneExportData {
             
             // Convert NPCs from IFO
             for ifo_npc in &ifo.npcs {
-                export_block.block.npcs.push(IfoObject::from_rose_ifo_object(&ifo_npc.object));
+                let mut npc = IfoNpc::new(ifo_npc.object.object_id);
+                npc.object = IfoObject::from_rose_ifo_object(&ifo_npc.object);
+                npc.ai_id = ifo_npc.ai_id;
+                npc.quest_file_name = ifo_npc.quest_file_name.clone();
+                export_block.block.npcs.push(npc);
+            }
+            
+            // Convert collision objects from IFO
+            for ifo_object in &ifo.collision_objects {
+                export_block.block.collision_objects.push(IfoObject::from_rose_ifo_object(ifo_object));
+            }
+            
+            // Convert monster spawns from IFO
+            for ifo_spawn in &ifo.monster_spawns {
+                let mut spawn_point = IfoMonsterSpawnPoint::new(ifo_spawn.object.object_id);
+                spawn_point.object = IfoObject::from_rose_ifo_object(&ifo_spawn.object);
+                spawn_point.spawn_name = String::new(); // spawn_name is not stored in rose_file_readers
+                spawn_point.basic_spawns = ifo_spawn.basic_spawns.iter()
+                    .map(|s| IfoMonsterSpawn::new(s.id, s.count))
+                    .collect();
+                spawn_point.tactic_spawns = ifo_spawn.tactic_spawns.iter()
+                    .map(|s| IfoMonsterSpawn::new(s.id, s.count))
+                    .collect();
+                spawn_point.interval = ifo_spawn.interval;
+                spawn_point.limit_count = ifo_spawn.limit_count;
+                spawn_point.range = ifo_spawn.range;
+                spawn_point.tactic_points = ifo_spawn.tactic_points;
+                export_block.block.monster_spawns.push(spawn_point);
             }
         }
         
