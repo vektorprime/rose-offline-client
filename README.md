@@ -43,7 +43,7 @@ leaves and grass swaying in the wind
 
 ## Map Editor and saver
 
-![map editor video](https://imgur.com/a/lzlMOQl)
+https://imgur.com/a/5JpmciY
 
 ## Flying
 
