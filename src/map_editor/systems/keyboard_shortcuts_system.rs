@@ -12,11 +12,10 @@
 
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
-use std::collections::HashSet;
 
 use crate::components::ZoneObject;
-use crate::map_editor::components::{EditorSelectable, SelectedInEditor};
-use crate::map_editor::resources::{DeletedZoneObjects, EditorAction, EditorMode, MapEditorState, ZoneObjectType};
+use crate::map_editor::components::SelectedInEditor;
+use crate::map_editor::resources::{DeletedZoneObjects, DuplicateSelectedEvent, EditorAction, EditorMode, MapEditorState, ZoneObjectType};
 use crate::systems::{FreeCamera, OrbitCamera};
 
 /// System to handle keyboard shortcuts for the map editor
@@ -24,11 +23,11 @@ pub fn keyboard_shortcuts_system(
     mut commands: Commands,
     mut map_editor_state: ResMut<MapEditorState>,
     mut deleted_zone_objects: ResMut<DeletedZoneObjects>,
+    mut duplicate_events: EventWriter<DuplicateSelectedEvent>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut egui_contexts: EguiContexts,
     selected_entities: Query<Entity, With<SelectedInEditor>>,
     transforms: Query<&GlobalTransform>,
-    names: Query<&Name>,
     zone_objects: Query<&ZoneObject>,
     camera_query: Query<Entity, With<Camera3d>>,
     free_camera_query: Query<&FreeCamera>,
@@ -65,13 +64,9 @@ pub fn keyboard_shortcuts_system(
     
     // Handle Ctrl+D - Duplicate selected entities
     if keyboard.just_pressed(KeyCode::KeyD) && is_ctrl_pressed(&keyboard) {
-        handle_duplicate_selected(
-            commands.reborrow(),
-            &mut map_editor_state,
-            &selected_entities,
-            &transforms,
-            &names,
-        );
+        // Send duplicate event - the duplicate_system will handle it
+        duplicate_events.write(DuplicateSelectedEvent::new());
+        log::info!("[KeyboardShortcuts] Duplicate event sent via Ctrl+D");
     }
     
     // Handle Ctrl+A - Select all
@@ -305,75 +300,6 @@ fn handle_delete_selected(
     
     log::info!("[KeyboardShortcuts] Deleted {} entities (tracked {} zone objects for save)", 
         entities.len(), deleted_zone_objects.len());
-}
-
-/// Handle Ctrl+D - Duplicate selected entities
-fn handle_duplicate_selected(
-    mut commands: Commands,
-    map_editor_state: &mut MapEditorState,
-    selected_entities: &Query<Entity, With<SelectedInEditor>>,
-    transforms: &Query<&GlobalTransform>,
-    names: &Query<&Name>,
-) {
-    let entities: Vec<Entity> = selected_entities.iter().collect();
-    
-    if entities.is_empty() {
-        return;
-    }
-    
-    // Offset for duplicated entities
-    let duplicate_offset = Vec3::new(1.0, 0.0, 1.0);
-    
-    // Remove selection from current entities
-    for entity in &entities {
-        commands.entity(*entity).remove::<SelectedInEditor>();
-    }
-    
-    // Create duplicated entities
-    let mut new_entities = Vec::new();
-    let mut new_selection = HashSet::new();
-    
-    for entity in &entities {
-        // Get the original transform
-        if let Ok(global_transform) = transforms.get(*entity) {
-            let translation = global_transform.translation();
-            let new_transform = Transform::from_translation(translation + duplicate_offset)
-                .with_rotation(global_transform.rotation())
-                .with_scale(global_transform.scale());
-            
-            // Get the original name
-            let name = names.get(*entity).ok()
-                .map(|n| format!("{}_copy", n.as_str()))
-                .unwrap_or_else(|| "DuplicatedEntity".to_string());
-            
-            // Create the duplicated entity
-            let new_entity = commands.spawn((
-                new_transform,
-                GlobalTransform::default(),
-                Name::new(name),
-                EditorSelectable,
-                SelectedInEditor,
-            )).id();
-            
-            new_entities.push(new_entity);
-            new_selection.insert(new_entity);
-        }
-    }
-    
-    // Clear old selection and set new selection
-    map_editor_state.clear_selection();
-    for entity in &new_selection {
-        map_editor_state.select_entity(*entity);
-    }
-    
-    // Record the action for undo
-    if !new_entities.is_empty() {
-        map_editor_state.push_action(EditorAction::AddEntities {
-            entities: new_entities.clone(),
-        });
-    }
-    
-    log::info!("[KeyboardShortcuts] Duplicated {} entities", new_entities.len());
 }
 
 /// Handle Ctrl+A - Select all entities

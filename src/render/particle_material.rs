@@ -12,6 +12,8 @@ use bevy::{
 
 use log::{info, warn, error};
 
+use crate::effect_loader::{decode_blend_op, decode_blend_factor};
+
 pub const PARTICLE_SHADER_HANDLE: Handle<Shader> = weak_handle!("00010002-0000-0000-0000-000000000000");
 
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
@@ -106,7 +108,10 @@ impl Material for ParticleMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Blend
+        // Use Premultiplied alpha mode for particles - this provides better
+        // transparency handling for particle effects where black pixels should
+        // be transparent. The shader outputs premultiplied alpha values.
+        AlphaMode::Premultiplied
     }
 }
 

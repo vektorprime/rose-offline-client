@@ -13,6 +13,7 @@ use bevy::{
         Resource, Shader, Startup, Transform, Update, World, With,
     },
     reflect::{Reflect, TypePath},
+    render::camera::Exposure,
     render::{
         render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
         render_resource::{
@@ -34,6 +35,40 @@ pub struct VolumetricFogVolume;
 use std::any::TypeId;
 use std::sync::OnceLock;
 use uuid::Uuid;
+
+/// Mode for controlling how the time of day is determined.
+#[derive(Reflect, Clone, Copy, PartialEq, Debug, Default)]
+pub enum SkyMode {
+    /// Time of day follows the game's ZoneTime resource automatically
+    #[default]
+    Automatic,
+    /// Time of day is manually controlled by the user via SkySettings.manual_time
+    Manual,
+}
+
+/// Resource for controlling sky and time-of-day settings.
+/// Allows players to manually set the time or let it follow game time automatically.
+#[derive(Resource, Reflect, Clone)]
+#[reflect(Resource)]
+pub struct SkySettings {
+    /// Whether time is automatic (follows game time) or manual (user-controlled)
+    pub mode: SkyMode,
+    /// Manual time value in hours (0-24) when mode is Manual
+    pub manual_time: f32,
+    /// Multiplier for atmosphere scattering intensity (0.0-2.0)
+    /// Values > 1.0 make the sky more dramatic, < 1.0 makes it more subtle
+    pub atmosphere_intensity: f32,
+}
+
+impl Default for SkySettings {
+    fn default() -> Self {
+        Self {
+            mode: SkyMode::Automatic,
+            manual_time: 12.0, // Default to noon
+            atmosphere_intensity: 1.0,
+        }
+    }
+}
 
 /// Global storage for the zone lighting bind group layout.
 /// This allows the specialize method to access the layout without needing direct resource access.
@@ -69,7 +104,10 @@ impl Plugin for ZoneLightingPlugin {
         );
 
         app.register_type::<ZoneLighting>()
-            .init_resource::<ZoneLighting>();
+            .register_type::<SkySettings>()
+            .register_type::<SkyMode>()
+            .init_resource::<ZoneLighting>()
+            .init_resource::<SkySettings>();
 
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             // bevy::log::info!("[ZONE LIGHTING] Initializing render app systems");
@@ -81,7 +119,7 @@ impl Plugin for ZoneLightingPlugin {
         }
 
         app.add_systems(Startup, spawn_lights)
-            .add_systems(Update, update_volumetric_fog_system);
+            .add_systems(Update, (update_volumetric_fog_system, update_sun_position_system));
         // bevy::log::info!("[ZONE LIGHTING] ZoneLightingPlugin build complete");
     }
 
@@ -215,6 +253,75 @@ fn update_volumetric_fog_system(
             fog_volume.density_factor = 0.0;
             // bevy::log::debug!("[ZONE LIGHTING] Volumetric fog disabled - set density_factor to 0");
         }
+    }
+}
+
+/// System that updates the directional light rotation based on SkySettings and ZoneTime.
+/// This creates a dynamic day/night cycle where the sun position changes with time.
+/// The sun rotates around the scene based on the time of day (0-24 hours).
+///
+/// When SkySettings.mode is Automatic, the sun follows the game's ZoneTime.
+/// When SkySettings.mode is Manual, the sun position is controlled by SkySettings.manual_time.
+///
+/// Sun path:
+/// - Sunrise (~6:00): Sun at horizon in the East
+/// - Noon (~12:00): Sun directly overhead
+/// - Sunset (~18:00): Sun at horizon in the West
+/// - Night (~21:00-5:00): Sun below horizon
+fn update_sun_position_system(
+    zone_time: Res<crate::resources::ZoneTime>,
+    sky_settings: Res<SkySettings>,
+    mut query: Query<&mut Transform, With<DirectionalLight>>,
+) {
+    // Determine if we should update based on mode and what changed
+    let should_update = match sky_settings.mode {
+        SkyMode::Automatic => zone_time.is_changed() || sky_settings.is_changed(),
+        SkyMode::Manual => sky_settings.is_changed(),
+    };
+    
+    if !should_update {
+        return;
+    }
+    
+    // Get the time value based on mode
+    let time_hours = match sky_settings.mode {
+        SkyMode::Automatic => {
+            // Use game time from ZoneTime
+            zone_time.time as f32
+        }
+        SkyMode::Manual => {
+            // Use manual time from SkySettings
+            sky_settings.manual_time
+        }
+    };
+    
+    for mut transform in query.iter_mut() {
+        // Normalize time to 0-24 hours range
+        let normalized_time = time_hours % 24.0;
+        
+        // Convert time to a fraction of the day (0.0 to 1.0)
+        let day_fract = (normalized_time / 24.0).clamp(0.0, 1.0);
+        
+        // Earth's axial tilt - this creates the arc path of the sun
+        // Higher values make the sun rise higher at noon
+        let earth_tilt_rad = std::f32::consts::PI / 3.0; // 60 degrees
+        
+        // Create rotation that moves the sun in an arc from east to west
+        // Using ZYX euler angles:
+        // - Z (earth_tilt_rad): Tilts the rotation axis to create the arc path
+        // - Y (0.0): No Y rotation needed
+        // - X (-day_fract * TAU): Rotates the sun around the tilted axis over the day
+        //
+        // At day_fract = 0.0 (midnight): sun is at lowest point (below horizon)
+        // At day_fract = 0.25 (6am): sun is at horizon (sunrise in east)
+        // At day_fract = 0.5 (noon): sun is at highest point (overhead)
+        // At day_fract = 0.75 (6pm): sun is at horizon (sunset in west)
+        transform.rotation = Quat::from_euler(
+            EulerRot::ZYX,
+            earth_tilt_rad,
+            0.0,
+            -day_fract * std::f32::consts::TAU,
+        );
     }
 }
 

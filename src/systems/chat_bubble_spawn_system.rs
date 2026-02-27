@@ -318,6 +318,7 @@ pub fn chat_bubble_spawn_system(
                 ChatBubble::new(target_entity, event.text.clone(), event.duration),
                 Visibility::Inherited,
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
                 Transform::from_translation(Vec3::new(0.0, bubble_height, 0.0)),
                 GlobalTransform::default(),
                 NoFrustumCulling,

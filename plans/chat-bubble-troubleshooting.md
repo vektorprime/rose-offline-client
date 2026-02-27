@@ -55,17 +55,24 @@ Chat bubbles are not visible in the game despite successful compilation and no r
 ## Current Status
 All fixes applied, build succeeds, extraction and queue work correctly, but bubbles still not visible.
 
-## Remaining Investigation Areas
-1. **Shader binding issues** - Zone lighting bind group may not be set correctly
-2. **Pipeline specialization** - May not be creating valid pipeline
-3. **Render command execution** - Draw commands may not be executing
-4. **Depth buffer issues** - Depth compare may be culling everything
-5. **Vertex data format** - May not match shader expectations
-6. **View uniform binding** - May not be available in render phase
+### 9. Missing ViewVisibility on Parent Entity (FIXED - 2026-02-26)
+- **Issue**: The `ChatBubbleEntity` parent entity was missing `ViewVisibility::default()` component
+- **Comparison**: The working `name_tag_system.rs` includes `ViewVisibility::default()` on the parent entity
+- **Root Cause**: In Bevy 0.16, the visibility propagation system requires all three visibility components
+  (`Visibility`, `InheritedVisibility`, `ViewVisibility`) for proper visibility computation. Without
+  `ViewVisibility` on the parent, the children's inherited visibility was not correctly computed for rendering.
+- **Fix**: Added `ViewVisibility::default()` to the parent entity spawn in `chat_bubble_spawn_system.rs`
+- **File**: `src/systems/chat_bubble_spawn_system.rs` line 321
 
-## Next Steps
-1. Check if name tags (other WorldUiRects) are visible - they use the same system
-2. Add debug logging to render commands to verify they're executing
-3. Check if pipeline is being created and cached correctly
-4. Verify bind groups are being created and bound correctly
-5. Check depth/stencil state configuration
+## Resolution
+The chat bubble visibility issue was caused by a missing `ViewVisibility::default()` component on the
+parent `ChatBubbleEntity`. This is a Bevy 0.16 requirement - all entities in the visibility hierarchy
+must have all three visibility components for proper rendering.
+
+## Key Lesson
+When spawning entities with visibility in Bevy 0.16, always include all three visibility components:
+1. `Visibility` (or `Visibility::Inherited`)
+2. `InheritedVisibility::default()`
+3. `ViewVisibility::default()`
+
+This is especially important for parent entities that have child entities with renderable components.

@@ -3,6 +3,7 @@ use bevy::prelude::{Assets, EventWriter, Local, Res, ResMut};
 use bevy_egui::{egui, EguiContexts};
 
 use crate::{
+    events::CharacterSelectEvent,
     resources::UiResources,
     ui::{
         widgets::{DataBindings, Dialog},
@@ -33,6 +34,7 @@ pub fn ui_game_menu_system(
     mut ui_state: Local<UiGameMenuState>,
     ui_resources: Res<UiResources>,
     mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut character_select_events: EventWriter<CharacterSelectEvent>,
     dialog_assets: Res<Assets<Dialog>>,
 ) {
     let dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_game_menu) {
@@ -148,7 +150,7 @@ pub fn ui_game_menu_system(
     }
 
     if response_button_exit.map_or(false, |r| r.clicked()) {
-        // TODO: Exit dialog
+        character_select_events.write(CharacterSelectEvent::Disconnect);
         ui_state_windows.menu_open = false;
     }
 

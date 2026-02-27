@@ -32,13 +32,12 @@ pub use particle_render_data::*;
 pub mod particle_debug;
 pub use particle_debug::{debug_particle_rendering, particle_performance_monitor};
 
-pub mod particle_test;
-pub use particle_test::test_particle_spawn;
-
 pub mod zone_lighting;
 pub use zone_lighting::ZoneLighting;
 pub use zone_lighting::ZoneLightingPlugin;
 pub use zone_lighting::VolumetricFogVolume;
+pub use zone_lighting::SkySettings;
+pub use zone_lighting::SkyMode;
 
 pub mod trail_effect;
 pub use trail_effect::*;
@@ -49,9 +48,6 @@ pub use damage_digit_material::*;
 
 pub mod damage_digit_render_data;
 pub use damage_digit_render_data::*;
-
-pub mod sky_material;
-pub use sky_material::{SkyMaterial, SkyMaterialPlugin};
 
 // Angelic wing material with glow effects
 pub mod wing_material;

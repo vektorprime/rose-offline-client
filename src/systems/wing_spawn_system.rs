@@ -1,12 +1,12 @@
 //! Angelic Wing Spawn System
-//! 
+//!
 //! This system handles spawning and despawning of angelic wings when flight mode
 //! is toggled. Wings are procedurally generated meshes with custom materials.
 //!
 //! Wing Design:
 //! - Large, impressive angelic wings (2-3 units span)
 //! - Multiple feather layers for realistic appearance
-//! - Attached to character's back as child entities
+//! - Attached to character's Body mesh entity (not player root) for proper skeletal animation
 //! - Custom shader material with glow effects
 
 use bevy::prelude::*;
@@ -15,7 +15,7 @@ use bevy::render::render_asset::RenderAssetUsages;
 use bevy::pbr::MeshMaterial3d;
 use bevy::render::alpha::AlphaMode;
 
-use crate::components::{FlightState, PlayerCharacter, AngelicWings, WingSide};
+use crate::components::{CharacterModel, CharacterModelPart, FlightState, PlayerCharacter, AngelicWings, WingSide};
 use crate::events::FlightToggleEvent;
 use crate::render::wing_material::{WingMaterial, WingMaterialPlugin};
 
@@ -37,62 +37,110 @@ impl Plugin for WingSpawnPlugin {
     }
 }
 
-/// System that spawns wings when flight is enabled.
-/// 
-/// This system listens for [`FlightToggleEvent`] events and spawns wing entities
-/// when flight mode is enabled. The wings are attached as children to the player.
+/// System that handles wing spawning when flight is enabled.
+///
+/// This system listens for [`FlightToggleEvent`] events and would normally spawn wing entities
+/// when flight mode is enabled. Currently, wing model spawning is DISABLED - the system
+/// only logs when flight is enabled without spawning visual wings.
+///
+/// To re-enable wing spawning, uncomment the spawn_wings() call below.
 pub fn wing_spawn_system(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<WingMaterial>>,
+    mut _commands: Commands,
+    mut _meshes: ResMut<Assets<Mesh>>,
+    mut _materials: ResMut<Assets<WingMaterial>>,
     mut flight_events: EventReader<FlightToggleEvent>,
-    mut flight_states: Query<(Entity, &mut FlightState), With<PlayerCharacter>>,
+    player_query: Query<(Entity, &CharacterModel), With<PlayerCharacter>>,
+    mut flight_states: Query<&mut FlightState, With<PlayerCharacter>>,
 ) {
     for event in flight_events.read() {
-        if let Ok((entity, mut flight_state)) = flight_states.get_mut(event.entity) {
-            if flight_state.is_flying {
-                // Flight just enabled - spawn wings
-                if flight_state.wing_entity_left.is_none() && flight_state.wing_entity_right.is_none() {
-                    let (left_wing, right_wing) = spawn_wings(
-                        &mut commands,
-                        &mut meshes,
-                        &mut materials,
-                        entity,
-                    );
-                    
-                    flight_state.wing_entity_left = Some(left_wing);
-                    flight_state.wing_entity_right = Some(right_wing);
-                    
-                    log::info!("[WingSpawn] Spawned angelic wings for entity {:?}", entity);
-                }
+        // Get CharacterModel from the player query
+        if let Ok((entity, _character_model)) = player_query.get(event.entity) {
+            // Get FlightState separately to avoid borrow conflicts
+            if let Ok(_flight_state) = flight_states.get_mut(event.entity) {
+                // Wing spawning is currently DISABLED.
+                // The flight state is managed in flight_toggle_system.rs.
+                // Flying functionality (movement, animation) still works without visual wings.
+                //
+                // To re-enable wing spawning, uncomment the code below:
+                //
+                // let flight_state = _flight_state.into_inner();
+                //
+                // if flight_state.is_flying {
+                //     if flight_state.wing_entity_left.is_none() && flight_state.wing_entity_right.is_none() {
+                //         let body_entities = &_character_model.model_parts[CharacterModelPart::Body].1;
+                //         let attachment_parent = body_entities.first().copied().unwrap_or(entity);
+                //
+                //         let (left_wing, right_wing) = spawn_wings(
+                //             &mut _commands,
+                //             &mut _meshes,
+                //             &mut _materials,
+                //             attachment_parent,
+                //             body_entities,
+                //         );
+                //
+                //         flight_state.wing_entity_left = Some(left_wing);
+                //         flight_state.wing_entity_right = Some(right_wing);
+                //     }
+                // }
+                
+                log::info!(
+                    "[WingSpawn] Flight enabled for entity {:?} - wing spawning disabled (models will be added later)",
+                    entity
+                );
             }
-            // Note: Wing despawning is handled in flight_toggle_system.rs
         }
     }
 }
 
-/// Spawns left and right wing entities attached to the character
+/// Spawns left and right wing entities attached to the character's body
+///
+/// # Arguments
+/// * `commands` - Bevy commands for spawning entities
+/// * `meshes` - Mesh asset collection
+/// * `materials` - Wing material asset collection
+/// * `attachment_parent` - The entity to attach wings to (typically the Body mesh entity)
+/// * `body_entities` - All Body mesh entities (for reference, may be used for multi-part attachment)
+///
+/// # Wing Positioning
+/// Wings are positioned relative to the attachment parent (Body mesh).
+/// Since Body mesh is part of the skeletal hierarchy, wings will follow
+/// skeletal animations properly.
 fn spawn_wings(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<WingMaterial>>,
-    owner_entity: Entity,
+    attachment_parent: Entity,
+    _body_entities: &[Entity],
 ) -> (Entity, Entity) {
     // Create wing meshes
     let left_wing_mesh = create_angel_wing_mesh(meshes, WingSide::Left);
     let right_wing_mesh = create_angel_wing_mesh(meshes, WingSide::Right);
     
-    // Create wing material with default ethereal appearance using StandardMaterial
+    // Create wing material with enhanced ethereal appearance
+    // Brighter base color with subtle emissive glow for angelic effect
     let wing_material = materials.add(WingMaterial {
-        base_color: Color::srgba(0.95, 0.95, 1.0, 0.85),  // White/silver, semi-transparent
+        base_color: Color::srgba(0.98, 0.98, 1.0, 0.9),  // Brighter white/silver, more opaque
         alpha_mode: AlphaMode::Blend,
         cull_mode: None, // Double-sided
-        perceptual_roughness: 0.3,
-        metallic: 0.1,
+        perceptual_roughness: 0.2,  // Smoother for more ethereal look
+        metallic: 0.15,  // Slight metallic sheen
+        emissive: LinearRgba::new(0.8, 0.85, 1.0, 0.3),  // Subtle light blue glow
         ..Default::default()
     });
     
-    // Spawn left wing entity as child of player
+    // IMPORTANT: Wing transform offsets are now relative to the Body mesh entity,
+    // not the player root. The Body mesh is part of the skeletal hierarchy.
+    //
+    // Since the Body mesh is typically positioned near the character's center/pelvis,
+    // we need to offset wings to appear at shoulder blade level on the back.
+    // The Y offset is relative to the Body mesh's local origin.
+    //
+    // Character skeleton: root/pelvis is at ~Y=0, head is at ~Y=1.5-1.8
+    // Shoulder blades are approximately at Y=1.0-1.2 relative to pelvis
+    // But since Body mesh origin is typically at pelvis, we use smaller offsets.
+    
+    // Left wing: positioned on left side of back, at shoulder blade level
+    // Local offset from Body mesh origin
     let left_wing = commands.spawn((
         AngelicWings {
             side: WingSide::Left,
@@ -103,19 +151,28 @@ fn spawn_wings(
         },
         Mesh3d(left_wing_mesh),
         MeshMaterial3d(wing_material.clone()),
-        // Position behind and slightly above character, angled outward
-        Transform::from_xyz(-0.2, 0.8, -0.3)
-            .looking_at(Vec3::new(-1.5, 0.5, -0.5), Vec3::Y),
+        // Position relative to Body mesh:
+        // X: -0.15 (slightly left of center for left wing attachment point)
+        // Y: 0.9 (upper back / shoulder blade level relative to pelvis)
+        // Z: -0.2 (behind the body, on the back)
+        Transform::from_xyz(-0.1, 0.9, -0.15)
+            .looking_at(Vec3::new(-1.5, 0.5, -0.15), Vec3::Y),
         GlobalTransform::default(),
         Visibility::Visible,
         InheritedVisibility::default(),
         ViewVisibility::default(),
     )).id();
     
-    // Attach left wing to player
-    commands.entity(owner_entity).add_child(left_wing);
+    // Attach left wing to the Body mesh entity
+    commands.entity(attachment_parent).add_child(left_wing);
     
-    // Spawn right wing entity as child of player
+    log::info!(
+        "[WingSpawn] Left wing {:?} attached to Body entity {:?}",
+        left_wing,
+        attachment_parent
+    );
+    
+    // Right wing: positioned on right side of back, at shoulder blade level
     let right_wing = commands.spawn((
         AngelicWings {
             side: WingSide::Right,
@@ -126,37 +183,49 @@ fn spawn_wings(
         },
         Mesh3d(right_wing_mesh),
         MeshMaterial3d(wing_material),
-        // Position behind and slightly above character, angled outward
-        Transform::from_xyz(0.2, 0.8, -0.3)
-            .looking_at(Vec3::new(1.5, 0.5, -0.5), Vec3::Y),
+        // Position relative to Body mesh:
+        // X: 0.1 (slightly right of center for right wing attachment point)
+        // Y: 0.9 (upper back / shoulder blade level relative to pelvis)
+        // Z: -0.15 (behind the body, on the back)
+        Transform::from_xyz(0.1, 0.9, -0.15)
+            .looking_at(Vec3::new(1.5, 0.5, -0.15), Vec3::Y),
         GlobalTransform::default(),
         Visibility::Visible,
         InheritedVisibility::default(),
         ViewVisibility::default(),
     )).id();
     
-    // Attach right wing to player
-    commands.entity(owner_entity).add_child(right_wing);
+    // Attach right wing to the Body mesh entity
+    commands.entity(attachment_parent).add_child(right_wing);
+    
+    log::info!(
+        "[WingSpawn] Right wing {:?} attached to Body entity {:?}",
+        right_wing,
+        attachment_parent
+    );
     
     (left_wing, right_wing)
 }
 
-/// Creates a procedural angel wing mesh
-/// 
+/// Creates a procedural angel wing mesh with enhanced quality
+///
 /// The wing is designed with:
 /// - A main "arm" structure (like a bird/bat wing bone)
-/// - Multiple feather layers (primary, secondary, coverts)
-/// - Large span (about 2-3 units from body)
-/// - Curved, natural shape
+/// - Multiple feather layers (primary, secondary, tertiary, coverts)
+/// - Large span (about 2.5-3 units from body)
+/// - Curved, natural shape with smoother curves
+/// - Gradient coloring from white base to silver/pearlescent tips
 fn create_angel_wing_mesh(
     meshes: &mut ResMut<Assets<Mesh>>,
     side: WingSide,
 ) -> Handle<Mesh> {
-    // Wing parameters
-    let wing_span = 2.5;        // Length from body to tip
-    let wing_height = 1.5;      // Height at highest point
-    let feather_count = 12;     // Number of primary feathers
-    let segments = 24;          // Horizontal segments for smoothness
+    // Enhanced wing parameters for better quality
+    let wing_span = 2.8;        // Longer span for more dramatic wings
+    let wing_height = 1.6;      // Slightly taller for better proportions
+    let primary_feather_count = 16;  // Increased from 12 for fuller wing tip
+    let secondary_feather_count = 12; // Increased from 8 for denser mid-wing
+    let tertiary_feather_count = 5;   // NEW: Small feathers near body
+    let segments = 32;          // Increased from 24 for smoother curves
     
     let mut vertices: Vec<[f32; 3]> = Vec::new();
     let mut normals: Vec<[f32; 3]> = Vec::new();
@@ -169,45 +238,50 @@ fn create_angel_wing_mesh(
         WingSide::Right => 1.0,
     };
     
-    // Create wing shape using multiple layers
-    
+    // ============================================
     // Layer 1: Wing membrane/base (creates the overall wing shape)
+    // Enhanced with smoother curves and better proportions
+    // ============================================
     for i in 0..=segments {
         let t = i as f32 / segments as f32;  // 0.0 to 1.0 along wing
         
         // Wing shape curve - starts thick near body, tapers to tip
-        // Uses bezier-like curve for natural shape
+        // Uses bezier-like curve for natural shape with enhanced curve
         let base_x = t * wing_span * mirror;
         
-        // Wing curves upward then down toward tip
-        let base_y = wing_height * (1.0 - t) * (1.0 - t * 0.3) * 
-                     (1.0 + 0.3 * (t * std::f32::consts::PI).sin());
+        // Enhanced wing curve - more organic upward sweep then graceful down
+        let curve_factor = (t * std::f32::consts::PI * 0.8).sin();
+        let base_y = wing_height * (1.0 - t * 0.6) * (1.0 - t * 0.25) *
+                     (1.0 + 0.35 * curve_factor);
         
         // Wing depth (front to back) - fuller near body, narrow at tip
-        let depth = 0.8 * (1.0 - t * 0.7) * (1.0 + 0.2 * (t * std::f32::consts::PI * 2.0).sin());
+        let depth = 0.9 * (1.0 - t * 0.65) * (1.0 + 0.25 * (t * std::f32::consts::PI * 1.5).sin());
         
-        // Leading edge (front of wing)
-        let leading_z = -depth * 0.5;
+        // Leading edge (front of wing) with slight curve
+        let leading_z = -depth * 0.5 - 0.05 * (t * std::f32::consts::PI).sin();
         // Trailing edge (back of wing)
         let trailing_z = depth * 0.5;
+        
+        // UV coordinates for gradient effect (white base to silver tip)
+        let uv_gradient = t; // 0 at body (white) to 1 at tip (silver)
         
         // Top surface vertex
         vertices.push([base_x, base_y + 0.02, leading_z]);
         normals.push([0.0, 1.0, 0.0]);
-        uvs.push([t, 0.0]);
+        uvs.push([t, 0.0 + uv_gradient * 0.1]); // Slight UV shift for gradient
         
         // Bottom surface vertex
         vertices.push([base_x, base_y - 0.02, leading_z]);
         normals.push([0.0, -1.0, 0.0]);
-        uvs.push([t, 0.3]);
+        uvs.push([t, 0.3 + uv_gradient * 0.05]);
         
         // Trailing edge top
-        vertices.push([base_x * 0.95, base_y * 0.9 + 0.02, trailing_z]);
+        vertices.push([base_x * 0.95, base_y * 0.88 + 0.02, trailing_z]);
         normals.push([0.0, 1.0, 0.3]);
-        uvs.push([t, 0.7]);
+        uvs.push([t, 0.7 + uv_gradient * 0.1]);
         
         // Trailing edge bottom
-        vertices.push([base_x * 0.95, base_y * 0.9 - 0.02, trailing_z]);
+        vertices.push([base_x * 0.95, base_y * 0.88 - 0.02, trailing_z]);
         normals.push([0.0, -1.0, 0.3]);
         uvs.push([t, 1.0]);
     }
@@ -230,45 +304,49 @@ fn create_angel_wing_mesh(
         ]);
     }
     
+    // ============================================
     // Layer 2: Primary feathers (long feathers at wing tip)
-    let feather_start_vertex = vertices.len() as u32;
-    
-    for i in 0..feather_count {
-        let t = (i as f32 / feather_count as f32);  // 0.0 to 1.0
-        let feather_t = 0.6 + t * 0.4;  // Feathers start at 60% along wing
+    // Enhanced: 16 feathers, longer, more tapered with curve
+    // ============================================
+    for i in 0..primary_feather_count {
+        let t = (i as f32 / primary_feather_count as f32);  // 0.0 to 1.0
+        let feather_t = 0.55 + t * 0.45;  // Feathers start at 55% along wing
         
         // Feather base position
         let base_x = feather_t * wing_span * mirror;
-        let base_y = wing_height * (1.0 - feather_t) * 0.8;
-        let base_z = 0.3 - t * 0.6;  // Spread along trailing edge
+        let base_y = wing_height * (1.0 - feather_t) * 0.85;
+        let base_z = 0.35 - t * 0.7;  // Spread along trailing edge
         
-        // Feather tip (extends beyond wing membrane)
-        let tip_x = (feather_t + 0.15 + t * 0.1) * wing_span * mirror;
-        let tip_y = base_y * 0.5 - t * 0.2;
-        let tip_z = base_z - 0.2 - t * 0.1;
+        // Enhanced feather tip - longer and more dramatic
+        // Add slight curve for organic look
+        let curve_offset = 0.08 * (t * std::f32::consts::PI).sin();
+        let tip_extension = 0.18 + t * 0.12; // Longer feathers toward tip
+        let tip_x = (feather_t + tip_extension) * wing_span * mirror;
+        let tip_y = base_y * 0.45 - t * 0.25 + curve_offset;
+        let tip_z = base_z - 0.25 - t * 0.12;
         
-        // Feather width
-        let feather_width = 0.08 * (1.0 - t * 0.5);
+        // Feather width - more tapered
+        let feather_width = 0.07 * (1.0 - t * 0.6);
         
-        // Two triangles per feather (quad)
         let idx = vertices.len() as u32;
         
-        // Feather vertices
+        // Feather vertices with enhanced UVs for gradient
         vertices.push([base_x, base_y, base_z]);
         normals.push([0.0, 1.0, 0.0]);
-        uvs.push([feather_t, 0.5 + t * 0.3]);
+        uvs.push([feather_t, 0.5 + t * 0.25]); // Gradient toward tip
         
         vertices.push([base_x, base_y - 0.01, base_z]);
         normals.push([0.0, -1.0, 0.0]);
-        uvs.push([feather_t, 0.5 + t * 0.3]);
+        uvs.push([feather_t, 0.5 + t * 0.25]);
         
+        // Tip vertices with curve
         vertices.push([tip_x, tip_y, tip_z - feather_width]);
         normals.push([0.0, 0.7, -0.3]);
-        uvs.push([feather_t + 0.15, 0.6 + t * 0.3]);
+        uvs.push([feather_t + tip_extension, 0.6 + t * 0.25]);
         
         vertices.push([tip_x, tip_y, tip_z + feather_width]);
         normals.push([0.0, 0.7, 0.3]);
-        uvs.push([feather_t + 0.15, 0.4 + t * 0.3]);
+        uvs.push([feather_t + tip_extension, 0.4 + t * 0.25]);
         
         // Feather indices (two triangles)
         indices.extend_from_slice(&[
@@ -277,41 +355,43 @@ fn create_angel_wing_mesh(
         ]);
     }
     
+    // ============================================
     // Layer 3: Secondary feathers (mid-wing feathers)
-    let secondary_start = vertices.len() as u32;
-    let secondary_count = 8;
-    
-    for i in 0..secondary_count {
-        let t = i as f32 / secondary_count as f32;
-        let feather_t = 0.3 + t * 0.35;  // Secondary feathers in middle section
+    // Enhanced: 12 feathers with better curve
+    // ============================================
+    for i in 0..secondary_feather_count {
+        let t = i as f32 / secondary_feather_count as f32;
+        let feather_t = 0.25 + t * 0.35;  // Secondary feathers in middle section
         
         let base_x = feather_t * wing_span * mirror;
-        let base_y = wing_height * (1.0 - feather_t * 0.5) * 0.9;
-        let base_z = 0.2 - t * 0.4;
+        let base_y = wing_height * (1.0 - feather_t * 0.45) * 0.92;
+        let base_z = 0.25 - t * 0.45;
         
-        let tip_x = (feather_t + 0.1) * wing_span * mirror;
-        let tip_y = base_y * 0.85;
-        let tip_z = base_z + 0.15;
+        // Add slight curve to secondary feathers
+        let curve_offset = 0.05 * (t * std::f32::consts::PI).sin();
+        let tip_x = (feather_t + 0.12) * wing_span * mirror;
+        let tip_y = base_y * 0.82 + curve_offset;
+        let tip_z = base_z + 0.18;
         
-        let feather_width = 0.1 * (1.0 - t * 0.3);
+        let feather_width = 0.095 * (1.0 - t * 0.35);
         
         let idx = vertices.len() as u32;
         
         vertices.push([base_x, base_y, base_z]);
         normals.push([0.0, 1.0, 0.1]);
-        uvs.push([feather_t, 0.4 + t * 0.2]);
+        uvs.push([feather_t, 0.35 + t * 0.15]);
         
         vertices.push([base_x, base_y - 0.01, base_z]);
         normals.push([0.0, -1.0, 0.1]);
-        uvs.push([feather_t, 0.4 + t * 0.2]);
+        uvs.push([feather_t, 0.35 + t * 0.15]);
         
         vertices.push([tip_x, tip_y, tip_z - feather_width]);
         normals.push([0.0, 0.8, 0.0]);
-        uvs.push([feather_t + 0.1, 0.5 + t * 0.2]);
+        uvs.push([feather_t + 0.12, 0.45 + t * 0.15]);
         
         vertices.push([tip_x, tip_y, tip_z + feather_width]);
         normals.push([0.0, 0.8, 0.0]);
-        uvs.push([feather_t + 0.1, 0.3 + t * 0.2]);
+        uvs.push([feather_t + 0.12, 0.25 + t * 0.15]);
         
         indices.extend_from_slice(&[
             idx, idx + 2, idx + 3,
@@ -319,37 +399,83 @@ fn create_angel_wing_mesh(
         ]);
     }
     
-    // Layer 4: Covert feathers (small feathers near body)
-    let covert_start = vertices.len() as u32;
-    let covert_count = 6;
-    
-    for i in 0..covert_count {
-        let t = i as f32 / covert_count as f32;
-        let feather_t = 0.1 + t * 0.25;  // Coverts near body
+    // ============================================
+    // Layer 4: Tertiary feathers (NEW - small feathers near body)
+    // These add fullness near the wing joint
+    // ============================================
+    for i in 0..tertiary_feather_count {
+        let t = i as f32 / tertiary_feather_count as f32;
+        let feather_t = 0.08 + t * 0.18;  // Tertiary feathers very close to body
         
         let base_x = feather_t * wing_span * mirror;
-        let base_y = wing_height * (1.0 - feather_t * 0.3);
-        let base_z = -0.2 + t * 0.15;
+        let base_y = wing_height * (1.0 - feather_t * 0.2) * 0.95;
+        let base_z = -0.15 + t * 0.2;
         
-        let tip_x = (feather_t + 0.08) * wing_span * mirror;
-        let tip_y = base_y * 0.95;
-        let tip_z = base_z + 0.1;
+        // Short, rounded feathers
+        let tip_x = (feather_t + 0.06) * wing_span * mirror;
+        let tip_y = base_y * 0.92;
+        let tip_z = base_z + 0.08;
         
-        let feather_width = 0.12;
+        let feather_width = 0.1 * (1.0 - t * 0.2);
         
         let idx = vertices.len() as u32;
         
-        vertices.push([base_x, base_y + 0.03, base_z]);
+        vertices.push([base_x, base_y + 0.025, base_z]);
+        normals.push([0.0, 1.0, 0.15]);
+        uvs.push([feather_t, 0.15 + t * 0.08]);
+        
+        vertices.push([base_x, base_y, base_z]);
+        normals.push([0.0, 1.0, 0.15]);
+        uvs.push([feather_t, 0.15 + t * 0.08]);
+        
+        vertices.push([tip_x, tip_y + 0.02, tip_z - feather_width]);
+        normals.push([0.0, 1.0, 0.1]);
+        uvs.push([feather_t + 0.06, 0.2 + t * 0.08]);
+        
+        vertices.push([tip_x, tip_y + 0.02, tip_z + feather_width]);
+        normals.push([0.0, 1.0, 0.1]);
+        uvs.push([feather_t + 0.06, 0.1 + t * 0.08]);
+        
+        // Two triangles for fuller tertiary feathers
+        indices.extend_from_slice(&[
+            idx, idx + 2, idx + 3,
+            idx + 1, idx + 3, idx + 2,
+        ]);
+    }
+    
+    // ============================================
+    // Layer 5: Covert feathers (small overlapping feathers near body)
+    // Enhanced with better coverage
+    // ============================================
+    let covert_count = 8; // Increased from 6
+    
+    for i in 0..covert_count {
+        let t = i as f32 / covert_count as f32;
+        let feather_t = 0.05 + t * 0.28;  // Coverts near body
+        
+        let base_x = feather_t * wing_span * mirror;
+        let base_y = wing_height * (1.0 - feather_t * 0.25);
+        let base_z = -0.25 + t * 0.18;
+        
+        let tip_x = (feather_t + 0.07) * wing_span * mirror;
+        let tip_y = base_y * 0.96;
+        let tip_z = base_z + 0.12;
+        
+        let feather_width = 0.11;
+        
+        let idx = vertices.len() as u32;
+        
+        vertices.push([base_x, base_y + 0.035, base_z]);
         normals.push([0.0, 1.0, 0.2]);
-        uvs.push([feather_t, 0.2 + t * 0.1]);
+        uvs.push([feather_t, 0.18 + t * 0.08]);
         
         vertices.push([base_x, base_y, base_z]);
         normals.push([0.0, 1.0, 0.2]);
-        uvs.push([feather_t, 0.2 + t * 0.1]);
+        uvs.push([feather_t, 0.18 + t * 0.08]);
         
-        vertices.push([tip_x, tip_y + 0.02, tip_z]);
+        vertices.push([tip_x, tip_y + 0.025, tip_z]);
         normals.push([0.0, 1.0, 0.1]);
-        uvs.push([feather_t + 0.08, 0.25 + t * 0.1]);
+        uvs.push([feather_t + 0.07, 0.22 + t * 0.08]);
         
         indices.extend_from_slice(&[
             idx, idx + 2, idx + 1,

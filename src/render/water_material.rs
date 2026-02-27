@@ -163,6 +163,11 @@ impl Material for WaterMaterial {
             .unwrap()
             .depth_write_enabled = false;
 
+        // Disable back-face culling so water is visible from below
+        // This is critical for underwater viewing - without this, the water
+        // surface disappears when the camera goes underwater
+        descriptor.primitive.cull_mode = None;
+
         // Set up vertex buffer layout
         let vertex_layout = layout.0.get_layout(&[
             Mesh::ATTRIBUTE_POSITION.at_shader_location(0),

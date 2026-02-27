@@ -10,7 +10,7 @@ use crate::components::{
     EventObject, WarpObject, ZoneObject, ZoneObjectPart, ZoneObjectPartCollisionShape,
 };
 use crate::map_editor::components::SelectedInEditor;
-use crate::map_editor::resources::{EditorMode, MapEditorState};
+use crate::map_editor::resources::{DuplicateSelectedEvent, EditorMode, MapEditorState};
 use crate::map_editor::systems::property_update_system::PropertyChangeEvent;
 
 /// System parameter for accessing entity data in the properties panel
@@ -120,6 +120,7 @@ pub fn editor_properties_panel(
     name_query: &Query<&Name>,
     transform_query: &Query<&Transform>,
     event_writer: &mut EventWriter<PropertyChangeEvent>,
+    duplicate_event_writer: &mut EventWriter<DuplicateSelectedEvent>,
 ) {
     egui::SidePanel::right("properties_panel")
         .default_width(300.0)
@@ -153,11 +154,12 @@ pub fn editor_properties_panel(
                         name_query,
                         transform_query,
                         event_writer,
+                        duplicate_event_writer,
                     );
                 }
             } else {
                 // Multi-selection - show summary
-                multi_object_properties_standalone(ui, map_editor_state, event_writer);
+                multi_object_properties_standalone(ui, map_editor_state, event_writer, duplicate_event_writer);
             }
         });
 }
@@ -266,6 +268,7 @@ fn single_object_properties_standalone(
     name_query: &Query<&Name>,
     transform_query: &Query<&Transform>,
     event_writer: &mut EventWriter<PropertyChangeEvent>,
+    duplicate_event_writer: &mut EventWriter<DuplicateSelectedEvent>,
 ) {
     // Initialize pending edits when switching to a new entity
     if pending_edits.editing_entity != Some(entity) {
@@ -301,6 +304,19 @@ fn single_object_properties_standalone(
             ui.label(egui::RichText::new("Entity ID:").strong());
             ui.label(format!("{:?}", entity));
         });
+    });
+    
+    ui.separator();
+    
+    // Quick actions
+    ui.horizontal(|ui| {
+        if ui.button("Duplicate").on_hover_text("Duplicate this object (Ctrl+D)").clicked() {
+            duplicate_event_writer.write(DuplicateSelectedEvent::new());
+            log::info!("[Properties] Duplicate clicked for entity {:?}", entity);
+        }
+        if ui.button("Delete").on_hover_text("Delete this object (Delete key)").clicked() {
+            log::info!("[Properties] Delete clicked for entity {:?}", entity);
+        }
     });
     
     ui.separator();
@@ -406,6 +422,7 @@ fn multi_object_properties_standalone(
     ui: &mut egui::Ui,
     map_editor_state: &MapEditorState,
     _event_writer: &mut EventWriter<PropertyChangeEvent>,
+    duplicate_event_writer: &mut EventWriter<DuplicateSelectedEvent>,
 ) {
     let count = map_editor_state.selection_count();
     
@@ -444,6 +461,7 @@ fn multi_object_properties_standalone(
     }
     
     if ui.button("Duplicate All Selected").clicked() {
+        duplicate_event_writer.write(DuplicateSelectedEvent::new());
         log::info!("[Properties] Duplicate all selected clicked");
     }
     

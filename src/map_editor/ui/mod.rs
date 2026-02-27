@@ -26,12 +26,12 @@ pub mod properties_panel;
 pub mod status_bar;
 pub mod zone_list_panel;
 
-use bevy::prelude::*;
+use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::{egui, EguiContexts};
 
 use crate::components::{EventObject, WarpObject, ZoneObject};
 use crate::map_editor::components::SelectedInEditor;
-use crate::map_editor::resources::{AvailableModels, EditorMode, HierarchyFilter, MapEditorState, SelectedModel};
+use crate::map_editor::resources::{AvailableModels, DuplicateSelectedEvent, EditorMode, HierarchyFilter, MapEditorState, SelectedModel};
 use crate::map_editor::systems::property_update_system::PropertyChangeEvent;
 use crate::map_editor::save::{SaveZoneEvent, SaveStatus};
 use crate::resources::{CurrentZone, GameData};
@@ -48,6 +48,13 @@ use zone_list_panel::{ZoneListPanelState, zone_list_panel_system};
 pub use properties_panel::{
     editor_properties_panel, EntityDataQuery, PendingPropertyEdits,
 };
+
+/// System parameter combining queries needed by the properties panel
+#[derive(SystemParam)]
+pub struct PropertiesQueries<'w, 's> {
+    pub name_query: Query<'w, 's, &'static Name>,
+    pub transform_query: Query<'w, 's, &'static Transform>,
+}
 
 /// Plugin for the map editor UI systems
 pub struct EditorUiPlugin;
@@ -113,9 +120,9 @@ pub fn editor_ui_system(
     entity_data: EntityDataQuery,
     hierarchy_query: HierarchyQuery,
     mut pending_edits: ResMut<PendingPropertyEdits>,
-    name_query: Query<&Name>,
-    transform_query: Query<&Transform>,
-    mut event_writer: EventWriter<PropertyChangeEvent>,
+    queries: PropertiesQueries,
+    mut property_change_event: EventWriter<PropertyChangeEvent>,
+    mut duplicate_event: EventWriter<DuplicateSelectedEvent>,
     mut zone_list_state: ResMut<ZoneListPanelState>,
     mut new_zone_events: EventWriter<NewZoneEvent>,
     mut help_state: ResMut<HelpWindowState>,
@@ -154,9 +161,10 @@ pub fn editor_ui_system(
         &map_editor_state,
         &entity_data,
         &mut pending_edits,
-        &name_query,
-        &transform_query,
-        &mut event_writer,
+        &queries.name_query,
+        &queries.transform_query,
+        &mut property_change_event,
+        &mut duplicate_event,
     );
     
     // Status Bar (bottom)

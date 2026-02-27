@@ -1,5 +1,5 @@
 // Particle shader using storage buffers for GPU-driven rendering
-// CORRECTED VERSION - Fixed coordinate space transformations
+// CORRECTED VERSION - Fixed coordinate space transformations and alpha handling
 
 #import bevy_render::view::View
 #import bevy_pbr::mesh_bindings::mesh
@@ -125,5 +125,16 @@ fn vertex(model: VertexInput) -> VertexOutput {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    return in.color * textureSample(base_color_texture, base_color_sampler, in.uv);
+    let texture_color = textureSample(base_color_texture, base_color_sampler, in.uv);
+    let result = in.color * texture_color;
+    
+    // Discard pixels with very low alpha to prevent black box artifacts
+    // This is crucial for particles with black backgrounds in textures
+    if (result.a < 0.01) {
+        discard;
+    }
+    
+    // Output premultiplied alpha for proper blending
+    // RGB values are multiplied by alpha to avoid dark halos
+    return vec4<f32>(result.rgb * result.a, result.a);
 }

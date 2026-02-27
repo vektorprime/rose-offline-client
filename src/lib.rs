@@ -9,8 +9,9 @@ use bevy::{
         core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
         core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
         core_pipeline::smaa::Smaa,
-        pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial, MeshMaterial3d, VolumetricFog, VolumetricLight, FogVolume, ShadowFilteringMethod, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel},
+        pbr::{Atmosphere, AtmosphereSettings, ExtendedMaterial, MaterialPlugin, StandardMaterial, MeshMaterial3d, VolumetricFog, VolumetricLight, FogVolume, ShadowFilteringMethod, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel},
         render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
+        render::experimental::occlusion_culling::OcclusionCulling,
         prelude::{
             apply_deferred, default, in_state, not, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
             ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoScheduleConfigs,
@@ -88,6 +89,9 @@ use render::{
     RoseWaterExtension,
     RoseEffectExtension,
     SkyMaterialPlugin,
+    // REMOVED: CartoonSky - using Bevy 0.16 Atmosphere instead
+    // CartoonSkyMaterialPlugin,
+    // CartoonSkySettings,
     TrailEffectRenderPlugin,
     WorldUiRenderPlugin,
     ZoneLightingPlugin,
@@ -120,7 +124,7 @@ use systems::{
     conversation_dialog_system, cooldown_system, damage_digit_render_system,
     create_damage_digit_material_system,
     directional_light_system, effect_system, facing_direction_system,
-    flight_movement_system, flight_toggle_system, ensure_flight_state_system,
+    flight_movement_system, flight_pose_system, flight_pose_blend_update_system, flight_toggle_system, ensure_flight_state_system,
     free_camera_system, game_connection_system, game_mouse_input_system, game_state_enter_system,
     game_zone_change_system, hit_event_system, item_drop_model_add_collider_system,
     item_drop_model_system, login_connection_system, login_event_system, login_state_enter_system,
@@ -136,7 +140,8 @@ use systems::{
     status_effect_system, system_func_event_system, update_position_system, use_item_event_system,
     vehicle_model_system, vehicle_sound_system, visible_status_effects_system,
     world_connection_system, world_time_system, zone_time_system, zone_viewer_enter_system,
-    color_grading_time_of_day_system,
+    // DISABLED: color_grading_time_of_day_system conflicts with Bevy 0.16 Atmosphere
+    // color_grading_time_of_day_system,
     DebugInspectorPlugin, FishPlugin, BirdPlugin, DirtDashPlugin, WingSpawnPlugin, WindEffectPlugin,
 };
 use ui::{
@@ -885,7 +890,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // Optional: Add these for full rendering support
     app.add_plugins((
-            SkyMaterialPlugin { prepass_enabled: false },
+            // SkyMaterialPlugin { prepass_enabled: false },  // DISABLED - using Bevy 0.16 Atmosphere instead
+            // CartoonSkyMaterialPlugin { prepass_enabled: false },  // DISABLED - using Bevy 0.16 Atmosphere instead
             TrailEffectRenderPlugin,
             ZoneLightingPlugin,
             WorldUiRenderPlugin,
@@ -1112,7 +1118,10 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             system_func_event_system,
             load_dialog_sprites_system,
             zone_time_system,
-            color_grading_time_of_day_system,
+            // DISABLED: color_grading_time_of_day_system conflicts with Bevy 0.16 Atmosphere
+            // This system was applying time-based color grading (temperature/saturation changes)
+            // which conflicts with the new atmospheric scattering system.
+            // color_grading_time_of_day_system,
             directional_light_system,
         ),
     );
@@ -1410,6 +1419,11 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, ensure_flight_state_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, flight_toggle_system.run_if(in_state(AppState::Game)).after(ensure_flight_state_system));
     app.add_systems(Update, flight_movement_system.run_if(in_state(AppState::Game)).after(flight_toggle_system));
+    // Flight pose blend update system - updates pose_blend value on FlightState
+    app.add_systems(Update, flight_pose_blend_update_system.run_if(in_state(AppState::Game)).after(flight_toggle_system));
+    // Flight pose system applies visual-only rotations to character model parts
+    // Runs after facing_direction_system and character_model_update_system
+    app.add_systems(Update, flight_pose_system.run_if(in_state(AppState::Game)).after(facing_direction_system).after(flight_toggle_system).after(character_model_update_system));
     
     // Move speed command system
     app.add_systems(Update, move_speed_set_system.run_if(in_state(AppState::Game)));
@@ -1767,13 +1781,19 @@ fn load_common_game_data(
         ShadowFilteringMethod::Gaussian,
         // SMAA for high-quality anti-aliasing without ghosting artifacts
         Smaa::default(),
-        // Prepasses for depth (required for some effects)
+        // Prepasses for depth (required for some effects and GPU occlusion culling)
         DepthPrepass,
+        // GPU Occlusion Culling - Bevy 0.16 experimental feature
+        // Culls objects hidden behind other objects to improve performance
+        OcclusionCulling,
         // Underwater state tracking for underwater rendering effect
         CameraUnderwaterState::default(),
     )).id();
     // Insert additional components separately to avoid tuple size limit
     commands.entity(camera_entity).insert((
+        // Bevy 0.16 built-in atmospheric scattering for realistic sky
+        Atmosphere::EARTH,
+        AtmosphereSettings::default(),
         // Add Depth of Field effect
         DepthOfField {
             mode: DepthOfFieldMode::Bokeh,
@@ -1837,6 +1857,7 @@ fn load_common_game_data(
     info!("[CAMERA] SMAA enabled for anti-aliasing (no ghosting)");
     info!("[CAMERA] SSAO enabled with Medium quality for contact shadows");
     info!("[CAMERA] ColorGrading enabled with filmic color correction");
+    info!("[CAMERA] GPU Occlusion Culling enabled (Bevy 0.16 experimental)");
     info!("[CAMERA] Camera position: ~5120.0, 100.0, -5120.0 (game world center)");
 
     commands.insert_resource(DamageDigitsSpawner::load(

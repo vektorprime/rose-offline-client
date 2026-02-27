@@ -5,7 +5,7 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-use crate::map_editor::resources::{MapEditorState, EditorMode, SelectedModel};
+use crate::map_editor::resources::{DuplicateSelectedEvent, MapEditorState, EditorMode, SelectedModel};
 use crate::map_editor::save::{SaveZoneEvent, SaveStatus};
 use crate::map_editor::ui::NewZoneEvent;
 use crate::map_editor::ui::zone_list_panel::ZoneListPanelState;
@@ -124,11 +124,14 @@ fn file_menu(
 }
 
 /// Edit menu with Undo, Redo, Cut, Copy, Paste, Delete, Duplicate options
-fn edit_menu(ui: &mut egui::Ui, _map_editor_state: &MapEditorState) {
+fn edit_menu(
+    ui: &mut egui::Ui,
+    map_editor_state: &MapEditorState,
+) {
     ui.menu_button("Edit", |ui| {
         // Undo with shortcut
         let undo_button = ui.add_enabled(
-            _map_editor_state.can_undo(),
+            map_editor_state.can_undo(),
             egui::Button::new("Undo").shortcut_text("Ctrl+Z"),
         );
         if undo_button.clicked() {
@@ -138,7 +141,7 @@ fn edit_menu(ui: &mut egui::Ui, _map_editor_state: &MapEditorState) {
         
         // Redo with shortcut
         let redo_button = ui.add_enabled(
-            _map_editor_state.can_redo(),
+            map_editor_state.can_redo(),
             egui::Button::new("Redo").shortcut_text("Ctrl+Y"),
         );
         if redo_button.clicked() {
@@ -165,13 +168,24 @@ fn edit_menu(ui: &mut egui::Ui, _map_editor_state: &MapEditorState) {
         
         ui.separator();
         
-        if ui.button("Delete").clicked() {
+        // Delete button - only enabled when something is selected
+        let delete_button = ui.add_enabled(
+            map_editor_state.selection_count() > 0,
+            egui::Button::new("Delete").shortcut_text("Delete"),
+        );
+        if delete_button.clicked() {
             log::info!("[MapEditor] Edit > Delete clicked");
             ui.close_menu();
         }
         
-        if ui.button("Duplicate").clicked() {
-            log::info!("[MapEditor] Edit > Duplicate clicked");
+        // Duplicate button - only enabled when something is selected
+        // Note: Actual duplication is handled by keyboard_shortcuts_system via Ctrl+D
+        let duplicate_button = ui.add_enabled(
+            map_editor_state.selection_count() > 0,
+            egui::Button::new("Duplicate").shortcut_text("Ctrl+D"),
+        );
+        if duplicate_button.clicked() {
+            log::info!("[MapEditor] Edit > Duplicate clicked - use Ctrl+D shortcut");
             ui.close_menu();
         }
         

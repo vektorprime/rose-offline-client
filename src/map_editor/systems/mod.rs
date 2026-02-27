@@ -2,6 +2,7 @@
 //!
 //! This module contains the system implementations for the map editor.
 
+pub mod duplicate_system;
 pub mod grid_system;
 pub mod keyboard_shortcuts_system;
 pub mod load_models_system;
@@ -13,6 +14,7 @@ pub mod transform_gizmo_system;
 pub mod undo_system;
 
 // Re-export systems for convenience
+pub use duplicate_system::{handle_duplicate_event, DuplicateSystemPlugin};
 pub use grid_system::{grid_spawn_system, grid_visibility_system};
 pub use keyboard_shortcuts_system::keyboard_shortcuts_system;
 pub use load_models_system::{load_available_models_system, update_models_on_zone_load_system};

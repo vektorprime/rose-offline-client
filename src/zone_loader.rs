@@ -2044,25 +2044,10 @@ pub fn spawn_zone(
     log::info!("[SPAWN ZONE DIAGNOSTIC] ✓ Zone entity SUCCESSFULLY SPAWNED: entity={:?}, zone_id={}",
         zone_entity, zone_data.zone_id.get());
 
-    if let Some(skybox_data) = zone_list_entry
-        .skybox_id
-        .and_then(|skybox_id| game_data.skybox.get_skybox_data(skybox_id))
-    {
-        log::info!("[SPAWN ZONE] Spawning skybox");
-        let (skybox_entity, skybox_assets) = spawn_skybox(commands, asset_server, standard_materials, skybox_data);
-       // info!("[ASSET LIFECYCLE] Skybox entity spawned: {:?}", skybox_entity);
-        memory_tracking.log_entity_spawned("Skybox", skybox_assets.len());
-        log::info!("[SPAWN ZONE] Skybox entity spawned: {:?} with {} loading assets", skybox_entity, skybox_assets.len());
-        log::info!("[MEMORY] Skybox entity created: {:?}", skybox_entity);
-        commands.entity(zone_entity).add_child(skybox_entity);
-        
-        // CRITICAL FIX: Add skybox assets to zone_loading_assets so the zone loader waits for them
-        // This prevents the intermittent sky color/missing sky bug on the login screen
-        zone_loading_assets.extend(skybox_assets);
-        log::info!("[SPAWN ZONE] Added skybox assets to zone_loading_assets, total assets now: {}", zone_loading_assets.len());
-    } else {
-        log::warn!("[SPAWN ZONE] No skybox data found for zone {}", zone_data.zone_id.get());
-    }
+    // Cartoon sky removed - now using Bevy 0.16 built-in atmospheric scattering
+    // The Atmosphere and AtmosphereSettings components are added to the camera instead
+    // This provides physics-based Rayleigh and Mie scattering with dynamic time-of-day
+    log::info!("[SPAWN ZONE] Using Bevy 0.16 built-in atmospheric scattering (cartoon sky disabled)");
 
     let mut terrain_count = 0;
     let mut water_count = 0;
@@ -2299,82 +2284,57 @@ pub fn spawn_zone(
     Ok((zone_entity, zone_loading_assets))
 }
 
-const SKYBOX_MODEL_SCALE: f32 = 10.0;
+// REMOVED: CartoonSky - using Bevy 0.16 Atmosphere instead
+// const SKY_DOME_RADIUS: f32 = 500.0;
 
-/// Spawns a skybox entity and returns the entity along with asset handles that need to be tracked for loading.
-/// CRITICAL: The returned handles must be added to zone_loading_assets to ensure the zone waits for skybox
-/// assets to load before being marked as ready. This prevents the intermittent sky color/missing sky bug.
-fn spawn_skybox(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
-    skybox_data: &SkyboxData,
-) -> (Entity, Vec<UntypedHandle>) {
-    let mesh_path = skybox_data.mesh.path().to_string_lossy().into_owned();
-    let texture_day_path = skybox_data.texture_day.path().to_string_lossy().into_owned();
-    let texture_night_path = skybox_data.texture_night.path().to_string_lossy().into_owned();
-
-    // Collect asset handles that need to be tracked for loading
-    let mut loading_assets: Vec<UntypedHandle> = Vec::new();
-
-    // Skip loading NULL textures for skybox - use fallback instead of None
-    let texture_day_handle = if texture_day_path.is_empty() || texture_day_path == "NULL" {
-        log::warn!("[SPAWN SKYBOX] NULL or empty day texture path, using fallback");
-        let handle = asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS");
-        loading_assets.push(handle.clone().untyped());
-        handle
-    } else {
-        log::info!("[SPAWN SKYBOX] Loading day texture: {}", texture_day_path);
-        let handle = asset_server.load::<Image>(&texture_day_path);
-        loading_assets.push(handle.clone().untyped());
-        handle
-    };
-    
-    // Note: texture_night is loaded but not currently used (day/night cycle not implemented)
-    // We still track it for loading to ensure it's ready when needed
-    let _texture_night_handle = if texture_night_path.is_empty() || texture_night_path == "NULL" {
-        log::warn!("[SPAWN SKYBOX] NULL or empty night texture path, using fallback");
-        let handle = asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS");
-        loading_assets.push(handle.clone().untyped());
-        handle
-    } else {
-        log::info!("[SPAWN SKYBOX] Loading night texture: {}", texture_night_path);
-        let handle = asset_server.load::<Image>(&texture_night_path);
-        loading_assets.push(handle.clone().untyped());
-        handle
-    };
-
-    let mesh_handle = asset_server.load::<Mesh>(&mesh_path);
-    log::info!("[SPAWN SKYBOX] Loading skybox mesh: {}", mesh_path);
-    loading_assets.push(mesh_handle.clone().untyped());
-
-    //info!("[MEMORY TRACKING] Skybox mesh handle created: {}", mesh_path);
-    //info!("[MEMORY TRACKING] Skybox texture day handle created: {}", texture_day_path);
-    //info!("[MEMORY TRACKING] Skybox texture night handle created: {}", texture_night_path);
-
-    let entity = commands
-        .spawn((
-            Mesh3d(mesh_handle),
-            MeshMaterial3d(standard_materials.add(bevy::pbr::StandardMaterial {
-                base_color_texture: Some(texture_day_handle),
-                unlit: true,
-                ..Default::default()
-            })),
-            Transform::from_scale(Vec3::splat(SKYBOX_MODEL_SCALE)),
-            GlobalTransform::default(),
-            ViewVisibility::default(),
-            Visibility::Visible,
-            InheritedVisibility::default(),
-            NoFrustumCulling,
-            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
-            RenderLayers::layer(0),
-        ))
-        .id();
-    
-    log::info!("[SPAWN SKYBOX] Skybox entity spawned: {:?} with {} loading assets", entity, loading_assets.len());
-    
-    (entity, loading_assets)
-}
+// /// Spawns a cartoon procedural sky entity and returns the entity along with asset handles.
+// /// Uses CartoonSkyMaterial for procedural sky rendering with day/night cycle support.
+// fn spawn_cartoon_sky(
+//     commands: &mut Commands,
+//     meshes: &mut Assets<Mesh>,
+//     cartoon_sky_materials: &mut Assets<CartoonSkyMaterial>,
+// ) -> (Entity, Vec<UntypedHandle>) {
+//     log::info!("[SPAWN CARTOON SKY] Creating procedural cartoon sky dome");
+//
+//     // Create a UV sphere mesh for the sky dome
+//     // The sphere is inverted (rendered from inside) for sky rendering
+//     let sky_dome_mesh = Mesh::from(bevy::math::primitives::Sphere {
+//         radius: SKY_DOME_RADIUS,
+//     });
+//
+//     let mesh_handle = meshes.add(sky_dome_mesh);
+//     log::info!("[SPAWN CARTOON SKY] Created sky dome mesh with radius {}", SKY_DOME_RADIUS);
+//
+//     // Create the cartoon sky material with default settings
+//     // The material will be updated by cartoon_sky_material_system based on ZoneTime
+//     let material = cartoon_sky_materials.add(CartoonSkyMaterial::default());
+//
+//     log::info!("[SPAWN CARTOON SKY] Created cartoon sky material");
+//
+//     // Spawn the sky dome entity
+//     // Note: No asset loading needed - everything is procedural
+//     // CRITICAL: Include NotShadowCaster - sky should never cast shadows
+//     let entity = commands
+//         .spawn((
+//             Mesh3d(mesh_handle),
+//             MeshMaterial3d(material),
+//             Transform::from_xyz(0.0, 0.0, 0.0),
+//             GlobalTransform::default(),
+//             ViewVisibility::default(),
+//             Visibility::Visible,
+//             InheritedVisibility::default(),
+//             NoFrustumCulling,
+//             Aabb::from_min_max(Vec3::splat(-SKY_DOME_RADIUS * 1.1), Vec3::splat(SKY_DOME_RADIUS * 1.1)),
+//             RenderLayers::layer(0),
+//             NotShadowCaster,  // Sky should never cast shadows
+//         ))
+//         .id();
+//
+//     log::info!("[SPAWN CARTOON SKY] Cartoon sky entity spawned: {:?}", entity);
+//
+//     // No external assets to load - everything is procedural
+//     (entity, Vec::new())
+// }
 
 #[allow(clippy::too_many_arguments)]
 fn spawn_terrain(

@@ -392,7 +392,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 }
 
 @fragment
-fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @location(0) vec4<f32> {
     // === PROCEDURAL WAVE NORMALS (calculate early for refraction) ===
     // Calculate wave normal based on world position for consistent wave patterns
     // Use wave_speed from settings to control animation speed
@@ -405,7 +405,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let wave_normal = calculate_wave_normal(wave_pos, wave_time);
     
     // Get base normal from mesh and normalize
-    let base_normal = normalize(in.world_normal);
+    var base_normal = normalize(in.world_normal);
+    
+    // Flip normal when viewing from below (back-facing fragments)
+    // This ensures correct lighting when camera is underwater
+    if (!is_front_facing) {
+        base_normal = -base_normal;
+    }
     
     // Blend wave normal with base normal
     // wave_strength of 0.3 gives visible waves without being too extreme

@@ -497,6 +497,7 @@ pub fn name_tag_system(
                 NameTag { name_tag_type },
                 visibility,
                 InheritedVisibility::default(),
+                ViewVisibility::default(),
                 Transform::from_translation(Vec3::new(0.0, object.model_height.height, 0.0)),
                 GlobalTransform::default(),
                 NoFrustumCulling,

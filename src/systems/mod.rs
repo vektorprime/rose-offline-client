@@ -32,6 +32,7 @@ mod facing_direction_system;
 mod fish_system;
 mod flight_command_system;
 mod flight_movement_system;
+mod flight_pose_system;
 mod flight_toggle_system;
 mod free_camera_system;
 
@@ -145,6 +146,7 @@ pub use blood_spatter_system::{BloodSpatterPlugin, blood_spatter_on_death_system
 pub use gash_wound_system::{GashWoundPlugin, wound_visibility_system, wound_spawn_system, wound_cleanup_system};
 pub use flight_command_system::{is_fly_command, flight_command_system};
 pub use flight_movement_system::flight_movement_system;
+pub use flight_pose_system::{flight_pose_system, flight_pose_blend_update_system};
 pub use flight_toggle_system::{flight_toggle_system, ensure_flight_state_system};
 pub use wing_spawn_system::{WingSpawnPlugin, wing_spawn_system, wing_animation_system};
 pub use free_camera_system::{free_camera_system, FreeCamera};

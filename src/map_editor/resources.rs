@@ -8,6 +8,33 @@ use std::collections::HashSet;
 /// Maximum number of undo actions to keep in history
 const MAX_UNDO_HISTORY: usize = 100;
 
+/// Event to request duplication of selected entities
+#[derive(Event, Debug, Clone)]
+pub struct DuplicateSelectedEvent {
+    /// Optional offset to apply to duplicated entities
+    pub offset: Vec3,
+}
+
+impl Default for DuplicateSelectedEvent {
+    fn default() -> Self {
+        Self {
+            offset: Vec3::new(1.0, 0.0, 1.0),
+        }
+    }
+}
+
+impl DuplicateSelectedEvent {
+    /// Create a new duplicate event with default offset
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    /// Create a new duplicate event with custom offset
+    pub fn with_offset(offset: Vec3) -> Self {
+        Self { offset }
+    }
+}
+
 /// Main resource for map editor state
 #[derive(Resource, Default)]
 pub struct MapEditorState {

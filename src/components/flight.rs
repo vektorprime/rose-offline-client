@@ -18,4 +18,8 @@ pub struct FlightState {
     pub wing_entity_right: Option<Entity>,
     /// Entity ID of the wind effect emitter
     pub wind_emitter_entity: Option<Entity>,
+    /// Original rotation before flight pose was applied (for restoration when flight ends)
+    pub original_rotation: Option<Quat>,
+    /// Current flight pose blend factor (0.0 = no pose, 1.0 = full pose)
+    pub pose_blend: f32,
 }

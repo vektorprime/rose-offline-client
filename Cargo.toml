@@ -47,7 +47,6 @@ toml = "0.7.2"
 uuid = "1"
 quick-xml = { version = "0.26.0", features = ["serialize"] }
 regex = "1"
-renderdoc = "0.11"
 rose-data = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-data" }
 rose-data-irose = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-data-irose" }
 rose-file-readers = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-file-readers" }

@@ -737,10 +737,36 @@ pub fn game_connection_system(
                         let spawn_y = get_spawn_height_from_world(world, x, y);
                         let final_spawn_y = spawn_y + 1.5; // Add 1.5m offset for subtle fall effect
                         
-                        log::info!("[TELEPORT] Spawning at terrain height: {:.2}m + 1.5m offset = {:.2}m", 
+                        log::info!("[TELEPORT] Spawning at terrain height: {:.2}m + 1.5m offset = {:.2}m",
                             spawn_y, final_spawn_y);
                         
                         if let Ok(mut player) = world.get_entity_mut(player_entity_for_closure) {
+                            // Check if player is dead before teleport (respawn scenario)
+                            let is_dead = player.get::<Dead>().is_some();
+                            
+                            // Remove Dead component and revive player if they were dead
+                            if is_dead {
+                                log::info!("[TELEPORT] Reviving dead player on teleport/respawn");
+                                
+                                // Get max HP to restore player health on respawn
+                                let max_hp = player.get::<AbilityValues>()
+                                    .map(|av| av.get_max_health())
+                                    .unwrap_or(100);
+                                
+                                // Restore HP to 30% of max on respawn
+                                let respawn_hp = (max_hp as f32 * 0.3) as i32;
+                                
+                                if let Some(mut health_points) = player.get_mut::<HealthPoints>() {
+                                    health_points.hp = respawn_hp;
+                                    log::info!("[TELEPORT] Restored HP to {} (30% of max {})", respawn_hp, max_hp);
+                                }
+                                
+                                // Remove Dead component and reset commands
+                                player.remove::<Dead>()
+                                    .insert(Command::with_stop())
+                                    .insert(NextCommand::with_stop());
+                            }
+                            
                             player.insert((
                                 Position::new(Vec3::new(x, y, 0.0)),
                                 Transform::from_xyz(x / 100.0, final_spawn_y, -y / 100.0),

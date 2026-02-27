@@ -5,7 +5,7 @@ use bevy_egui::{egui, EguiContexts};
 use crate::{
     audio::SoundGain,
     components::{BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory, WindSwaySettings},
-    render::ZoneLighting,
+    render::{SkyMode, SkySettings, ZoneLighting},
     resources::{SeasonSettings, SoundSettings, WaterSettings},
     ui::UiStateWindows,
 };
@@ -13,6 +13,7 @@ use crate::{
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum SettingsPage {
     Sound,
+    Sky,
     DepthOfField,
     VolumetricFog,
     Water,
@@ -74,6 +75,7 @@ pub fn ui_settings_system(
     mut ui_state_settings: Local<UiStateSettings>,
     mut sound_settings: ResMut<SoundSettings>,
     mut query_sounds: Query<(&SoundCategory, &mut SoundGain)>,
+    mut sky_settings: ResMut<SkySettings>,
     mut dof_settings: ResMut<DepthOfFieldSettings>,
     mut zone_lighting: ResMut<ZoneLighting>,
     mut water_settings: ResMut<WaterSettings>,
@@ -89,6 +91,11 @@ pub fn ui_settings_system(
         .show(egui_context.ctx_mut(), |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut ui_state_settings.page, SettingsPage::Sound, "Sound");
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::Sky,
+                    "Sky",
+                );
                 ui.selectable_value(
                     &mut ui_state_settings.page,
                     SettingsPage::DepthOfField,
@@ -186,6 +193,63 @@ pub fn ui_settings_system(
                                 }
                             }
                         });
+                }
+                SettingsPage::Sky => {
+                    egui::Grid::new("sky_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Time Mode:");
+                            let mode_text = match sky_settings.mode {
+                                SkyMode::Automatic => "Automatic (Game Time)",
+                                SkyMode::Manual => "Manual",
+                            };
+                            egui::ComboBox::from_label("")
+                                .selected_text(mode_text)
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut sky_settings.mode,
+                                        SkyMode::Automatic,
+                                        "Automatic (Game Time)",
+                                    );
+                                    ui.selectable_value(
+                                        &mut sky_settings.mode,
+                                        SkyMode::Manual,
+                                        "Manual",
+                                    );
+                                });
+                            ui.end_row();
+
+                            // Only show time slider in manual mode
+                            if sky_settings.mode == SkyMode::Manual {
+                                ui.label("Time of Day:");
+                                ui.add(
+                                    egui::Slider::new(&mut sky_settings.manual_time, 0.0..=24.0)
+                                        .text("hours")
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+                                
+                                // Show time description
+                                let time_desc = format_time_of_day(sky_settings.manual_time);
+                                ui.label("");
+                                ui.label(time_desc);
+                                ui.end_row();
+                            }
+
+                            ui.label("Atmosphere Intensity:");
+                            ui.add(
+                                egui::Slider::new(&mut sky_settings.atmosphere_intensity, 0.0..=2.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                        });
+
+                    ui.separator();
+                    if sky_settings.mode == SkyMode::Automatic {
+                        ui.label("Tip: Time follows game time automatically. Switch to Manual mode to control time yourself.");
+                    } else {
+                        ui.label("Tip: Drag the time slider to change time of day. 6 = sunrise, 12 = noon, 18 = sunset, 0 = midnight.");
+                    }
                 }
                 SettingsPage::DepthOfField => {
                     egui::Grid::new("dof_settings")
@@ -763,4 +827,28 @@ pub fn ui_settings_system(
                 }
             }
         });
+}
+
+/// Helper function to format time of day as a human-readable string
+fn format_time_of_day(hours: f32) -> String {
+    let hour = hours.floor() as i32 % 24;
+    let minutes = ((hours % 1.0) * 60.0).round() as i32;
+    
+    let period = if hour < 6 {
+        "Night"
+    } else if hour < 8 {
+        "Dawn"
+    } else if hour < 12 {
+        "Morning"
+    } else if hour < 14 {
+        "Noon"
+    } else if hour < 17 {
+        "Afternoon"
+    } else if hour < 20 {
+        "Evening"
+    } else {
+        "Night"
+    };
+    
+    format!("{:02}:{:02} ({})", hour, minutes, period)
 }

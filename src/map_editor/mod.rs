@@ -85,6 +85,7 @@ pub use save::{
 };
 
 use bevy::prelude::*;
+use systems::duplicate_system::DuplicateSystemPlugin;
 use systems::grid_system::EditorGridPlugin;
 use systems::keyboard_shortcuts_system::KeyboardShortcutsPlugin;
 use systems::load_models_system;
@@ -125,6 +126,7 @@ impl Plugin for MapEditorPlugin {
             .add_plugins(UndoRedoPlugin)
             // Phase 2.5: Model management plugins
             .add_plugins(ModelPlacementPlugin)
+            .add_plugins(DuplicateSystemPlugin)
             // Phase 2.6: Save functionality
             .add_plugins(save::SavePlugin);
         

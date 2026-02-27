@@ -43,3 +43,5 @@ When you fix an issue AND the user confirms it's resolved, note the interaction 
 ## Issue Tracking
 
 When working on an issue, note what you attempted in a .md file dedicated to the issue. This should be reviewed everytime context is compressed to prevent repeatedly trying the same thing. The file should be cleaned up when the issue is confirmed as fixed.
+
+
