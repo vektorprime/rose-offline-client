@@ -11,6 +11,8 @@ This is a fork modified with an LLM. I take no credit for this and can't speak t
 
 -Bevy has been upgraded to 0.16.1.
 
+- MAP EDITOR with --map-editor
+
 -Flying
 
 -modify in game graphics or systems with settings from in-game menu
@@ -38,6 +40,14 @@ leaves and grass swaying in the wind
 
 
 # Screenshots
+
+## Map Editor and saver
+
+
+
+https://github.com/user-attachments/assets/27187943-d471-4d7e-bdec-a5f122501e0a
+
+
 
 ## Flying
 
