@@ -1783,13 +1783,13 @@ fn load_common_game_data(
         Msaa::Off,  // Required for SSAO and TAA compatibility
         Camera {
             hdr: true,  // Enable HDR for better depth of field
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.70, 0.90, 1.0)),
+            clear_color: ClearColorConfig::Custom(Color::srgb(0.0, 0.0, 0.02)),  // Near-black for star visibility
             ..default()
         },
         Projection::Perspective(PerspectiveProjection {
             fov: std::f32::consts::PI / 4.0,
             near: 0.1,
-            far: 50000.0,
+            far: 100000.0,  // Increased to contain sky sphere (radius 50000 + camera distance)
             aspect_ratio: 16.0 / 9.0,
         }),
         Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
@@ -1813,10 +1813,15 @@ fn load_common_game_data(
         CameraUnderwaterState::default(),
     )).id();
     // Insert additional components separately to avoid tuple size limit
-    commands.entity(camera_entity).insert((
-        // Bevy 0.16 built-in atmospheric scattering for realistic sky
-        Atmosphere::EARTH,
-        AtmosphereSettings::default(),
+    // DEBUG: Disable atmosphere when testing starry sky
+    // When FORCE_NIGHT_MODE is true in starry_sky_material.rs, don't add atmosphere
+    const DEBUG_DISABLE_ATMOSPHERE: bool = false;
+
+    if !DEBUG_DISABLE_ATMOSPHERE {
+        commands.entity(camera_entity).insert((
+            // Bevy 0.16 built-in atmospheric scattering for realistic sky
+            Atmosphere::EARTH,
+            AtmosphereSettings::default(),
         // Add Depth of Field effect
         DepthOfField {
             mode: DepthOfFieldMode::Bokeh,
@@ -1874,6 +1879,7 @@ fn load_common_game_data(
             },
         },
     ));
+    }
     info!("[CAMERA] Camera entity spawned with id: {:?}", camera_entity);
     info!("[CAMERA] VolumetricFog settings: ambient_intensity=0.1, step_count=64");
     info!("[CAMERA] Shadow filtering: Gaussian (non-temporal)");
@@ -2151,6 +2157,7 @@ fn spawn_starry_sky_and_moon(
         MeshMaterial3d(sky_material_handle),
         Transform::from_xyz(0.0, 0.0, 0.0),  // Center of world - sphere is large enough to contain camera
         Visibility::Visible,
+        bevy::render::view::NoFrustumCulling,  // CRITICAL: Prevent frustum culling of sky sphere
     )).id();
     
     log::info!("[STARRY SKY] StarrySky entity spawned with id: {:?}", sky_entity);

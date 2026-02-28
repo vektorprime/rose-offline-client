@@ -240,8 +240,9 @@ impl Material for StarrySkyMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
-        // Use additive blending for stars
-        AlphaMode::Add
+        // Use blend blending instead of additive for better visibility
+        // AlphaMode::Blend prevents the depth prepass issues
+        AlphaMode::Blend
     }
 
     fn depth_bias(&self) -> f32 {
@@ -517,11 +518,25 @@ pub fn update_starry_sky_night_factor(
     mut starry_sky_settings: ResMut<StarrySkySettings>,
 ) {
     use crate::resources::ZoneTimeState;
-    
+
+    // DEBUG OVERRIDE: Set to true to force night mode for testing stars
+    // TODO: Set back to false after testing
+    const FORCE_NIGHT_MODE: bool = false;
+
     // Frame counter for throttling logs
     static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let should_log = frame % 60 == 0; // Log every 60 frames
+
+    // DEBUG: Force night mode for testing
+    if FORCE_NIGHT_MODE {
+        if should_log {
+            log::warn!("[NIGHT_FACTOR_UPDATE] ========== DEBUG MODE: FORCING NIGHT ==========");
+            log::warn!("[NIGHT_FACTOR_UPDATE] FORCE_NIGHT_MODE is enabled - stars should be visible!");
+        }
+        starry_sky_settings.night_factor = 1.0;
+        return;
+    }
     
     if should_log {
         log::info!("[NIGHT_FACTOR_UPDATE] ========== SYSTEM RUNNING ==========");
@@ -654,19 +669,36 @@ impl Default for AtmosphereState {
 /// During Day/Evening/Morning, the Atmosphere is re-added for realistic sky rendering.
 ///
 /// This system must run after zone_time_system to get the current time state.
-pub fn toggle_atmosphere_based_on_time(
+    pub fn toggle_atmosphere_based_on_time(
     zone_time: Option<Res<crate::resources::ZoneTime>>,
     mut atmosphere_state: ResMut<AtmosphereState>,
-    camera_query: Query<Entity, With<bevy::prelude::Camera3d>>,
+        camera_query: Query<Entity, With<bevy::prelude::Camera3d>>,
     mut commands: Commands,
 ) {
     use crate::resources::ZoneTimeState;
     use bevy::pbr::{Atmosphere, AtmosphereSettings};
-    
+
+    // DEBUG OVERRIDE: Must match FORCE_NIGHT_MODE in update_starry_sky_night_factor
+    // When forcing night mode, also force atmosphere OFF
+    const FORCE_NIGHT_MODE: bool = false;
+
     // Frame counter for throttling diagnostic logs
     static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let should_log = frame % 60 == 0; // Log every 60 frames
+
+    // DEBUG: Force atmosphere OFF when forcing night mode
+    if FORCE_NIGHT_MODE {
+        if atmosphere_state.enabled {
+            if let Ok(camera_entity) = camera_query.get_single() {
+                atmosphere_state.enabled = false;
+                commands.entity(camera_entity).remove::<Atmosphere>();
+                commands.entity(camera_entity).remove::<AtmosphereSettings>();
+                log::warn!("[ATMOSPHERE] DEBUG: Forcing atmosphere OFF for night mode testing");
+            }
+        }
+        return;
+    }
     
     // Check if ZoneTime resource exists
     let Some(zone_time) = zone_time else {

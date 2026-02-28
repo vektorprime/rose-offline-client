@@ -1,5 +1,5 @@
 //! Procedural Starry Sky Shader for Bevy 0.16
-//! 
+//!
 //! This shader renders a dense, high-detail star field with:
 //! - Multiple star layers (distant, medium, bright stars)
 //! - Procedural star generation using hash functions
@@ -17,12 +17,15 @@
 //!   4 = BLUE gradient based on dir.y (horizon check)
 //!   5 = Normal rendering with extra brightness
 
-#import bevy_pbr::{
-    mesh_functions,
-    view_transformations::position_world_to_clip,
-}
+#import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_world, mesh_position_local_to_clip}
+#import bevy_pbr::mesh_view_bindings view
 
 // DEBUG MODE: Set to 1-5 for visual debugging, 0 for normal rendering
+// DEBUG 1 = YELLOW: Verify shader is executing (should always show at night)
+// DEBUG 2 = RED gradient based on night_factor
+// DEBUG 3 = GREEN gradient based on star calculation
+// DEBUG 4 = BLUE gradient based on dir.y (horizon check)
+// DEBUG 5 = Normal rendering with extra brightness
 const DEBUG_MODE: i32 = 0;
 
 // Uniforms for time and star settings - must match AsBindGroup bindings
@@ -195,19 +198,18 @@ fn get_night_visibility(dir: vec3<f32>) -> f32 {
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
-    
-    // Get mesh data - mesh_functions provides the transform from the mesh's instance
-    let mesh_data = mesh_functions::get_world_from_local(vertex.instance_index);
-    
+
+    // Get the world-from-local transform matrix using Bevy 0.16.1 API
+    let world_from_local = get_world_from_local(vertex.instance_index);
+
     // Transform vertex position to world space
     // The sphere is centered at origin, so world_position = vertex position transformed by mesh transform
-    let world_position = mesh_data.world_from_local * vec4<f32>(vertex.position, 1.0);
-    
-    // DEBUG: Log world position to verify shader is running
-    // Output clip position
-    out.clip_position = position_world_to_clip(world_position.xyz);
+    let world_position = mesh_position_local_to_world(world_from_local, vec4<f32>(vertex.position, 1.0));
+
+    // Output clip position using Bevy 0.16.1 API
+    out.clip_position = mesh_position_local_to_clip(world_from_local, vec4<f32>(vertex.position, 1.0));
     out.world_position = world_position.xyz;
-    
+
     return out;
 }
 
