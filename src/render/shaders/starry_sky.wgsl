@@ -356,6 +356,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let horizon_glow = smoothstep(-0.1, 0.2, dir.y) * smoothstep(0.3, 0.1, dir.y);
     final_color += vec3<f32>(0.02, 0.015, 0.01) * horizon_glow * night_vis;
     
+    // Compensate for standard alpha blending being dimmer than additive
+    // This multiplier can be adjusted (try 1.5, 2.0, or 2.5) based on visual results
+    let brightness_multiplier = 2.0;
+    final_color *= brightness_multiplier;
+    
     // Return with alpha based on night factor for smooth transitions
     return vec4<f32>(final_color, night_factor);
 }

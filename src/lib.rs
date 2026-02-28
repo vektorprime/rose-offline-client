@@ -1400,6 +1400,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<SelectedTarget>()
         .init_resource::<NameTagSettings>()
         .init_resource::<DepthOfFieldSettings>()
+        .init_resource::<ui::PostProcessingSettings>()
+        .init_resource::<ui::StarrySkyRenderSettings>()
         .init_resource::<WaterSettings>()
         .init_resource::<FlightSettings>()
         .init_resource::<MonsterChatterPhrases>()
@@ -1412,6 +1414,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // System to apply depth of field settings from the resource to the camera
     app.add_systems(Update, apply_depth_of_field_settings);
+    
+    // System to apply post-processing settings from the resource to the camera
+    app.add_systems(Update, apply_post_processing_settings);
     
     // System to apply water settings from the resource to water materials
     app.add_systems(Update, apply_water_settings);
@@ -1799,7 +1804,8 @@ fn load_common_game_data(
         // Add Tonemapping - REQUIRED for HDR to work properly with depth of field
         bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
         // Add Bloom - enhances the depth of field effect visibility
-        bevy::core_pipeline::bloom::Bloom::NATURAL,
+        // TEMPORARILY DISABLED: Testing if bloom causes ghosting with night sky
+        // bevy::core_pipeline::bloom::Bloom::NATURAL,
         // Shadow filtering - Gaussian (non-temporal, works with SMAA)
         ShadowFilteringMethod::Gaussian,
         // SMAA for high-quality anti-aliasing without ghosting artifacts
@@ -2029,6 +2035,81 @@ fn apply_depth_of_field_settings(
             } else {
                 // When disabled, use Gaussian mode with minimal effect (effectively off)
                 dof.mode = DepthOfFieldMode::Gaussian;
+            }
+        }
+    }
+}
+
+/// System to apply post-processing settings from the resource to the camera
+/// This allows live toggling of bloom, SSAO, volumetric fog, and color grading via the Settings UI
+fn apply_post_processing_settings(
+    post_process_settings: Res<ui::PostProcessingSettings>,
+    mut camera_query: Query<(
+        Entity,
+        Option<&mut Bloom>,
+        Option<&mut ScreenSpaceAmbientOcclusion>,
+        Option<&mut VolumetricFog>,
+        Option<&mut ColorGrading>,
+    )>,
+    mut commands: Commands,
+) {
+    use bevy::ecs::change_detection::DetectChanges;
+    
+    // Only update if settings have changed
+    if !post_process_settings.is_changed() {
+        return;
+    }
+    
+    for (entity, bloom, ssao, volumetric_fog, color_grading) in camera_query.iter_mut() {
+        // Handle Bloom
+        if post_process_settings.bloom_enabled {
+            if bloom.is_none() {
+                // Add Bloom component if not present
+                commands.entity(entity).insert(Bloom::NATURAL);
+                info!("[PostProcess] Bloom enabled on camera");
+            }
+        } else {
+            if bloom.is_some() {
+                // Remove Bloom component if present
+                commands.entity(entity).remove::<Bloom>();
+                info!("[PostProcess] Bloom disabled on camera");
+            }
+        }
+        
+        // Handle SSAO
+        if let Some(mut ssao_comp) = ssao {
+            if !post_process_settings.ssao_enabled {
+                // Set quality to lowest effectively disabling it
+                ssao_comp.quality_level = ScreenSpaceAmbientOcclusionQualityLevel::Low;
+            } else {
+                ssao_comp.quality_level = ScreenSpaceAmbientOcclusionQualityLevel::Medium;
+            }
+        }
+        
+        // Handle Volumetric Fog
+        if let Some(mut fog) = volumetric_fog {
+            if post_process_settings.volumetric_fog_enabled {
+                fog.step_count = 64;
+            } else {
+                // Effectively disable by setting step count to minimum
+                fog.step_count = 1;
+            }
+        }
+        
+        // Handle Color Grading
+        if let Some(mut cg) = color_grading {
+            if post_process_settings.color_grading_enabled {
+                // Reset to default vibrant values
+                cg.global.post_saturation = 1.1;
+                cg.shadows.contrast = 1.1;
+                cg.midtones.saturation = 1.1;
+                cg.highlights.gain = 1.05;
+            } else {
+                // Set to neutral values (effectively off)
+                cg.global.post_saturation = 1.0;
+                cg.shadows.contrast = 1.0;
+                cg.midtones.saturation = 1.0;
+                cg.highlights.gain = 1.0;
             }
         }
     }

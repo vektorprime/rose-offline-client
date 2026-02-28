@@ -1,4 +1,5 @@
 use bevy::core_pipeline::dof::DepthOfFieldMode;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::{Local, Query, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts};
 
@@ -10,11 +11,98 @@ use crate::{
     ui::UiStateWindows,
 };
 
+/// Blend mode for starry sky rendering
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SkyBlendMode {
+    #[default]
+    Additive,
+    Alpha,
+    PremultipliedAlpha,
+    Multiply,
+}
+
+/// Depth compare function for starry sky
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SkyDepthCompare {
+    Always,
+    #[default]
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+}
+
+/// Resource for starry sky render settings that affect ghosting.
+/// These control the blend mode, depth testing, and other render pipeline settings.
+#[derive(Resource, Debug, Clone)]
+pub struct StarrySkyRenderSettings {
+    /// Blend mode for the starry sky material
+    pub blend_mode: SkyBlendMode,
+    /// Depth compare function
+    pub depth_compare: SkyDepthCompare,
+    /// Whether depth writes are enabled
+    pub depth_write_enabled: bool,
+    /// Depth bias value
+    pub depth_bias: f32,
+    /// Whether to use NoFrustumCulling
+    pub no_frustum_culling: bool,
+    /// Alpha cutoff value (for alpha testing)
+    pub alpha_cutoff: f32,
+    /// Whether to render stars at full brightness (ignore night factor for testing)
+    pub force_full_brightness: bool,
+}
+
+impl Default for StarrySkyRenderSettings {
+    fn default() -> Self {
+        Self {
+            blend_mode: SkyBlendMode::Additive,
+            depth_compare: SkyDepthCompare::Always,
+            depth_write_enabled: false,
+            depth_bias: 1.0,
+            no_frustum_culling: true,
+            alpha_cutoff: 0.0,
+            force_full_brightness: false,
+        }
+    }
+}
+
+/// Resource for storing post-processing settings that can be modified at runtime.
+/// These settings affect potential ghosting artifacts.
+#[derive(Resource, Debug, Clone)]
+pub struct PostProcessingSettings {
+    /// Whether bloom effect is enabled
+    pub bloom_enabled: bool,
+    /// Bloom intensity (0.0 - 1.0)
+    pub bloom_intensity: f32,
+    /// Whether SSAO (Screen Space Ambient Occlusion) is enabled
+    pub ssao_enabled: bool,
+    /// Whether depth of field is enabled
+    pub dof_enabled: bool,
+    /// Whether volumetric fog is enabled
+    pub volumetric_fog_enabled: bool,
+    /// Whether color grading is enabled
+    pub color_grading_enabled: bool,
+}
+
+impl Default for PostProcessingSettings {
+    fn default() -> Self {
+        Self {
+            bloom_enabled: true,
+            bloom_intensity: 0.5,
+            ssao_enabled: true,
+            dof_enabled: false,
+            volumetric_fog_enabled: true,
+            color_grading_enabled: true,
+        }
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum SettingsPage {
     Sound,
     Sky,
     Stars,
+    StarrySkyRender,
     DepthOfField,
     VolumetricFog,
     Water,
@@ -23,6 +111,7 @@ enum SettingsPage {
     Seasons,
     DirtDash,
     WindSway,
+    PostProcessing,
 }
 
 pub struct UiStateSettings {
@@ -70,23 +159,49 @@ impl Default for DepthOfFieldSettings {
     }
 }
 
-pub fn ui_settings_system(
-    mut egui_context: EguiContexts,
-    mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_state_settings: Local<UiStateSettings>,
-    mut sound_settings: ResMut<SoundSettings>,
-    mut query_sounds: Query<(&SoundCategory, &mut SoundGain)>,
-    mut sky_settings: ResMut<SkySettings>,
-    mut starry_sky_settings: ResMut<StarrySkySettings>,
-    mut dof_settings: ResMut<DepthOfFieldSettings>,
-    mut zone_lighting: ResMut<ZoneLighting>,
-    mut water_settings: ResMut<WaterSettings>,
-    mut fish_settings: ResMut<FishSettings>,
-    mut bird_settings: ResMut<BirdSettings>,
-    mut season_settings: ResMut<SeasonSettings>,
-    mut dirt_dash_settings: ResMut<DirtDashSettings>,
-    wind_sway_settings: Option<ResMut<WindSwaySettings>>,
-) {
+/// Grouped system parameters for ui_settings_system to avoid parameter count limit
+#[derive(SystemParam)]
+pub struct SettingsSystemParams<'w, 's> {
+    pub egui_context: EguiContexts<'w, 's>,
+    pub ui_state_windows: ResMut<'w, UiStateWindows>,
+    pub ui_state_settings: Local<'s, UiStateSettings>,
+    pub sound_settings: ResMut<'w, SoundSettings>,
+    pub query_sounds: Query<'w, 's, (&'static SoundCategory, &'static mut SoundGain)>,
+    pub sky_settings: ResMut<'w, SkySettings>,
+    pub starry_sky_settings: ResMut<'w, StarrySkySettings>,
+    pub starry_sky_render_settings: ResMut<'w, StarrySkyRenderSettings>,
+    pub dof_settings: ResMut<'w, DepthOfFieldSettings>,
+    pub zone_lighting: ResMut<'w, ZoneLighting>,
+    pub water_settings: ResMut<'w, WaterSettings>,
+    pub fish_settings: ResMut<'w, FishSettings>,
+    pub bird_settings: ResMut<'w, BirdSettings>,
+    pub season_settings: ResMut<'w, SeasonSettings>,
+    pub dirt_dash_settings: ResMut<'w, DirtDashSettings>,
+    pub wind_sway_settings: Option<ResMut<'w, WindSwaySettings>>,
+    pub post_processing_settings: ResMut<'w, PostProcessingSettings>,
+}
+
+pub fn ui_settings_system(mut params: SettingsSystemParams) {
+    let SettingsSystemParams {
+        mut egui_context,
+        mut ui_state_windows,
+        mut ui_state_settings,
+        mut sound_settings,
+        mut query_sounds,
+        mut sky_settings,
+        mut starry_sky_settings,
+        mut starry_sky_render_settings,
+        mut dof_settings,
+        mut zone_lighting,
+        mut water_settings,
+        mut fish_settings,
+        mut bird_settings,
+        mut season_settings,
+        mut dirt_dash_settings,
+        wind_sway_settings,
+        mut post_processing_settings,
+    } = params;
+
     egui::Window::new("Settings")
         .open(&mut ui_state_windows.settings_open)
         .resizable(false)
@@ -102,6 +217,11 @@ pub fn ui_settings_system(
                     &mut ui_state_settings.page,
                     SettingsPage::Stars,
                     "Stars",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::StarrySkyRender,
+                    "Sky Render",
                 );
                 ui.selectable_value(
                     &mut ui_state_settings.page,
@@ -142,6 +262,11 @@ pub fn ui_settings_system(
                     &mut ui_state_settings.page,
                     SettingsPage::WindSway,
                     "Wind Sway",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::PostProcessing,
+                    "Post Process",
                 );
             });
 
@@ -335,6 +460,137 @@ pub fn ui_settings_system(
                     ui.separator();
                     ui.label("Tip: Star density 0.15 = sparse (~1,000 stars), 0.60 = dense (~6,000 stars). Changes apply instantly.");
                     ui.label("Note: Night factor is controlled by game time. Set to Manual mode in Sky tab and set time to midnight to see stars.");
+                }
+                SettingsPage::StarrySkyRender => {
+                    egui::Grid::new("starry_sky_render_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("⚠️ GHOSTING DEBUG");
+                            ui.label("Change settings to fix ghosting");
+                            ui.end_row();
+                            
+                            ui.separator();
+                            ui.end_row();
+                            
+                            ui.label("Blend Mode:");
+                            let blend_text = match starry_sky_render_settings.blend_mode {
+                                SkyBlendMode::Additive => "Additive (One)",
+                                SkyBlendMode::Alpha => "Alpha (OneMinusSrcAlpha)",
+                                SkyBlendMode::PremultipliedAlpha => "Premultiplied Alpha",
+                                SkyBlendMode::Multiply => "Multiply",
+                            };
+                            egui::ComboBox::from_label("")
+                                .selected_text(blend_text)
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut starry_sky_render_settings.blend_mode,
+                                        SkyBlendMode::Additive,
+                                        "Additive (One) - CURRENT",
+                                    );
+                                    ui.selectable_value(
+                                        &mut starry_sky_render_settings.blend_mode,
+                                        SkyBlendMode::Alpha,
+                                        "Alpha (OneMinusSrcAlpha) - FIX OPTION",
+                                    );
+                                    ui.selectable_value(
+                                        &mut starry_sky_render_settings.blend_mode,
+                                        SkyBlendMode::PremultipliedAlpha,
+                                        "Premultiplied Alpha",
+                                    );
+                                    ui.selectable_value(
+                                        &mut starry_sky_render_settings.blend_mode,
+                                        SkyBlendMode::Multiply,
+                                        "Multiply",
+                                    );
+                                });
+                            ui.end_row();
+                            
+                            ui.label("Depth Compare:");
+                            let depth_text = match starry_sky_render_settings.depth_compare {
+                                SkyDepthCompare::Always => "Always (CURRENT)",
+                                SkyDepthCompare::Less => "Less",
+                                SkyDepthCompare::LessEqual => "LessEqual - FIX OPTION",
+                                SkyDepthCompare::Greater => "Greater",
+                                SkyDepthCompare::GreaterEqual => "GreaterEqual",
+                            };
+                            egui::ComboBox::from_label("")
+                                .selected_text(depth_text)
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut starry_sky_render_settings.depth_compare,
+                                        SkyDepthCompare::Always,
+                                        "Always - Sky ignores depth",
+                                    );
+                                    ui.selectable_value(
+                                        &mut starry_sky_render_settings.depth_compare,
+                                        SkyDepthCompare::Less,
+                                        "Less - Strict depth test",
+                                    );
+                                    ui.selectable_value(
+                                        &mut starry_sky_render_settings.depth_compare,
+                                        SkyDepthCompare::LessEqual,
+                                        "LessEqual - Standard depth test",
+                                    );
+                                    ui.selectable_value(
+                                        &mut starry_sky_render_settings.depth_compare,
+                                        SkyDepthCompare::Greater,
+                                        "Greater",
+                                    );
+                                    ui.selectable_value(
+                                        &mut starry_sky_render_settings.depth_compare,
+                                        SkyDepthCompare::GreaterEqual,
+                                        "GreaterEqual",
+                                    );
+                                });
+                            ui.end_row();
+                            
+                            ui.label("Depth Write:");
+                            ui.checkbox(&mut starry_sky_render_settings.depth_write_enabled, "Enabled (usually OFF for sky)");
+                            ui.end_row();
+                            
+                            ui.label("Depth Bias:");
+                            ui.add(
+                                egui::Slider::new(&mut starry_sky_render_settings.depth_bias, -10.0..=10.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                            
+                            ui.label("Alpha Cutoff:");
+                            ui.add(
+                                egui::Slider::new(&mut starry_sky_render_settings.alpha_cutoff, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                            
+                            ui.label("Force Full Brightness:");
+                            ui.checkbox(&mut starry_sky_render_settings.force_full_brightness, "Ignore night factor (DEBUG)");
+                            ui.end_row();
+                            
+                            ui.separator();
+                            ui.end_row();
+                            
+                            // Quick fix buttons
+                            ui.label("Quick Fixes:");
+                            ui.end_row();
+                            
+                            if ui.button("Fix: Alpha Blend + LessEqual Depth").clicked() {
+                                starry_sky_render_settings.blend_mode = SkyBlendMode::Alpha;
+                                starry_sky_render_settings.depth_compare = SkyDepthCompare::LessEqual;
+                            }
+                            ui.end_row();
+                            
+                            if ui.button("Reset: Additive + Always Depth").clicked() {
+                                starry_sky_render_settings.blend_mode = SkyBlendMode::Additive;
+                                starry_sky_render_settings.depth_compare = SkyDepthCompare::Always;
+                            }
+                            ui.end_row();
+                        });
+
+                    ui.separator();
+                    ui.label("TIP: Try 'Alpha Blend + LessEqual Depth' to fix ghosting.");
+                    ui.label("Additive blending (dst=One) accumulates color which may cause trails.");
+                    ui.label("Always depth compare may cause sky to render over models incorrectly.");
+                    ui.label("Changes require app restart to take effect (pipeline recreation).");
                 }
                 SettingsPage::DepthOfField => {
                     egui::Grid::new("dof_settings")
@@ -909,6 +1165,50 @@ pub fn ui_settings_system(
                         ui.label("Wind Sway settings not available.");
                         ui.label("The WindEffectPlugin may not be loaded yet.");
                     }
+                }
+                SettingsPage::PostProcessing => {
+                    egui::Grid::new("post_processing_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("🔍 GHOSTING DEBUG");
+                            ui.label("Toggle effects to isolate ghosting cause");
+                            ui.end_row();
+                            
+                            ui.separator();
+                            ui.end_row();
+                            
+                            ui.label("Bloom:");
+                            ui.checkbox(&mut post_processing_settings.bloom_enabled, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Bloom Intensity:");
+                            ui.add(
+                                egui::Slider::new(&mut post_processing_settings.bloom_intensity, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("SSAO:");
+                            ui.checkbox(&mut post_processing_settings.ssao_enabled, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Depth of Field:");
+                            ui.checkbox(&mut post_processing_settings.dof_enabled, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Volumetric Fog:");
+                            ui.checkbox(&mut post_processing_settings.volumetric_fog_enabled, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Color Grading:");
+                            ui.checkbox(&mut post_processing_settings.color_grading_enabled, "Enabled");
+                            ui.end_row();
+                        });
+
+                    ui.separator();
+                    ui.label("TIP: Disable effects one by one to find ghosting cause.");
+                    ui.label("Bloom is most likely to cause trails with bright HDR content.");
+                    ui.label("SSAO without TAA can cause noise/flickering.");
                 }
             }
         });

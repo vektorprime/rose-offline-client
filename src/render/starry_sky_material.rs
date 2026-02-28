@@ -275,33 +275,34 @@ impl Material for StarrySkyMaterial {
         descriptor.primitive.cull_mode = None;  // Disable culling entirely
         log::info!("[STARRY SKY SPECIALIZE] Backface culling DISABLED (cull_mode = None)");
 
-        // Configure blending for additive star rendering
+        // Configure blending for standard alpha blending (Solution 2 for ghosting fix)
+        // Standard alpha blending prevents color accumulation that causes ghosting
         if let Some(fragment) = descriptor.fragment.as_mut() {
             for color_target_state in fragment.targets.iter_mut().filter_map(|x| x.as_mut()) {
                 color_target_state.blend = Some(BlendState {
                     color: BlendComponent {
                         src_factor: BlendFactor::SrcAlpha,
-                        dst_factor: BlendFactor::One,
+                        dst_factor: BlendFactor::OneMinusSrcAlpha,  // Standard alpha blending
                         operation: BlendOperation::Add,
                     },
                     alpha: BlendComponent {
                         src_factor: BlendFactor::One,
-                        dst_factor: BlendFactor::One,
+                        dst_factor: BlendFactor::OneMinusSrcAlpha,  // Standard alpha blending
                         operation: BlendOperation::Add,
                     },
                 });
             }
-            log::info!("[STARRY SKY SPECIALIZE] Blend state configured for additive rendering");
+            log::info!("[STARRY SKY SPECIALIZE] Blend state configured for standard alpha rendering");
         }
 
-        // CRITICAL: Disable depth writes AND use Always comparison for sky
-        // The sky sphere is at the far plane edge, so normal depth comparison fails
-        // We want the sky to always render (behind everything) but with additive blending
+        // CRITICAL: Disable depth writes and use GreaterEqual comparison for sky
+        // GreaterEqual means "render where sky depth >= depth buffer" (closer to camera)
+        // With reverse-z depth buffer, this prevents sky from bleeding through geometry
         if let Some(depth_stencil) = descriptor.depth_stencil.as_mut() {
             depth_stencil.depth_write_enabled = false;
-            // Use Always comparison so sky renders regardless of depth
-            depth_stencil.depth_compare = bevy::render::render_resource::CompareFunction::Always;
-            log::info!("[STARRY SKY SPECIALIZE] Depth writes DISABLED, depth_compare = Always");
+            // Only render sky where no opaque objects are in front
+            depth_stencil.depth_compare = bevy::render::render_resource::CompareFunction::GreaterEqual;
+            log::info!("[STARRY SKY SPECIALIZE] Depth writes DISABLED, depth_compare = GreaterEqual");
         }
 
         log::info!("[STARRY SKY SPECIALIZE] Pipeline specialization complete");
