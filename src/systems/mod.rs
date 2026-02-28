@@ -22,9 +22,6 @@ mod cooldown_system;
 mod damage_digit_render_system;
 mod dirt_dash_system;
 mod debug_inspector_system;
-mod debug_render_collider_system;
-mod debug_render_directional_light_system;
-mod debug_render_skeleton_system;
 mod debug_rendering_system;
 mod directional_light_system;
 mod effect_system;
@@ -113,9 +110,6 @@ pub use cooldown_system::cooldown_system;
 pub use damage_digit_render_system::{damage_digit_render_system, create_damage_digit_material_system};
 pub use dirt_dash_system::{DirtDashPlugin, dirt_dash_spawn_system, dirt_dash_particle_update_system};
 pub use debug_inspector_system::DebugInspectorPlugin;
-pub use debug_render_collider_system::debug_render_collider_system;
-pub use debug_render_directional_light_system::debug_render_directional_light_system;
-pub use debug_render_skeleton_system::debug_render_skeleton_system;
 pub use debug_rendering_system::{
     debug_entity_visibility,
     render_diagnostics_system,

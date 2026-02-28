@@ -100,6 +100,54 @@ pub fn zone_time_system(
         return;
     }
     let zone_data = zone_data.unwrap();
+    
+    // Debug log time thresholds once when zone changes (or on first run)
+    static LAST_LOGGED_ZONE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX);
+    let zone_id = current_zone.id.get() as u32;
+    if LAST_LOGGED_ZONE.load(std::sync::atomic::Ordering::Relaxed) != zone_id {
+        LAST_LOGGED_ZONE.store(zone_id, std::sync::atomic::Ordering::Relaxed);
+        
+        // Calculate expected tick values for standard 24-hour day
+        let ticks_per_hour = zone_data.day_cycle as f32 / 24.0;
+        
+        log::info!("[ZONE_TIME] ========== ZONE TIME THRESHOLDS ==========");
+        log::info!("[ZONE_TIME] Zone {} ({})", zone_id, zone_data.name);
+        log::info!("[ZONE_TIME]   day_cycle: {} ticks = 24 hours", zone_data.day_cycle);
+        log::info!("[ZONE_TIME]   ticks_per_hour: {:.2} ticks", ticks_per_hour);
+        log::info!("[ZONE_TIME]");
+        log::info!("[ZONE_TIME]   ACTUAL VALUES FROM STB:");
+        log::info!("[ZONE_TIME]     morning_time: {} ticks = {:.1} hours ({:02}:{:02})", 
+            zone_data.morning_time,
+            zone_data.morning_time as f32 / ticks_per_hour,
+            (zone_data.morning_time as f32 / ticks_per_hour) as u32,
+            ((zone_data.morning_time as f32 / ticks_per_hour % 1.0) * 60.0) as u32
+        );
+        log::info!("[ZONE_TIME]     day_time: {} ticks = {:.1} hours ({:02}:{:02})", 
+            zone_data.day_time,
+            zone_data.day_time as f32 / ticks_per_hour,
+            (zone_data.day_time as f32 / ticks_per_hour) as u32,
+            ((zone_data.day_time as f32 / ticks_per_hour % 1.0) * 60.0) as u32
+        );
+        log::info!("[ZONE_TIME]     evening_time: {} ticks = {:.1} hours ({:02}:{:02})", 
+            zone_data.evening_time,
+            zone_data.evening_time as f32 / ticks_per_hour,
+            (zone_data.evening_time as f32 / ticks_per_hour) as u32,
+            ((zone_data.evening_time as f32 / ticks_per_hour % 1.0) * 60.0) as u32
+        );
+        log::info!("[ZONE_TIME]     night_time: {} ticks = {:.1} hours ({:02}:{:02})", 
+            zone_data.night_time,
+            zone_data.night_time as f32 / ticks_per_hour,
+            (zone_data.night_time as f32 / ticks_per_hour) as u32,
+            ((zone_data.night_time as f32 / ticks_per_hour % 1.0) * 60.0) as u32
+        );
+        log::info!("[ZONE_TIME]");
+        log::info!("[ZONE_TIME]   EXPECTED VALUES (standard 24h day):");
+        log::info!("[ZONE_TIME]     morning (6:00): {} ticks", zone_data.day_cycle / 4);
+        log::info!("[ZONE_TIME]     day (12:00): {} ticks", zone_data.day_cycle / 2);
+        log::info!("[ZONE_TIME]     evening (18:00): {} ticks", 3 * zone_data.day_cycle / 4);
+        log::info!("[ZONE_TIME]     night (22:00): {} ticks", 22 * zone_data.day_cycle / 24);
+        log::info!("[ZONE_TIME] =============================================");
+    }
     let skybox_data = zone_data
         .skybox_id
         .and_then(|id| game_data.skybox.get_skybox_data(id));
@@ -113,10 +161,80 @@ pub fn zone_time_system(
             world_time.time_since_last_tick.as_secs_f32() / WORLD_TICK_DURATION.as_secs_f32(),
         )
     };
+    
+    // Convert day_time to hours for easier debugging (assuming day_cycle represents 24 hours)
+    let day_time_hours = (day_time as f32 / zone_data.day_cycle as f32) * 24.0;
+    let hours = day_time_hours.floor() as u32;
+    let minutes = ((day_time_hours - hours as f32) * 60.0) as u32;
+    
+    // Log current time every 60 frames (~1 second) for debugging
+    static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let should_log = frame % 60 == 0;
+    
+    if should_log {
+        log::info!("[ZONE_TIME] ========== CURRENT TIME ==========");
+        log::info!("[ZONE_TIME]   tick: {} / {}", day_time, zone_data.day_cycle);
+        log::info!("[ZONE_TIME]   game time: {:02}:{:02}", hours, minutes);
+        log::info!("[ZONE_TIME]   state: {:?}", zone_time.state);
+        log::info!("[ZONE_TIME]   state_percent: {:.1}%", zone_time.state_percent_complete * 100.0);
+    }
+    
+    // Determine time state based on thresholds
+    // The game supports two configurations:
+    // 1. Wrap-around: night_time > morning_time (e.g., night=133, morning=27)
+    //    Night wraps around midnight: 133-160 AND 0-27
+    // 2. Non-wrap: night_time < morning_time (e.g., night=0, morning=40)
+    //    Night is a simple range: 0-40
+    
+    let is_night = if zone_data.night_time >= zone_data.morning_time {
+        // Night wraps around midnight: time >= night_time OR time < morning_time
+        day_time >= zone_data.night_time || day_time < zone_data.morning_time
+    } else {
+        // Night doesn't wrap: time >= night_time AND time < morning_time
+        day_time >= zone_data.night_time && day_time < zone_data.morning_time
+    };
+    
+    // For evening, handle the case where night_time might wrap around
+    let is_evening = if zone_data.night_time >= zone_data.evening_time {
+        // Normal case: evening_time to night_time is a simple range
+        day_time >= zone_data.evening_time && day_time < zone_data.night_time
+    } else {
+        // Wrap case: evening wraps around (evening_time to day_cycle, then 0 to night_time)
+        day_time >= zone_data.evening_time || day_time < zone_data.night_time
+    };
+    
+    // Day and morning are always simple ranges (no wrap-around in standard configs)
+    let is_day = day_time >= zone_data.day_time && day_time < zone_data.evening_time;
+    let is_morning = day_time >= zone_data.morning_time && day_time < zone_data.day_time;
+    
+    if should_log {
+        log::info!("[ZONE_TIME]   State checks:");
+        log::info!("[ZONE_TIME]     is_night: {} (time >= {} || time < {})", is_night, zone_data.night_time, zone_data.morning_time);
+        log::info!("[ZONE_TIME]     is_evening: {} (time >= {} && time < {})", is_evening, zone_data.evening_time, zone_data.night_time);
+        log::info!("[ZONE_TIME]     is_day: {} (time >= {} && time < {})", is_day, zone_data.day_time, zone_data.evening_time);
+        log::info!("[ZONE_TIME]     is_morning: {} (time >= {} && time < {})", is_morning, zone_data.morning_time, zone_data.day_time);
+        log::info!("[ZONE_TIME] ======================================");
+    }
 
-    if day_time >= zone_data.night_time || day_time < zone_data.morning_time {
-        let state_length = zone_data.morning_time + (zone_data.day_cycle - zone_data.night_time);
-        let state_ticks = day_time - zone_data.night_time;
+    if is_night {
+        // Calculate state_length and state_ticks, handling wrap-around
+        let state_length = if zone_data.night_time >= zone_data.morning_time {
+            // Night wraps around: night_time to end of day, then 0 to morning_time
+            zone_data.morning_time + (zone_data.day_cycle - zone_data.night_time)
+        } else {
+            // Night doesn't wrap: simple range from night_time to morning_time
+            zone_data.morning_time - zone_data.night_time
+        };
+        
+        // Calculate state_ticks, handling wrap-around
+        let state_ticks = if day_time >= zone_data.night_time {
+            // We're in the first part of night (after night_time)
+            day_time - zone_data.night_time
+        } else {
+            // We're in the second part of night (before morning_time, after midnight)
+            (zone_data.day_cycle - zone_data.night_time) + day_time
+        };
 
         if zone_time.state != ZoneTimeState::Night {
             for entity in query_night_effects.iter_mut() {
@@ -142,9 +260,24 @@ pub fn zone_time_system(
             zone_lighting.fog_color = NIGHT_FOG_COLOR;
             zone_lighting.fog_density = NIGHT_FOG_DENSITY;
         }
-    } else if day_time >= zone_data.evening_time {
-        let state_length = zone_data.night_time - zone_data.evening_time;
-        let state_ticks = day_time - zone_data.evening_time;
+    } else if is_evening {
+        // Calculate state_length and state_ticks, handling wrap-around
+        let state_length = if zone_data.night_time >= zone_data.evening_time {
+            // Normal case: evening_time to night_time is a simple range
+            zone_data.night_time - zone_data.evening_time
+        } else {
+            // Wrap case: evening_time to end of day, then 0 to night_time
+            (zone_data.day_cycle - zone_data.evening_time) + zone_data.night_time
+        };
+        
+        // Calculate state_ticks, handling wrap-around
+        let state_ticks = if day_time >= zone_data.evening_time {
+            // We're in the first part of evening (after evening_time)
+            day_time - zone_data.evening_time
+        } else {
+            // We're in the second part of evening (before night_time, after midnight)
+            (zone_data.day_cycle - zone_data.evening_time) + day_time
+        };
 
         if zone_time.state != ZoneTimeState::Evening {
             for entity in query_night_effects.iter_mut() {
@@ -233,7 +366,7 @@ pub fn zone_time_system(
                 );
             }
         }
-    } else if day_time >= zone_data.day_time {
+    } else if is_day {
         let state_length = zone_data.evening_time - zone_data.day_time;
         let state_ticks = day_time - zone_data.day_time;
 
@@ -260,7 +393,7 @@ pub fn zone_time_system(
             zone_lighting.fog_color = DAY_FOG_COLOR;
             zone_lighting.fog_density = DAY_FOG_DENSITY;
         }
-    } else if day_time >= zone_data.morning_time {
+    } else if is_morning {
         let state_length = zone_data.day_time - zone_data.morning_time;
         let state_ticks = day_time - zone_data.morning_time;
 

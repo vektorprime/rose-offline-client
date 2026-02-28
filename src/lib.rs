@@ -88,10 +88,6 @@ use render::{
     RoseTerrainExtension,
     RoseWaterExtension,
     RoseEffectExtension,
-    SkyMaterialPlugin,
-    // REMOVED: CartoonSky - using Bevy 0.16 Atmosphere instead
-    // CartoonSkyMaterialPlugin,
-    // CartoonSkySettings,
     TrailEffectRenderPlugin,
     WorldUiRenderPlugin,
     ZoneLightingPlugin,
@@ -103,6 +99,17 @@ use render::{
     UnderwaterEffectPlugin,
     UnderwaterSettings,
     CameraUnderwaterState,
+    StarrySkyMaterialPlugin,
+    StarrySkySettings,
+    StarrySky,
+    MoonLight,
+    StarrySkyMaterial,
+    create_starry_sky_mesh,
+    update_starry_sky_system,
+    update_starry_sky_night_factor,
+    toggle_atmosphere_based_on_time,
+    sky_sphere_follow_camera_system,
+    AtmosphereState,
 };
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
@@ -890,8 +897,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // Optional: Add these for full rendering support
     app.add_plugins((
-            // SkyMaterialPlugin { prepass_enabled: false },  // DISABLED - using Bevy 0.16 Atmosphere instead
-            // CartoonSkyMaterialPlugin { prepass_enabled: false },  // DISABLED - using Bevy 0.16 Atmosphere instead
             TrailEffectRenderPlugin,
             ZoneLightingPlugin,
             WorldUiRenderPlugin,
@@ -934,6 +939,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             // Underwater rendering effect
             UnderwaterEffectPlugin,
 
+            // Procedural starry sky with moon lighting
+            StarrySkyMaterialPlugin,
+
             // Blood effect system (spatter decals, gash wounds)
             blood_effect_plugin::BloodEffectPlugin,
 
@@ -949,7 +957,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseTerrainExtension> registered");
     log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseWaterExtension> registered");
     log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseEffectExtension> registered");
-    log::info!("[MATERIAL PLUGIN] SkyMaterialPlugin registered");
 
     // Setup state
     app.insert_state(app_state);
@@ -1118,11 +1125,20 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             system_func_event_system,
             load_dialog_sprites_system,
             zone_time_system,
+            // Toggle atmosphere based on time of day (disable at night for stars)
+            // Must run after zone_time_system to get current time state
+            toggle_atmosphere_based_on_time.after(zone_time_system),
+            // Update starry sky night_factor from zone time state
+            // Must run after zone_time_system and before update_starry_sky_system
+            update_starry_sky_night_factor.after(zone_time_system),
             // DISABLED: color_grading_time_of_day_system conflicts with Bevy 0.16 Atmosphere
             // This system was applying time-based color grading (temperature/saturation changes)
             // which conflicts with the new atmospheric scattering system.
             // color_grading_time_of_day_system,
             directional_light_system,
+            // Starry sky material update - updates uniforms for twinkling and night factor
+            // Runs after update_starry_sky_night_factor to use updated night_factor value
+            update_starry_sky_system.after(update_starry_sky_night_factor),
         ),
     );
     // update_ui_resources uses EguiContexts
@@ -1183,6 +1199,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // character_model_blink_system in PostUpdate to avoid any conflicts with model destruction
     // e.g. through the character select exit system.
     app.add_systems(PostUpdate, character_model_blink_system);
+
+    // Sky sphere follows camera in PostUpdate to ensure camera transform is up to date
+    app.add_systems(PostUpdate, sky_sphere_follow_camera_system.after(TransformSystem::TransformPropagate));
 
     // vehicle_model_system in after ::Update but before ::PostUpdate to avoid any conflicts,
     // with model destruction but to also be before global transform is calculated.
@@ -1383,9 +1402,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<DepthOfFieldSettings>()
         .init_resource::<WaterSettings>()
         .init_resource::<FlightSettings>()
-        .init_resource::<MonsterChatterPhrases>();
+        .init_resource::<MonsterChatterPhrases>()
+        .init_resource::<AtmosphereState>();
 
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
+
+    // Spawn starry sky and moon light entities on startup
+    app.add_systems(PostStartup, spawn_starry_sky_and_moon);
 
     // System to apply depth of field settings from the resource to the camera
     app.add_systems(Update, apply_depth_of_field_settings);
@@ -2026,4 +2049,130 @@ fn apply_water_settings(
             material.fog_max_density = zone_lighting.fog_max_density;
         }
     }
+}
+
+/// System to spawn starry sky sphere and moon directional light
+/// Creates a large inverted sphere with procedural star material and a moon light source
+fn spawn_starry_sky_and_moon(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StarrySkyMaterial>>,
+    starry_sky_settings: Res<StarrySkySettings>,
+) {
+    use bevy::math::primitives::Sphere;
+    use bevy::pbr::DirectionalLight as DirectionalLightComponent;
+    
+    log::info!("[STARRY SKY] ========== SPAWN SYSTEM CALLED ==========");
+    log::info!("[STARRY SKY] spawn_starry_sky_and_moon function executing");
+    
+    // CRITICAL: The sky sphere must be LARGE enough to contain the entire game world.
+    // Camera is at ~5120, 100, -5120 which is ~7242 units from world origin.
+    // Using 50000 units radius ensures camera is always inside the sphere.
+    // The sphere is centered at world origin (0,0,0).
+    let sky_sphere_radius = 50000.0;
+    
+    log::info!("[STARRY SKY] Sky sphere radius: {}", sky_sphere_radius);
+    log::info!("[STARRY SKY] Camera expected at ~5120, 100, -5120 (inside sphere)");
+    log::info!("[STARRY SKY] StarrySkySettings - star_density: {}, star_brightness: {}, night_factor: {}",
+        starry_sky_settings.star_density,
+        starry_sky_settings.star_brightness,
+        starry_sky_settings.night_factor
+    );
+    
+    // Create starry sky sphere mesh (large sphere centered at world origin)
+    let sphere = Sphere::new(sky_sphere_radius);
+    let mut sky_mesh = Mesh::from(sphere);
+    log::info!("[STARRY SKY] Created sphere mesh primitive");
+    
+    // Flip normals for inside rendering (we're inside the sphere looking out)
+    if let Some(normals) = sky_mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL) {
+        if let bevy::render::mesh::VertexAttributeValues::Float32x3(normals) = normals {
+            log::info!("[STARRY SKY] Flipping {} normals for inside rendering", normals.len());
+            for normal in normals.iter_mut() {
+                normal[0] = -normal[0];
+                normal[1] = -normal[1];
+                normal[2] = -normal[2];
+            }
+        } else {
+            log::warn!("[STARRY SKY] Normals attribute has unexpected format!");
+        }
+    } else {
+        log::warn!("[STARRY SKY] No normals attribute found in mesh!");
+    }
+    
+    // CRITICAL FIX: Reverse the winding order of triangles for inside rendering
+    // When viewing a sphere from inside, the triangles are front-facing if we reverse the indices
+    // Without this, backface culling removes all triangles and the sky is invisible
+    if let Some(indices) = sky_mesh.indices_mut() {
+        match indices {
+            bevy::render::mesh::Indices::U32(indices) => {
+                let count = indices.len() / 3;
+                log::info!("[STARRY SKY] Reversing winding order for {} triangles", count);
+                // Reverse each triangle (swap v1 and v2 of each triangle)
+                for chunk in indices.chunks_mut(3) {
+                    chunk.swap(1, 2);
+                }
+            }
+            bevy::render::mesh::Indices::U16(indices) => {
+                let count = indices.len() / 3;
+                log::info!("[STARRY SKY] Reversing winding order for {} triangles (U16)", count);
+                for chunk in indices.chunks_mut(3) {
+                    chunk.swap(1, 2);
+                }
+            }
+            _ => {
+                log::warn!("[STARRY SKY] Unknown index format, cannot reverse winding order!");
+            }
+        }
+    } else {
+        log::warn!("[STARRY SKY] No indices in mesh - mesh may use non-indexed rendering");
+    }
+    
+    // Create material with current settings
+    let sky_material = StarrySkyMaterial {
+        time: 0.0,
+        star_density: starry_sky_settings.star_density,
+        star_brightness: starry_sky_settings.star_brightness,
+        night_factor: starry_sky_settings.night_factor,
+        moon_phase: starry_sky_settings.moon_phase,
+        moon_direction: starry_sky_settings.moon_direction,
+    };
+    log::info!("[STARRY SKY] Created StarrySkyMaterial with time=0.0, night_factor={}", sky_material.night_factor);
+    
+    // Spawn starry sky entity
+    let sky_mesh_handle = meshes.add(sky_mesh);
+    let sky_material_handle = materials.add(sky_material);
+    log::info!("[STARRY SKY] Mesh handle created: {:?}", sky_mesh_handle);
+    log::info!("[STARRY SKY] Material handle created: {:?}", sky_material_handle);
+    
+    let sky_entity = commands.spawn((
+        StarrySky,
+        Mesh3d(sky_mesh_handle),
+        MeshMaterial3d(sky_material_handle),
+        Transform::from_xyz(0.0, 0.0, 0.0),  // Center of world - sphere is large enough to contain camera
+        Visibility::Visible,
+    )).id();
+    
+    log::info!("[STARRY SKY] StarrySky entity spawned with id: {:?}", sky_entity);
+    log::info!("[STARRY SKY] Entity components: StarrySky, Mesh3d, MeshMaterial3d<StarrySkyMaterial>, Transform(0,0,0), Visibility::Visible");
+    
+    // Spawn moon directional light (separate from sun)
+    // This provides illumination at night
+    let moon_entity = commands.spawn((
+        MoonLight,
+        DirectionalLightComponent {
+            illuminance: 5000.0,  // Moonlight intensity (much dimmer than sun)
+            color: Color::srgb(0.8, 0.85, 0.95),  // Slightly blue-white moonlight
+            shadows_enabled: true,
+            shadow_depth_bias: 0.0,
+            shadow_normal_bias: 0.0,
+            affects_lightmapped_mesh_diffuse: true,
+        },
+        Transform::from_xyz(0.0, 100.0, 0.0)
+            .looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+        Visibility::Visible,
+    )).id();
+    
+    log::info!("[STARRY SKY] MoonLight entity spawned with id: {:?}", moon_entity);
+    log::info!("[STARRY SKY] ========== SPAWN COMPLETE ==========");
 }

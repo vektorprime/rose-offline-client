@@ -9,6 +9,22 @@ This document outlines a comprehensive plan for upgrading the ROSE Offline Clien
 
 ---
 
+## Detailed Analysis Reports
+
+The following detailed analysis reports provide in-depth information on specific aspects of the upgrade:
+
+1. **[Event/Message Migration Analysis](./upgrade-analysis-event-message.md)** - Comprehensive analysis of the Event → Message system migration, including all event types in the codebase and their migration paths.
+
+2. **[Shader Bind Group Migration Analysis](./upgrade-analysis-shader-bindgroups.md)** - Analysis of shader and bind group changes required for wgpu 25 compatibility, including all custom shaders.
+
+3. **[Render Crate Reorganization Analysis](./upgrade-analysis-render-reorganization.md)** - Detailed mapping of types moved between crates (bevy_render → bevy_camera, bevy_mesh, etc.).
+
+4. **[Third-Party Dependency Analysis](./upgrade-analysis-third-party-deps.md)** - Compatibility analysis for bevy_egui, bevy-inspector-egui, and bevy_rapier3d.
+
+5. **[Animation System Analysis](./upgrade-analysis-animation-system.md)** - Analysis of animation system changes including AnimationTarget split and related migrations.
+
+---
+
 ## Phase 1: Pre-Upgrade Preparation
 
 ### 1.1 Third-Party Dependency Compatibility Check

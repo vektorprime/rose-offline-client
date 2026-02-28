@@ -79,6 +79,17 @@ pub use underwater_effect::{
     UnderwaterEffectPlugin, UnderwaterSettings, CameraUnderwaterState,
 };
 
+// Procedural starry sky material
+pub mod starry_sky_material;
+pub use starry_sky_material::{
+    StarrySkyMaterial, StarrySkyMaterialPlugin,
+    StarrySkySettings, StarrySky, MoonLight,
+    create_starry_sky_mesh, update_starry_sky_system,
+    sky_sphere_follow_camera_system, moon_light_follow_camera_system,
+    update_starry_sky_night_factor, toggle_atmosphere_based_on_time,
+    AtmosphereState,
+};
+
 pub const MESH_ATTRIBUTE_UV_1: MeshVertexAttribute =
     MeshVertexAttribute::new("Vertex_Uv2", 280035324, VertexFormat::Float32x2);
 
