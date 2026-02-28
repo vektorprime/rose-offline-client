@@ -5,7 +5,7 @@ use bevy_egui::{egui, EguiContexts};
 use crate::{
     audio::SoundGain,
     components::{BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory, WindSwaySettings},
-    render::{SkyMode, SkySettings, ZoneLighting},
+    render::{SkyMode, SkySettings, StarrySkySettings, ZoneLighting},
     resources::{SeasonSettings, SoundSettings, WaterSettings},
     ui::UiStateWindows,
 };
@@ -14,6 +14,7 @@ use crate::{
 enum SettingsPage {
     Sound,
     Sky,
+    Stars,
     DepthOfField,
     VolumetricFog,
     Water,
@@ -76,6 +77,7 @@ pub fn ui_settings_system(
     mut sound_settings: ResMut<SoundSettings>,
     mut query_sounds: Query<(&SoundCategory, &mut SoundGain)>,
     mut sky_settings: ResMut<SkySettings>,
+    mut starry_sky_settings: ResMut<StarrySkySettings>,
     mut dof_settings: ResMut<DepthOfFieldSettings>,
     mut zone_lighting: ResMut<ZoneLighting>,
     mut water_settings: ResMut<WaterSettings>,
@@ -95,6 +97,11 @@ pub fn ui_settings_system(
                     &mut ui_state_settings.page,
                     SettingsPage::Sky,
                     "Sky",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::Stars,
+                    "Stars",
                 );
                 ui.selectable_value(
                     &mut ui_state_settings.page,
@@ -250,6 +257,84 @@ pub fn ui_settings_system(
                     } else {
                         ui.label("Tip: Drag the time slider to change time of day. 6 = sunrise, 12 = noon, 18 = sunset, 0 = midnight.");
                     }
+                }
+                SettingsPage::Stars => {
+                    egui::Grid::new("starry_sky_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Star Density:");
+                            ui.add(
+                                egui::Slider::new(&mut starry_sky_settings.star_density, 0.0..=1.0)
+                                    .text("density")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Star Brightness:");
+                            ui.add(
+                                egui::Slider::new(&mut starry_sky_settings.star_brightness, 0.0..=5.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Moon Phase:");
+                            ui.add(
+                                egui::Slider::new(&mut starry_sky_settings.moon_phase, 0.0..=1.0)
+                                    .text("phase")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            // Moon phase description
+                            let phase_desc = match starry_sky_settings.moon_phase {
+                                p if p < 0.05 || p > 0.95 => "New Moon",
+                                p if p < 0.25 => "Waxing Crescent",
+                                p if p < 0.35 => "First Quarter",
+                                p if p < 0.55 => "Waxing Gibbous",
+                                p if p < 0.65 => "Full Moon",
+                                p if p < 0.75 => "Waning Gibbous",
+                                p if p < 0.95 => "Last Quarter",
+                                _ => "New Moon",
+                            };
+                            ui.label("");
+                            ui.label(phase_desc);
+                            ui.end_row();
+
+                            ui.label("Moon Direction X:");
+                            ui.add(
+                                egui::Slider::new(&mut starry_sky_settings.moon_direction.x, -1.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Moon Direction Y:");
+                            ui.add(
+                                egui::Slider::new(&mut starry_sky_settings.moon_direction.y, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Moon Direction Z:");
+                            ui.add(
+                                egui::Slider::new(&mut starry_sky_settings.moon_direction.z, -1.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            // Normalize button
+                            if ui.button("Normalize Moon Direction").clicked() {
+                                starry_sky_settings.moon_direction = starry_sky_settings.moon_direction.normalize();
+                            }
+                            ui.end_row();
+
+                            ui.label("Night Factor:");
+                            ui.label(format!("{:.2} (auto)", starry_sky_settings.night_factor));
+                            ui.end_row();
+                        });
+
+                    ui.separator();
+                    ui.label("Tip: Star density 0.15 = sparse (~1,000 stars), 0.60 = dense (~6,000 stars). Changes apply instantly.");
+                    ui.label("Note: Night factor is controlled by game time. Set to Manual mode in Sky tab and set time to midnight to see stars.");
                 }
                 SettingsPage::DepthOfField => {
                     egui::Grid::new("dof_settings")

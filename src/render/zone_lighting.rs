@@ -119,7 +119,11 @@ impl Plugin for ZoneLightingPlugin {
         }
 
         app.add_systems(Startup, spawn_lights)
-            .add_systems(Update, (update_volumetric_fog_system, update_sun_position_system));
+            .add_systems(Update, (
+                update_volumetric_fog_system,
+                update_sun_position_system,
+                apply_sky_settings_to_zone_time,
+            ));
         // bevy::log::info!("[ZONE LIGHTING] ZoneLightingPlugin build complete");
     }
 
@@ -322,6 +326,62 @@ fn update_sun_position_system(
             0.0,
             -day_fract * std::f32::consts::TAU,
         );
+    }
+}
+
+/// System that applies SkySettings manual time to ZoneTime.debug_overwrite_time
+/// This bridges the UI settings to the zone time system
+///
+/// When SkySettings.mode is Manual, this system converts manual_time (0-24 hours)
+/// to ticks and sets ZoneTime.debug_overwrite_time, which causes zone_time_system
+/// to use the manual time instead of the game's world time.
+///
+/// When SkySettings.mode is Automatic, this system clears debug_overwrite_time
+/// so the game time is used normally.
+fn apply_sky_settings_to_zone_time(
+    sky_settings: Res<SkySettings>,
+    current_zone: Option<Res<crate::resources::CurrentZone>>,
+    game_data: Res<crate::resources::GameData>,
+    mut zone_time: ResMut<crate::resources::ZoneTime>,
+) {
+    // Only update if sky_settings changed
+    if !sky_settings.is_changed() {
+        return;
+    }
+
+    // Need current zone to get day_cycle
+    let Some(current_zone) = current_zone else {
+        return;
+    };
+
+    let Some(zone_data) = game_data.zone_list.get_zone(current_zone.id) else {
+        return;
+    };
+
+    match sky_settings.mode {
+        SkyMode::Manual => {
+            // Convert manual_time (hours 0-24) to ticks
+            // day_cycle represents the total ticks for a full 24-hour day
+            let manual_time_hours = sky_settings.manual_time.clamp(0.0, 24.0);
+            let tick_value = ((manual_time_hours / 24.0) * zone_data.day_cycle as f32) as u32;
+
+            zone_time.debug_overwrite_time = Some(tick_value);
+
+            // Log once when manual mode is enabled
+            if zone_time.debug_overwrite_time.is_some() {
+                log::info!(
+                    "[SKY SETTINGS] Manual time enabled: {:.1} hours -> {} ticks (day_cycle: {})",
+                    manual_time_hours,
+                    tick_value,
+                    zone_data.day_cycle
+                );
+            }
+        }
+        SkyMode::Automatic => {
+            // Clear the override to use game time
+            zone_time.debug_overwrite_time = None;
+            log::info!("[SKY SETTINGS] Automatic time enabled - following game time");
+        }
     }
 }
 

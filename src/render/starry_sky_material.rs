@@ -179,11 +179,11 @@ pub struct StarrySkySettings {
 impl Default for StarrySkySettings {
     fn default() -> Self {
         Self {
-            star_density: 0.15,        // 15% of cells have stars
+            star_density: 0.50,        // 50% of cells have stars (~3,000-5,000 stars)
             star_brightness: 1.0,      // Normal brightness
             moon_phase: 0.5,           // Full moon
             moon_direction: Vec3::new(0.3, 0.8, 0.5).normalize(),  // Upper right
-            night_factor: 1.0,         // Visible by default
+            night_factor: 0.0,         // Default to daytime (stars hidden) until zone_time_system updates it
         }
     }
 }
@@ -221,9 +221,9 @@ impl Default for StarrySkyMaterial {
     fn default() -> Self {
         Self {
             time: 0.0,
-            star_density: 0.15,
+            star_density: 0.50,  // Match StarrySkySettings default
             star_brightness: 1.0,
-            night_factor: 1.0,
+            night_factor: 0.0,  // Default to daytime (stars hidden)
             moon_phase: 0.5,
             moon_direction: Vec3::new(0.3, 0.8, 0.5).normalize(),
         }
