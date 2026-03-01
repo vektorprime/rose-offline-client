@@ -275,6 +275,8 @@ fn update_volumetric_fog_system(
 fn update_sun_position_system(
     zone_time: Res<crate::resources::ZoneTime>,
     sky_settings: Res<SkySettings>,
+    current_zone: Option<Res<crate::resources::CurrentZone>>,
+    game_data: Res<crate::resources::GameData>,
     mut query: Query<&mut Transform, With<DirectionalLight>>,
 ) {
     // Determine if we should update based on mode and what changed
@@ -287,14 +289,29 @@ fn update_sun_position_system(
         return;
     }
     
-    // Get the time value based on mode
+    // Get the time value in HOURS (0-24) based on mode
     let time_hours = match sky_settings.mode {
         SkyMode::Automatic => {
-            // Use game time from ZoneTime
-            zone_time.time as f32
+            // Convert ZoneTime.time (ticks) to hours (0-24)
+            // Need to get day_cycle from zone data for proper conversion
+            const DEFAULT_DAY_CYCLE: f32 = 160.0; // Standard 24-hour day cycle
+            let day_cycle = if let Some(current_zone) = current_zone {
+                if let Some(zone_data) = game_data.zone_list.get_zone(current_zone.id) {
+                    // SAFETY: Ensure day_cycle is never zero to prevent division by zero
+                    let cycle = zone_data.day_cycle as f32;
+                    if cycle > 0.0 { cycle } else { DEFAULT_DAY_CYCLE }
+                } else {
+                    DEFAULT_DAY_CYCLE
+                }
+            } else {
+                DEFAULT_DAY_CYCLE
+            };
+            
+            // Convert ticks to hours: (ticks / day_cycle) * 24
+            (zone_time.time as f32 / day_cycle) * 24.0
         }
         SkyMode::Manual => {
-            // Use manual time from SkySettings
+            // Use manual time from SkySettings (already in hours)
             sky_settings.manual_time
         }
     };
@@ -303,8 +320,23 @@ fn update_sun_position_system(
         // Normalize time to 0-24 hours range
         let normalized_time = time_hours % 24.0;
         
+        // Shift time to achieve desired sun cycle:
+        // - 6:00: sunrise (sun at horizon, rising)
+        // - 12:00-17:00: sun high in the sky
+        // - After 17:00: sunset (sun goes below horizon)
+        //
+        // The shift of +19 hours (equivalent to -5) maps:
+        // - 6:00 → shifted 1:00 → day_fract ≈ 0.04 (sun rising)
+        // - 12:00 → shifted 7:00 → day_fract ≈ 0.29 (sun climbing)
+        // - 17:00 → shifted 12:00 → day_fract = 0.5 (sun at highest/noon position)
+        // - 18:00 → shifted 13:00 → day_fract ≈ 0.54 (sun starting to descend)
+        // - 23:00 → shifted 18:00 → day_fract = 0.75 (sun setting)
+        //
+        // This extends daylight by ~6 hours: sun visible from 6:00 through 17:00+
+        let shifted_time = (normalized_time + 19.0) % 24.0;
+        
         // Convert time to a fraction of the day (0.0 to 1.0)
-        let day_fract = (normalized_time / 24.0).clamp(0.0, 1.0);
+        let day_fract = (shifted_time / 24.0).clamp(0.0, 1.0);
         
         // Earth's axial tilt - this creates the arc path of the sun
         // Higher values make the sun rise higher at noon
@@ -316,10 +348,13 @@ fn update_sun_position_system(
         // - Y (0.0): No Y rotation needed
         // - X (-day_fract * TAU): Rotates the sun around the tilted axis over the day
         //
-        // At day_fract = 0.0 (midnight): sun is at lowest point (below horizon)
-        // At day_fract = 0.25 (6am): sun is at horizon (sunrise in east)
-        // At day_fract = 0.5 (noon): sun is at highest point (overhead)
-        // At day_fract = 0.75 (6pm): sun is at horizon (sunset in west)
+        // With the +19 hour shift:
+        // At 6:00 (day_fract ≈ 0.04): sun rising at horizon
+        // At 12:00 (day_fract ≈ 0.29): sun climbing in sky
+        // At 17:00 (day_fract = 0.5): sun at highest point (noon position)
+        // At 23:00 (day_fract = 0.75): sun setting at horizon
+        //
+        // This keeps sun visible from 6:00 through 17:00+ (extended daylight)
         transform.rotation = Quat::from_euler(
             EulerRot::ZYX,
             earth_tilt_rad,

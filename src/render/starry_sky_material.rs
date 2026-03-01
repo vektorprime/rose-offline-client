@@ -179,8 +179,8 @@ pub struct StarrySkySettings {
 impl Default for StarrySkySettings {
     fn default() -> Self {
         Self {
-            star_density: 0.50,        // 50% of cells have stars (~3,000-5,000 stars)
-            star_brightness: 1.0,      // Normal brightness
+            star_density: 1.0,        // 50% of cells have stars (~3,000-5,000 stars)
+            star_brightness: 5.0,      // Normal brightness
             moon_phase: 0.5,           // Full moon
             moon_direction: Vec3::new(0.3, 0.8, 0.5).normalize(),  // Upper right
             night_factor: 0.0,         // Default to daytime (stars hidden) until zone_time_system updates it
