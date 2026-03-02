@@ -45,6 +45,25 @@ pub struct ParticleMaterial {
     
     #[uniform(9)]
     pub billboard_type: u32,
+    
+    pub alpha_mode: AlphaMode,
+}
+
+impl Default for ParticleMaterial {
+    fn default() -> Self {
+        Self {
+            positions: Handle::default(),
+            sizes: Handle::default(),
+            colors: Handle::default(),
+            textures: Handle::default(),
+            texture: Handle::default(),
+            blend_op: 0,
+            src_blend_factor: 0,
+            dst_blend_factor: 0,
+            billboard_type: 0,
+            alpha_mode: AlphaMode::Premultiplied,
+        }
+    }
 }
 
 impl Material for ParticleMaterial {
@@ -108,10 +127,7 @@ impl Material for ParticleMaterial {
     }
 
     fn alpha_mode(&self) -> AlphaMode {
-        // Use Premultiplied alpha mode for particles - this provides better
-        // transparency handling for particle effects where black pixels should
-        // be transparent. The shader outputs premultiplied alpha values.
-        AlphaMode::Premultiplied
+        self.alpha_mode
     }
 }
 

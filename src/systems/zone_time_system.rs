@@ -184,8 +184,8 @@ pub fn zone_time_system(
     
     // Log current time every 60 frames (~1 second) for debugging
     static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let should_log = frame % 60 == 0;
+    let _frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let should_log = false; // Disabled - was: frame % 60 == 0
     
     if should_log {
         log::info!("[ZONE_TIME] ========== CURRENT TIME ==========");

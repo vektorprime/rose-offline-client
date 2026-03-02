@@ -23,8 +23,8 @@ impl ChatBubbleEvent {
             target_entity: None,
             entity_name,
             text,
-            duration: 5.0,
-            color: Color::WHITE,
+            duration: 10.0,
+            color: Color::BLACK,
             bubble_type: ChatBubbleType::Normal,
         }
     }

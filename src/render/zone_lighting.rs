@@ -644,6 +644,7 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetZoneLightingBindGroup
         meta: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
+        log::debug!("[SetZoneLightingBindGroup] Setting bind group {} for render pass", I);
         pass.set_bind_group(I, &meta.into_inner().bind_group, &[]);
 
         RenderCommandResult::Success

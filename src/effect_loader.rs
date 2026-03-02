@@ -348,6 +348,11 @@ fn spawn_particle(
                             2 => 1, // Y-axis billboard
                             _ => 2, // Default to Full billboard
                         },
+                        alpha_mode: if sequence.dst_blend_mode == 2 {
+                            AlphaMode::Add
+                        } else {
+                            AlphaMode::Premultiplied
+                        },
                     });
 
                     // Create a custom mesh with num_particles * 6 vertices to match shader expectations

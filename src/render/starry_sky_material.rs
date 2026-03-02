@@ -66,97 +66,15 @@ impl Plugin for StarrySkyMaterialPlugin {
 }
 
 /// Diagnostic system to log material preparation status and visibility
-/// Runs every 60 frames to report material state
+/// DISABLED: All logging has been disabled to reduce console noise
+#[allow(dead_code)]
 fn diagnose_starry_sky_materials(
-    materials: Res<Assets<StarrySkyMaterial>>,
-    query: Query<(&MeshMaterial3d<StarrySkyMaterial>, Entity, &Visibility, Option<&ViewVisibility>, Option<&InheritedVisibility>, &Transform), With<StarrySky>>,
-    camera_query: Query<&GlobalTransform, With<Camera>>,
+    _materials: Res<Assets<StarrySkyMaterial>>,
+    _query: Query<(&MeshMaterial3d<StarrySkyMaterial>, Entity, &Visibility, Option<&ViewVisibility>, Option<&InheritedVisibility>, &Transform), With<StarrySky>>,
+    _camera_query: Query<&GlobalTransform, With<Camera>>,
 ) {
-    static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    
-    // Log every 60 frames (~1 second at 60fps)
-    if frame % 60 != 0 {
-        return;
-    }
-    
-    log::info!("[STARRY SKY PREPARE] ========== MATERIAL PREPARE DIAGNOSTIC ==========");
-    log::info!("[STARRY SKY PREPARE] Frame: {}", frame);
-    
-    // Log camera position
-    if let Ok(camera_transform) = camera_query.get_single() {
-        let cam_pos = camera_transform.translation();
-        let cam_distance = cam_pos.length();
-        log::info!("[STARRY SKY PREPARE] Camera position: {:?}", cam_pos);
-        log::info!("[STARRY SKY PREPARE] Camera distance from origin: {:.0} (sphere radius: 50000)", cam_distance);
-        
-        if cam_distance > 45000.0 {
-            log::warn!("[STARRY SKY PREPARE] Camera may be near sphere edge!");
-        }
-    } else {
-        log::warn!("[STARRY SKY PREPARE] No camera found!");
-    }
-    
-    let entity_count = query.iter().count();
-    log::info!("[STARRY SKY PREPARE] StarrySky entities with material: {}", entity_count);
-    
-    if entity_count == 0 {
-        log::warn!("[STARRY SKY PREPARE] No StarrySky entities found! Spawn may have failed.");
-        log::info!("[STARRY SKY PREPARE] ================================================");
-        return;
-    }
-    
-    let total_materials = materials.len();
-    log::info!("[STARRY SKY PREPARE] Total StarrySkyMaterial assets: {}", total_materials);
-    
-    for (material_handle, entity, visibility, view_visibility, inherited_visibility, transform) in query.iter() {
-        log::info!("[STARRY SKY PREPARE] Entity {:?}:", entity);
-        log::info!("[STARRY SKY PREPARE]   Transform: {:?}", transform.translation);
-        log::info!("[STARRY SKY PREPARE]   Visibility: {:?}", visibility);
-        log::info!("[STARRY SKY PREPARE]   ViewVisibility: {:?}", view_visibility);
-        log::info!("[STARRY SKY PREPARE]   InheritedVisibility: {:?}", inherited_visibility);
-        
-        // Check if entity is visible
-        if let Some(view_vis) = view_visibility {
-            log::info!("[STARRY SKY PREPARE]   view_visibility.get() = {}", view_vis.get());
-        }
-        if let Some(inherited_vis) = inherited_visibility {
-            log::info!("[STARRY SKY PREPARE]   inherited_visibility.get() = {}", inherited_vis.get());
-        }
-        
-        if let Some(material) = materials.get(&material_handle.0) {
-            log::info!("[STARRY SKY PREPARE]   Material values (UNIFORMS SENT TO GPU):");
-            log::info!("[STARRY SKY PREPARE]     binding 0 - time: {:.2}s", material.time);
-            log::info!("[STARRY SKY PREPARE]     binding 1 - star_density: {:.3}", material.star_density);
-            log::info!("[STARRY SKY PREPARE]     binding 2 - star_brightness: {:.3}", material.star_brightness);
-            log::info!("[STARRY SKY PREPARE]     binding 3 - night_factor: {:.3} *** CRITICAL ***", material.night_factor);
-            log::info!("[STARRY SKY PREPARE]       -> If night_factor <= 0.01, shader returns transparent!");
-            log::info!("[STARRY SKY PREPARE]     binding 4 - moon_phase: {:.3}", material.moon_phase);
-            log::info!("[STARRY SKY PREPARE]     binding 5 - moon_direction: {:?}", material.moon_direction);
-            
-            // Critical warnings
-            if material.night_factor <= 0.0 {
-                log::error!("[STARRY SKY PREPARE] !!! night_factor = 0 - STARS WILL BE INVISIBLE !!!");
-                log::error!("[STARRY SKY PREPARE] !!! This means it's DAYTIME - check zone_time_system !!!");
-            } else if material.night_factor < 0.5 {
-                log::warn!("[STARRY SKY PREPARE] night_factor = {:.2} - stars will be dim (transition period)", material.night_factor);
-            } else {
-                log::info!("[STARRY SKY PREPARE] night_factor = {:.2} - stars SHOULD BE VISIBLE", material.night_factor);
-            }
-            
-            if material.star_density <= 0.0 {
-                log::error!("[STARRY SKY PREPARE] !!! star_density = 0 - NO STARS WILL BE GENERATED !!!");
-            }
-            
-            if material.star_brightness <= 0.0 {
-                log::error!("[STARRY SKY PREPARE] !!! star_brightness = 0 - STARS WILL BE BLACK !!!");
-            }
-        } else {
-            log::error!("[STARRY SKY PREPARE] Entity {:?} material handle {:?} NOT FOUND in assets!", entity, material_handle.0);
-        }
-    }
-    
-    log::info!("[STARRY SKY PREPARE] ================================================");
+    // All [STARRY SKY PREPARE] logging disabled
+    // To re-enable, replace this function body with the original diagnostic code
 }
 
 /// Resource for starry sky settings
@@ -376,9 +294,9 @@ pub fn update_starry_sky_system(
     let entity_count = query.iter().count();
     
     // Log every 60 frames (~1 second at 60fps) to avoid log spam
-    static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let should_log = frame % 60 == 0;
+    //static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    //let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let should_log = false; // Disabled: frame % 60 == 0;
     
     if should_log {
         log::info!("[STARRY SKY UPDATE] ========== UPDATE SYSTEM RUNNING ==========");
@@ -457,10 +375,10 @@ pub fn sky_sphere_follow_camera_system(
                 let sphere_pos = sky_transform.translation;
                 let sphere_radius = 50000.0;
                 
-                log::info!(
-                    "[SKY SPHERE] Camera at {:?} (distance: {:.0} from origin), Sphere at {:?}, radius: {}",
-                    camera_pos, camera_distance, sphere_pos, sphere_radius
-                );
+                // log::info!(
+                //     "[SKY SPHERE] Camera at {:?} (distance: {:.0} from origin), Sphere at {:?}, radius: {}",
+                //     camera_pos, camera_distance, sphere_pos, sphere_radius
+                // );
                 
                 if camera_distance > sphere_radius * 0.9 {
                     log::warn!(
@@ -526,8 +444,8 @@ pub fn update_starry_sky_night_factor(
 
     // Frame counter for throttling logs
     static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let should_log = frame % 60 == 0; // Log every 60 frames
+    let _frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let should_log = false; // Disabled - was: frame % 60 == 0
 
     // DEBUG: Force night mode for testing
     if FORCE_NIGHT_MODE {
@@ -541,7 +459,7 @@ pub fn update_starry_sky_night_factor(
     
     if should_log {
         log::info!("[NIGHT_FACTOR_UPDATE] ========== SYSTEM RUNNING ==========");
-        log::info!("[NIGHT_FACTOR_UPDATE] Frame: {}", frame);
+        // Frame logging disabled
     }
     
     // Check if ZoneTime resource exists
@@ -629,13 +547,13 @@ pub fn update_starry_sky_night_factor(
         starry_sky_settings.night_factor = new_night_factor;
         
         // Always log when value actually changes
-        log::info!(
-            "[NIGHT_FACTOR_UPDATE] UPDATED: night_factor {:.2} -> {:.2} (state: {:?}, progress: {:.2})",
-            old_night_factor,
-            new_night_factor,
-            zone_time.state,
-            zone_time.state_percent_complete
-        );
+        // log::info!(
+        //     "[NIGHT_FACTOR_UPDATE] UPDATED: night_factor {:.2} -> {:.2} (state: {:?}, progress: {:.2})",
+        //     old_night_factor,
+        //     new_night_factor,
+        //     zone_time.state,
+        //     zone_time.state_percent_complete
+        // );
     } else {
         if should_log {
             log::info!("[NIGHT_FACTOR_UPDATE] No change needed (value already {:.2})", new_night_factor);
@@ -685,8 +603,8 @@ impl Default for AtmosphereState {
 
     // Frame counter for throttling diagnostic logs
     static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let should_log = frame % 60 == 0; // Log every 60 frames
+    let _frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let should_log = false; // Disabled - was: frame % 60 == 0
 
     // DEBUG: Force atmosphere OFF when forcing night mode
     if FORCE_NIGHT_MODE {
@@ -734,7 +652,7 @@ impl Default for AtmosphereState {
     // Diagnostic logging
     if should_log {
         log::info!("[ATMOSPHERE] ========== TOGGLE SYSTEM RUNNING ==========");
-        log::info!("[ATMOSPHERE] Frame: {}", frame);
+        // Frame logging disabled
         log::info!("[ATMOSPHERE] ZoneTime state: {:?}", zone_time.state);
         log::info!("[ATMOSPHERE] ZoneTime progress: {:.2}%", zone_time.state_percent_complete * 100.0);
         log::info!("[ATMOSPHERE] Current atmosphere_state.enabled: {}", atmosphere_state.enabled);

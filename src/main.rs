@@ -6,6 +6,7 @@ use rose_data::ZoneId;
 use rose_offline_client::{
     load_config, run_game, run_map_editor, run_model_viewer, run_zone_viewer, Config, FilesystemDeviceConfig,
     SystemsConfig,
+    logging::{init_session_logging, LoggingConfig, LoggingGuard},
 };
 
 fn main() {
@@ -268,6 +269,28 @@ fn main() {
     }
 
     println!("Determining which mode to run...");
+    
+    // Determine mode name for logging
+    let mode = if matches.is_present("model-viewer") {
+        "ModelViewer"
+    } else if matches.is_present("zone-viewer") {
+        "ZoneViewer"
+    } else if matches.is_present("map-editor") {
+        "MapEditor"
+    } else {
+        "Game"
+    };
+    
+    // Initialize session-based logging
+    // The guard must be kept alive for the duration of the application
+    let _logging_guard = init_session_logging(
+        mode,
+        None, // Use default logging config
+        None, // No additional session config
+    ).expect("Failed to initialize logging");
+    
+    log::info!("[LOGGING] Session logging initialized for mode: {}", mode);
+    
     if matches.is_present("model-viewer") {
         println!("Running in model viewer mode");
         run_model_viewer(&config);

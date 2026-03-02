@@ -13,7 +13,7 @@ use bevy::{
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        view::{ViewVisibility, InheritedVisibility, NoFrustumCulling},
+        view::{NoFrustumCulling, VisibilityClass},
     },
     window::PrimaryWindow,
 };
@@ -43,6 +43,7 @@ pub struct NameTagData {
     pub rects: ArrayVec<WorldUiRect, MAX_NAME_ROWS>,
 }
 
+#[derive(Clone)]
 pub struct NameTagPendingData {
     pub galley: Arc<egui::Galley>,
     pub colors: ArrayVec<Color, MAX_NAME_ROWS>,
@@ -432,6 +433,11 @@ pub fn name_tag_system(
         name_tag_cache.pending.remove(&entity);
     }
 
+    let add_count = query_add.iter().len();
+    if add_count > 0 {
+        info!("[NAME_TAG_DEBUG] Processing {} entities without name tags", add_count);
+    }
+    
     for object in query_add.iter() {
         let name_tag_type = if let Some(npc) = object.npc {
             if object
@@ -454,24 +460,29 @@ pub fn name_tag_system(
         {
             name_tag_data
         } else if let Some(pending_name_tag_data) = name_tag_cache.pending.remove(&object.entity) {
+            info!("[NAME_TAG_DEBUG] Found pending data for entity {:?} name='{}'", object.entity, object.name.name);
             if let Some(name_tag_data) = create_nametag_data(
                 window_entity,
                 &mut egui_context,
                 &egui_managed_textures,
                 &mut images,
-                pending_name_tag_data,
+                pending_name_tag_data.clone(),
             ) {
+                info!("[NAME_TAG_DEBUG] Successfully created name tag data for '{}'", object.name.name);
                 name_tag_cache
                     .cache
                     .insert(object.name.name.clone(), name_tag_data);
                 name_tag_cache.cache.get(&object.name.name).unwrap()
             } else {
-                // Try again next frame
+                // FIX: Re-insert pending data to try again next frame instead of losing it
+                info!("[NAME_TAG_DEBUG] create_nametag_data returned None, re-inserting pending for '{}'", object.name.name);
+                name_tag_cache.pending.insert(object.entity, pending_name_tag_data);
                 continue;
             }
         } else {
             // Create egui text and wait until next frame to read the font texture to ensure
             // that the texture has been updated and contains the characters we want to use
+            info!("[NAME_TAG_DEBUG] Creating pending name tag for entity {:?} name='{}'", object.entity, object.name.name);
             name_tag_cache.pending.insert(
                 object.entity,
                 create_pending_nametag(
@@ -496,8 +507,7 @@ pub fn name_tag_system(
             .spawn((
                 NameTag { name_tag_type },
                 visibility,
-                InheritedVisibility::default(),
-                ViewVisibility::default(),
+                VisibilityClass::default(),
                 Transform::from_translation(Vec3::new(0.0, object.model_height.height, 0.0)),
                 GlobalTransform::default(),
                 NoFrustumCulling,
@@ -649,9 +659,8 @@ pub fn name_tag_system(
                     rect,
                     Transform::default(),
                     GlobalTransform::default(),
-                    Visibility::default(),
-                    InheritedVisibility::default(),
-                    ViewVisibility::default(),
+                    Visibility::Inherited,
+                    VisibilityClass::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -665,8 +674,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    InheritedVisibility::default(),
-                    ViewVisibility::default(),
+                    VisibilityClass::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -680,8 +688,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    InheritedVisibility::default(),
-                    ViewVisibility::default(),
+                    VisibilityClass::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
@@ -699,8 +706,7 @@ pub fn name_tag_system(
                     Transform::default(),
                     GlobalTransform::default(),
                     Visibility::Hidden,
-                    InheritedVisibility::default(),
-                    ViewVisibility::default(),
+                    VisibilityClass::default(),
                     NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);

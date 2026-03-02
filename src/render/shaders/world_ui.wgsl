@@ -12,8 +12,31 @@ var base_texture: texture_2d<f32>;
 var base_sampler: sampler;
 
 // Zone lighting uniforms (when ZONE_LIGHTING_GROUP_2 is defined)
+// Define ZoneLightingData struct locally to avoid bind group conflict with imported module
+// which declares zone_lighting at group(3)
 #ifdef ZONE_LIGHTING_GROUP_2
-#import rose_client::zone_lighting
+struct ZoneLightingData {
+    // Group 0: 64 bytes (4 vec4)
+    map_ambient_color: vec4<f32>,
+    character_ambient_color: vec4<f32>,
+    character_diffuse_color: vec4<f32>,
+    light_direction: vec4<f32>,
+    
+    // Group 1: 64 bytes (4 vec4)
+    fog_color: vec4<f32>,
+    day_color: vec4<f32>,
+    night_color: vec4<f32>,
+    // Pack 4 f32 values into vec4 for alignment
+    fog_params: vec4<f32>, // x = fog_density, y = fog_min_density, z = fog_max_density, w = fog_height_density
+    
+    // Group 2: 48 bytes (3 vec4)
+    // Pack 4 f32 values into vec4 for alignment
+    fog_height_params: vec4<f32>, // x = fog_min_height, y = fog_max_height, z = time_of_day, w = unused
+    // Pack 2 f32 values with padding
+    fog_alpha_params: vec4<f32>, // x = fog_alpha_range_start, y = fog_alpha_range_end, zw = unused
+    _padding: vec4<f32>, // Padding to ensure total size is multiple of 16
+};
+
 @group(2) @binding(0)
 var<uniform> zone_lighting: ZoneLightingData;
 #endif
@@ -39,13 +62,14 @@ fn vertex(in: VertexInput) -> VertexOutput {
     // Transform world position directly to clip space
     let clip_pos = view.clip_from_world * vec4<f32>(in.world_position, 1.0);
     
-    // Convert to screen space and apply offset
+    // Convert to NDC and apply offset, then convert back to clip space
     // screen_position is in pixels, convert to NDC (-1 to 1)
     let viewport_size = view.viewport.zw;
-    let ndc_offset = in.screen_position / viewport_size * 2.0;
-    let screen_pos = (clip_pos.xy / clip_pos.w) + ndc_offset;
+    let ndc_offset = vec2<f32>(in.screen_position.x, -in.screen_position.y) / viewport_size * 2.0;
+    let ndc_pos = clip_pos.xy / clip_pos.w + ndc_offset;
     
-    out.clip_position = vec4<f32>(screen_pos, clip_pos.z, clip_pos.w);
+    // Convert back to clip space by multiplying by w
+    out.clip_position = vec4<f32>(ndc_pos * clip_pos.w, clip_pos.z, clip_pos.w);
     out.uv = in.uv;
     out.color = in.color;
     out.world_position = in.world_position;
@@ -63,12 +87,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     
 #ifdef ZONE_LIGHTING_GROUP_2
     // Apply simple fog if zone lighting is available
-    let view_pos = view.world_position - in.world_position;
-    let distance = length(view_pos);
-    let fog_far = zone_lighting.fog_params.z;
-    let fog_near = zone_lighting.fog_params.y;
-    let fog_factor = clamp((fog_far - distance) / (fog_far - fog_near), 0.0, 1.0);
-    out_color = mix(zone_lighting.fog_color, out_color, fog_factor);
+    // let view_pos = view.world_position - in.world_position;
+    // let distance = length(view_pos);
+    // let fog_far = zone_lighting.fog_params.z;
+    // let fog_near = zone_lighting.fog_params.y;
+    // let fog_factor = clamp((fog_far - distance) / (fog_far - fog_near), 0.0, 1.0);
+    // out_color = mix(zone_lighting.fog_color, out_color, fog_factor);
 #endif
     
     return out_color;

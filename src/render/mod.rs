@@ -90,6 +90,14 @@ pub use starry_sky_material::{
     AtmosphereState,
 };
 
+// Procedural cloud material
+pub mod cloud_material;
+pub use cloud_material::{
+    CloudMaterial, CloudMaterialPlugin, CloudSettings, CloudLayer,
+    spawn_cloud_layer, update_cloud_material_system,
+    update_cloud_lighting_system, cloud_layer_follow_camera_system,
+};
+
 pub const MESH_ATTRIBUTE_UV_1: MeshVertexAttribute =
     MeshVertexAttribute::new("Vertex_Uv2", 280035324, VertexFormat::Float32x2);
 

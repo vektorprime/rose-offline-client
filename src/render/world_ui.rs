@@ -28,7 +28,7 @@ use bevy::{
             BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferBindingType, BufferUsages, RawBufferVec, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, FragmentState, FrontFace, MultisampleState, PipelineCache, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipelineDescriptor, SamplerBindingType, Shader, ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode
         },
         renderer::{RenderDevice, RenderQueue},
-        view::{prepare_view_uniforms, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms}
+        view::{self, prepare_view_uniforms, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms, VisibilityClass}
     },
     color::ColorToComponents,
 };
@@ -69,7 +69,9 @@ impl Plugin for WorldUiRenderPlugin {
                 .add_render_command::<Transparent3d, DrawWorldUi>()
                 .init_resource::<SpecializedRenderPipelines<WorldUiPipeline>>()
                 .add_systems(ExtractSchedule, extract_world_ui_rects)
-                .add_systems(Render, (queue_world_ui_meshes).in_set(RenderSet::Queue));
+                // NOTE: This system must run in PrepareBindGroups (not Queue) because it depends on
+                // prepare_view_uniforms which runs in PrepareResources. Queue runs BEFORE PrepareResources.
+                .add_systems(Render, (queue_world_ui_meshes).in_set(RenderSet::PrepareBindGroups).after(prepare_view_uniforms));
         }
     }
 
@@ -83,6 +85,8 @@ impl Plugin for WorldUiRenderPlugin {
 }
 
 #[derive(Component, Clone)]
+#[require(VisibilityClass)]
+#[component(on_add = view::add_visibility_class::<WorldUiRect>)]
 pub struct WorldUiRect {
     pub image: Handle<Image>,
     pub screen_offset: Vec2,
@@ -120,15 +124,16 @@ impl Default for ExtractedWorldUi {
 fn extract_world_ui_rects(
     mut extracted_world_ui: ResMut<ExtractedWorldUi>,
     images: Extract<Res<Assets<Image>>>,
-    query: Extract<Query<(&InheritedVisibility, &GlobalTransform, &WorldUiRect)>>,
+    query: Extract<Query<(&ViewVisibility, &GlobalTransform, &WorldUiRect)>>,
 ) {
     extracted_world_ui.rects.clear();
     let mut visible_count = 0;
     let mut hidden_count = 0;
     let mut missing_image_count = 0;
+    let total_count = query.iter().len();
     
-    for (inherited_visibility, global_transform, rect) in query.iter() {
-        if !inherited_visibility.get() {
+    for (view_visibility, global_transform, rect) in query.iter() {
+        if !view_visibility.get() {
             hidden_count += 1;
             continue;
         }
@@ -151,9 +156,9 @@ fn extract_world_ui_rects(
         });
     }
     
-    if visible_count > 0 || hidden_count > 0 || missing_image_count > 0 {
-        //log::info!("[WORLD_UI_EXTRACT] visible={}, hidden={}, missing_image={}", visible_count, hidden_count, missing_image_count);
-    }
+    // Always log for debugging
+    //log::info!("[WORLD_UI_EXTRACT] total={}, visible={}, hidden={}, missing_image={}",
+    //    total_count, visible_count, hidden_count, missing_image_count);
 }
 
 #[repr(C)]
@@ -392,17 +397,21 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWorldUiMaterialBindGr
     ) -> RenderCommandResult {
         let sprite_batch = match sprite_batch {
             Some(sprite_batch) => sprite_batch,
-            None => return RenderCommandResult::Success,
+            None => {
+                log::warn!("[SetWorldUiMaterialBindGroup] No batch data found");
+                return RenderCommandResult::Success;
+            }
         };
         let image_bind_groups = image_bind_groups.into_inner();
-        pass.set_bind_group(
-                I,
-                image_bind_groups
-                    .values
-                    .get(&sprite_batch.image_handle_id)
-                    .unwrap(),
-                &[],
-            );
+        match image_bind_groups.values.get(&sprite_batch.image_handle_id) {
+            Some(bind_group) => {
+                pass.set_bind_group(I, bind_group, &[]);
+                log::debug!("[SetWorldUiMaterialBindGroup] Set bind group {} for image {:?}", I, sprite_batch.image_handle_id);
+            }
+            None => {
+                log::error!("[SetWorldUiMaterialBindGroup] No bind group found for image {:?}", sprite_batch.image_handle_id);
+            }
+        }
         RenderCommandResult::Success
     }
 }
@@ -431,11 +440,23 @@ impl<P: PhaseItem> RenderCommand<P> for DrawWorldUiBatch {
     ) -> RenderCommandResult {
         let batch = match batch {
             Some(batch) => batch,
-            None => return RenderCommandResult::Success,
+            None => {
+                log::warn!("[DrawWorldUiBatch] No batch data found");
+                return RenderCommandResult::Success;
+            }
         };
         let sprite_meta = sprite_meta.into_inner();
-        pass.set_vertex_buffer(0, sprite_meta.vertices.buffer().unwrap().slice(..));
-        pass.draw(batch.vertex_range.clone(), 0..1);
+        let buffer = sprite_meta.vertices.buffer();
+        match buffer {
+            Some(buf) => {
+                pass.set_vertex_buffer(0, buf.slice(..));
+                log::debug!("[DrawWorldUiBatch] Drawing vertices {:?} (6 vertices for quad)", batch.vertex_range);
+                pass.draw(batch.vertex_range.clone(), 0..1);
+            }
+            None => {
+                log::error!("[DrawWorldUiBatch] Vertex buffer is None!");
+            }
+        }
         RenderCommandResult::Success
     }
 }
@@ -443,8 +464,8 @@ impl<P: PhaseItem> RenderCommand<P> for DrawWorldUiBatch {
 struct SetWorldUiViewBindGroup<const I: usize>;
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWorldUiViewBindGroup<I> {
     type Param = SRes<WorldUiMeta>;
-    type ViewQuery = Option<Read<ViewUniformOffset>>;
-    type ItemQuery = Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<Option<()>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;
+    type ViewQuery = Read<ViewUniformOffset>;
+    type ItemQuery = ();
 
     fn render<'w>(
         _: &P,
@@ -453,14 +474,16 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWorldUiViewBindGroup<
         world_ui_meta: SystemParamItem<'w, 'w, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        let Some(view_uniform) = view_uniform else {
-            return RenderCommandResult::Success;
-        };
-        pass.set_bind_group(
-            I,
-            world_ui_meta.into_inner().view_bind_group.as_ref().unwrap(),
-            &[view_uniform.offset],
-        );
+        let world_ui_meta = world_ui_meta.into_inner();
+        match world_ui_meta.view_bind_group.as_ref() {
+            Some(bind_group) => {
+                pass.set_bind_group(I, bind_group, &[view_uniform.offset]);
+                log::debug!("[SetWorldUiViewBindGroup] Set bind group {} with offset {}", I, view_uniform.offset);
+            }
+            None => {
+                log::error!("[SetWorldUiViewBindGroup] View bind group is None!");
+            }
+        }
         RenderCommandResult::Success
     }
 }
@@ -524,9 +547,11 @@ pub fn queue_world_ui_meshes(
     }
 
     for (view_entity, view, msaa) in views.iter() {
-        let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity) else {
-            continue;
-        };
+    //log::info!("[WORLD_UI_QUEUE] Processing view entity={:?}, retained_view_entity={:?}", view_entity, view.retained_view_entity);
+    let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity) else {
+        //log::warn!("[WORLD_UI_QUEUE] No transparent phase found for view {:?}", view.retained_view_entity);
+        continue;
+    };
 
         let msaa_samples = msaa.map(|m| m.samples()).unwrap_or(1);
         let view_key = MeshPipelineKey::from_msaa_samples(msaa_samples)
@@ -541,6 +566,8 @@ pub fn queue_world_ui_meshes(
         // );
         
         let pipeline = pipelines.specialize(&pipeline_cache, &world_ui_pipeline, view_key);
+        let pipeline = pipelines.specialize(&pipeline_cache, &world_ui_pipeline, view_key);
+        //log::info!("[WORLD_UI_QUEUE] Pipeline specialized: {:?}", pipeline);
         let view_matrix = view.world_from_view.compute_matrix();
         let inverse_view_transform = view_matrix.inverse();
         let inverse_view_row_2 = inverse_view_transform.row(2);
@@ -581,12 +608,12 @@ pub fn queue_world_ui_meshes(
                 };
 
             let clip_pos = view_proj.project_point3(rect.world_position);
-            //log::info!("[WORLD_UI_QUEUE] Projection: world_pos={:?}, clip_pos={:?}, clip_from_world={}",
-             //   rect.world_position, clip_pos, view.clip_from_world.is_some());
+            //log::info!("[WORLD_UI_QUEUE] Projection: world_pos={:?}, clip_pos={:?}, order={}",
+            //    rect.world_position, clip_pos, rect.order);
             if clip_pos.z < 0.0 || clip_pos.z > 1.0 {
                 // Outside frustum depth, ignore
                 frustum_culled_count += 1;
-                //log::info!("[WORLD_UI_QUEUE] Frustum culled: world_pos={:?}, clip_z={}", rect.world_position, clip_pos.z);
+                //log::info!("[WORLD_UI_QUEUE] FRUSTUM CULLED: world_pos={:?}, clip_z={}", rect.world_position, clip_pos.z);
                 continue;
             }
             // Convert from NDC to screen coordinates
@@ -606,7 +633,7 @@ pub fn queue_world_ui_meshes(
             {
                 // Not visible on screen
                 screen_culled_count += 1;
-                //log::info!("[WORLD_UI_QUEUE] Screen culled: world_pos={:?}, screen_pos={:?}, min={:?}, max={:?}, offset={:?}, size={:?}, view={}x{}",
+                //log::info!("[WORLD_UI_QUEUE] SCREEN CULLED: world_pos={:?}, screen_pos={:?}, min={:?}, max={:?}, offset={:?}, size={:?}, view={}x{}",
                 //    rect.world_position, screen_pos, min_screen_pos, max_screen_pos, rect.screen_offset, rect.screen_size, view_width, view_height);
                 continue;
             }
@@ -628,10 +655,10 @@ pub fn queue_world_ui_meshes(
                 ],
             ];
             let uvs = [
-                [rect.uv_min.x, rect.uv_max.y],
-                [rect.uv_max.x, rect.uv_max.y],
-                [rect.uv_max.x, rect.uv_min.y],
                 [rect.uv_min.x, rect.uv_min.y],
+                [rect.uv_max.x, rect.uv_min.y],
+                [rect.uv_max.x, rect.uv_max.y],
+                [rect.uv_min.x, rect.uv_max.y],
             ];
 
             const QUAD_INDICES: [usize; 6] = [0, 2, 3, 0, 1, 2];
@@ -675,11 +702,19 @@ pub fn queue_world_ui_meshes(
                     )
                 });
 
+            // Use a large POSITIVE distance to render ON TOP of everything
+            // Transparent3d sorts back-to-front (ascending by distance)
+            // "Values increase towards the camera" - so larger distance = closer = rendered last = on top
+            let base_distance = inverse_view_row_2.dot(rect.world_position.extend(1.0));
+            // Add a large offset to ensure UI renders on top of all other transparent objects
+            let ui_distance = base_distance + 999999.0;
+            //log::info!("[WORLD_UI_QUEUE] Adding phase item: entity={:?}, base_distance={}, ui_distance={}",
+            //    visible_entity, base_distance, ui_distance);
             transparent_phase.items.push(Transparent3d {
                 entity: (visible_entity, visible_entity.into()),
                 draw_function: draw_alpha_mask,
                 pipeline,
-                distance: inverse_view_row_2.dot(rect.world_position.extend(1.0)) + 999999.0,
+                distance: ui_distance,
                 batch_range: 0..1,
                 extra_index: PhaseItemExtraIndex::None,
                 indexed: false,
@@ -689,9 +724,15 @@ pub fn queue_world_ui_meshes(
         // Write vertex buffer to GPU
         world_ui_meta.vertices.write_buffer(&render_device, &render_queue);
         
-        if extracted_count > 0 {
-            //log::info!("[WORLD_UI_QUEUE] extracted={}, gpu_missing={}, frustum_culled={}, screen_culled={}, queued={}",
-            //    extracted_count, gpu_image_missing_count, frustum_culled_count, screen_culled_count, queued_count);
-        }
+        // Log vertex buffer status
+        //log::info!("[WORLD_UI_QUEUE] Vertex buffer len={}, buffer exists={}",
+        //    world_ui_meta.vertices.len(), world_ui_meta.vertices.buffer().is_some());
+        
+        // Log phase items count
+        //log::info!("[WORLD_UI_QUEUE] Transparent phase items count: {}", transparent_phase.items.len());
+        
+        // Always log for debugging
+        //log::info!("[WORLD_UI_QUEUE] extracted={}, gpu_missing={}, frustum_culled={}, screen_culled={}, queued={}",
+        //    extracted_count, gpu_image_missing_count, frustum_culled_count, screen_culled_count, queued_count);
     }
 }

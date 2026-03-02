@@ -54,6 +54,7 @@ pub mod diagnostics;
 pub mod effect_loader;
 pub mod events;
 pub mod exe_resource_loader;
+pub mod logging;
 pub mod map_editor;
 pub mod model_loader;
 pub mod protocol;
@@ -110,6 +111,8 @@ use render::{
     toggle_atmosphere_based_on_time,
     sky_sphere_follow_camera_system,
     AtmosphereState,
+    CloudMaterialPlugin,
+    spawn_cloud_layer,
 };
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
@@ -947,6 +950,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
             // Map editor system
             map_editor::MapEditorPlugin,
+
+            // Procedural cloud material
+            CloudMaterialPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -1410,7 +1416,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
 
     // Spawn starry sky and moon light entities on startup
-    app.add_systems(PostStartup, spawn_starry_sky_and_moon);
+    app.add_systems(PostStartup, (spawn_starry_sky_and_moon, spawn_cloud_layer));
 
     // System to apply depth of field settings from the resource to the camera
     app.add_systems(Update, apply_depth_of_field_settings);

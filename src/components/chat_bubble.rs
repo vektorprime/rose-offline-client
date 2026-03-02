@@ -22,18 +22,18 @@ impl ChatBubble {
             text,
             remaining_time: duration,
             total_time: duration,
-            fade_start_fraction: 0.8, // Fade starts at 80% of total time
+            fade_start_fraction: 0.2, // Fade starts when 20% of time is left
         }
     }
 
     /// Returns a value between 0.0 and 1.0 representing the fade alpha
     /// 1.0 means fully visible, 0.0 means fully faded
     pub fn get_fade_alpha(&self) -> f32 {
-        let fade_start_time = self.total_time * self.fade_start_fraction;
-        if self.remaining_time >= fade_start_time {
+        let fade_duration = self.total_time * self.fade_start_fraction;
+        if self.remaining_time >= fade_duration {
             1.0
         } else {
-            (self.remaining_time / fade_start_time).clamp(0.0, 1.0)
+            (self.remaining_time / fade_duration).clamp(0.0, 1.0)
         }
     }
 }

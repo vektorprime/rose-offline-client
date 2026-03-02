@@ -56,6 +56,21 @@ pub fn character_model_add_collider_system(
                     .1
                     .iter(),
             )
+            .chain(
+                character_model.model_parts[CharacterModelPart::Head]
+                    .1
+                    .iter(),
+            )
+            .chain(
+                character_model.model_parts[CharacterModelPart::CharacterFace]
+                    .1
+                    .iter(),
+            )
+            .chain(
+                character_model.model_parts[CharacterModelPart::CharacterHair]
+                    .1
+                    .iter(),
+            )
         {
             parts_found += 1;
             match query_aabb.get(*part_entity) {
@@ -116,7 +131,7 @@ pub fn character_model_add_collider_system(
 
         commands.entity(entity).insert((
             ColliderEntity::new(collider_entity),
-            ModelHeight::new(0.65 + half_extents.y * 2.0),
+            ModelHeight::new(1.25 + half_extents.y * 2.0),
         ));
 
         info!("Created collider for entity {:?}: half_extents=({:.2}, {:.2}, {:.2}), root_bone_offset=({:.2}, {:.2}, {:.2})",

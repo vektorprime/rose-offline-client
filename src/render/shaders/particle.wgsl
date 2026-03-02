@@ -134,7 +134,24 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         discard;
     }
     
-    // Output premultiplied alpha for proper blending
-    // RGB values are multiplied by alpha to avoid dark halos
-    return vec4<f32>(result.rgb * result.a, result.a);
+    // Handle different blend modes to match ROSE engine behavior
+    // We use Bevy's Premultiplied alpha blend state: src * 1 + dst * (1 - src_alpha)
+    
+    var src_rgb: vec3<f32>;
+    if (src_blend_factor == 2u) { // BlendFactor::One
+        src_rgb = result.rgb;
+    } else { // Default to BlendFactor::SrcAlpha (5)
+        src_rgb = result.rgb * result.a;
+    }
+
+    var src_a: f32;
+    if (dst_blend_factor == 2u) { // BlendFactor::One (Additive)
+        src_a = 0.0;
+    } else if (dst_blend_factor == 1u) { // BlendFactor::Zero (Opaque)
+        src_a = 1.0;
+    } else { // Default to BlendFactor::OneMinusSrcAlpha (6)
+        src_a = result.a;
+    }
+    
+    return vec4<f32>(src_rgb, src_a);
 }

@@ -2,7 +2,7 @@ use bevy::prelude::{EventWriter, Local, Res, State};
 
 use crate::{
     events::{CharacterSelectEvent, LoginEvent},
-    resources::{AppState, CharacterList, ServerConfiguration, ServerList},
+    resources::{AppState, CharacterList, CharacterSelectState, ServerConfiguration, ServerList},
 };
 
 #[derive(Default)]
@@ -18,6 +18,7 @@ pub fn auto_login_system(
     mut auto_login_state: Local<AutoLoginState>,
     app_state: Res<State<AppState>>,
     character_list: Option<Res<CharacterList>>,
+    character_select_state: Option<Res<CharacterSelectState>>,
     server_list: Option<Res<ServerList>>,
     server_configuration: Res<ServerConfiguration>,
     mut login_events: EventWriter<LoginEvent>,
@@ -83,16 +84,30 @@ pub fn auto_login_system(
         }
         AutoLoginState::WaitCharacterList => {
             if matches!(app_state.get(), AppState::GameCharacterSelect) {
-                if let Some(preset_character_name) =
-                    server_configuration.preset_character_name.as_ref()
-                {
-                    if let Some(character_list) = character_list.as_ref() {
-                        for (i, character) in character_list.characters.iter().enumerate() {
-                            if &character.info.name == preset_character_name {
-                                character_select_events
-                                    .write(CharacterSelectEvent::SelectCharacter(i));
-                                character_select_events.write(CharacterSelectEvent::PlaySelected);
-                                *auto_login_state = AutoLoginState::SelectedCharacter;
+                // Wait for CharacterSelectState to be ready (not in Entering state)
+                // before sending character selection events
+                let is_ready = character_select_state
+                    .as_ref()
+                    .map(|state| matches!(**state, CharacterSelectState::CharacterSelect(_)))
+                    .unwrap_or(false);
+
+                if is_ready {
+                    if let Some(preset_character_name) =
+                        server_configuration.preset_character_name.as_ref()
+                    {
+                        if let Some(character_list) = character_list.as_ref() {
+                            for (i, character) in character_list.characters.iter().enumerate() {
+                                if &character.info.name == preset_character_name {
+                                    log::info!(
+                                        "[AUTO_LOGIN] Auto-selecting character '{}' at index {}",
+                                        character.info.name,
+                                        i
+                                    );
+                                    character_select_events
+                                        .write(CharacterSelectEvent::SelectCharacter(i));
+                                    character_select_events.write(CharacterSelectEvent::PlaySelected);
+                                    *auto_login_state = AutoLoginState::SelectedCharacter;
+                                }
                             }
                         }
                     }

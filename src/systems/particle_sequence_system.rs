@@ -1,16 +1,13 @@
 use std::ops::RangeInclusive;
 
 use bevy::{
-    asset::{Assets, AssetServer, Handle, LoadState},
+    asset::{AssetServer, Assets, Handle, LoadState},
     image::ImageSampler,
     log::{debug, error, info, warn},
     math::{Quat, Vec2, Vec3, Vec4},
     prelude::{Commands, Component, Entity, GlobalTransform, Image, Mesh3d, MeshMaterial3d, Query, Res, ResMut, Resource, Time, Transform},
     render::{
-        mesh::{Indices, Mesh, PrimitiveTopology},
-        render_asset::RenderAssetUsages,
-        render_resource::{Extent3d, TextureDimension, TextureFormat},
-        storage::ShaderStorageBuffer,
+        alpha::AlphaMode, mesh::{Indices, Mesh, PrimitiveTopology}, render_asset::RenderAssetUsages, render_resource::{Extent3d, TextureDimension, TextureFormat}, storage::ShaderStorageBuffer
     },
 };
 use rand::Rng;
@@ -573,6 +570,11 @@ pub fn particle_storage_buffer_update_system(
                 src_blend_factor: render_data.src_blend_factor as u32,
                 dst_blend_factor: render_data.dst_blend_factor as u32,
                 billboard_type: render_data.billboard_type as u32,
+                alpha_mode: if render_data.dst_blend_factor == 2 {
+                    AlphaMode::Add
+                } else {
+                    AlphaMode::Premultiplied
+                },
             };
             
             // Create mesh with proper vertex count

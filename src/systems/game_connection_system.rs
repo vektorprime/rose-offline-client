@@ -812,7 +812,7 @@ pub fn game_connection_system(
                                 .resource_mut::<Events<ChatBubbleEvent>>()
                                 .send(ChatBubbleEvent::new(name, text_for_bubble)
                                     .with_entity(chat_entity)
-                                    .with_duration(5.0)
+                                    .with_duration(8.0)
                                     .with_bubble_type(ChatBubbleType::Normal));
                         }
                     });
@@ -822,7 +822,7 @@ pub fn game_connection_system(
                 let _ = chatbox_events.write(ChatboxEvent::Shout(name.clone(), text.clone()));
                 // Also send chat bubble event for shout
                 let _ = chat_bubble_events.write(ChatBubbleEvent::new(name, text)
-                    .with_duration(6.0)
+                    .with_duration(10.0)
                     .with_color(bevy::prelude::Color::srgb(1.0, 0.8, 0.4))
                     .with_bubble_type(ChatBubbleType::Shout));
             }

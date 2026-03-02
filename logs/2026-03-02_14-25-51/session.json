@@ -1,0 +1,11 @@
+{
+  "session_id": "2026-03-02_14-25-51",
+  "start_time_utc": "2026-03-02T20:25:51.019952100+00:00",
+  "start_time_local": "2026-03-02T14:25:51.019952100-06:00",
+  "hostname": "VEKTX",
+  "command_line": ".\\target\\debug\\rose-offline-client.exe --auto-login --character-name tesrrr --username ryko --password ryko",
+  "mode": "Game",
+  "bevy_version": "0.16.1",
+  "rust_version": "1.93.1",
+  "os": "windows"
+}
