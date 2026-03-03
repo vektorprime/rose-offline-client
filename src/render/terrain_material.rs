@@ -14,7 +14,7 @@ use bevy::{
     pbr::{
         AmbientLight, DirectionalLight, Material, MaterialPipeline, MaterialPipelineKey, MeshPipelineKey,
     },
-    prelude::{App, Color, GlobalTransform, Mesh, Plugin, Query, Res, ResMut, Resource, World, Vec3, Vec4, ColorToComponents},
+    prelude::{App, Color, GlobalTransform, Mesh, Plugin, Query, Res, ResMut, Resource, World, Vec3, Vec4, ColorToComponents, DetectChanges, LinearRgba},
     reflect::TypePath,
     render::{
         alpha::AlphaMode,
@@ -27,7 +27,7 @@ use bevy::{
     },
 };
 
-use crate::render::{MESH_ATTRIBUTE_UV_1, TERRAIN_MESH_ATTRIBUTE_TILE_INFO};
+use crate::render::{MESH_ATTRIBUTE_UV_1, TERRAIN_MESH_ATTRIBUTE_TILE_INFO, ZoneLighting};
 
 /// Shader handle for the terrain material shader
 pub const TERRAIN_MATERIAL_SHADER_HANDLE: Handle<Shader> =
@@ -63,23 +63,20 @@ impl Plugin for TerrainMaterialPlugin {
 }
 
 pub fn update_terrain_lighting_system(
-    query_light: Query<(&DirectionalLight, &GlobalTransform)>,
-    ambient_light: Res<AmbientLight>,
+    zone_lighting: Res<ZoneLighting>,
     mut terrain_materials: ResMut<Assets<TerrainMaterial>>,
 ) {
-    if let Ok((light, transform)) = query_light.get_single() {
-        let light_direction = transform.forward();
-        let light_color = light.color;
-        
-        // Combine ambient color and brightness for the shader
-        // We use a simple multiplication as an approximation for the shader
-        let ambient_color = Color::from(ambient_light.color.to_linear() * (ambient_light.brightness / 500.0)); // Normalize relative to original 500.0
+    // Only update if zone_lighting has changed
+    if !zone_lighting.is_changed() {
+        return;
+    }
 
-        for (_, material) in terrain_materials.iter_mut() {
-            material.light_direction = *light_direction;
-            material.light_color = light_color;
-            material.ambient_color = ambient_color;
-        }
+    for (_, material) in terrain_materials.iter_mut() {
+        material.light_direction = zone_lighting.light_direction;
+        let char_diffuse = zone_lighting.character_diffuse_color;
+        material.light_color = Color::from(LinearRgba::new(char_diffuse.x, char_diffuse.y, char_diffuse.z, 1.0));
+        let map_ambient = zone_lighting.map_ambient_color;
+        material.ambient_color = Color::from(LinearRgba::new(map_ambient.x, map_ambient.y, map_ambient.z, 1.0));
     }
 }
 

@@ -91,7 +91,8 @@ pub fn camera_animation_system(
             next_frame_index,
         );
 
-        if let (Some(eye), Some(center), Some(up)) = (eye, center, up) {
+        if let (Some(eye), Some(center)) = (eye, center) {
+            let up = up.unwrap_or(Vec3::Y);
             let new_transform = Transform::from_translation(eye).looking_at(center, up);
             *transform = new_transform;
         }

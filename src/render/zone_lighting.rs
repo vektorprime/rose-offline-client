@@ -10,7 +10,8 @@ use bevy::{
     prelude::{
         AmbientLight, App, Color, Commands, DetectChanges, DirectionalLight, EulerRot,
         FromWorld, IntoScheduleConfigs, Local, Plugin, Query, Quat, ReflectResource, Res, ResMut,
-        Resource, Shader, Startup, Transform, Update, World, With,
+        Resource, Shader, Startup, Transform, Update, World, With, LinearRgba,
+        GlobalTransform, ColorToComponents, Dir3,
     },
     reflect::{Reflect, TypePath},
     render::camera::Exposure,
@@ -123,6 +124,7 @@ impl Plugin for ZoneLightingPlugin {
                 update_volumetric_fog_system,
                 update_sun_position_system,
                 apply_sky_settings_to_zone_time,
+                sync_zone_lighting_to_bevy_lights_system,
             ));
         // bevy::log::info!("[ZONE LIGHTING] ZoneLightingPlugin build complete");
     }
@@ -256,6 +258,32 @@ fn update_volumetric_fog_system(
             // When disabled, set density to 0 to effectively disable the fog
             fog_volume.density_factor = 0.0;
             // bevy::log::debug!("[ZONE LIGHTING] Volumetric fog disabled - set density_factor to 0");
+        }
+    }
+}
+
+/// System that syncs ZoneLighting resource values to Bevy's built-in lights
+/// This ensures that both custom shaders and standard PBR materials use the same lighting
+fn sync_zone_lighting_to_bevy_lights_system(
+    mut zone_lighting: ResMut<ZoneLighting>,
+    mut ambient_light: ResMut<AmbientLight>,
+    mut query_directional_light: Query<(&mut DirectionalLight, &GlobalTransform)>,
+) {
+    // Sync ambient light color from zone_lighting.map_ambient_color
+    // We preserve the brightness we set earlier for better balance
+    let map_ambient = zone_lighting.map_ambient_color;
+    ambient_light.color = Color::from(LinearRgba::new(map_ambient.x, map_ambient.y, map_ambient.z, 1.0));
+
+    if let Ok((mut light, transform)) = query_directional_light.get_single_mut() {
+        // Sync directional light color from zone_lighting.character_diffuse_color
+        let char_diffuse = zone_lighting.character_diffuse_color;
+        light.color = Color::from(LinearRgba::new(char_diffuse.x, char_diffuse.y, char_diffuse.z, 1.0));
+        
+        // Update zone_lighting.light_direction from the actual light transform
+        // This ensures custom shaders (like terrain) stay in sync with the sun position
+        let current_dir: Dir3 = transform.forward();
+        if zone_lighting.light_direction != *current_dir {
+            zone_lighting.light_direction = *current_dir;
         }
     }
 }

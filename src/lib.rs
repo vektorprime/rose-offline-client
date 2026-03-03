@@ -1812,8 +1812,8 @@ fn load_common_game_data(
             far: 100000.0,  // Increased to contain sky sphere (radius 50000 + camera distance)
             aspect_ratio: 16.0 / 9.0,
         }),
-        Transform::from_translation(Vec3::new(5120.0, 100.0, -5120.0))
-            .looking_at(Vec3::new(5120.0, 0.0, -5130.0), Vec3::Y),
+        Transform::from_translation(Vec3::new(5200.0, 30.0, -5180.0))
+            .looking_at(Vec3::new(5200.0, 10.0, -5230.0), Vec3::Y),
         GlobalTransform::default(),
         bevy::ui::IsDefaultUiCamera,
         // Add Tonemapping - REQUIRED for HDR to work properly with depth of field

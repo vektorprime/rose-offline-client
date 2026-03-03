@@ -2,7 +2,7 @@
 
 ## Overview
 
-The sun in this Rose Online implementation is represented by a **DirectionalLight** that simulates sunlight. The sun does **not move** in 3D space - instead, the game uses a **static directional light** with a fixed angle, and the time-of-day system changes **lighting colors, fog properties, and skybox textures** to simulate the sun's movement through the sky.
+The sun in this Rose Online implementation is represented by a **DirectionalLight** that simulates sunlight. The sun's position and color are dynamically updated by the **time-of-day system**, which synchronizes the **ZoneLighting** resource with Bevy's built-in lights to ensure a consistent and high-quality visual experience across all world elements.
 
 ---
 
@@ -136,21 +136,18 @@ The volumetric fog is **not attached to the sun** - it's a world-space volume th
 
 ---
 
-## Light Direction in Shaders
+## Light Synchronization System
 
-The light direction is passed to shaders via the `ZoneLighting` resource:
+A dedicated system, `sync_zone_lighting_to_bevy_lights_system` in `src/render/zone_lighting.rs`, ensures that the game's two lighting systems remain perfectly in sync:
 
-```rust
-// zone_lighting.rs
-pub struct ZoneLightingUniformData {
-    pub light_direction: Vec4,  // Normalized direction vector
-    // ...
-}
-```
+1.  **Ambient Light**: Synchronizes `zone_lighting.map_ambient_color` with the global `AmbientLight` resource.
+2.  **Directional Light Color**: Synchronizes `zone_lighting.character_diffuse_color` with the `DirectionalLight` component.
+3.  **Light Direction**: Automatically updates `zone_lighting.light_direction` from the actual sun position (transform) in the sky.
 
-In WGSL shaders, this is used for:
-- **Water material specular calculations**: `light_direction: Vec3(0.3, -0.8, 0.5)`
-- **PBR lighting calculations**: Directional light direction from the transform
+This synchronization is critical for:
+- **Terrain Lighting**: Allows the custom terrain shader to receive dynamic light direction and color updates.
+- **Water Reflections**: Ensures specular highlights on water match the sun's position.
+- **PBR Consistency**: Guarantees that characters and world objects are lit identically to the terrain.
 
 ---
 
