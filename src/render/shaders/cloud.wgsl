@@ -193,7 +193,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     out.world_position = world_position.xyz;
     
     // View direction from camera
-    let camera_pos = view.world_from_camera[3].xyz;
+    let camera_pos = view.world_from_view[3].xyz;
     out.view_direction = normalize(world_position.xyz - camera_pos);
     
     return out;

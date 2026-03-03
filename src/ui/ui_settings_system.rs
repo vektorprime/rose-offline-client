@@ -92,7 +92,7 @@ impl Default for PostProcessingSettings {
             ssao_enabled: true,
             dof_enabled: false,
             volumetric_fog_enabled: true,
-            color_grading_enabled: true,
+            color_grading_enabled: false,
         }
     }
 }

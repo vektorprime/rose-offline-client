@@ -148,7 +148,7 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
         },
         default_light_transform(),
         CascadeShadowConfig {
-            bounds: vec![50.0, 150.0, 500.0, 2000.0],  // Tighter bounds for better shadow quality at game scale
+            bounds: vec![20.0, 80.0, 300.0, 1000.0],  // Tighter bounds for better shadow quality at game scale
             overlap_proportion: 0.3,  // More overlap for smoother cascade transitions
             minimum_distance: 0.1,
         },
@@ -162,7 +162,7 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
     // or kept as a resource. Using as resource for global ambient light.
     commands.insert_resource(AmbientLight {
         color: Color::srgb(0.9, 0.9, 1.0),  // Slightly cool ambient for better atmosphere
-        brightness: 350.0,  // Increased to provide fill light on shadowed character faces (was 150.0, originally 500.0)
+        brightness: 150.0,  // Reduced to balance with EnvironmentMapLight and prevent washing out colors
         affects_lightmapped_meshes: true,
     });
     

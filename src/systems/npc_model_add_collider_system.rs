@@ -109,7 +109,7 @@ pub fn npc_model_add_collider_system(
 
         commands.entity(entity).insert((
             ColliderEntity::new(collider_entity),
-            ModelHeight::new(1.5 + root_bone_height + half_extents.y * 2.0),
+            ModelHeight::new(0.8 + root_bone_height + half_extents.y * 2.0),
         ));
     }
 }

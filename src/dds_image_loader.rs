@@ -4,7 +4,7 @@ use bevy::{
     prelude::Image,
     render::{
         render_asset::RenderAssetUsages,
-        render_resource::{Extent3d, TextureDimension, TextureFormat},
+        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureViewDescriptor, TextureViewDimension},
     },
     tasks::futures_lite::AsyncReadExt,
 };
@@ -32,6 +32,7 @@ impl AssetLoader for DdsImageLoader {
     ) -> impl Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
         let asset_path = load_context.path().to_string_lossy().to_string();
+        let is_cube = load_context.asset_path().label() == Some("cube");
 
         // Read all bytes from the reader
         let mut bytes = Vec::new();
@@ -50,48 +51,48 @@ impl AssetLoader for DdsImageLoader {
             match dds_info.format {
                 DdsFormat::R8G8B8 => {
                    // info!("[DDS LOADER] Converting R8G8B8 to R8G8B8A8");
-                    convert_rgb_to_rgba(&bytes, &dds_info)
+                    convert_rgb_to_rgba(&bytes, &dds_info, is_cube)
                 }
                 DdsFormat::R8G8B8A8 | DdsFormat::B8G8R8A8 => {
                    // info!("[DDS LOADER] Loading RGBA data directly");
-                    load_rgba_direct(&bytes, &dds_info)
+                    load_rgba_direct(&bytes, &dds_info, is_cube)
                 }
                 DdsFormat::B8G8R8 => {
                    // info!("[DDS LOADER] Converting B8G8R8 to R8G8B8A8");
-                    convert_bgr_to_rgba(&bytes, &dds_info)
+                    convert_bgr_to_rgba(&bytes, &dds_info, is_cube)
                 }
                 DdsFormat::A1R5G5B5 => {
                     // info!("[DDS LOADER] Converting A1R5G5B5 to R8G8B8A8");
-                    convert_a1r5g5b5_to_rgba(&bytes, &dds_info)
+                    convert_a1r5g5b5_to_rgba(&bytes, &dds_info, is_cube)
                 }
                 DdsFormat::R5G6B5 => {
                     // info!("[DDS LOADER] Converting R5G6B5 to R8G8B8A8");
-                    convert_r5g6b5_to_rgba(&bytes, &dds_info)
+                    convert_r5g6b5_to_rgba(&bytes, &dds_info, is_cube)
                 }
                 DdsFormat::A4R4G4B4 => {
                     // info!("[DDS LOADER] Converting A4R4G4B4 to R8G8B8A8");
-                    convert_a4r4g4b4_to_rgba(&bytes, &dds_info)
+                    convert_a4r4g4b4_to_rgba(&bytes, &dds_info, is_cube)
                 }
                 DdsFormat::B5G6R5 => {
                    // info!("[DDS LOADER] Converting B5G6R5 to R8G8B8A8");
-                    convert_b5g6r5_to_rgba(&bytes, &dds_info)
+                    convert_b5g6r5_to_rgba(&bytes, &dds_info, is_cube)
                 }
                 DdsFormat::Bc1Dxt1 => {
                    // info!("[DDS LOADER] Decompressing BC1/DXT1 to R8G8B8A8");
-                    decompress_bc1_to_rgba(&bytes, &dds_info)
+                    decompress_bc1_to_rgba(&bytes, &dds_info, is_cube)
                 }
                 DdsFormat::Bc2Dxt3 => {
                    // info!("[DDS LOADER] Decompressing BC2/DXT3 to R8G8B8A8");
-                    decompress_bc2_to_rgba(&bytes, &dds_info)
+                    decompress_bc2_to_rgba(&bytes, &dds_info, is_cube)
                 }
                 DdsFormat::Bc3Dxt5 => {
                    // info!("[DDS LOADER] Decompressing BC3/DXT5 to R8G8B8A8");
-                    decompress_bc3_to_rgba(&bytes, &dds_info)
+                    decompress_bc3_to_rgba(&bytes, &dds_info, is_cube)
                 }
                 _ => {
                     // Try image crate as fallback - it will also convert to RGBA8
                     warn!("[DDS LOADER] Format {:?}, trying image crate", dds_info.format);
-                    try_image_crate(&bytes, &asset_path)
+                    try_image_crate(&bytes, &asset_path, is_cube)
                 }
             }
         }
@@ -325,23 +326,37 @@ fn read_u32(data: &[u8], offset: usize) -> u32 {
     ])
 }
 
-fn create_rgba_image(width: u32, height: u32, rgba_data: Vec<u8>) -> Image {
+fn create_rgba_image(width: u32, height: u32, rgba_data: Vec<u8>, is_cube: bool) -> Image {
     let mut image = Image::new(
         Extent3d {
             width,
             height,
-            depth_or_array_layers: 1,
+            depth_or_array_layers: if is_cube { 6 } else { 1 },
         },
         TextureDimension::D2,
-        rgba_data,
+        if is_cube {
+            let mut cube_data = Vec::with_capacity(rgba_data.len() * 6);
+            for _ in 0..6 {
+                cube_data.extend_from_slice(&rgba_data);
+            }
+            cube_data
+        } else {
+            rgba_data
+        },
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::default(),
     );
+    if is_cube {
+        image.texture_view_descriptor = Some(TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::Cube),
+            ..Default::default()
+        });
+    }
     image.sampler = ImageSampler::linear();
     image
 }
 
-fn convert_rgb_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+fn convert_rgb_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
     let data_start = info.data_offset;
     let num_pixels = (info.width * info.height) as usize;
     let expected_size = num_pixels * 3;
@@ -361,10 +376,10 @@ fn convert_rgb_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
         rgba_data.push(255);                    // A (fully opaque)
     }
     
-    Ok(create_rgba_image(info.width, info.height, rgba_data))
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 
-fn convert_bgr_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+fn convert_bgr_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
     let data_start = info.data_offset;
     let num_pixels = (info.width * info.height) as usize;
     let expected_size = num_pixels * 3;
@@ -384,10 +399,10 @@ fn convert_bgr_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
         rgba_data.push(255);                    // A (fully opaque)
     }
     
-    Ok(create_rgba_image(info.width, info.height, rgba_data))
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 
-fn load_rgba_direct(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+fn load_rgba_direct(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
     let data_start = info.data_offset;
     let expected_size = (info.width * info.height * 4) as usize;
     
@@ -396,10 +411,10 @@ fn load_rgba_direct(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
     }
     
     let rgba_data = bytes[data_start..data_start + expected_size].to_vec();
-    Ok(create_rgba_image(info.width, info.height, rgba_data))
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 
-fn convert_a1r5g5b5_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+fn convert_a1r5g5b5_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
     let data_start = info.data_offset;
     let num_pixels = (info.width * info.height) as usize;
     let expected_size = num_pixels * 2; // 16 bits per pixel
@@ -433,10 +448,10 @@ fn convert_a1r5g5b5_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Imag
         rgba_data.push(a);
     }
     
-    Ok(create_rgba_image(info.width, info.height, rgba_data))
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 
-fn convert_b5g6r5_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+fn convert_b5g6r5_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
     let data_start = info.data_offset;
     let num_pixels = (info.width * info.height) as usize;
     let expected_size = num_pixels * 2; // 16 bits per pixel
@@ -470,10 +485,10 @@ fn convert_b5g6r5_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image>
         rgba_data.push(255); // A (fully opaque - no alpha channel)
     }
 
-    Ok(create_rgba_image(info.width, info.height, rgba_data))
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 
-fn convert_r5g6b5_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+fn convert_r5g6b5_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
     let data_start = info.data_offset;
     let num_pixels = (info.width * info.height) as usize;
     let expected_size = num_pixels * 2; // 16 bits per pixel
@@ -508,10 +523,10 @@ fn convert_r5g6b5_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image>
         rgba_data.push(255); // A (fully opaque - no alpha channel)
     }
 
-    Ok(create_rgba_image(info.width, info.height, rgba_data))
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 
-fn convert_a4r4g4b4_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+fn convert_a4r4g4b4_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
     let data_start = info.data_offset;
     let num_pixels = (info.width * info.height) as usize;
     let expected_size = num_pixels * 2; // 16 bits per pixel
@@ -545,7 +560,7 @@ fn convert_a4r4g4b4_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Imag
         rgba_data.push((a << 4) | a);
     }
 
-    Ok(create_rgba_image(info.width, info.height, rgba_data))
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 
 // DXT decompression functions
@@ -553,7 +568,7 @@ fn convert_a4r4g4b4_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Imag
 // Color0 and Color1 are 16-bit RGB565 values
 // If color0 > color1: 4 color block, else: 3 color + transparent
 
-fn decompress_bc1_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+fn decompress_bc1_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
     let data_start = info.data_offset;
     let block_count_x = ((info.width + 3) / 4) as usize;
     let block_count_y = ((info.height + 3) / 4) as usize;
@@ -595,7 +610,7 @@ fn decompress_bc1_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image>
         }
     }
     
-    Ok(create_rgba_image(info.width, info.height, rgba_data))
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 
 fn decode_bc1_colors(color0: u16, color1: u16) -> [[u8; 4]; 4] {
@@ -645,7 +660,7 @@ fn interpolate_color(c1: [u8; 4], c2: [u8; 4], w1: u8, w2: u8) -> [u8; 4] {
 // BC2/DXT3: 16 bytes per 4x4 block
 // First 8 bytes: explicit alpha (4 bits per pixel)
 // Last 8 bytes: same color encoding as BC1
-fn decompress_bc2_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+fn decompress_bc2_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
     let data_start = info.data_offset;
     let block_count_x = ((info.width + 3) / 4) as usize;
     let block_count_y = ((info.height + 3) / 4) as usize;
@@ -697,13 +712,13 @@ fn decompress_bc2_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image>
         }
     }
     
-    Ok(create_rgba_image(info.width, info.height, rgba_data))
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 
-// BC3/DXT5: 16 bytes per 4x4 block  
+// BC3/DXT5: 16 bytes per 4x4 block
 // First 8 bytes: interpolated alpha (similar to BC1 color)
 // Last 8 bytes: same color encoding as BC1
-fn decompress_bc3_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image> {
+fn decompress_bc3_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
     let data_start = info.data_offset;
     let block_count_x = ((info.width + 3) / 4) as usize;
     let block_count_y = ((info.height + 3) / 4) as usize;
@@ -779,10 +794,10 @@ fn decompress_bc3_to_rgba(bytes: &[u8], info: &DdsInfo) -> anyhow::Result<Image>
         }
     }
     
-    Ok(create_rgba_image(info.width, info.height, rgba_data))
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 
-fn try_image_crate(bytes: &[u8], asset_path: &str) -> anyhow::Result<Image> {
+fn try_image_crate(bytes: &[u8], asset_path: &str, is_cube: bool) -> anyhow::Result<Image> {
     use image::ImageFormat;
     
     match image::load_from_memory_with_format(bytes, ImageFormat::Dds) {
@@ -790,7 +805,7 @@ fn try_image_crate(bytes: &[u8], asset_path: &str) -> anyhow::Result<Image> {
             let rgba_image = dynamic_image.to_rgba8();
             let (width, height) = rgba_image.dimensions();
             
-            Ok(create_rgba_image(width, height, rgba_image.into_raw()))
+            Ok(create_rgba_image(width, height, rgba_image.into_raw(), is_cube))
         }
         Err(e) => {
             anyhow::bail!("Image crate failed to load {}: {:?}", asset_path, e)

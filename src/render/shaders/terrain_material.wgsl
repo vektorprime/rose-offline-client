@@ -34,6 +34,12 @@ struct VertexOutput {
 var tile_array_texture: binding_array<texture_2d<f32>, 100>;
 @group(2) @binding(1)
 var tile_array_sampler: sampler;
+@group(2) @binding(2)
+var<uniform> light_direction: vec4<f32>;
+@group(2) @binding(3)
+var<uniform> light_color: vec4<f32>;
+@group(2) @binding(4)
+var<uniform> ambient_color: vec4<f32>;
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
@@ -106,12 +112,18 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // layer2.a determines how much of layer2 to show (0 = all layer1, 1 = all layer2)
     let terrain_color = mix(layer1, layer2, layer2.a);
 
-    // Apply simple directional lighting
-    let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
+    // Apply dynamic lighting from uniforms
     let normal = normalize(in.world_normal);
-    let diffuse = max(dot(normal, light_dir), 0.0) * 0.5 + 0.5;
-
-    let final_color = vec4<f32>(terrain_color.rgb * diffuse, 1.0);
+    let light_dir = normalize(light_direction.xyz);
+    
+    // Calculate diffuse lighting from the scene's directional light
+    let diffuse_factor = max(dot(normal, light_dir), 0.0);
+    let diffuse_light = light_color.rgb * diffuse_factor;
+    
+    // Combine with ambient light
+    let lighting = ambient_color.rgb + diffuse_light;
+    
+    let final_color = vec4<f32>(terrain_color.rgb * lighting, 1.0);
 
     return final_color;
 }

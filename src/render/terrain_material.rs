@@ -12,9 +12,9 @@ use bevy::{
     asset::{load_internal_asset, Asset, Assets, AssetApp, Handle, weak_handle},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     pbr::{
-        Material, MaterialPipeline, MaterialPipelineKey, MeshPipelineKey,
+        AmbientLight, DirectionalLight, Material, MaterialPipeline, MaterialPipelineKey, MeshPipelineKey,
     },
-    prelude::{App, Mesh, Plugin, Res, Resource, World},
+    prelude::{App, Color, GlobalTransform, Mesh, Plugin, Query, Res, ResMut, Resource, World, Vec3, Vec4, ColorToComponents},
     reflect::TypePath,
     render::{
         alpha::AlphaMode,
@@ -62,11 +62,41 @@ impl Plugin for TerrainMaterialPlugin {
     }
 }
 
+pub fn update_terrain_lighting_system(
+    query_light: Query<(&DirectionalLight, &GlobalTransform)>,
+    ambient_light: Res<AmbientLight>,
+    mut terrain_materials: ResMut<Assets<TerrainMaterial>>,
+) {
+    if let Ok((light, transform)) = query_light.get_single() {
+        let light_direction = transform.forward();
+        let light_color = light.color;
+        
+        // Combine ambient color and brightness for the shader
+        // We use a simple multiplication as an approximation for the shader
+        let ambient_color = Color::from(ambient_light.color.to_linear() * (ambient_light.brightness / 500.0)); // Normalize relative to original 500.0
+
+        for (_, material) in terrain_materials.iter_mut() {
+            material.light_direction = *light_direction;
+            material.light_color = light_color;
+            material.ambient_color = ambient_color;
+        }
+    }
+}
+
 /// Custom terrain material supporting multiple tile textures via texture array
 #[derive(Asset, Debug, Clone, TypePath)]
 pub struct TerrainMaterial {
     /// Array of tile texture handles (up to TERRAIN_MATERIAL_MAX_TEXTURES)
     pub textures: Vec<Handle<bevy::image::Image>>,
+
+    /// Directional light direction
+    pub light_direction: Vec3,
+
+    /// Directional light color
+    pub light_color: Color,
+
+    /// Ambient light color
+    pub ambient_color: Color,
 }
 
 /// Data stored alongside the prepared bind group
@@ -179,6 +209,26 @@ impl AsBindGroup for TerrainMaterial {
             ..Default::default()
         });
 
+        let light_dir_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("terrain_light_direction"),
+            usage: BufferUsages::UNIFORM,
+            contents: bytemuck::cast_slice(&[self.light_direction.extend(0.0)]),
+        });
+        let light_color_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("terrain_light_color"),
+            usage: BufferUsages::UNIFORM,
+            contents: bytemuck::cast_slice(&[Vec4::from(self.light_color.to_linear().to_f32_array())]),
+        });
+        let ambient_color_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("terrain_ambient_color"),
+            usage: BufferUsages::UNIFORM,
+            contents: bytemuck::cast_slice(&[Vec4::from(self.ambient_color.to_linear().to_f32_array())]),
+        });
+
+        let light_dir_binding = light_dir_buffer.as_entire_buffer_binding();
+        let light_color_binding = light_color_buffer.as_entire_buffer_binding();
+        let ambient_color_binding = ambient_color_buffer.as_entire_buffer_binding();
+
         // Create bind group entries
         let entries = vec![
             BindGroupEntry {
@@ -188,6 +238,18 @@ impl AsBindGroup for TerrainMaterial {
             BindGroupEntry {
                 binding: 1,
                 resource: BindingResource::Sampler(&sampler),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::Buffer(light_dir_binding),
+            },
+            BindGroupEntry {
+                binding: 3,
+                resource: BindingResource::Buffer(light_color_binding),
+            },
+            BindGroupEntry {
+                binding: 4,
+                resource: BindingResource::Buffer(ambient_color_binding),
             },
         ];
 
@@ -236,6 +298,39 @@ impl AsBindGroup for TerrainMaterial {
                 binding: 1,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+            // Light direction
+            BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
+                },
+                count: None,
+            },
+            // Light color
+            BindGroupLayoutEntry {
+                binding: 3,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
+                },
+                count: None,
+            },
+            // Ambient color
+            BindGroupLayoutEntry {
+                binding: 4,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(std::num::NonZeroU64::new(16).unwrap()),
+                },
                 count: None,
             },
         ]

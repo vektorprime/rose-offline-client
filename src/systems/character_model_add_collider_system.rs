@@ -131,7 +131,7 @@ pub fn character_model_add_collider_system(
 
         commands.entity(entity).insert((
             ColliderEntity::new(collider_entity),
-            ModelHeight::new(1.25 + half_extents.y * 2.0),
+            ModelHeight::new(1.8 + half_extents.y * 2.0),
         ));
 
         info!("Created collider for entity {:?}: half_extents=({:.2}, {:.2}, {:.2}), root_bone_offset=({:.2}, {:.2}, {:.2})",

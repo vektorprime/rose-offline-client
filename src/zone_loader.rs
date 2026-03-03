@@ -2539,6 +2539,9 @@ fn spawn_terrain(
     // The shader uses binding_array to sample from up to 100 textures based on per-vertex tile_info
     let material_handle = terrain_materials.add(TerrainMaterial {
         textures: tile_textures.clone(),
+        light_direction: Vec3::new(0.5, 1.0, 0.3).normalize(),
+        light_color: Color::WHITE,
+        ambient_color: Color::srgb(0.9, 0.9, 1.0),
     });
 
     // Split spawn to avoid Bundle tuple limit (15+ components not supported)

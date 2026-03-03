@@ -9,13 +9,18 @@ use bevy::{
         core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
         core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
         core_pipeline::smaa::Smaa,
-        pbr::{Atmosphere, AtmosphereSettings, ExtendedMaterial, MaterialPlugin, StandardMaterial, MeshMaterial3d, VolumetricFog, VolumetricLight, FogVolume, ShadowFilteringMethod, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel},
+        pbr::{
+            Atmosphere, AtmosphereSettings, ExtendedMaterial, MaterialPlugin, StandardMaterial,
+            MeshMaterial3d, VolumetricFog, VolumetricLight, FogVolume, ShadowFilteringMethod,
+            ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
+            DirectionalLightShadowMap
+        },
         render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
         render::experimental::occlusion_culling::OcclusionCulling,
         prelude::{
             apply_deferred, default, in_state, not, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
             ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, InheritedVisibility, IntoScheduleConfigs,
-            Local, Mesh, Mesh3d, Msaa, OnEnter, OnExit, PerspectiveProjection,
+            EnvironmentMapLight, Local, Mesh, Mesh3d, Msaa, OnEnter, OnExit, PerspectiveProjection,
             PluginGroup, PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
             SystemSet, Time, Transform, Update, Vec3, ViewVisibility, Visibility, With, Without, World,
         },
@@ -830,6 +835,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.init_resource::<RenderExtractionDiagnostics>();
     log::info!("[ZONE LOADER] Debug diagnostics resources initialized");
 
+    // High-quality shadow map resolution
+    app.insert_resource(DirectionalLightShadowMap { size: 4096 });
+
     app.register_asset_loader(ZmsAssetLoader)
         .init_asset::<ZmsMaterialNumFaces>()
         .register_asset_loader(ZmsNoSkinAssetLoader)
@@ -952,7 +960,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             map_editor::MapEditorPlugin,
 
             // Procedural cloud material
-            CloudMaterialPlugin,
+            // CloudMaterialPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -1142,6 +1150,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             // which conflicts with the new atmospheric scattering system.
             // color_grading_time_of_day_system,
             directional_light_system,
+            render::terrain_material::update_terrain_lighting_system,
             // Starry sky material update - updates uniforms for twinkling and night factor
             // Runs after update_starry_sky_night_factor to use updated night_factor value
             update_starry_sky_system.after(update_starry_sky_night_factor),
@@ -1416,7 +1425,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
 
     // Spawn starry sky and moon light entities on startup
-    app.add_systems(PostStartup, (spawn_starry_sky_and_moon, spawn_cloud_layer));
+    app.add_systems(PostStartup, (spawn_starry_sky_and_moon, /*spawn_cloud_layer*/));
 
     // System to apply depth of field settings from the resource to the camera
     app.add_systems(Update, apply_depth_of_field_settings);
@@ -1810,11 +1819,10 @@ fn load_common_game_data(
         // Add Tonemapping - REQUIRED for HDR to work properly with depth of field
         bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
         // Add Bloom - enhances the depth of field effect visibility
-        // TEMPORARILY DISABLED: Testing if bloom causes ghosting with night sky
-        // bevy::core_pipeline::bloom::Bloom::NATURAL,
-        // Shadow filtering - Gaussian (non-temporal, works with SMAA)
+        Bloom::NATURAL,
+        // Shadow filtering - Gaussian for high-quality soft shadows
         ShadowFilteringMethod::Gaussian,
-        // SMAA for high-quality anti-aliasing without ghosting artifacts
+        // SMAA for high-quality anti-aliasing
         Smaa::default(),
         // Prepasses for depth (required for some effects and GPU occlusion culling)
         DepthPrepass,
@@ -1823,6 +1831,14 @@ fn load_common_game_data(
         OcclusionCulling,
         // Underwater state tracking for underwater rendering effect
         CameraUnderwaterState::default(),
+        // Environment Map Light for richer PBR reflections and lighting
+        // The DDS loader is configured to load this texture as a cubemap when the #cube label is used
+        EnvironmentMapLight {
+            diffuse_map: asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS#cube"),
+            specular_map: asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS#cube"),
+            intensity: 150.0,
+            ..default()
+        },
     )).id();
     // Insert additional components separately to avoid tuple size limit
     // DEBUG: Disable atmosphere when testing starry sky
@@ -1848,47 +1864,14 @@ fn load_common_game_data(
         VolumetricFog {
             ambient_intensity: 0.1,
             jitter: 0.0,
-            step_count: 64,
+            step_count: 128,
             ..default()
         },
         // SSAO for contact shadows - adds darkening in crevices and where objects meet ground
         // Requires Msaa::Off (which is the default in Bevy 0.15)
         ScreenSpaceAmbientOcclusion {
-            quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium,
+            quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
             constant_object_thickness: 0.25,  // Adjust if AO is too strong/weak
-        },
-        // Color Grading - filmic color correction for improved visual tone mapping
-        // Provides exposure, contrast, saturation, and color tint controls
-        ColorGrading {
-            global: ColorGradingGlobal {
-                exposure: 0.0,            // EV offset (0.0 = no change)
-                temperature: 0.0,         // Warm/cooler (positive = warmer/redder)
-                tint: 0.0,                // Green/magenta shift
-                hue: 0.0,                 // Hue rotation in radians
-                post_saturation: 1.1,     // Slightly increased saturation for vibrant colors
-                midtones_range: 0.2..0.7, // Default midtone range
-            },
-            shadows: ColorGradingSection {
-                saturation: 1.0,          // Keep shadow saturation
-                contrast: 1.1,            // Slightly increased shadow contrast
-                gamma: 1.0,               // No gamma adjustment
-                gain: 1.0,                // No gain adjustment
-                lift: 0.02,               // Slight lift to prevent crushed blacks
-            },
-            midtones: ColorGradingSection {
-                saturation: 1.1,          // Increased midtone saturation
-                contrast: 1.05,           // Slightly increased contrast
-                gamma: 1.0,               // No gamma adjustment
-                gain: 1.0,                // No gain adjustment
-                lift: 0.0,                // No lift
-            },
-            highlights: ColorGradingSection {
-                saturation: 0.95,         // Slightly reduced highlight saturation
-                contrast: 1.0,            // Default contrast
-                gamma: 1.0,               // No gamma adjustment
-                gain: 1.05,               // Slight gain for brighter highlights
-                lift: 0.0,                // No lift
-            },
         },
     ));
     }
@@ -2102,22 +2085,6 @@ fn apply_post_processing_settings(
             }
         }
         
-        // Handle Color Grading
-        if let Some(mut cg) = color_grading {
-            if post_process_settings.color_grading_enabled {
-                // Reset to default vibrant values
-                cg.global.post_saturation = 1.1;
-                cg.shadows.contrast = 1.1;
-                cg.midtones.saturation = 1.1;
-                cg.highlights.gain = 1.05;
-            } else {
-                // Set to neutral values (effectively off)
-                cg.global.post_saturation = 1.0;
-                cg.shadows.contrast = 1.0;
-                cg.midtones.saturation = 1.0;
-                cg.highlights.gain = 1.0;
-            }
-        }
     }
 }
 
