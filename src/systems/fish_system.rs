@@ -87,7 +87,7 @@ fn spawn_fish_in_water(
         alpha_mode: AlphaMode::Blend,
         perceptual_roughness: 0.3,
         metallic: 0.1,
-        cull_mode: Some(Face::Back), // Back-face culling for performance
+        cull_mode: None,
         ..default()
     });
     
@@ -97,7 +97,7 @@ fn spawn_fish_in_water(
         alpha_mode: AlphaMode::Blend,
         perceptual_roughness: 0.3,
         metallic: 0.1,
-        cull_mode: Some(Face::Back),
+        cull_mode: None,
         ..default()
     });
     
@@ -107,7 +107,7 @@ fn spawn_fish_in_water(
         alpha_mode: AlphaMode::Blend,
         perceptual_roughness: 0.2,
         metallic: 0.3,
-        cull_mode: Some(Face::Back),
+        cull_mode: None,
         ..default()
     });
     

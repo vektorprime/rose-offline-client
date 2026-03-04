@@ -163,9 +163,6 @@ impl Material for WaterMaterial {
             .unwrap()
             .depth_write_enabled = false;
 
-        // Enable back-face culling for performance
-        descriptor.primitive.cull_mode = Some(Face::Back);
-
         // Set up vertex buffer layout
         let vertex_layout = layout.0.get_layout(&[
             Mesh::ATTRIBUTE_POSITION.at_shader_location(0),

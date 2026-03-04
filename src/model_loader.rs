@@ -1399,16 +1399,16 @@ fn spawn_skeleton(
         }
 
         // Log all mesh spawning for diagnostics
-        log::info!(
-            "[SPAWN_MODEL] model_id={}, mesh_id={}, is_skin={}, has_skinned_mesh_param={}, bone_index={:?}, dummy_index={:?}, default_bone_index={:?}",
-            model_id,
-            mesh_id,
-            zsc_material.is_skin,
-            skinned_mesh.is_some(),
-            object_part.bone_index,
-            object_part.dummy_index,
-            default_bone_index
-        );
+        // log::info!(
+        //     "[SPAWN_MODEL] model_id={}, mesh_id={}, is_skin={}, has_skinned_mesh_param={}, bone_index={:?}, dummy_index={:?}, default_bone_index={:?}",
+        //     model_id,
+        //     mesh_id,
+        //     zsc_material.is_skin,
+        //     skinned_mesh.is_some(),
+        //     object_part.bone_index,
+        //     object_part.dummy_index,
+        //     default_bone_index
+        // );
         
         // CRITICAL: Do NOT insert SkinnedMesh directly in Bevy0.16
         // The ZSC material's is_skin flag doesn't guarantee the ZMS mesh has joint attributes

@@ -265,7 +265,7 @@ impl SpecializedRenderPipeline for WorldUiPipeline {
             ],
             primitive: PrimitiveState {
                 front_face: FrontFace::Ccw,
-                cull_mode: Some(Face::Back),
+                cull_mode: None,
                 unclipped_depth: false,
                 polygon_mode: PolygonMode::Fill,
                 conservative: false,

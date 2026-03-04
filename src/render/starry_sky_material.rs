@@ -187,10 +187,6 @@ impl Material for StarrySkyMaterial {
         descriptor.vertex.buffers = vec![vertex_layout];
         log::info!("[STARRY SKY SPECIALIZE] Vertex buffer layout configured");
 
-        // Enable back-face culling for performance
-        descriptor.primitive.cull_mode = Some(Face::Back);
-        log::info!("[STARRY SKY SPECIALIZE] Backface culling ENABLED (cull_mode = Some(Face::Back))");
-
         // Configure blending for standard alpha blending (Solution 2 for ghosting fix)
         // Standard alpha blending prevents color accumulation that causes ghosting
         if let Some(fragment) = descriptor.fragment.as_mut() {

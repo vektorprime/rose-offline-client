@@ -263,10 +263,6 @@ impl Material for CloudMaterial {
         descriptor.vertex.buffers = vec![vertex_layout];
         log::info!("[CLOUD SPECIALIZE] Vertex buffer layout configured");
 
-        // Enable back-face culling for performance
-        descriptor.primitive.cull_mode = Some(Face::Back);
-        log::info!("[CLOUD SPECIALIZE] Backface culling ENABLED (cull_mode = Some(Face::Back))");
-
         // Configure alpha blending for soft clouds (standard alpha blending)
         if let Some(fragment) = descriptor.fragment.as_mut() {
             for color_target_state in fragment.targets.iter_mut().filter_map(|x| x.as_mut()) {

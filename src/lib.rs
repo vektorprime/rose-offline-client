@@ -1953,23 +1953,23 @@ fn diagnose_camera_extraction_state(
         let has_valid_transform = global_transform.affine().translation.length() > 0.0
             || global_transform.affine().matrix3 != bevy::math::Mat3A::IDENTITY;
         
-        log::info!(
-            "[NAME_TAG_DEBUG] Camera entity {:?}: is_active={}, viewport={:?}, viewport_size={:?}, target_size={:?}, has_global_transform={}, has_camera3d={}",
-            entity,
-            camera.is_active,
-            physical_viewport,
-            physical_viewport_size,
-            physical_target_size,
-            has_valid_transform,
-            camera3d.is_some()
-        );
+        // log::info!(
+        //     "[NAME_TAG_DEBUG] Camera entity {:?}: is_active={}, viewport={:?}, viewport_size={:?}, target_size={:?}, has_global_transform={}, has_camera3d={}",
+        //     entity,
+        //     camera.is_active,
+        //     physical_viewport,
+        //     physical_viewport_size,
+        //     physical_target_size,
+        //     has_valid_transform,
+        //     camera3d.is_some()
+        // );
         
-        // Log target info
-        log::info!(
-            "[NAME_TAG_DEBUG] Camera {:?} target: {:?}",
-            entity,
-            camera.target
-        );
+        // // Log target info
+        // log::info!(
+        //     "[NAME_TAG_DEBUG] Camera {:?} target: {:?}",
+        //     entity,
+        //     camera.target
+        // );
         
         // Check extraction conditions
         let viewport_ok = physical_viewport.is_some();

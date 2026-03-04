@@ -139,7 +139,7 @@ fn get_spawn_height_from_world(
         if let Some(zone_loader_assets) = world.get_resource::<Assets<ZoneLoaderAsset>>() {
             if let Some(zone_data) = zone_loader_assets.get(&current_zone.handle) {
                 let terrain_height = zone_data.get_terrain_height(position_x, position_y) / 100.0;
-                log::info!("[SPAWN_HEIGHT] Terrain height at ({:.2}, {:.2}): {:.2}m", position_x, position_y, terrain_height);
+                //log::info!("[SPAWN_HEIGHT] Terrain height at ({:.2}, {:.2}): {:.2}m", position_x, position_y, terrain_height);
                 return terrain_height;
             }
         }

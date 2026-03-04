@@ -9,7 +9,7 @@ use bevy::{
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        view::VisibilityClass,
+        view::{NoFrustumCulling, VisibilityClass},
     },
     window::PrimaryWindow,
 };
@@ -67,11 +67,11 @@ pub fn chat_bubble_spawn_system(
     };
 
     let pixels_per_point = egui_context.ctx_mut().pixels_per_point();
-   // info!("[CHAT_BUBBLE_DEBUG] Pixels per point: {}", pixels_per_point);
+   //// info!("[CHAT_BUBBLE_DEBUG] Pixels per point: {}", pixels_per_point);
 
     // Log event count
     let event_count = chat_bubble_events.read().len();
-   // info!("[CHAT_BUBBLE_DEBUG] Processing {} new events", event_count);
+   //// info!("[CHAT_BUBBLE_DEBUG] Processing {} new events", event_count);
     
     // Reset the event reader since we consumed it above for counting
     // Actually we need to re-read, let's handle this differently
@@ -80,13 +80,13 @@ pub fn chat_bubble_spawn_system(
     let new_pending: Vec<PendingChatBubble> = chat_bubble_events
         .read()
         .filter_map(|event| {
-           // info!("[CHAT_BUBBLE_DEBUG] Event received - entity: {:?}, name: '{}', text: '{}'", 
+           //// info!("[CHAT_BUBBLE_DEBUG] Event received - entity: {:?}, name: '{}', text: '{}'", 
             //    event.target_entity, event.entity_name, event.text);
             
             // Find target entity
             let target_entity = match event.target_entity {
                 Some(entity) => {
-                   // info!("[CHAT_BUBBLE_DEBUG] Using direct entity reference: {:?}", entity);
+                   //// info!("[CHAT_BUBBLE_DEBUG] Using direct entity reference: {:?}", entity);
                     Some(entity)
                 },
                 None => {
@@ -94,7 +94,7 @@ pub fn chat_bubble_spawn_system(
                         .iter()
                         .find(|(_, name)| name.name == event.entity_name)
                         .map(|(entity, _)| entity);
-                   // info!("[CHAT_BUBBLE_DEBUG] Looking up entity by name '{}': found={:?}", event.entity_name, found);
+                   //// info!("[CHAT_BUBBLE_DEBUG] Looking up entity by name '{}': found={:?}", event.entity_name, found);
                     found
                 }
             };
@@ -122,7 +122,7 @@ pub fn chat_bubble_spawn_system(
                 .ctx_mut()
                 .fonts(|fonts| fonts.layout_job(layout_job));
 
-           // info!("[CHAT_BUBBLE_DEBUG] Created galley with {} rows", galley.rows.len());
+           //// info!("[CHAT_BUBBLE_DEBUG] Created galley with {} rows", galley.rows.len());
 
             Some(PendingChatBubble {
                 target_entity,
@@ -134,20 +134,20 @@ pub fn chat_bubble_spawn_system(
         })
         .collect();
 
-   // info!("[CHAT_BUBBLE_DEBUG] Converted {} events to pending bubbles", new_pending.len());
+   //// info!("[CHAT_BUBBLE_DEBUG] Converted {} events to pending bubbles", new_pending.len());
 
     // Process pending chat bubbles from previous frames (retry when font texture wasn't ready)
     let pending_from_cache = pending_cache.pending.len();
     let mut pending_to_process = std::mem::take(&mut pending_cache.pending);
     pending_to_process.extend(new_pending);
     
-   // info!("[CHAT_BUBBLE_DEBUG] Processing {} total bubbles ({} from cache, {} new)", 
+   //// info!("[CHAT_BUBBLE_DEBUG] Processing {} total bubbles ({} from cache, {} new)", 
     //    pending_to_process.len(), pending_from_cache, pending_to_process.len() - pending_from_cache);
 
     // Log egui managed textures state
-   // info!("[CHAT_BUBBLE_DEBUG] Egui managed textures count: {}", egui_managed_textures.0.len());
+   //// info!("[CHAT_BUBBLE_DEBUG] Egui managed textures count: {}", egui_managed_textures.0.len());
     for (key, _) in egui_managed_textures.0.iter() {
-       // info!("[CHAT_BUBBLE_DEBUG] Texture key: window={:?}, id={}", key.0, key.1);
+       //// info!("[CHAT_BUBBLE_DEBUG] Texture key: window={:?}, id={}", key.0, key.1);
     }
 
     for (bubble_idx, pending) in pending_to_process.into_iter().enumerate() {
@@ -159,7 +159,7 @@ pub fn chat_bubble_spawn_system(
             galley,
         } = pending;
 
-       // info!("[CHAT_BUBBLE_DEBUG] [{}] Processing bubble for entity {:?}, text='{}'", 
+       //// info!("[CHAT_BUBBLE_DEBUG] [{}] Processing bubble for entity {:?}, text='{}'", 
         //    bubble_idx, target_entity, text);
 
         // Get model height for positioning (use default if not available yet)
@@ -168,7 +168,7 @@ pub fn chat_bubble_spawn_system(
             .map(|mh| mh.height)
             .unwrap_or(CHAT_BUBBLE_DEFAULT_HEIGHT);
 
-       // info!("[CHAT_BUBBLE_DEBUG] [{}] Model height: {}", bubble_idx, model_height_value);
+       //// info!("[CHAT_BUBBLE_DEBUG] [{}] Model height: {}", bubble_idx, model_height_value);
 
         // Despawn any existing chat bubble for this target
         let mut despawned_count = 0;
@@ -179,7 +179,7 @@ pub fn chat_bubble_spawn_system(
             }
         }
         if despawned_count > 0 {
-           // info!("[CHAT_BUBBLE_DEBUG] [{}] Despawned {} existing bubbles", bubble_idx, despawned_count);
+           //// info!("[CHAT_BUBBLE_DEBUG] [{}] Despawned {} existing bubbles", bubble_idx, despawned_count);
         }
 
         // Calculate text bounds and check if font textures are ready
@@ -213,10 +213,10 @@ pub fn chat_bubble_spawn_system(
             }
         }
 
-        info!("[CHAT_BUBBLE_DEBUG] Text: '{}', Bounds: min={:?}, max={:?}, size={:?}, textures_ready={}, rows={}",
-            text, min_pos, max_pos, max_pos - min_pos, all_textures_ready, galley.rows.len());
+       // info!("[CHAT_BUBBLE_DEBUG] Text: '{}', Bounds: min={:?}, max={:?}, size={:?}, textures_ready={}, rows={}",
+        //    text, min_pos, max_pos, max_pos - min_pos, all_textures_ready, galley.rows.len());
 
-       // info!("[CHAT_BUBBLE_DEBUG] [{}] Text bounds: {:?}, textures ready: {}, font textures found: {}", 
+       //// info!("[CHAT_BUBBLE_DEBUG] [{}] Text bounds: {:?}, textures ready: {}, font textures found: {}", 
         //    bubble_idx, max_bounds, all_textures_ready, font_source_textures.len());
 
         // If font textures are not ready, re-add to pending queue and try next frame
@@ -302,7 +302,7 @@ pub fn chat_bubble_spawn_system(
                 }
             }
         }
-       // info!("[CHAT_BUBBLE_DEBUG] [{}] Copied {} glyphs to texture", bubble_idx, glyphs_copied);
+       //// info!("[CHAT_BUBBLE_DEBUG] [{}] Copied {} glyphs to texture", bubble_idx, glyphs_copied);
 
         // Apply outline to text
         let mut outlined_data = text_data.clone();
@@ -354,7 +354,7 @@ pub fn chat_bubble_spawn_system(
             RenderAssetUsages::default(),
         );
         let text_image_handle = images.add(text_image);
-       // info!("[CHAT_BUBBLE_DEBUG] [{}] Created text image handle: {:?}", bubble_idx, text_image_handle);
+       //// info!("[CHAT_BUBBLE_DEBUG] [{}] Created text image handle: {:?}", bubble_idx, text_image_handle);
 
         // Create background image (simple rounded rectangle)
         let bg_width = (text_size.x as u32).next_power_of_two();
@@ -417,7 +417,7 @@ pub fn chat_bubble_spawn_system(
             RenderAssetUsages::default(),
         );
         let bg_image_handle = images.add(bg_image);
-       // info!("[CHAT_BUBBLE_DEBUG] [{}] Created background image handle: {:?}", bubble_idx, bg_image_handle);
+       //// info!("[CHAT_BUBBLE_DEBUG] [{}] Created background image handle: {:?}", bubble_idx, bg_image_handle);
 
         // Spawn chat bubble parent entity
         let bubble_height = model_height_value + CHAT_BUBBLE_VERTICAL_OFFSET;
@@ -425,6 +425,7 @@ pub fn chat_bubble_spawn_system(
             .spawn((
                 ChatBubbleEntity { target_entity },
                 ChatBubble::new(target_entity, text.clone(), duration),
+                NoFrustumCulling,
                 Visibility::Inherited,
                 VisibilityClass::default(),
                 Transform::from_translation(Vec3::new(0.0, bubble_height, 0.0)),
@@ -432,7 +433,7 @@ pub fn chat_bubble_spawn_system(
             ))
             .id();
 
-       // info!("[CHAT_BUBBLE_DEBUG] [{}] Spawned parent bubble entity {:?} at height {}", 
+       //// info!("[CHAT_BUBBLE_DEBUG] [{}] Spawned parent bubble entity {:?} at height {}", 
         //    bubble_idx, bubble_entity, bubble_height);
 
         // Spawn background rect
@@ -442,6 +443,7 @@ pub fn chat_bubble_spawn_system(
         let bg_rect_entity = commands
             .spawn((
                 ChatBubbleBackground,
+                NoFrustumCulling,
                 WorldUiRect {
                     image: bg_image_handle,
                     screen_offset: Vec2::new(-text_size.x / 2.0, -text_size.y),
@@ -459,7 +461,7 @@ pub fn chat_bubble_spawn_system(
             .set_parent(bubble_entity)
             .id();
 
-       // info!("[CHAT_BUBBLE_DEBUG] [{}] Spawned background rect entity {:?}", bubble_idx, bg_rect_entity);
+       //// info!("[CHAT_BUBBLE_DEBUG] [{}] Spawned background rect entity {:?}", bubble_idx, bg_rect_entity);
 
         // Spawn text rect
         let text_uv_x1 = text_size.x / target_texture_width as f32;
@@ -468,6 +470,7 @@ pub fn chat_bubble_spawn_system(
         let text_rect_entity = commands
             .spawn((
                 ChatBubbleText,
+                NoFrustumCulling,
                 WorldUiRect {
                     image: text_image_handle,
                     screen_offset: Vec2::new(-text_size.x / 2.0, -text_size.y),
@@ -485,14 +488,14 @@ pub fn chat_bubble_spawn_system(
             .set_parent(bubble_entity)
             .id();
 
-       // info!("[CHAT_BUBBLE_DEBUG] [{}] Spawned text rect entity {:?}", bubble_idx, text_rect_entity);
+       //// info!("[CHAT_BUBBLE_DEBUG] [{}] Spawned text rect entity {:?}", bubble_idx, text_rect_entity);
 
         // Add bubble as child of target entity
         commands.entity(target_entity).add_child(bubble_entity);
         
-       // info!("[CHAT_BUBBLE_DEBUG] [{}] Successfully created chat bubble! Parent: {:?}, Children: bg={:?}, text={:?}", 
+       //// info!("[CHAT_BUBBLE_DEBUG] [{}] Successfully created chat bubble! Parent: {:?}, Children: bg={:?}, text={:?}", 
         //    bubble_idx, target_entity, bg_rect_entity, text_rect_entity);
     }
     
-   // info!("[CHAT_BUBBLE_DEBUG] Spawn system complete. Remaining in cache: {}", pending_cache.pending.len());
+   //// info!("[CHAT_BUBBLE_DEBUG] Spawn system complete. Remaining in cache: {}", pending_cache.pending.len());
 }

@@ -162,11 +162,8 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
 
     // Bevy 0.14: AmbientLight is now a component that can be spawned as an entity
     // or kept as a resource. Using as resource for global ambient light.
-    commands.insert_resource(AmbientLight {
-        color: Color::srgb(0.9, 0.9, 1.0),  // Slightly cool ambient for better atmosphere
-        brightness: 150.0,  // Reduced to balance with EnvironmentMapLight and prevent washing out colors
-        affects_lightmapped_meshes: true,
-    });
+    // Using Bevy default values: Color::WHITE, brightness: 80.0
+    commands.insert_resource(AmbientLight::default());
     
     //bevy::log::info!("[ZONE LIGHTING] Ambient light inserted: brightness=1.0");
 

@@ -13,7 +13,7 @@ use bevy::{
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        view::VisibilityClass,
+        view::{NoFrustumCulling, VisibilityClass},
     },
     window::PrimaryWindow,
 };
@@ -435,7 +435,7 @@ pub fn name_tag_system(
 
     let add_count = query_add.iter().len();
     if add_count > 0 {
-        info!("[NAME_TAG_DEBUG] Processing {} entities without name tags", add_count);
+        //info!("[NAME_TAG_DEBUG] Processing {} entities without name tags", add_count);
     }
     
     for object in query_add.iter() {
@@ -460,7 +460,7 @@ pub fn name_tag_system(
         {
             name_tag_data
         } else if let Some(pending_name_tag_data) = name_tag_cache.pending.remove(&object.entity) {
-            info!("[NAME_TAG_DEBUG] Found pending data for entity {:?} name='{}'", object.entity, object.name.name);
+            //info!("[NAME_TAG_DEBUG] Found pending data for entity {:?} name='{}'", object.entity, object.name.name);
             if let Some(name_tag_data) = create_nametag_data(
                 window_entity,
                 &mut egui_context,
@@ -468,21 +468,21 @@ pub fn name_tag_system(
                 &mut images,
                 pending_name_tag_data.clone(),
             ) {
-                info!("[NAME_TAG_DEBUG] Successfully created name tag data for '{}'", object.name.name);
+                //info!("[NAME_TAG_DEBUG] Successfully created name tag data for '{}'", object.name.name);
                 name_tag_cache
                     .cache
                     .insert(object.name.name.clone(), name_tag_data);
                 name_tag_cache.cache.get(&object.name.name).unwrap()
             } else {
                 // FIX: Re-insert pending data to try again next frame instead of losing it
-                info!("[NAME_TAG_DEBUG] create_nametag_data returned None, re-inserting pending for '{}'", object.name.name);
+                //info!("[NAME_TAG_DEBUG] create_nametag_data returned None, re-inserting pending for '{}'", object.name.name);
                 name_tag_cache.pending.insert(object.entity, pending_name_tag_data);
                 continue;
             }
         } else {
             // Create egui text and wait until next frame to read the font texture to ensure
             // that the texture has been updated and contains the characters we want to use
-            info!("[NAME_TAG_DEBUG] Creating pending name tag for entity {:?} name='{}'", object.entity, object.name.name);
+            //info!("[NAME_TAG_DEBUG] Creating pending name tag for entity {:?} name='{}'", object.entity, object.name.name);
             name_tag_cache.pending.insert(
                 object.entity,
                 create_pending_nametag(
@@ -506,6 +506,7 @@ pub fn name_tag_system(
         let name_tag_entity = commands
             .spawn((
                 NameTag { name_tag_type },
+                NoFrustumCulling,
                 visibility,
                 VisibilityClass::default(),
                 Transform::from_translation(Vec3::new(0.0, object.model_height.height, 0.0)),
@@ -655,6 +656,7 @@ pub fn name_tag_system(
             commands
                 .spawn((
                     NameTagName,
+                    NoFrustumCulling,
                     rect,
                     Transform::default(),
                     GlobalTransform::default(),
@@ -668,6 +670,7 @@ pub fn name_tag_system(
             commands
                 .spawn((
                     NameTagTargetMark,
+                    NoFrustumCulling,
                     rect,
                     Transform::default(),
                     GlobalTransform::default(),
@@ -681,6 +684,7 @@ pub fn name_tag_system(
             commands
                 .spawn((
                     NameTagHealthbarBackground,
+                    NoFrustumCulling,
                     rect,
                     Transform::default(),
                     GlobalTransform::default(),
@@ -698,6 +702,7 @@ pub fn name_tag_system(
                         uv_min_x: health_bar_foreground_uv_x_bounds.0,
                         uv_max_x: health_bar_foreground_uv_x_bounds.1,
                     },
+                    NoFrustumCulling,
                     rect,
                     Transform::default(),
                     GlobalTransform::default(),
