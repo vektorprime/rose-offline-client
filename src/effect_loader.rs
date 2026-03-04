@@ -10,7 +10,7 @@ use bevy::{
         primitives::Aabb,
         render_resource::{BlendFactor, BlendOperation},
         storage::ShaderStorageBuffer,
-        view::{ViewVisibility, InheritedVisibility, NoFrustumCulling},
+        view::{ViewVisibility, InheritedVisibility},
     },
 };
 use bytemuck::{Pod, Zeroable};
@@ -232,8 +232,7 @@ fn spawn_mesh(
                     let motion = asset_server.load(ZmoTextureAssetLoader::convert_path(
                         mesh_animation_path.path(),
                     ));
-                    entity_comands.insert((
-                        NoFrustumCulling, // AABB culling is broken for mesh animations
+                    entity_comands.insert(
                         MeshAnimation::repeat(
                             motion,
                             if eft_mesh.repeat_count == 0 {
@@ -243,7 +242,7 @@ fn spawn_mesh(
                             },
                         )
                         .with_start_delay(eft_mesh.start_delay as f32 / 1000.0),
-                    ));
+                    );
                 }
 
                 if let Some(transform_animation_path) = &eft_mesh.animation_file {
@@ -378,7 +377,6 @@ fn spawn_particle(
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
                     ));
-                    entity_comands.insert(NoFrustumCulling); // AABB culling is broken for particles
 
                     if let Some(transform_animation_path) = &eft_particle.animation_file {
                         let motion = asset_server.load(transform_animation_path.path().to_string_lossy().into_owned());

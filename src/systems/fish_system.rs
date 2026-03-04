@@ -10,6 +10,7 @@ use bevy::prelude::*;
 use bevy::math::Vec3;
 use bevy::render::mesh::{Mesh, Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
+use bevy::render::render_resource::Face;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::render::alpha::AlphaMode;
 use rand::Rng;
@@ -86,7 +87,7 @@ fn spawn_fish_in_water(
         alpha_mode: AlphaMode::Blend,
         perceptual_roughness: 0.3,
         metallic: 0.1,
-        cull_mode: None, // Double-sided for better visibility
+        cull_mode: Some(Face::Back), // Back-face culling for performance
         ..default()
     });
     
@@ -96,7 +97,7 @@ fn spawn_fish_in_water(
         alpha_mode: AlphaMode::Blend,
         perceptual_roughness: 0.3,
         metallic: 0.1,
-        cull_mode: None,
+        cull_mode: Some(Face::Back),
         ..default()
     });
     
@@ -106,7 +107,7 @@ fn spawn_fish_in_water(
         alpha_mode: AlphaMode::Blend,
         perceptual_roughness: 0.2,
         metallic: 0.3,
-        cull_mode: None,
+        cull_mode: Some(Face::Back),
         ..default()
     });
     

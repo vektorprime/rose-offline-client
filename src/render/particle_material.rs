@@ -250,6 +250,12 @@ fn validate_particle_materials(
         // Mark as warned so we don't spam logs
         warned_materials.insert(id);
     }
+    
+    // Clear the warned materials set periodically to prevent unbounded growth
+    // Do this every 1000 frames or so
+    if warned_materials.len() > 100 {
+        warned_materials.clear();
+    }
 }
 
 /// DIAGNOSTIC: System to log bind group creation details for ParticleMaterial
@@ -273,5 +279,11 @@ fn log_particle_material_bind_groups(
        //  info!("[ParticleMaterial]   - Bindings 6-9: Uniforms (u32 each)");
         
         logged_materials.insert(id);
+    }
+    
+    // Clear the logged materials set periodically to prevent unbounded growth
+    // Do this every 1000 frames or so
+    if logged_materials.len() > 100 {
+        logged_materials.clear();
     }
 }

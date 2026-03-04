@@ -10,6 +10,7 @@
 use bevy::prelude::*;
 use bevy::render::mesh::{Mesh, Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
+use bevy::render::render_resource::Face;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use rand::Rng;
 
@@ -152,7 +153,7 @@ fn spawn_birds(
         materials.add(StandardMaterial {
             base_color: color,
             unlit: true, // Birds don't need complex lighting for distance viewing
-            cull_mode: None, // Double-sided for better visibility
+            cull_mode: Some(Face::Back), // Back-face culling for performance
             ..default()
         })
     }).collect();

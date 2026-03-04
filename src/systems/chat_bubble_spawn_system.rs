@@ -9,7 +9,7 @@ use bevy::{
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        view::{NoFrustumCulling, VisibilityClass},
+        view::VisibilityClass,
     },
     window::PrimaryWindow,
 };
@@ -429,7 +429,6 @@ pub fn chat_bubble_spawn_system(
                 VisibilityClass::default(),
                 Transform::from_translation(Vec3::new(0.0, bubble_height, 0.0)),
                 GlobalTransform::default(),
-                NoFrustumCulling,
             ))
             .id();
 
@@ -456,7 +455,6 @@ pub fn chat_bubble_spawn_system(
                 GlobalTransform::default(),
                 Visibility::Inherited,
                 VisibilityClass::default(),
-                NoFrustumCulling,
             ))
             .set_parent(bubble_entity)
             .id();
@@ -483,7 +481,6 @@ pub fn chat_bubble_spawn_system(
                 GlobalTransform::default(),
                 Visibility::Inherited,
                 VisibilityClass::default(),
-                NoFrustumCulling,
             ))
             .set_parent(bubble_entity)
             .id();

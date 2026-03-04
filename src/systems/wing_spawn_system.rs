@@ -12,6 +12,7 @@
 use bevy::prelude::*;
 use bevy::render::mesh::{Mesh, Indices, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssetUsages;
+use bevy::render::render_resource::Face;
 use bevy::pbr::MeshMaterial3d;
 use bevy::render::alpha::AlphaMode;
 
@@ -121,7 +122,7 @@ fn spawn_wings(
     let wing_material = materials.add(WingMaterial {
         base_color: Color::srgba(0.98, 0.98, 1.0, 0.9),  // Brighter white/silver, more opaque
         alpha_mode: AlphaMode::Blend,
-        cull_mode: None, // Double-sided
+        cull_mode: Some(Face::Back), // Back-face culling for performance
         perceptual_roughness: 0.2,  // Smoother for more ethereal look
         metallic: 0.15,  // Slight metallic sheen
         emissive: LinearRgba::new(0.8, 0.85, 1.0, 0.3),  // Subtle light blue glow

@@ -112,6 +112,11 @@ pub fn damage_digit_render_system(
         
         // Update the storage buffers with new render data
         if let Some(material) = materials.get_mut(&material_handle.0) {
+            // Store old buffer handles to prevent memory leak
+            let old_positions = material.positions.clone();
+            let old_sizes = material.sizes.clone();
+            let old_uvs = material.uvs.clone();
+            
             // Create new storage buffers with updated data
             let positions_buffer = storage_buffers.add(ShaderStorageBuffer::from(damage_digit_render_data.positions.clone()));
             let sizes_buffer = storage_buffers.add(ShaderStorageBuffer::from(damage_digit_render_data.sizes.clone()));
@@ -121,6 +126,11 @@ pub fn damage_digit_render_system(
             material.positions = positions_buffer;
             material.sizes = sizes_buffer;
             material.uvs = uvs_buffer;
+            
+            // Remove old buffers to prevent memory leak
+            storage_buffers.remove(&old_positions);
+            storage_buffers.remove(&old_sizes);
+            storage_buffers.remove(&old_uvs);
         }
     }
 }

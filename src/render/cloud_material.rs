@@ -263,9 +263,9 @@ impl Material for CloudMaterial {
         descriptor.vertex.buffers = vec![vertex_layout];
         log::info!("[CLOUD SPECIALIZE] Vertex buffer layout configured");
 
-        // Disable backface culling - camera can be under or above cloud layer
-        descriptor.primitive.cull_mode = None;
-        log::info!("[CLOUD SPECIALIZE] Backface culling DISABLED");
+        // Enable back-face culling for performance
+        descriptor.primitive.cull_mode = Some(Face::Back);
+        log::info!("[CLOUD SPECIALIZE] Backface culling ENABLED (cull_mode = Some(Face::Back))");
 
         // Configure alpha blending for soft clouds (standard alpha blending)
         if let Some(fragment) = descriptor.fragment.as_mut() {
@@ -545,7 +545,6 @@ pub fn spawn_cloud_layer(
         CloudLayer,
         Name::new("CloudLayer"),
         Visibility::Visible,
-        bevy::render::view::NoFrustumCulling,  // Prevent frustum culling of large cloud plane
     ));
     
     log::info!("[CLOUD] Spawned cloud layer at altitude {}", cloud_settings.altitude);

@@ -7,7 +7,7 @@ use bevy::{
     asset::RenderAssetUsages,
     pbr::decal::{ForwardDecal, ForwardDecalMaterial, ForwardDecalMaterialExt},
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
+    render::render_resource::{Extent3d, Face, TextureDimension, TextureFormat},
 };
 
 use crate::{
@@ -116,7 +116,7 @@ pub fn blood_spatter_spawn_system(
                         base_color_texture: Some(blood_texture),
                         base_color: config.blood_color.with_alpha(alpha),
                         alpha_mode: AlphaMode::Blend,
-                        cull_mode: None,
+                        cull_mode: Some(Face::Back),
                         ..default()
                     },
                     extension: ForwardDecalMaterialExt {

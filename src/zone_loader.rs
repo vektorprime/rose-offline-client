@@ -293,7 +293,7 @@ use    bevy::{
             mesh::{Indices, Mesh, PrimitiveTopology},
             primitives::Aabb,
             render_asset::RenderAssetUsages,
-            view::{NoFrustumCulling, ViewVisibility, InheritedVisibility, RenderLayers},
+            view::{ViewVisibility, InheritedVisibility, RenderLayers},
         },
         tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
     };
@@ -2029,12 +2029,11 @@ pub fn spawn_zone(
             InheritedVisibility::default(),
             Transform::from_xyz(5200.0, 0.0, -5200.0),
             GlobalTransform::default(),
-            NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
         ))
         .id();
-    log::info!("[ZONE LOADER DEBUG] Spawned Zone entity {:?} with Visibility::Visible, NoFrustumCulling, and large Aabb", zone_entity);
+    log::info!("[ZONE LOADER DEBUG] Spawned Zone entity {:?} with Visibility::Visible and large Aabb", zone_entity);
    // info!("[ASSET LIFECYCLE] Zone entity spawned: {:?} (zone_id: {})", zone_entity, zone_data.zone_id.get());
     memory_tracking.log_entity_spawned("Zone", 0);
     log::info!("[SPAWN ZONE] Zone entity spawned: {:?}", zone_entity);
@@ -2559,7 +2558,6 @@ fn spawn_terrain(
             Visibility::Visible,
             ViewVisibility::default(),
             InheritedVisibility::default(),
-            NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
             NotShadowCaster,
@@ -2655,7 +2653,6 @@ fn spawn_water(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-            NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
             NotShadowCaster,
@@ -2726,7 +2723,6 @@ fn spawn_object(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-        NoFrustumCulling,
         Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
         bevy::render::view::RenderLayers::layer(0),
         RigidBody::Fixed,
@@ -2930,7 +2926,6 @@ fn spawn_object(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-                NoFrustumCulling,
                 Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
                 RenderLayers::layer(0),
                 ColliderParent::new(object_entity),
@@ -3191,7 +3186,6 @@ fn spawn_animated_object(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-            NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
             AsyncCollider(ComputedColliderShape::TriMesh(bevy_rapier3d::prelude::TriMeshFlags::empty())),
@@ -3312,7 +3306,6 @@ fn spawn_sound_object(
                Visibility::Visible,
                InheritedVisibility::default(),
                ViewVisibility::default(),
-               NoFrustumCulling,
                Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
                RenderLayers::layer(0),
            ))
@@ -3334,7 +3327,6 @@ fn spawn_sound_object(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-            NoFrustumCulling,
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
             RenderLayers::layer(0),
         ))

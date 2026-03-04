@@ -187,11 +187,9 @@ impl Material for StarrySkyMaterial {
         descriptor.vertex.buffers = vec![vertex_layout];
         log::info!("[STARRY SKY SPECIALIZE] Vertex buffer layout configured");
 
-        // CRITICAL FIX: Disable backface culling for sky sphere
-        // The camera is INSIDE the sphere, so all triangles face away from camera
-        // and would be culled by default backface culling
-        descriptor.primitive.cull_mode = None;  // Disable culling entirely
-        log::info!("[STARRY SKY SPECIALIZE] Backface culling DISABLED (cull_mode = None)");
+        // Enable back-face culling for performance
+        descriptor.primitive.cull_mode = Some(Face::Back);
+        log::info!("[STARRY SKY SPECIALIZE] Backface culling ENABLED (cull_mode = Some(Face::Back))");
 
         // Configure blending for standard alpha blending (Solution 2 for ghosting fix)
         // Standard alpha blending prevents color accumulation that causes ghosting

@@ -57,5 +57,6 @@ pub enum ChatBubbleType {
     Shout,
     Whisper,
     Monster,
+    Npc,
     Emote,
 }

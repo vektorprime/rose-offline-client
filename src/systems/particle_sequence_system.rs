@@ -544,6 +544,12 @@ pub fn particle_storage_buffer_update_system(
         if let Some(existing_material_handle) = material_handle {
             // Update existing material - preserve the original texture!
             if let Some(mat) = materials.get_mut(&existing_material_handle.0) {
+                // Store old buffer handles to prevent memory leak
+                let old_positions = mat.positions.clone();
+                let old_sizes = mat.sizes.clone();
+                let old_colors = mat.colors.clone();
+                let old_textures = mat.textures.clone();
+                
                 // Only update the storage buffers and blend settings, preserve the texture
                 mat.positions = positions_buffer;
                 mat.sizes = sizes_buffer;
@@ -554,6 +560,12 @@ pub fn particle_storage_buffer_update_system(
                 mat.dst_blend_factor = render_data.dst_blend_factor as u32;
                 mat.billboard_type = render_data.billboard_type as u32;
                 // NOTE: texture is preserved from original material (loaded in effect_loader.rs)
+                
+                // Remove old buffers to prevent memory leak
+                storage_buffers.remove(&old_positions);
+                storage_buffers.remove(&old_sizes);
+                storage_buffers.remove(&old_colors);
+                storage_buffers.remove(&old_textures);
             }
         } else {
             // Create new material - use default white texture as fallback

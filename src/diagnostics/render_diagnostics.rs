@@ -143,6 +143,15 @@ impl Plugin for RenderDiagnosticsPlugin {
 /// Update frame counter
 pub fn update_frame_counter(mut state: ResMut<RenderDiagnosticsState>) -> Result<(), BevyError> {
     state.frame_count += 1;
+    
+    // Clear diagnostic vectors periodically to prevent unbounded growth
+    if state.frame_count % 300 == 0 {
+        state.pipeline_cache_accesses.clear();
+        state.pipeline_creations.clear();
+        state.alpha_blend_mesh_events.clear();
+        state.shader_binding_configs.clear();
+    }
+    
     Ok(())
 }
 

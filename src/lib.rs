@@ -81,9 +81,9 @@ use events::{
     BankEvent, CharacterSelectEvent, ChatBubbleEvent, ChatboxEvent, ClanDialogEvent, ClientEntityEvent,
     ConversationDialogEvent, FlightToggleEvent, GameConnectionEvent, HitEvent, LoadZoneEvent, LoginEvent,
     MessageBoxEvent, MoveDestinationEffectEvent, MoveSpeedSetEvent, NetworkEvent, NpcStoreEvent,
-    NumberInputDialogEvent, PartyEvent, PersonalStoreEvent, PlayerCommandEvent, QuestTriggerEvent,
-    SpawnEffectEvent, SpawnProjectileEvent, SystemFuncEvent, UseItemEvent, WorldConnectionEvent,
-    ZoneEvent, ZoneLoadedFromVfsEvent,
+    NumberInputDialogEvent, PartyEvent, PingRequestEvent, PingResponseEvent, PingState, PersonalStoreEvent,
+    PlayerCommandEvent, QuestTriggerEvent, SpawnEffectEvent, SpawnProjectileEvent, SystemFuncEvent,
+    UseItemEvent, WorldConnectionEvent, ZoneEvent, ZoneLoadedFromVfsEvent,
     };
 use model_loader::ModelLoader;
 use render::{
@@ -160,10 +160,10 @@ use systems::{
     DebugInspectorPlugin, FishPlugin, BirdPlugin, DirtDashPlugin, WingSpawnPlugin, WindEffectPlugin,
 };
 use ui::{
-    load_dialog_sprites_system, ui_bank_system, ui_character_create_system,
-    ui_character_info_system, ui_character_select_name_tag_system, ui_character_select_system,
-    ui_chatbox_system, ui_clan_system, ui_create_clan_system, ui_debug_camera_info_system,
-    ui_debug_client_entity_list_system, ui_debug_command_viewer_system,
+    admin_menu_keyboard_system, load_dialog_sprites_system, ui_admin_menu_system, ui_bank_system,
+    ui_character_create_system, ui_character_info_system, ui_character_select_name_tag_system,
+    ui_character_select_system, ui_chatbox_system, ui_clan_system, ui_create_clan_system,
+    ui_debug_camera_info_system, ui_debug_client_entity_list_system, ui_debug_command_viewer_system,
     ui_debug_diagnostics_system, ui_debug_dialog_list_system, ui_debug_effect_list_system,
     ui_debug_entity_inspector_system, ui_debug_item_list_system, ui_debug_menu_system,
     ui_debug_npc_list_system, ui_debug_physics_system, ui_debug_render_system,
@@ -174,8 +174,8 @@ use ui::{
     ui_party_system, ui_personal_store_system, ui_player_info_system, ui_quest_list_system,
     ui_respawn_system, ui_selected_target_system, ui_server_select_system, ui_settings_system,
     ui_skill_list_system, ui_skill_tree_system, ui_sound_event_system, ui_status_effects_system,
-    ui_window_sound_system, widgets::Dialog, DepthOfFieldSettings, DialogLoader, UiSoundEvent, UiStateDebugWindows,
-    UiStateDragAndDrop, UiStateWindows,
+    ui_window_sound_system, widgets::Dialog, DepthOfFieldSettings, DialogLoader, UiSoundEvent,
+    UiStateAdminMenu, UiStateDebugWindows, UiStateDragAndDrop, UiStateWindows,
 };
 use dds_image_loader::DdsImageLoader;
 use vfs_asset_io::{VfsAssetIo, VfsAssetReaderPlugin};
@@ -994,6 +994,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_event::<NumberInputDialogEvent>()
         .add_event::<NpcStoreEvent>()
         .add_event::<PartyEvent>()
+        .add_event::<PingRequestEvent>()
+        .add_event::<PingResponseEvent>()
         .add_event::<PersonalStoreEvent>()
         .add_event::<PlayerCommandEvent>()
         .add_event::<QuestTriggerEvent>()
@@ -1408,6 +1410,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.init_resource::<UiStateDragAndDrop>()
         .init_resource::<UiStateWindows>()
         .init_resource::<UiStateDebugWindows>()
+        .init_resource::<UiStateAdminMenu>()
+        .init_resource::<PingState>()
         .init_resource::<ClientEntityList>()
         .init_resource::<DebugRenderConfig>()
         .init_resource::<WorldTime>()
@@ -1479,6 +1483,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // game_mouse_input_system uses EguiContexts to check if egui wants pointer input
     app.add_systems(Update, game_mouse_input_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
     // UI systems - part 1
+    app.add_systems(Update, ui_admin_menu_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(Update, admin_menu_keyboard_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, ui_bank_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
     app.add_systems(Update, ui_chatbox_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));
     app.add_systems(Update, ui_character_info_system.run_if(in_state(AppState::Game)).after(bevy_egui::EguiPreUpdateSet::InitContexts));

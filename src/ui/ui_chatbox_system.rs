@@ -1,13 +1,15 @@
-use bevy::prelude::{Assets, Entity, EventReader, EventWriter, Local, Query, Res, With};
+use std::time::Instant;
+
+use bevy::prelude::{Assets, Entity, EventReader, EventWriter, Local, Query, Res, ResMut, Resource, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
     components::PlayerCharacter,
-    events::{ChatboxEvent, FlightToggleEvent, MoveSpeedSetEvent},
+    events::{ChatboxEvent, FlightToggleEvent, PingRequestEvent, PingState},
     resources::{GameConnection, UiResources},
-    systems::{is_fly_command, parse_move_speed_command},
+    systems::{is_fly_command, is_ping_command},
     ui::{
         widgets::{DataBindings, Dialog},
         UiSoundEvent,
@@ -64,6 +66,7 @@ pub struct UiStateChatbox {
     textbox_layout_job: egui::text::LayoutJob,
     cleanup_layout_text_counter: usize,
     selected_channel: i32,
+    show_command_help: bool,
 }
 
 impl Default for UiStateChatbox {
@@ -73,6 +76,7 @@ impl Default for UiStateChatbox {
             textbox_layout_job: Default::default(),
             cleanup_layout_text_counter: 0,
             selected_channel: IID_BTN_ALL,
+            show_command_help: false,
         }
     }
 }
@@ -86,7 +90,8 @@ pub fn ui_chatbox_system(
     mut ui_sound_events: EventWriter<UiSoundEvent>,
     dialog_assets: Res<Assets<Dialog>>,
     mut flight_toggle_events: EventWriter<FlightToggleEvent>,
-    mut move_speed_set_events: EventWriter<MoveSpeedSetEvent>,
+    mut ping_request_events: EventWriter<PingRequestEvent>,
+    mut ping_state: ResMut<PingState>,
     player_query: Query<Entity, With<PlayerCharacter>>,
 ) {
     let ui_state_chatbox = &mut *ui_state_chatbox;
@@ -291,7 +296,135 @@ pub fn ui_chatbox_system(
                     );
                 },
             );
+
+        // Show command help tooltip when typing "/"
+        let is_typing_command = ui_state_chatbox.textbox_text.starts_with('/');
+        if is_typing_command {
+            // Update state to show help
+            ui_state_chatbox.show_command_help = true;
+        } else {
+            ui_state_chatbox.show_command_help = false;
+        }
         });
+
+    // Show command help popup above the chatbox
+    if ui_state_chatbox.show_command_help {
+        egui::Area::new(egui::Id::new("chat_command_help"))
+            .anchor(egui::Align2::LEFT_BOTTOM, [5.0, -165.0])
+            .order(egui::Order::Foreground)
+            .show(egui_context.ctx_mut(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(400.0)
+                        .show(ui, |ui| {
+                            ui.set_min_width(380.0);
+                            ui.label(egui::RichText::new("Chat Commands (press Esc to close)")
+                                .strong()
+                                .color(egui::Color32::from_rgb(255, 220, 100)));
+                            ui.separator();
+                            egui::Grid::new("command_help_grid")
+                                .num_columns(1)
+                                .spacing([4.0, 2.0])
+                                .show(ui, |ui| {
+                                    // Client-side commands
+                                    ui.label(egui::RichText::new("Client-side (local):").strong().color(egui::Color32::from_rgb(150, 200, 255)));
+                                    ui.end_row();
+                                    ui.label("  /fly - Toggle flight mode");
+                                    ui.end_row();
+                                    ui.label("  /ping - Show latency to server");
+                                    ui.end_row();
+                                    
+                                    // Server-side commands - Character
+                                    ui.label(egui::RichText::new("Server-side - Character:").strong().color(egui::Color32::from_rgb(150, 255, 150)));
+                                    ui.end_row();
+                                    ui.label("  /help - List all server commands");
+                                    ui.end_row();
+                                    ui.label("  /where - Show current position");
+                                    ui.end_row();
+                                    ui.label("  /god - Toggle invincibility");
+                                    ui.end_row();
+                                    ui.label("  /ghost - Toggle ghost mode");
+                                    ui.end_row();
+                                    ui.label("  /heal - Fully restore HP/MP/Stamina");
+                                    ui.end_row();
+                                    ui.label("  /revive - Revive yourself");
+                                    ui.end_row();
+                                    ui.label("  /save - Force save character");
+                                    ui.end_row();
+                                    ui.label("  /speed <value> - Set move speed (e.g., /speed 4000)");
+                                    ui.end_row();
+                                    ui.label("  /mspeed <value> - Set move speed (e.g., /mspeed 1000)");
+                                    ui.end_row();
+                                    ui.label("  /level <level> - Set level");
+                                    ui.end_row();
+                                    ui.label("  /money <amount> - Set money (e.g., /money 1000000)");
+                                    ui.end_row();
+                                    
+                                    // Server-side commands - Teleportation
+                                    ui.label(egui::RichText::new("Server-side - Teleportation:").strong().color(egui::Color32::from_rgb(200, 150, 255)));
+                                    ui.end_row();
+                                    ui.label("  /tp <player> - Teleport to player (e.g., /tp John)");
+                                    ui.end_row();
+                                    ui.label("  /mm <zone> [x] [y] - Teleport to zone (e.g., /mm 1)");
+                                    ui.end_row();
+                                    ui.label("  /zonelist - List all zones with IDs");
+                                    ui.end_row();
+                                    
+                                    // Server-side commands - Server
+                                    ui.label(egui::RichText::new("Server-side - Server:").strong().color(egui::Color32::from_rgb(255, 200, 150)));
+                                    ui.end_row();
+                                    ui.label("  /players - List all online players");
+                                    ui.end_row();
+                                    ui.label("  /who - Show nearby players");
+                                    ui.end_row();
+                                    ui.label("  /serverinfo - Show server stats");
+                                    ui.end_row();
+                                    ui.label("  /announce <msg> - Global announcement (e.g., /announce Hello!)");
+                                    ui.end_row();
+                                    ui.label("  /info - Debug entity info under cursor");
+                                    ui.end_row();
+                                    
+                                    // Server-side commands - Spawning
+                                    ui.label(egui::RichText::new("Server-side - Spawning:").strong().color(egui::Color32::from_rgb(255, 150, 200)));
+                                    ui.end_row();
+                                    ui.label("  /mon <id> <count> - Spawn monsters (e.g., /mon 1 5)");
+                                    ui.end_row();
+                                    ui.label("  /item <type> <id> [qty] - Give item (e.g., /item 1 100 1)");
+                                    ui.end_row();
+                                    ui.label("  /bot <n> - Spawn bot characters");
+                                    ui.end_row();
+                                    
+                                    // Server-side commands - Skills/Stats
+                                    ui.label(egui::RichText::new("Server-side - Skills/Stats:").strong().color(egui::Color32::from_rgb(150, 255, 200)));
+                                    ui.end_row();
+                                    ui.label("  /skill add|remove <id> - Add/remove skill");
+                                    ui.end_row();
+                                    ui.label("  /add <ability> <value> - Add to ability");
+                                    ui.end_row();
+                                    ui.label("  /set <ability> <value> - Set ability value");
+                                    ui.end_row();
+                                    ui.label("  /rate <type> <value> - Set rates");
+                                    ui.end_row();
+                                    
+                                    // Chat prefixes
+                                    ui.label(egui::RichText::new("Chat prefixes:").strong().color(egui::Color32::from_rgb(255, 180, 100)));
+                                    ui.end_row();
+                                    ui.label("  ! - Shout (all players)");
+                                    ui.end_row();
+                                    ui.label("  @ - Whisper (private)");
+                                    ui.end_row();
+                                    ui.label("  # - Party  & - Clan  ~ - Allied");
+                                    ui.end_row();
+                                });
+                        });
+                });
+            });
+    }
+
+    // Hide command help when Escape is pressed
+    if egui_context.ctx_mut().input(|input| input.key_pressed(egui::Key::Escape)) {
+        ui_state_chatbox.show_command_help = false;
+    }
 
     if let Some(response) = response_editbox {
         if response
@@ -310,17 +443,23 @@ pub fn ui_chatbox_system(
                         }
                         // Clear the textbox without sending to server
                         ui_state_chatbox.textbox_text.clear();
-                    } else if let Some(speed) = parse_move_speed_command(&ui_state_chatbox.textbox_text) {
-                        // Check if this is a "/mspeed <value>" command
-                        if let Ok(player_entity) = player_query.get_single() {
-                            move_speed_set_events.write(MoveSpeedSetEvent {
-                                entity: player_entity,
-                                speed,
-                            });
+                    } else if is_ping_command(&ui_state_chatbox.textbox_text) {
+                        // Handle /ping command client-side
+                        // Record the timestamp and send a ping request
+                        ping_state.pending_ping_timestamp = Some(Instant::now());
+                        
+                        // Send a chat message to server to measure RTT
+                        if let Some(game_connection) = game_connection.as_ref() {
+                            game_connection
+                                .client_message_tx
+                                .send(ClientMessage::Chat {
+                                    text: "/ping".to_string(),
+                                })
+                                .ok();
                         }
-                        // Clear the textbox without sending to server
                         ui_state_chatbox.textbox_text.clear();
                     } else {
+                        // Send all other commands (including /mspeed) to the server
                         // TODO: Parse text line to decide whether its chat, shout, etc
                         if let Some(game_connection) = game_connection.as_ref() {
                             game_connection

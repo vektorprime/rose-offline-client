@@ -13,7 +13,7 @@ use bevy::{
     render::{
         render_asset::RenderAssetUsages,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        view::{NoFrustumCulling, VisibilityClass},
+        view::VisibilityClass,
     },
     window::PrimaryWindow,
 };
@@ -510,7 +510,6 @@ pub fn name_tag_system(
                 VisibilityClass::default(),
                 Transform::from_translation(Vec3::new(0.0, object.model_height.height, 0.0)),
                 GlobalTransform::default(),
-                NoFrustumCulling,
             ))
             .id();
 
@@ -661,7 +660,6 @@ pub fn name_tag_system(
                     GlobalTransform::default(),
                     Visibility::Inherited,
                     VisibilityClass::default(),
-                    NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
         }
@@ -675,7 +673,6 @@ pub fn name_tag_system(
                     GlobalTransform::default(),
                     Visibility::Hidden,
                     VisibilityClass::default(),
-                    NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
         }
@@ -689,7 +686,6 @@ pub fn name_tag_system(
                     GlobalTransform::default(),
                     Visibility::Hidden,
                     VisibilityClass::default(),
-                    NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
         }
@@ -707,7 +703,6 @@ pub fn name_tag_system(
                     GlobalTransform::default(),
                     Visibility::Hidden,
                     VisibilityClass::default(),
-                    NoFrustumCulling,
                 ))
                 .set_parent(name_tag_entity);
         }
