@@ -533,17 +533,19 @@ pub fn queue_world_ui_meshes(
         .get_id::<DrawWorldUi>()
         .unwrap();
 
+    // NOTE: We recreate the bind group every frame instead of caching it.
+    // This is necessary because the view uniforms buffer can be resized when
+    // shadow cascade counts change (e.g., changing shadow quality settings).
+    // If we cached the bind group, it would point to an old buffer that's too small.
     if let Some(view_bindings) = view_uniforms.uniforms.binding() {
-        world_ui_meta.view_bind_group.get_or_insert_with(|| {
-            render_device.create_bind_group(
-                "world_ui_view_bind_group",
-                &world_ui_pipeline.view_layout,
-                &[BindGroupEntry {
-                    binding: 0,
-                    resource: view_bindings,
-                }],
-            )
-        });
+        world_ui_meta.view_bind_group = Some(render_device.create_bind_group(
+            "world_ui_view_bind_group",
+            &world_ui_pipeline.view_layout,
+            &[BindGroupEntry {
+                binding: 0,
+                resource: view_bindings,
+            }],
+        ));
     }
 
     for (view_entity, view, msaa) in views.iter() {

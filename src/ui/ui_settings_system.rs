@@ -1,11 +1,12 @@
 use bevy::core_pipeline::dof::DepthOfFieldMode;
 use bevy::ecs::system::SystemParam;
-use bevy::prelude::{Local, Query, ResMut, Resource};
+use bevy::prelude::{Color, Local, Query, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts};
 
 use crate::{
     audio::SoundGain,
     components::{BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory, WindSwaySettings},
+    graphics::GraphicsSettings,
     render::{SkyMode, SkySettings, StarrySkySettings, ZoneLighting},
     resources::{SeasonSettings, SoundSettings, WaterSettings},
     ui::UiStateWindows,
@@ -112,6 +113,7 @@ enum SettingsPage {
     DirtDash,
     WindSway,
     PostProcessing,
+    Graphics,
 }
 
 pub struct UiStateSettings {
@@ -179,6 +181,7 @@ pub struct SettingsSystemParams<'w, 's> {
     pub dirt_dash_settings: ResMut<'w, DirtDashSettings>,
     pub wind_sway_settings: Option<ResMut<'w, WindSwaySettings>>,
     pub post_processing_settings: ResMut<'w, PostProcessingSettings>,
+    pub graphics_settings: ResMut<'w, GraphicsSettings>,
 }
 
 pub fn ui_settings_system(mut params: SettingsSystemParams) {
@@ -200,6 +203,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
         mut dirt_dash_settings,
         wind_sway_settings,
         mut post_processing_settings,
+        mut graphics_settings,
     } = params;
 
     egui::Window::new("Settings")
@@ -267,6 +271,11 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                     &mut ui_state_settings.page,
                     SettingsPage::PostProcessing,
                     "Post Process",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::Graphics,
+                    "Graphics",
                 );
             });
 
@@ -1209,6 +1218,232 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                     ui.label("TIP: Disable effects one by one to find ghosting cause.");
                     ui.label("Bloom is most likely to cause trails with bright HDR content.");
                     ui.label("SSAO without TAA can cause noise/flickering.");
+                }
+                SettingsPage::Graphics => {
+                    use crate::graphics::{GraphicsShadowFilteringMethod, MsaaSamples, ShadowQuality, SsaoQuality, TextureQuality, TonemappingMode, VsyncMode};
+                    
+                    // === Display Section ===
+                    ui.collapsing("Display", |ui| {
+                        egui::Grid::new("graphics_display")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("VSync:");
+                                egui::ComboBox::from_id_salt("vsync")
+                                    .selected_text(graphics_settings.vsync_mode.display_name())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut graphics_settings.vsync_mode, VsyncMode::Disabled, "Disabled");
+                                        ui.selectable_value(&mut graphics_settings.vsync_mode, VsyncMode::Enabled, "Enabled");
+                                        ui.selectable_value(&mut graphics_settings.vsync_mode, VsyncMode::Mailbox, "Mailbox (Triple Buffer)");
+                                    });
+                                ui.end_row();
+
+                                ui.label("Anti-Aliasing:");
+                                egui::ComboBox::from_id_salt("msaa")
+                                    .selected_text(graphics_settings.msaa_samples.display_name())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut graphics_settings.msaa_samples, MsaaSamples::X1, "Off");
+                                        ui.selectable_value(&mut graphics_settings.msaa_samples, MsaaSamples::X2, "2x MSAA");
+                                        ui.selectable_value(&mut graphics_settings.msaa_samples, MsaaSamples::X4, "4x MSAA");
+                                        ui.selectable_value(&mut graphics_settings.msaa_samples, MsaaSamples::X8, "8x MSAA");
+                                    });
+                                ui.end_row();
+
+                                ui.label("View Distance:");
+                                ui.add(egui::Slider::new(&mut graphics_settings.view_distance, 100.0..=2000.0)
+                                    .text("m")
+                                    .show_value(true));
+                                ui.end_row();
+                            });
+                    });
+
+                    // === Shadows Section ===
+                    ui.collapsing("Shadows", |ui| {
+                        egui::Grid::new("graphics_shadows")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Shadow Quality:");
+                                egui::ComboBox::from_id_salt("shadow_quality")
+                                    .selected_text(graphics_settings.shadow_quality.display_name())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut graphics_settings.shadow_quality, ShadowQuality::Off, "Off");
+                                        ui.selectable_value(&mut graphics_settings.shadow_quality, ShadowQuality::Low, "Low");
+                                        ui.selectable_value(&mut graphics_settings.shadow_quality, ShadowQuality::Medium, "Medium");
+                                        ui.selectable_value(&mut graphics_settings.shadow_quality, ShadowQuality::High, "High");
+                                        ui.selectable_value(&mut graphics_settings.shadow_quality, ShadowQuality::Ultra, "Ultra");
+                                    });
+                                ui.end_row();
+
+                                ui.label("Shadow Distance:");
+                                ui.add(egui::Slider::new(&mut graphics_settings.shadow_max_distance, 10.0..=400.0)
+                                    .text("m")
+                                    .show_value(true));
+                                ui.end_row();
+
+                                ui.label("Shadow Filtering:");
+                                egui::ComboBox::from_id_salt("shadow_filtering")
+                                    .selected_text(graphics_settings.shadow_filtering.display_name())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut graphics_settings.shadow_filtering, GraphicsShadowFilteringMethod::Hardware2x2, "Hardware 2x2");
+                                        ui.selectable_value(&mut graphics_settings.shadow_filtering, GraphicsShadowFilteringMethod::Gaussian, "Gaussian");
+                                        ui.selectable_value(&mut graphics_settings.shadow_filtering, GraphicsShadowFilteringMethod::Temporal, "Temporal");
+                                    });
+                                ui.end_row();
+                            });
+                    });
+
+                    // === Image Adjustments Section ===
+                    ui.collapsing("Image Adjustments", |ui| {
+                        egui::Grid::new("graphics_image")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Brightness:");
+                                ui.add(egui::Slider::new(&mut graphics_settings.brightness, 0.0..=2.0)
+                                    .show_value(true));
+                                ui.end_row();
+
+                                ui.label("Contrast:");
+                                ui.add(egui::Slider::new(&mut graphics_settings.contrast, 0.0..=2.0)
+                                    .show_value(true));
+                                ui.end_row();
+
+                                ui.label("Saturation:");
+                                ui.add(egui::Slider::new(&mut graphics_settings.saturation, 0.0..=2.0)
+                                    .show_value(true));
+                                ui.end_row();
+
+                                ui.label("Gamma:");
+                                ui.add(egui::Slider::new(&mut graphics_settings.gamma, 0.5..=2.5)
+                                    .show_value(true));
+                                ui.end_row();
+
+                                ui.label("Tonemapping:");
+                                egui::ComboBox::from_id_salt("tonemapping")
+                                    .selected_text(graphics_settings.tonemapping.display_name())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut graphics_settings.tonemapping, TonemappingMode::None, "None");
+                                        ui.selectable_value(&mut graphics_settings.tonemapping, TonemappingMode::Reinhard, "Reinhard");
+                                        ui.selectable_value(&mut graphics_settings.tonemapping, TonemappingMode::ReinhardLuminance, "Reinhard Luminance");
+                                        ui.selectable_value(&mut graphics_settings.tonemapping, TonemappingMode::AcesFitted, "ACES Fitted");
+                                        ui.selectable_value(&mut graphics_settings.tonemapping, TonemappingMode::AgX, "AgX");
+                                        ui.selectable_value(&mut graphics_settings.tonemapping, TonemappingMode::SomewhatBoringDisplayTransform, "Somewhat Boring");
+                                        ui.selectable_value(&mut graphics_settings.tonemapping, TonemappingMode::TonyMcMapface, "TonyMcMapface");
+                                        ui.selectable_value(&mut graphics_settings.tonemapping, TonemappingMode::BlenderFilmic, "Blender Filmic");
+                                    });
+                                ui.end_row();
+                            });
+                    });
+
+                    // === Effects Section ===
+                    ui.collapsing("Effects", |ui| {
+                        egui::Grid::new("graphics_effects")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Bloom:");
+                                ui.checkbox(&mut graphics_settings.bloom_enabled, "Enabled");
+                                ui.end_row();
+
+                                ui.label("Bloom Intensity:");
+                                ui.add(egui::Slider::new(&mut graphics_settings.bloom_intensity, 0.0..=1.0)
+                                    .show_value(true));
+                                ui.end_row();
+
+                                ui.label("Motion Blur:");
+                                ui.checkbox(&mut graphics_settings.motion_blur_enabled, "Enabled");
+                                ui.end_row();
+
+                                ui.label("Motion Blur Intensity:");
+                                ui.add(egui::Slider::new(&mut graphics_settings.motion_blur_intensity, 0.0..=1.0)
+                                    .show_value(true));
+                                ui.end_row();
+
+                                ui.label("SSAO:");
+                                ui.checkbox(&mut graphics_settings.ssao_enabled, "Enabled");
+                                ui.end_row();
+
+                                ui.label("SSAO Quality:");
+                                egui::ComboBox::from_id_salt("ssao_quality")
+                                    .selected_text(graphics_settings.ssao_quality.display_name())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut graphics_settings.ssao_quality, SsaoQuality::Off, "Off");
+                                        ui.selectable_value(&mut graphics_settings.ssao_quality, SsaoQuality::Low, "Low");
+                                        ui.selectable_value(&mut graphics_settings.ssao_quality, SsaoQuality::Medium, "Medium");
+                                        ui.selectable_value(&mut graphics_settings.ssao_quality, SsaoQuality::High, "High");
+                                        ui.selectable_value(&mut graphics_settings.ssao_quality, SsaoQuality::Ultra, "Ultra");
+                                    });
+                                ui.end_row();
+
+                                ui.label("Depth of Field:");
+                                ui.checkbox(&mut graphics_settings.dof_enabled, "Enabled");
+                                ui.end_row();
+                            });
+                    });
+
+                    // === Textures Section ===
+                    ui.collapsing("Textures", |ui| {
+                        egui::Grid::new("graphics_textures")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Texture Quality:");
+                                egui::ComboBox::from_id_salt("texture_quality")
+                                    .selected_text(graphics_settings.texture_quality.display_name())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut graphics_settings.texture_quality, TextureQuality::Low, "Low");
+                                        ui.selectable_value(&mut graphics_settings.texture_quality, TextureQuality::Medium, "Medium");
+                                        ui.selectable_value(&mut graphics_settings.texture_quality, TextureQuality::High, "High");
+                                        ui.selectable_value(&mut graphics_settings.texture_quality, TextureQuality::Ultra, "Ultra");
+                                    });
+                                ui.end_row();
+                            });
+                    });
+
+                    // === Ambient Lighting Section ===
+                    ui.collapsing("Ambient Lighting", |ui| {
+                        egui::Grid::new("graphics_ambient")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Brightness:");
+                                ui.add(egui::Slider::new(&mut graphics_settings.ambient_light_brightness, 0.0..=2.0)
+                                    .show_value(true));
+                                ui.end_row();
+
+                                ui.label("Color:");
+                                let mut color_array = [
+                                    graphics_settings.ambient_light_color.to_srgba().red,
+                                    graphics_settings.ambient_light_color.to_srgba().green,
+                                    graphics_settings.ambient_light_color.to_srgba().blue,
+                                ];
+                                if ui.color_edit_button_rgb(&mut color_array).changed() {
+                                    graphics_settings.ambient_light_color = Color::srgb(
+                                        color_array[0],
+                                        color_array[1],
+                                        color_array[2],
+                                    );
+                                }
+                                ui.end_row();
+                            });
+                    });
+
+                    ui.separator();
+                    
+                    // Preset buttons
+                    ui.horizontal(|ui| {
+                        if ui.button("Low Preset").clicked() {
+                            *graphics_settings = GraphicsSettings::low_preset();
+                        }
+                        if ui.button("Medium Preset").clicked() {
+                            *graphics_settings = GraphicsSettings::medium_preset();
+                        }
+                        if ui.button("High Preset").clicked() {
+                            *graphics_settings = GraphicsSettings::high_preset();
+                        }
+                        if ui.button("Ultra Preset").clicked() {
+                            *graphics_settings = GraphicsSettings::ultra_preset();
+                        }
+                    });
+                    
+                    ui.separator();
+                    ui.label("Tip: Higher shadow quality improves visual fidelity but reduces FPS.");
+                    ui.label("Changes to MSAA and VSync may require restart to take full effect.");
                 }
             }
         });

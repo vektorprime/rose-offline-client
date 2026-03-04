@@ -59,6 +59,7 @@ pub mod diagnostics;
 pub mod effect_loader;
 pub mod events;
 pub mod exe_resource_loader;
+pub mod graphics;
 pub mod logging;
 pub mod map_editor;
 pub mod model_loader;
@@ -1424,7 +1425,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<WaterSettings>()
         .init_resource::<FlightSettings>()
         .init_resource::<MonsterChatterPhrases>()
-        .init_resource::<AtmosphereState>();
+        .init_resource::<AtmosphereState>()
+        .init_resource::<graphics::GraphicsSettings>();
 
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
 
@@ -1439,6 +1441,17 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     
     // System to apply water settings from the resource to water materials
     app.add_systems(Update, apply_water_settings);
+    
+    // Graphics settings apply systems
+    app.add_systems(PostUpdate, (
+        graphics::apply_color_grading_system,
+        graphics::apply_shadow_quality_system,
+        graphics::apply_tonemapping_system,
+        graphics::apply_bloom_system,
+        graphics::apply_shadow_filtering_system,
+        graphics::apply_msaa_system,
+        graphics::apply_ambient_light_system,
+    ));
 
     // Register systems individually to avoid Bevy 0.13's IntoSystemConfigs trait bound issues
     // Game systems - part 1

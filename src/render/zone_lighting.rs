@@ -261,15 +261,40 @@ fn update_volumetric_fog_system(
 
 /// System that syncs ZoneLighting resource values to Bevy's built-in lights
 /// This ensures that both custom shaders and standard PBR materials use the same lighting
+///
+/// IMPORTANT: This system respects GraphicsSettings for ambient light, allowing user
+/// brightness/color adjustments to take effect while still using zone lighting as a base.
 fn sync_zone_lighting_to_bevy_lights_system(
     mut zone_lighting: ResMut<ZoneLighting>,
     mut ambient_light: ResMut<AmbientLight>,
     mut query_directional_light: Query<(&mut DirectionalLight, &GlobalTransform)>,
+    graphics_settings: Option<Res<crate::graphics::GraphicsSettings>>,
 ) {
-    // Sync ambient light color from zone_lighting.map_ambient_color
-    // We preserve the brightness we set earlier for better balance
+    // Determine the ambient light color to use:
+    // 1. Start with zone lighting's map_ambient_color as the base
+    // 2. If GraphicsSettings exists, multiply by the user's ambient color and brightness
     let map_ambient = zone_lighting.map_ambient_color;
-    ambient_light.color = Color::from(LinearRgba::new(map_ambient.x, map_ambient.y, map_ambient.z, 1.0));
+    
+    let (final_color, final_brightness) = if let Some(settings) = graphics_settings {
+        // Get the user's ambient color preference as linear RGB
+        let user_color = settings.ambient_light_color.to_linear();
+        
+        // Blend zone ambient color with user's ambient color
+        let blended_r = map_ambient.x * user_color.red;
+        let blended_g = map_ambient.y * user_color.green;
+        let blended_b = map_ambient.z * user_color.blue;
+        
+        // Apply user's brightness multiplier (base 80.0 is Bevy's default)
+        let brightness = 80.0 * settings.ambient_light_brightness;
+        
+        (Color::from(LinearRgba::new(blended_r, blended_g, blended_b, 1.0)), brightness)
+    } else {
+        // No graphics settings, use zone lighting defaults with Bevy's default brightness
+        (Color::from(LinearRgba::new(map_ambient.x, map_ambient.y, map_ambient.z, 1.0)), 80.0)
+    };
+    
+    ambient_light.color = final_color;
+    ambient_light.brightness = final_brightness;
 
     if let Ok((mut light, transform)) = query_directional_light.get_single_mut() {
         // Sync directional light color from zone_lighting.character_diffuse_color
@@ -428,14 +453,14 @@ fn apply_sky_settings_to_zone_time(
             zone_time.debug_overwrite_time = Some(tick_value);
 
             // Log once when manual mode is enabled
-            if zone_time.debug_overwrite_time.is_some() {
-                log::info!(
-                    "[SKY SETTINGS] Manual time enabled: {:.1} hours -> {} ticks (day_cycle: {})",
-                    manual_time_hours,
-                    tick_value,
-                    zone_data.day_cycle
-                );
-            }
+            // if zone_time.debug_overwrite_time.is_some() {
+            //     log::info!(
+            //         "[SKY SETTINGS] Manual time enabled: {:.1} hours -> {} ticks (day_cycle: {})",
+            //         manual_time_hours,
+            //         tick_value,
+            //         zone_data.day_cycle
+            //     );
+            // }
         }
         SkyMode::Automatic => {
             // Clear the override to use game time
