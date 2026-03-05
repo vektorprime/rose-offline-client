@@ -5,15 +5,21 @@ use log::{info, warn, error};
 use animation::RoseAnimationPlugin;
 use bevy::{
         asset::AssetApp,
-        core_pipeline::bloom::Bloom,
-        core_pipeline::dof::{DepthOfField, DepthOfFieldMode},
-        core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
-        core_pipeline::smaa::Smaa,
+        core_pipeline::{
+            bloom::Bloom,
+            dof::{DepthOfField, DepthOfFieldMode},
+            prepass::{DepthPrepass, MotionVectorPrepass},
+            smaa::Smaa,
+            motion_blur::MotionBlur,
+            auto_exposure::AutoExposure,
+            contrast_adaptive_sharpening::ContrastAdaptiveSharpening,
+        },
         pbr::{
             Atmosphere, AtmosphereSettings, ExtendedMaterial, MaterialPlugin, StandardMaterial,
             MeshMaterial3d, VolumetricFog, VolumetricLight, FogVolume, ShadowFilteringMethod,
             ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
-            DirectionalLightShadowMap
+            DirectionalLightShadowMap, DefaultOpaqueRendererMethod, OpaqueRendererMethod,
+            ScreenSpaceReflections,
         },
         render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
         render::experimental::occlusion_culling::OcclusionCulling,
@@ -839,6 +845,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // High-quality shadow map resolution
     app.insert_resource(DirectionalLightShadowMap { size: 4096 });
 
+    // Bevy 0.16 Deferred Rendering
+    app.insert_resource(DefaultOpaqueRendererMethod::deferred());
+
     app.register_asset_loader(ZmsAssetLoader)
         .init_asset::<ZmsMaterialNumFaces>()
         .register_asset_loader(ZmsNoSkinAssetLoader)
@@ -1153,7 +1162,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             // which conflicts with the new atmospheric scattering system.
             // color_grading_time_of_day_system,
             directional_light_system,
-            render::terrain_material::update_terrain_lighting_system,
+            // Update terrain lighting based on zone lighting and time of day
+            // Must run after zone_time_system to get current time state for intensity adjustment
+            render::terrain_material::update_terrain_lighting_system.after(zone_time_system),
             // Starry sky material update - updates uniforms for twinkling and night factor
             // Runs after update_starry_sky_night_factor to use updated night_factor value
             update_starry_sky_system.after(update_starry_sky_night_factor),
@@ -1850,6 +1861,9 @@ fn load_common_game_data(
         OcclusionCulling,
         // Underwater state tracking for underwater rendering effect
         CameraUnderwaterState::default(),
+    )).id();
+
+    commands.entity(camera_entity).insert((
         // Environment Map Light for richer PBR reflections and lighting
         // The DDS loader is configured to load this texture as a cubemap when the #cube label is used
         EnvironmentMapLight {
@@ -1858,7 +1872,15 @@ fn load_common_game_data(
             intensity: 150.0,
             ..default()
         },
-    )).id();
+        // Bevy 0.16 Screen Space Reflections
+        ScreenSpaceReflections::default(),
+        // Bevy 0.16 Motion Blur
+        MotionBlur::default(),
+        // Bevy 0.16 Auto Exposure
+        AutoExposure::default(),
+        // Bevy 0.16 Contrast Adaptive Sharpening
+        ContrastAdaptiveSharpening::default(),
+    ));
     // Insert additional components separately to avoid tuple size limit
     // DEBUG: Disable atmosphere when testing starry sky
     // When FORCE_NIGHT_MODE is true in starry_sky_material.rs, don't add atmosphere

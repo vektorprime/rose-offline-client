@@ -10,7 +10,7 @@ use bevy::{
     prelude::{
         AmbientLight, App, Color, Commands, DetectChanges, DirectionalLight, EulerRot,
         FromWorld, IntoScheduleConfigs, Local, Plugin, Query, Quat, ReflectResource, Res, ResMut,
-        Resource, Shader, Startup, Transform, Update, World, With, LinearRgba,
+        Resource, Shader, Startup, Transform, Update, World, With, Without, LinearRgba,
         GlobalTransform, ColorToComponents, Dir3,
     },
     reflect::{Reflect, TypePath},
@@ -28,6 +28,9 @@ use bevy::{
         Extract, ExtractSchedule, Render, RenderApp, RenderSet,
     },
 };
+use crate::graphics::{GraphicsSettings, ShadowQuality};
+use crate::resources::{ZoneTime, ZoneTimeState};
+use crate::render::starry_sky_material::MoonLight;
 
 /// Marker component for the volumetric fog volume entity.
 /// Used to query the fog volume for modifications or removal.
@@ -125,6 +128,9 @@ impl Plugin for ZoneLightingPlugin {
                 update_sun_position_system,
                 apply_sky_settings_to_zone_time,
                 sync_zone_lighting_to_bevy_lights_system,
+                update_shadows_for_time_of_day_system
+                    .after(crate::systems::zone_time_system)
+                    .after(crate::graphics::apply_shadow_quality_system),
             ));
         // bevy::log::info!("[ZONE LIGHTING] ZoneLightingPlugin build complete");
     }
@@ -467,6 +473,64 @@ fn apply_sky_settings_to_zone_time(
             zone_time.debug_overwrite_time = None;
             log::info!("[SKY SETTINGS] Automatic time enabled - following game time");
         }
+    }
+}
+
+/// System that adjusts shadow settings based on time of day.
+/// During evening and night, sun shadows are disabled since the starry sky
+/// provides ambient lighting from all directions.
+///
+/// Shadow State by Time:
+/// | Time State | Sun Shadows | Moon Shadows |
+/// |------------|-------------|--------------|
+/// | Morning    | Enabled     | Disabled     |
+/// | Day        | Enabled     | Disabled     |
+/// | Evening    | Disabled    | Disabled     |
+/// | Night      | Disabled    | Disabled     |
+pub fn update_shadows_for_time_of_day_system(
+    zone_time: Res<ZoneTime>,
+    mut sun_query: Query<&mut DirectionalLight, (With<VolumetricLight>, Without<MoonLight>)>,
+    mut moon_query: Query<&mut DirectionalLight, With<MoonLight>>,
+    graphics_settings: Option<Res<GraphicsSettings>>,
+) {
+    // Check if shadows are enabled in graphics settings
+    // If shadows are disabled by quality settings, don't override
+    let shadows_enabled_by_settings = graphics_settings
+        .map(|g| g.shadow_quality != ShadowQuality::Off)
+        .unwrap_or(true);
+    
+    if !shadows_enabled_by_settings {
+        return; // Shadows disabled in settings, nothing to do
+    }
+    
+    // Calculate shadow visibility based on time state
+    let (sun_shadows, moon_shadows) = match zone_time.state {
+        ZoneTimeState::Morning => {
+            // Morning: sun shadows enabled
+            (true, false)
+        }
+        ZoneTimeState::Day => {
+            // Full daylight: sun shadows enabled
+            (true, false)
+        }
+        ZoneTimeState::Evening => {
+            // Evening transition: disable sun shadows
+            (false, false)
+        }
+        ZoneTimeState::Night => {
+            // Night: no sun shadows, no moon shadows (ambient starry sky)
+            (false, false)
+        }
+    };
+    
+    // Apply to sun light
+    for mut light in sun_query.iter_mut() {
+        light.shadows_enabled = sun_shadows;
+    }
+    
+    // Apply to moon light
+    for mut light in moon_query.iter_mut() {
+        light.shadows_enabled = moon_shadows;
     }
 }
 

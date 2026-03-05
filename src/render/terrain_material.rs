@@ -27,6 +27,7 @@ use bevy::{
     },
 };
 
+use crate::graphics::GraphicsSettings;
 use crate::render::{MESH_ATTRIBUTE_UV_1, TERRAIN_MESH_ATTRIBUTE_TILE_INFO, ZoneLighting};
 
 /// Shader handle for the terrain material shader
@@ -62,19 +63,52 @@ impl Plugin for TerrainMaterialPlugin {
     }
 }
 
+/// System that updates terrain material lighting based on ZoneLighting and time of day.
+///
+/// The terrain lighting intensity is adjusted based on the time of day:
+/// | Time State | Intensity Multiplier | Time Period  |
+/// |------------|---------------------|--------------|
+/// | Morning    | 2.0                 | 6:00-12:00   |
+/// | Day        | 2.5                 | 12:00-17:00  |
+/// | Evening    | 2.0                 | 17:00-19:00  |
+/// | Night      | 1.0                 | 19:00-6:00   |
 pub fn update_terrain_lighting_system(
     zone_lighting: Res<ZoneLighting>,
+    graphics_settings: Res<GraphicsSettings>,
+    zone_time: Res<crate::resources::ZoneTime>,
     mut terrain_materials: ResMut<Assets<TerrainMaterial>>,
 ) {
-    // Only update if zone_lighting has changed
-    if !zone_lighting.is_changed() {
+    // Only update if zone_lighting, graphics_settings, or zone_time has changed
+    if !zone_lighting.is_changed() && !graphics_settings.is_changed() && !zone_time.is_changed() {
         return;
     }
+
+    // Get the terrain light intensity scale from graphics settings
+    let base_intensity = graphics_settings.terrain_light_intensity;
+
+    // Apply time-of-day multiplier to terrain lighting intensity
+    // This creates more realistic lighting transitions throughout the day
+    let time_multiplier = match zone_time.state {
+        crate::resources::ZoneTimeState::Morning => 2.0,   // 6:00-12:00: Moderate morning light
+        crate::resources::ZoneTimeState::Day => 2.5,       // 12:00-17:00: Bright daylight
+        crate::resources::ZoneTimeState::Evening => 2.0,   // 17:00-19:00: Dimming evening light
+        crate::resources::ZoneTimeState::Night => 1.0,     // 19:00-6:00: Dim night light
+    };
+
+    // Combine base intensity with time multiplier
+    // Scale down by dividing by 5.0 to keep values in reasonable range (base is 5.0)
+    let intensity_scale = (base_intensity * time_multiplier) / 5.0;
 
     for (_, material) in terrain_materials.iter_mut() {
         material.light_direction = zone_lighting.light_direction;
         let char_diffuse = zone_lighting.character_diffuse_color;
-        material.light_color = Color::from(LinearRgba::new(char_diffuse.x, char_diffuse.y, char_diffuse.z, 1.0));
+        // Scale the light color to match the perceptual brightness of DirectionalLight's HDR illuminance
+        material.light_color = Color::from(LinearRgba::new(
+            char_diffuse.x * intensity_scale,
+            char_diffuse.y * intensity_scale,
+            char_diffuse.z * intensity_scale,
+            1.0,
+        ));
         let map_ambient = zone_lighting.map_ambient_color;
         material.ambient_color = Color::from(LinearRgba::new(map_ambient.x, map_ambient.y, map_ambient.z, 1.0));
     }

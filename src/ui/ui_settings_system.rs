@@ -1,6 +1,6 @@
 use bevy::core_pipeline::dof::DepthOfFieldMode;
 use bevy::ecs::system::SystemParam;
-use bevy::prelude::{Color, Local, Query, ResMut, Resource};
+use bevy::prelude::{Color, Local, Query, Res, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts};
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
     components::{BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory, WindSwaySettings},
     graphics::GraphicsSettings,
     render::{SkyMode, SkySettings, StarrySkySettings, ZoneLighting},
-    resources::{SeasonSettings, SoundSettings, WaterSettings},
+    resources::{SeasonSettings, SoundSettings, WaterSettings, ZoneTime, ZoneTimeState},
     ui::UiStateWindows,
 };
 
@@ -182,6 +182,7 @@ pub struct SettingsSystemParams<'w, 's> {
     pub wind_sway_settings: Option<ResMut<'w, WindSwaySettings>>,
     pub post_processing_settings: ResMut<'w, PostProcessingSettings>,
     pub graphics_settings: ResMut<'w, GraphicsSettings>,
+    pub zone_time: Option<Res<'w, ZoneTime>>,
 }
 
 pub fn ui_settings_system(mut params: SettingsSystemParams) {
@@ -204,6 +205,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
         wind_sway_settings,
         mut post_processing_settings,
         mut graphics_settings,
+        zone_time,
     } = params;
 
     egui::Window::new("Settings")
@@ -1402,7 +1404,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                             .num_columns(2)
                             .show(ui, |ui| {
                                 ui.label("Brightness:");
-                                ui.add(egui::Slider::new(&mut graphics_settings.ambient_light_brightness, 0.0..=2.0)
+                                ui.add(egui::Slider::new(&mut graphics_settings.ambient_light_brightness, 0.5..=3.0)
                                     .show_value(true));
                                 ui.end_row();
 
@@ -1421,6 +1423,43 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                                 }
                                 ui.end_row();
                             });
+                    });
+
+                    // === Terrain Lighting Section ===
+                    ui.collapsing("Terrain Lighting", |ui| {
+                        egui::Grid::new("graphics_terrain")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Base Intensity:");
+                                ui.add(egui::Slider::new(&mut graphics_settings.terrain_light_intensity, 1.0..=20.0)
+                                    .show_value(true));
+                                ui.end_row();
+
+                                // Calculate and display effective intensity based on time of day
+                                if let Some(ref zone_time) = zone_time {
+                                    let time_mult = match zone_time.state {
+                                        ZoneTimeState::Morning => 2.0,
+                                        ZoneTimeState::Day => 2.5,
+                                        ZoneTimeState::Evening => 2.0,
+                                        ZoneTimeState::Night => 1.0,
+                                    };
+                                    let effective = (graphics_settings.terrain_light_intensity * time_mult) / 5.0;
+                                    let state_name = match zone_time.state {
+                                        ZoneTimeState::Morning => "Morning",
+                                        ZoneTimeState::Day => "Day",
+                                        ZoneTimeState::Evening => "Evening",
+                                        ZoneTimeState::Night => "Night",
+                                    };
+                                    ui.label("Effective Intensity:");
+                                    ui.label(format!("{:.2} ({:.1}x - {})", effective, time_mult, state_name));
+                                    ui.end_row();
+                                } else {
+                                    ui.label("Effective Intensity:");
+                                    ui.label("N/A (Zone not loaded)");
+                                    ui.end_row();
+                                }
+                            });
+                        ui.label("Tip: Effective intensity = (base × time_multiplier) / 5.0. Changes with time of day.");
                     });
 
                     ui.separator();

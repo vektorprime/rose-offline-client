@@ -383,6 +383,11 @@ pub struct GraphicsSettings {
 
     /// Ambient light color (RGB)
     pub ambient_light_color: Color,
+
+    // === Terrain Lighting Settings ===
+    /// Terrain light intensity scale (matches terrain lighting to model lighting)
+    /// Higher values make the terrain brighter. Default is 5.0.
+    pub terrain_light_intensity: f32,
 }
 
 impl Default for GraphicsSettings {
@@ -420,8 +425,11 @@ impl Default for GraphicsSettings {
             smaa_quality: SmaaQuality::default(),
 
             // Ambient Lighting
-            ambient_light_brightness: 1.0,
+            ambient_light_brightness: 1.5,
             ambient_light_color: Color::WHITE,
+
+            // Terrain Lighting
+            terrain_light_intensity: 5.0,
         }
     }
 }
@@ -453,6 +461,7 @@ impl GraphicsSettings {
             smaa_quality: SmaaQuality::Disabled,
             ambient_light_brightness: 1.0,
             ambient_light_color: Color::WHITE,
+            terrain_light_intensity: 5.0,
         }
     }
 
@@ -483,6 +492,7 @@ impl GraphicsSettings {
             smaa_quality: SmaaQuality::Disabled,
             ambient_light_brightness: 1.0,
             ambient_light_color: Color::WHITE,
+            terrain_light_intensity: 5.0,
         }
     }
 
@@ -513,6 +523,7 @@ impl GraphicsSettings {
             smaa_quality: SmaaQuality::Disabled,
             ambient_light_brightness: 1.0,
             ambient_light_color: Color::WHITE,
+            terrain_light_intensity: 5.0,
         }
     }
 
@@ -543,6 +554,7 @@ impl GraphicsSettings {
             smaa_quality: SmaaQuality::High,
             ambient_light_brightness: 1.0,
             ambient_light_color: Color::WHITE,
+            terrain_light_intensity: 5.0,
         }
     }
 }
