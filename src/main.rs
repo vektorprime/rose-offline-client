@@ -153,6 +153,11 @@ fn main() {
             .takes_value(true)
                 .value_parser(["irose"])
                 .help("Select which game version to use for ui."),
+        )
+        .arg(
+            clap::Arg::new("new-terrain")
+                .long("new-terrain")
+                .help("Use the new converted terrain system"),
         );
     println!("Parsing command line arguments...");
     let matches = command.get_matches();
@@ -212,6 +217,10 @@ fn main() {
 
     if matches.is_present("disable-sound") {
         config.sound.enabled = false;
+    }
+
+    if matches.is_present("new-terrain") {
+        config.graphics.use_new_terrain = true;
     }
 
     if let Some(version) = matches.value_of("data-version") {

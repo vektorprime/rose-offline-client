@@ -433,6 +433,7 @@ pub struct GraphicsConfig {
     pub passthrough_terrain_textures: bool,
     pub trail_effect_duration_multiplier: f32,
     pub disable_vsync: bool,
+    pub use_new_terrain: bool,
 }
 
 impl Default for GraphicsConfig {
@@ -445,6 +446,7 @@ impl Default for GraphicsConfig {
             passthrough_terrain_textures: false,
             trail_effect_duration_multiplier: 1.0,
             disable_vsync: false,
+            use_new_terrain: false,
         }
     }
 }
@@ -861,6 +863,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .insert_resource(RenderConfiguration {
             passthrough_terrain_textures: config.graphics.passthrough_terrain_textures,
             trail_effect_duration_multiplier: config.graphics.trail_effect_duration_multiplier,
+            use_new_terrain: config.graphics.use_new_terrain,
         })
         .insert_resource(ServerConfiguration {
             ip: config.server.ip.clone(),

@@ -41,8 +41,8 @@ pub fn monster_chatter_system(
                 }
             });
 
-            info!("[MONSTER_CHATTER] Sending chat bubble for entity {:?} name='{}' text='{}'",
-                entity, entity_name, phrase);
+            // info!("[MONSTER_CHATTER] Sending chat bubble for entity {:?} name='{}' text='{}'",
+            //     entity, entity_name, phrase);
             
             // Determine bubble type based on entity type
             let bubble_type = match entity_type {
@@ -67,9 +67,9 @@ pub fn monster_chatter_system(
         }
     }
     
-    if events_sent > 0 {
-        info!("[MONSTER_CHATTER] Sent {} chat bubble events this frame", events_sent);
-    }
+    // if events_sent > 0 {
+    //     info!("[MONSTER_CHATTER] Sent {} chat bubble events this frame", events_sent);
+    // }
 }
 
 /// System to add MonsterChatter component to newly spawned NPCs

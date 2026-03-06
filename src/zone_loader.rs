@@ -295,6 +295,7 @@ use    bevy::{
             render_asset::RenderAssetUsages,
             view::{ViewVisibility, InheritedVisibility, RenderLayers},
         },
+        image::ImageLoaderSettings,
         tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
     };
 use bevy_rapier3d::prelude::{
@@ -348,6 +349,7 @@ pub struct ZoneLoaderBlock {
     pub ifo: Option<IfoFile>,
     pub lit_cnst: Option<LitFile>,
     pub lit_deco: Option<LitFile>,
+    pub new_terrain_mesh: Option<Vec<u8>>,
 }
 
 pub struct ZoneNpc {
@@ -584,7 +586,7 @@ impl AssetLoader for ZoneLoader {
             log::info!("[ZONE LOADER ASSET LOADER] Zone ID parsed: {}", zone_id.get());
 
             log::info!("[ZONE LOADER ASSET LOADER] Calling load_zone...");
-            let result = load_zone(zone_id, load_context).await;
+            let result = load_zone(zone_id, load_context, false).await;
             log::info!("[ZONE LOADER ASSET LOADER] load_zone completed with result: {:?}", result.is_ok());
             result
         }
@@ -598,6 +600,7 @@ impl AssetLoader for ZoneLoader {
 async fn load_zone<'a, 'b>(
     zone_id: ZoneId,
     load_context: &'a mut LoadContext<'b>,
+    use_new_terrain: bool,
 ) -> Result<ZoneLoaderAsset, anyhow::Error> {
     log::info!("[ZONE LOADER DIAGNOSTIC] ===========================================");
     log::info!("[ZONE LOADER DIAGNOSTIC] load_zone called for zone_id: {}", zone_id.get());
@@ -659,7 +662,7 @@ async fn load_zone<'a, 'b>(
 
     for block_y in 0..64 {
         for block_x in 0..64 {
-            if let Ok(block) = load_block_files(load_context, zone_path, block_x, block_y).await {
+            if let Ok(block) = load_block_files(load_context, zone_path, block_x, block_y, use_new_terrain).await {
                 zone_blocks.push(block);
                 blocks_loaded += 1;
             } else {
@@ -767,7 +770,7 @@ fn read_bytes_with_priority_sync(
     }
 }
 
-async fn load_zone_direct(zone_id: ZoneId, vfs: &VirtualFilesystem, base_path: &Path) -> Result<ZoneLoaderAsset, anyhow::Error> {
+async fn load_zone_direct(zone_id: ZoneId, vfs: &VirtualFilesystem, base_path: &Path, use_new_terrain: bool) -> Result<ZoneLoaderAsset, anyhow::Error> {
     //log::info!("[ZONE LOADER DIRECT] ===========================================");
     //log::info!("[ZONE LOADER DIRECT] load_zone_direct called for zone_id: {}", zone_id.get());
     //log::info!("[ZONE LOADER DIRECT] ===========================================");
@@ -837,7 +840,7 @@ async fn load_zone_direct(zone_id: ZoneId, vfs: &VirtualFilesystem, base_path: &
 
     for block_y in 0..64 {
         for block_x in 0..64 {
-            match load_block_files_direct(vfs, base_path, zone_path, block_x, block_y).await {
+            match load_block_files_direct(vfs, base_path, zone_path, block_x, block_y, use_new_terrain).await {
                 Ok(block) => {
                     zone_blocks.push(block);
                     blocks_loaded += 1;
@@ -924,6 +927,7 @@ async fn load_block_files<'a>(
     zone_path: &Path,
     block_x: usize,
     block_y: usize,
+    use_new_terrain: bool,
 ) -> Result<Box<ZoneLoaderBlock>, anyhow::Error> {
     let him_path = zone_path.join(format!("{}_{}.HIM", block_x, block_y));
     log::trace!("[LOAD BLOCK] Loading block {}_{} from: {:?}", block_x, block_y, him_path);
@@ -979,6 +983,12 @@ async fn load_block_files<'a>(
         None
     };
 
+    let new_terrain_mesh = if use_new_terrain {
+        load_context.read_asset_bytes(zone_path.join(format!("block_{}_{}.mesh.bin", block_x, block_y))).await.ok()
+    } else {
+        None
+    };
+
     Ok(Box::new(ZoneLoaderBlock {
         block_x,
         block_y,
@@ -987,6 +997,7 @@ async fn load_block_files<'a>(
         ifo,
         lit_cnst,
         lit_deco,
+        new_terrain_mesh,
     }))
 }
 
@@ -1000,6 +1011,7 @@ async fn load_block_files_direct(
     zone_path: &Path,
     block_x: usize,
     block_y: usize,
+    use_new_terrain: bool,
 ) -> Result<Box<ZoneLoaderBlock>, anyhow::Error> {
     /// Helper function to read raw bytes with real filesystem priority
     /// Returns the raw file data either from real filesystem or VFS
@@ -1141,6 +1153,13 @@ async fn load_block_files_direct(
         Err(_) => None
     };
 
+    let new_terrain_mesh = if use_new_terrain {
+        let mesh_path = VfsPath::from(zone_path.join(format!("block_{}_{}.mesh.bin", block_x, block_y)));
+        read_bytes_with_priority(vfs, base_path, &mesh_path).ok()
+    } else {
+        None
+    };
+
     Ok(Box::new(ZoneLoaderBlock {
         block_x,
         block_y,
@@ -1149,6 +1168,7 @@ async fn load_block_files_direct(
         ifo,
         lit_cnst,
         lit_deco,
+        new_terrain_mesh,
     }))
 }
 
@@ -1168,6 +1188,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub particle_materials: ResMut<'w, Assets<ParticleMaterial>>,
     pub storage_buffers: ResMut<'w, Assets<bevy::render::storage::ShaderStorageBuffer>>,
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
+    pub render_config: Res<'w, crate::resources::RenderConfiguration>,
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
     pub water_spawned_events: EventWriter<'w, WaterSpawnedEvent>,
 }
@@ -1252,6 +1273,7 @@ pub fn zone_loader_system(
     mut debug_inspector_state: ResMut<DebugInspector>,
 ) {
     let _span = info_span!("zone_loader_system").entered();
+    let use_new_terrain = spawn_zone_params.render_config.use_new_terrain;
     let has_load_events = load_zone_events.len() > 0;
     let has_loading_zones = !loading_zones.is_empty();
 
@@ -1414,7 +1436,7 @@ pub fn zone_loader_system(
                 // log::info!("[ZONE LOADER DIRECT TASK] Async task started for zone_id: {}", zone_id.get());
                 // log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
                 
-                match load_zone_direct(zone_id, &vfs, &base_path).await {
+                match load_zone_direct(zone_id, &vfs, &base_path, use_new_terrain).await {
                     Ok(zone_asset) => {
                         // log::info!("[ZONE LOADER DIRECT TASK] ===========================================");
                         // log::info!("[ZONE LOADER DIRECT TASK] Zone loaded successfully: {}", zone_id.get());
@@ -1974,6 +1996,7 @@ pub fn spawn_zone(
         particle_materials,
         storage_buffers,
         zone_loader_assets: _,
+        render_config,
         memory_tracking,
         ref mut water_spawned_events,
     } = params;
@@ -2061,15 +2084,26 @@ pub fn spawn_zone(
     for block_y in 0..64 {
         for block_x in 0..64 {
             if let Some(block_data) = zone_data.blocks[block_x + block_y * 64].as_ref() {
-                let terrain_entity = spawn_terrain(
-                    commands,
-                    asset_server,
-                    meshes,
-                    terrain_materials,
-                    &tile_textures,
-                    zone_data,
-                    block_data,
-                );
+                let terrain_entity = if render_config.use_new_terrain && block_data.new_terrain_mesh.is_some() {
+                    spawn_new_terrain(
+                        commands,
+                        asset_server,
+                        meshes,
+                        standard_materials,
+                        zone_data,
+                        block_data,
+                    )
+                } else {
+                    spawn_terrain(
+                        commands,
+                        asset_server,
+                        meshes,
+                        terrain_materials,
+                        &tile_textures,
+                        zone_data,
+                        block_data,
+                    )
+                };
                 commands.entity(zone_entity).add_child(terrain_entity);
                 terrain_count += 1;
 
@@ -3267,6 +3301,150 @@ fn spawn_effect_object(
     );
 
     effect_object_entity
+}
+
+fn spawn_new_terrain(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    meshes: &mut Assets<Mesh>,
+    standard_materials: &mut Assets<StandardMaterial>,
+    zone_data: &ZoneLoaderAsset,
+    block_data: &ZoneLoaderBlock,
+) -> Entity {
+    let _span = info_span!("spawn_new_terrain", block_x = block_data.block_x, block_y = block_data.block_y).entered();
+    log::info!("[SPAWN NEW TERRAIN] Spawning new terrain block {}_{}", block_data.block_x, block_data.block_y);
+    
+    let offset_x = 160.0 * block_data.block_x as f32;
+    let offset_y = 160.0 * (65.0 - block_data.block_y as f32);
+
+    let mesh_data = block_data.new_terrain_mesh.as_ref().expect("New terrain mesh data missing");
+    let mut cursor = 0;
+
+    let mut read_u32 = |cursor: &mut usize, data: &[u8]| {
+        let val = u32::from_le_bytes(data[*cursor..*cursor + 4].try_into().unwrap());
+        *cursor += 4;
+        val
+    };
+
+    let mut read_f32 = |cursor: &mut usize, data: &[u8]| {
+        let val = f32::from_le_bytes(data[*cursor..*cursor + 4].try_into().unwrap());
+        *cursor += 4;
+        val
+    };
+
+    let vertex_count = read_u32(&mut cursor, mesh_data) as usize;
+    let mut positions = Vec::with_capacity(vertex_count);
+    for _ in 0..vertex_count {
+        positions.push([read_f32(&mut cursor, mesh_data), read_f32(&mut cursor, mesh_data), read_f32(&mut cursor, mesh_data)]);
+    }
+
+    let mut normals = Vec::with_capacity(vertex_count);
+    for _ in 0..vertex_count {
+        normals.push([read_f32(&mut cursor, mesh_data), read_f32(&mut cursor, mesh_data), read_f32(&mut cursor, mesh_data)]);
+    }
+
+    let mut uvs = Vec::with_capacity(vertex_count);
+    for _ in 0..vertex_count {
+        uvs.push([read_f32(&mut cursor, mesh_data), read_f32(&mut cursor, mesh_data)]);
+    }
+
+    let has_tangents = read_u32(&mut cursor, mesh_data) == 1;
+    let tangents = if has_tangents {
+        let mut t = Vec::with_capacity(vertex_count);
+        for _ in 0..vertex_count {
+            t.push([read_f32(&mut cursor, mesh_data), read_f32(&mut cursor, mesh_data), read_f32(&mut cursor, mesh_data), read_f32(&mut cursor, mesh_data)]);
+        }
+        Some(t)
+    } else {
+        None
+    };
+
+    let index_count = read_u32(&mut cursor, mesh_data) as usize;
+    let mut indices = Vec::with_capacity(index_count);
+    for _ in 0..index_count {
+        indices.push(read_u32(&mut cursor, mesh_data));
+    }
+
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_indices(Indices::U32(indices.clone()));
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions.clone());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    if let Some(tangents) = tangents {
+        mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, tangents);
+    }
+
+    let albedo_path = zone_data.zone_path.join(format!("block_{}_{}_albedo.png", block_data.block_x, block_data.block_y));
+    let normal_path = zone_data.zone_path.join(format!("block_{}_{}_normal.png", block_data.block_x, block_data.block_y));
+
+    let albedo = asset_server.load(albedo_path.to_string_lossy().into_owned());
+    let normal = asset_server.load_with_settings(
+        normal_path.to_string_lossy().into_owned(),
+        |settings: &mut ImageLoaderSettings| {
+            settings.is_srgb = false;
+        },
+    );
+
+    let material = standard_materials.add(StandardMaterial {
+        base_color_texture: Some(albedo),
+        normal_map_texture: Some(normal),
+        perceptual_roughness: 0.8,
+        metallic: 0.0,
+        depth_bias: 0.1, // Small bias to mitigate Z-fighting in overlapping terrain
+        ..Default::default()
+    });
+
+    let mut min = Vec3::splat(f32::MAX);
+    let mut max = Vec3::splat(f32::MIN);
+    let mut collider_verts = Vec::with_capacity(vertex_count);
+    for p in &positions {
+        let pos = Vec3::new(p[0], p[1], p[2]);
+        collider_verts.push(pos);
+        min = min.min(pos);
+        max = max.max(pos);
+    }
+    
+    let mut collider_indices = Vec::with_capacity(indices.len() / 3);
+    for i in 0..indices.len() / 3 {
+        collider_indices.push([indices[i*3], indices[i*3+1], indices[i*3+2]]);
+    }
+
+    let terrain_entity = commands
+        .spawn((
+            EditorSelectable,
+            ZoneObject::Terrain(ZoneObjectTerrain {
+                block_x: block_data.block_x as u32,
+                block_y: block_data.block_y as u32,
+            }),
+            Mesh3d(meshes.add(mesh)),
+            MeshMaterial3d(material),
+            Transform::from_xyz(offset_x - 5200.0, 0.0, -offset_y + 5200.0),
+            GlobalTransform::default(),
+            Visibility::Visible,
+            ViewVisibility::default(),
+            InheritedVisibility::default(),
+            Aabb::from_min_max(min, max),
+            RenderLayers::layer(0),
+            NotShadowCaster,
+        ))
+        .insert((
+            RigidBody::Fixed,
+            Collider::trimesh(collider_verts, collider_indices).expect("Failed to create terrain collider"),
+            CollisionGroups::new(
+                COLLISION_GROUP_ZONE_TERRAIN,
+                COLLISION_FILTER_INSPECTABLE
+                    | COLLISION_FILTER_COLLIDABLE
+                    | COLLISION_GROUP_PHYSICS_TOY
+                    | COLLISION_FILTER_MOVEABLE
+                    | COLLISION_FILTER_CLICKABLE,
+            ),
+        ))
+        .id();
+
+    terrain_entity
 }
 
 fn spawn_sound_object(

@@ -4,4 +4,5 @@ use bevy::prelude::Resource;
 pub struct RenderConfiguration {
     pub passthrough_terrain_textures: bool,
     pub trail_effect_duration_multiplier: f32,
+    pub use_new_terrain: bool,
 }
