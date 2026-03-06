@@ -41,6 +41,7 @@ use bevy::{
         window::{Window, WindowMode},
     };
 use bevy_egui::{egui, input::egui_wants_any_pointer_input, EguiContext, EguiContexts, EguiRenderOutput};
+use bevy_procedural_grass::prelude::*;
 use bevy_rapier3d::plugin::PhysicsSet;
 use enum_map::enum_map;
 use exe_resource_loader::{ExeResourceCursor, ExeResourceLoader};
@@ -959,6 +960,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
             // Vegetation wind sway effect (grass, trees, leaves)
             VegetationSwayPlugin,
+
+            // Procedural grass rendering
+            ProceduralGrassPlugin::default(),
 
             // Underwater rendering effect
             UnderwaterEffectPlugin,

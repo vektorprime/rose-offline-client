@@ -59,6 +59,7 @@ rose-game-common = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-
 rose-game-irose = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-game-irose" }
 rose-network-common = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-network-common" }
 rose-network-irose = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-network-irose" }
+bevy_procedural_grass = { path = "../bevy_procedural_grass" }
 
 [dependencies.bevy]
 version = "0.16"
