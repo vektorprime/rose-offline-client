@@ -316,7 +316,7 @@ use crate::{
     animation::{MeshAnimation, TransformAnimation, ZmoTextureAssetLoader},
     audio::{SoundRadius, SpatialSound},
     components::{
-        ColliderParent, EventObject, NightTimeEffect, WarpObject, WindSway, Zone, ZoneObject,
+        ColliderParent, EventObject, NightTimeEffect, TerrainMeshForGrass, WarpObject, WindSway, Zone, ZoneObject,
         ZoneObjectAnimatedObject, ZoneObjectId, ZoneObjectPart, ZoneObjectTerrain,
         COLLISION_FILTER_CLICKABLE, COLLISION_FILTER_COLLIDABLE, COLLISION_FILTER_INSPECTABLE,
         COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_ZONE_EVENT_OBJECT,
@@ -512,7 +512,16 @@ impl ZoneLoaderAsset {
             let height_y0 = height_00 * (1.0 - weight_x) + height_10 * weight_x;
             let height_y1 = height_01 * (1.0 - weight_x) + height_11 * weight_x;
 
-            height_y0 * (1.0 - weight_y) + height_y1 * weight_y
+            let base_height = height_y0 * (1.0 - weight_y) + height_y1 * weight_y;
+            
+            // Apply procedural noise using thread-local generator
+            // The input coordinates (x, y) are world coordinates in the game's coordinate system
+            // We need to convert them to the same world coordinate system used during terrain spawning
+            let world_x = x;
+            let world_z = -y;  // y is inverted in the game's coordinate system
+            let noise_offset = crate::terrain::get_thread_local_noise(world_x, world_z);
+            
+            base_height + (noise_offset * 100.0) // Convert noise to same scale as heightmap
         } else {
             0.0
         }
@@ -1191,6 +1200,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub render_config: Res<'w, crate::resources::RenderConfiguration>,
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
     pub water_spawned_events: EventWriter<'w, WaterSpawnedEvent>,
+    pub terrain_noise: Res<'w, crate::terrain::GlobalTerrainNoise>,
 }
 
 pub struct CachedZone {
@@ -1999,6 +2009,7 @@ pub fn spawn_zone(
         render_config,
         memory_tracking,
         ref mut water_spawned_events,
+        terrain_noise,
     } = params;
 
     let zone_list_entry = game_data
@@ -2102,6 +2113,7 @@ pub fn spawn_zone(
                         &tile_textures,
                         zone_data,
                         block_data,
+                        terrain_noise,
                     )
                 };
                 commands.entity(zone_entity).add_child(terrain_entity);
@@ -2378,6 +2390,7 @@ fn spawn_terrain(
     tile_textures: &Vec<Handle<Image>>,
     zone_data: &ZoneLoaderAsset,
     block_data: &ZoneLoaderBlock,
+    terrain_noise: &crate::terrain::GlobalTerrainNoise,
 ) -> Entity {
     let _span = info_span!("spawn_terrain", block_x = block_data.block_x, block_y = block_data.block_y).entered();
     log::info!("[SPAWN TERRAIN] Spawning terrain block {}_{}", block_data.block_x, block_data.block_y);
@@ -2473,11 +2486,37 @@ fn spawn_terrain(
                 for x in 0..5 {
                     let heightmap_x = x + tile_x as i32 * 4;
                     let heightmap_y = y + tile_y as i32 * 4;
-                    let height = heightmap.get_clamped(heightmap_x, heightmap_y) / 100.0;
-                    let height_l = heightmap.get_clamped(heightmap_x - 1, heightmap_y) / 100.0;
-                    let height_r = heightmap.get_clamped(heightmap_x + 1, heightmap_y) / 100.0;
-                    let height_t = heightmap.get_clamped(heightmap_x, heightmap_y - 1) / 100.0;
-                    let height_b = heightmap.get_clamped(heightmap_x, heightmap_y + 1) / 100.0;
+                    let base_height = heightmap.get_clamped(heightmap_x, heightmap_y) / 100.0;
+                    
+                    // Calculate world coordinates for noise sampling
+                    // Local position within block
+                    let local_x = tile_offset_x + x as f32 * 2.5;
+                    let local_z = tile_offset_y + y as f32 * 2.5;
+                    // World position (matching the transform applied at spawn)
+                    let world_x = offset_x - 5200.0 + local_x;
+                    let world_z = -offset_y + 5200.0 + local_z;
+                    
+                    // Apply procedural noise to height
+                    let noise_offset = terrain_noise.get_noise(world_x, world_z);
+                    let height = base_height + noise_offset;
+                    
+                    // Calculate normals using noise-adjusted heights
+                    let base_height_l = heightmap.get_clamped(heightmap_x - 1, heightmap_y) / 100.0;
+                    let base_height_r = heightmap.get_clamped(heightmap_x + 1, heightmap_y) / 100.0;
+                    let base_height_t = heightmap.get_clamped(heightmap_x, heightmap_y - 1) / 100.0;
+                    let base_height_b = heightmap.get_clamped(heightmap_x, heightmap_y + 1) / 100.0;
+                    
+                    // Apply noise to neighboring heights for smooth normals
+                    let world_x_l = world_x - 2.5;
+                    let world_x_r = world_x + 2.5;
+                    let world_z_t = world_z - 2.5;
+                    let world_z_b = world_z + 2.5;
+                    
+                    let height_l = base_height_l + terrain_noise.get_noise(world_x_l, world_z);
+                    let height_r = base_height_r + terrain_noise.get_noise(world_x_r, world_z);
+                    let height_t = base_height_t + terrain_noise.get_noise(world_x, world_z_t);
+                    let height_b = base_height_b + terrain_noise.get_noise(world_x, world_z_b);
+                    
                     let normal = Vec3::new(
                         (height_l - height_r) / 2.0,
                         1.0,
@@ -2486,9 +2525,9 @@ fn spawn_terrain(
                     .normalize();
 
                     positions.push([
-                        tile_offset_x + x as f32 * 2.5,
+                        local_x,
                         height,
-                        tile_offset_y + y as f32 * 2.5,
+                        local_z,
                     ]);
                     normals.push([normal.x, normal.y, normal.z]);
                     uvs_tile.push([x as f32 / 4.0, y as f32 / 4.0]);
@@ -2545,11 +2584,22 @@ fn spawn_terrain(
 
     for y in 0..heightmap.height as i32 {
         for x in 0..heightmap.width as i32 {
+            // Calculate world coordinates for noise sampling (same as mesh vertices)
+            let local_x = x as f32 * 2.5;
+            let local_z = y as f32 * 2.5;
+            let world_x = offset_x - 5200.0 + local_x;
+            let world_z = -offset_y + 5200.0 + local_z;
+            
+            // Apply same noise to collider for physics consistency
+            let base_height = heightmap.get_clamped(x, y) / 100.0;
+            let noise_offset = terrain_noise.get_noise(world_x, world_z);
+            let height = base_height + noise_offset;
+            
             collider_verts.push(
                 [
-                    x as f32 * 2.5,
-                    heightmap.get_clamped(x, y) / 100.0,
-                    y as f32 * 2.5,
+                    local_x,
+                    height,
+                    local_z,
                 ]
                 .into(),
             );
@@ -2577,7 +2627,7 @@ fn spawn_terrain(
         ambient_color: Color::srgb(0.9, 0.9, 1.0),
     });
 
-    // Split spawn to avoid Bundle tuple limit (15+ components not supported)
+      // Split spawn to avoid Bundle tuple limit (15+ components not supported)
     let terrain_entity = commands
         .spawn((
             EditorSelectable,
@@ -2585,6 +2635,7 @@ fn spawn_terrain(
                 block_x: block_data.block_x as u32,
                 block_y: block_data.block_y as u32,
             }),
+            TerrainMeshForGrass,
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(material_handle),
             Transform::from_xyz(offset_x - 5200.0, 0.0, -offset_y + 5200.0),
@@ -3412,13 +3463,14 @@ fn spawn_new_terrain(
         collider_indices.push([indices[i*3], indices[i*3+1], indices[i*3+2]]);
     }
 
-    let terrain_entity = commands
+     let terrain_entity = commands
         .spawn((
             EditorSelectable,
             ZoneObject::Terrain(ZoneObjectTerrain {
                 block_x: block_data.block_x as u32,
                 block_y: block_data.block_y as u32,
             }),
+            TerrainMeshForGrass,
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(material),
             Transform::from_xyz(offset_x - 5200.0, 0.0, -offset_y + 5200.0),

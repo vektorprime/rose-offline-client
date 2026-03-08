@@ -108,19 +108,24 @@ impl Default for WinterSettings {
 /// Summer-specific settings
 #[derive(Resource, Debug, Clone, Reflect)]
 pub struct SummerSettings {
-    /// Maximum number of grass blades to spawn
+    /// Maximum number of grass blades to spawn (CPU-based, deprecated)
+    #[deprecated(since = "0.2.0", note = "CPU-based grass is deprecated. Use GPU-based procedural grass instead.")]
     pub max_grass_blades: usize,
     /// Maximum number of flowers to spawn
     pub max_flowers: usize,
     /// Spawn radius around player for vegetation
     pub spawn_radius: f32,
-    /// Grass blade height range
+    /// Grass blade height range (CPU-based, deprecated)
+    #[deprecated(since = "0.2.0", note = "CPU-based grass is deprecated. Use blade_length for GPU grass instead.")]
     pub grass_height_range: (f32, f32),
-    /// Grass blade width
+    /// Grass blade width (CPU-based, deprecated)
+    #[deprecated(since = "0.2.0", note = "CPU-based grass is deprecated. Use blade_width for GPU grass instead.")]
     pub grass_width: f32,
-    /// Grass sway speed
+    /// Grass sway speed (CPU-based, deprecated)
+    #[deprecated(since = "0.2.0", note = "CPU-based grass animation is deprecated. GPU grass uses GrassWind resource.")]
     pub grass_sway_speed: f32,
-    /// Grass sway amplitude (radians)
+    /// Grass sway amplitude (radians) (CPU-based, deprecated)
+    #[deprecated(since = "0.2.0", note = "CPU-based grass animation is deprecated. GPU grass uses GrassWind resource.")]
     pub grass_sway_amplitude: f32,
     /// Flower spawn chance per frame
     pub flower_spawn_chance: f32,
@@ -132,6 +137,23 @@ pub struct SummerSettings {
     pub flower_head_size: f32,
     /// Wind intensity for vegetation sway
     pub wind_intensity: f32,
+    // Procedural grass settings (GPU-based)
+    /// Grass blades per unit area
+    pub grass_density: u32,
+    /// Blade height in meters
+    pub blade_length: f32,
+    /// Blade base width in meters
+    pub blade_width: f32,
+    /// Base tilt angle
+    pub blade_tilt: f32,
+    /// Random tilt variation
+    pub blade_tilt_variance: f32,
+    /// Mid-point flexibility (0.0-1.0)
+    pub blade_p1_flexibility: f32,
+    /// Tip flexibility (0.0-1.0)
+    pub blade_p2_flexibility: f32,
+    /// Blade curvature
+    pub blade_curve: f32,
 }
 
 impl Default for SummerSettings {
@@ -155,6 +177,15 @@ impl Default for SummerSettings {
             flower_stem_height_range: (4.0, 7.0),  // Increased 10x from (0.4, 0.7) for visibility
             flower_head_size: 1.5,       // Increased 10x from 0.15 for visibility
             wind_intensity: 1.0,
+            // Procedural grass settings (GPU-based)
+            grass_density: 25,
+            blade_length: 1.5,
+            blade_width: 0.05,
+            blade_tilt: 0.5,
+            blade_tilt_variance: 0.2,
+            blade_p1_flexibility: 0.5,
+            blade_p2_flexibility: 0.5,
+            blade_curve: 15.0,
         }
     }
 }

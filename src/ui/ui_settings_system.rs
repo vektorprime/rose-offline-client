@@ -8,7 +8,8 @@ use crate::{
     components::{BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory, WindSwaySettings},
     graphics::GraphicsSettings,
     render::{SkyMode, SkySettings, StarrySkySettings, ZoneLighting},
-    resources::{SeasonSettings, SoundSettings, WaterSettings, ZoneTime, ZoneTimeState},
+    resources::{SeasonSettings, SoundSettings, SummerSettings, WaterSettings, ZoneTime, ZoneTimeState},
+    terrain::TerrainEnhancementSettings,
     ui::UiStateWindows,
 };
 
@@ -114,6 +115,7 @@ enum SettingsPage {
     WindSway,
     PostProcessing,
     Graphics,
+    Terrain,
 }
 
 pub struct UiStateSettings {
@@ -178,10 +180,12 @@ pub struct SettingsSystemParams<'w, 's> {
     pub fish_settings: ResMut<'w, FishSettings>,
     pub bird_settings: ResMut<'w, BirdSettings>,
     pub season_settings: ResMut<'w, SeasonSettings>,
+    pub summer_settings: ResMut<'w, SummerSettings>,
     pub dirt_dash_settings: ResMut<'w, DirtDashSettings>,
     pub wind_sway_settings: Option<ResMut<'w, WindSwaySettings>>,
     pub post_processing_settings: ResMut<'w, PostProcessingSettings>,
     pub graphics_settings: ResMut<'w, GraphicsSettings>,
+    pub terrain_settings: ResMut<'w, TerrainEnhancementSettings>,
     pub zone_time: Option<Res<'w, ZoneTime>>,
 }
 
@@ -201,10 +205,12 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
         mut fish_settings,
         mut bird_settings,
         mut season_settings,
+        mut summer_settings,
         mut dirt_dash_settings,
         wind_sway_settings,
         mut post_processing_settings,
         mut graphics_settings,
+        mut terrain_settings,
         zone_time,
     } = params;
 
@@ -278,6 +284,11 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                     &mut ui_state_settings.page,
                     SettingsPage::Graphics,
                     "Graphics",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::Terrain,
+                    "Terrain",
                 );
             });
 
@@ -1010,7 +1021,74 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                         });
 
                     ui.separator();
+                    ui.label("Procedural Grass Settings (GPU-based)");
+                    
+                    egui::Grid::new("procedural_grass_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Grass Density:");
+                            ui.add(
+                                egui::Slider::new(&mut summer_settings.grass_density, 5..=100)
+                                    .text("blades/unit")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Blade Length:");
+                            ui.add(
+                                egui::Slider::new(&mut summer_settings.blade_length, 0.5..=3.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Blade Width:");
+                            ui.add(
+                                egui::Slider::new(&mut summer_settings.blade_width, 0.01..=0.2)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Blade Tilt:");
+                            ui.add(
+                                egui::Slider::new(&mut summer_settings.blade_tilt, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Tilt Variance:");
+                            ui.add(
+                                egui::Slider::new(&mut summer_settings.blade_tilt_variance, 0.0..=0.5)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Mid Flexibility:");
+                            ui.add(
+                                egui::Slider::new(&mut summer_settings.blade_p1_flexibility, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Tip Flexibility:");
+                            ui.add(
+                                egui::Slider::new(&mut summer_settings.blade_p2_flexibility, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Blade Curve:");
+                            ui.add(
+                                egui::Slider::new(&mut summer_settings.blade_curve, 0.0..=30.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                        });
+
+                    ui.separator();
                     ui.label("Tip: Season changes apply immediately. Disable to turn off all weather effects.");
+                    ui.label("Procedural grass settings apply when entering a new zone.");
                 }
                 SettingsPage::DirtDash => {
                     egui::Grid::new("dust_settings")
@@ -1483,6 +1561,127 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                     ui.separator();
                     ui.label("Tip: Higher shadow quality improves visual fidelity but reduces FPS.");
                     ui.label("Changes to MSAA and VSync may require restart to take full effect.");
+                }
+                SettingsPage::Terrain => {
+                    egui::Grid::new("terrain_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Terrain Noise:");
+                            ui.checkbox(&mut terrain_settings.noise_enabled, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Noise Amplitude:");
+                            ui.add(
+                                egui::Slider::new(&mut terrain_settings.noise_amplitude, 0.0..=10.0)
+                                    .text("units")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Noise Scale:");
+                            ui.add(
+                                egui::Slider::new(&mut terrain_settings.noise_scale, 0.001..=0.05)
+                                    .text("frequency")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Noise Octaves:");
+                            ui.add(
+                                egui::Slider::new(&mut terrain_settings.noise_octaves, 1..=8)
+                                    .text("layers")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Noise Persistence:");
+                            ui.add(
+                                egui::Slider::new(&mut terrain_settings.noise_persistence, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Noise Seed:");
+                            ui.add(
+                                egui::Slider::new(&mut terrain_settings.noise_seed, 0..=1000u32)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+                        });
+
+                    ui.separator();
+                    ui.collapsing("Elevation Zones", |ui| {
+                        egui::Grid::new("terrain_elevation_settings")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Valley Threshold:");
+                                ui.add(
+                                    egui::Slider::new(&mut terrain_settings.elevation_zone_low, 0.0..=20.0)
+                                        .text("units")
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+
+                                ui.label("Mountain Threshold:");
+                                ui.add(
+                                    egui::Slider::new(&mut terrain_settings.elevation_zone_high, 10.0..=100.0)
+                                        .text("units")
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+
+                                ui.label("Valley Noise Multiplier:");
+                                ui.add(
+                                    egui::Slider::new(&mut terrain_settings.valley_noise_multiplier, 0.0..=2.0)
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+
+                                ui.label("Mountain Noise Multiplier:");
+                                ui.add(
+                                    egui::Slider::new(&mut terrain_settings.mountain_noise_multiplier, 0.0..=3.0)
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+
+                                ui.label("Transition Smoothness:");
+                                ui.add(
+                                    egui::Slider::new(&mut terrain_settings.elevation_transition_smoothness, 0.0..=1.0)
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+                            });
+                    });
+
+                    ui.separator();
+                    ui.collapsing("Blend Zones (Near Objects)", |ui| {
+                        egui::Grid::new("terrain_blend_settings")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Blend Near Objects:");
+                                ui.checkbox(&mut terrain_settings.blend_near_objects, "Enabled");
+                                ui.end_row();
+
+                                ui.label("Blend Distance:");
+                                ui.add(
+                                    egui::Slider::new(&mut terrain_settings.blend_distance, 5.0..=100.0)
+                                        .text("units")
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+
+                                ui.label("Blend Curve Power:");
+                                ui.add(
+                                    egui::Slider::new(&mut terrain_settings.blend_curve_power, 1.0..=4.0)
+                                        .show_value(true),
+                                );
+                                ui.end_row();
+                            });
+                    });
+
+                    ui.separator();
+                    ui.label("⚠️ Note: Terrain mesh is generated when a zone loads.");
+                    ui.label("Changes take effect on next zone load.");
                 }
             }
         });

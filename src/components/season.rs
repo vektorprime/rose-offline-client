@@ -35,6 +35,14 @@ pub struct SpringFlower {
 }
 
 /// Component for grass blade entities spawned in summer
+/// 
+/// **DEPRECATED**: This component is used by the old CPU-based grass system.
+/// Use the GPU-based `bevy_procedural_grass` system instead (see `Grass` component).
+/// This will be removed in a future version.
+#[deprecated(
+    since = "0.2.0",
+    note = "Use GPU-based bevy_procedural_grass system instead. See Grass component."
+)]
 #[derive(Component, Debug, Clone, Reflect)]
 pub struct GrassBlade {
     /// Initial rotation offset for varied swaying
@@ -59,3 +67,8 @@ pub struct SummerFlower {
     /// Height of the flower stem
     pub stem_height: f32,
 }
+
+/// Marker for terrain entities that can have procedural grass
+#[derive(Component, Reflect, Clone, Copy, Default, Debug)]
+#[reflect(Component)]
+pub struct TerrainMeshForGrass;

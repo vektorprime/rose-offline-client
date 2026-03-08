@@ -76,6 +76,7 @@ pub use render::DamageDigitMaterial;
 pub mod resources;
 pub mod scripting;
 pub mod systems;
+pub mod terrain;
 pub mod ui;
 pub mod dds_image_loader;
 pub mod vfs_asset_io;
@@ -844,6 +845,10 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     app.init_resource::<RenderExtractionDiagnostics>();
     log::info!("[ZONE LOADER] Debug diagnostics resources initialized");
+
+    // Initialize terrain enhancement with procedural noise
+    app.add_plugins(terrain::TerrainEnhancementPlugin);
+    log::info!("[TERRAIN] Terrain enhancement plugin initialized with procedural noise");
 
     // High-quality shadow map resolution
     app.insert_resource(DirectionalLightShadowMap { size: 4096 });

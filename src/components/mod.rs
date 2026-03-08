@@ -98,7 +98,7 @@ pub use personal_store::{PersonalStore, PersonalStoreModel};
 pub use player_character::PlayerCharacter;
 pub use position::Position;
 pub use projectile::{Projectile, ProjectileParabola, ProjectileTarget};
-pub use season::{GrassBlade, Season, SeasonMarker, SpringFlower, SummerFlower, WeatherParticle};
+pub use season::{GrassBlade, Season, SeasonMarker, SpringFlower, SummerFlower, TerrainMeshForGrass, WeatherParticle};
 pub use sound_category::SoundCategory;
 pub use vehicle::Vehicle;
 pub use vehicle_model::VehicleModel;

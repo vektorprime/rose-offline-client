@@ -13,6 +13,11 @@ Do NOT run "cargo run" ask the user for output of the compiled software
 
 Do NOT run "cargo clean" without asking the user for permission.
 
+You MUST run "Cargo run" inside of a subtask where it was requested. It should not run in the same task it was requested on. Report back the errors or failures, not warnings.
+
+## Reading files
+Prefer to read the whole file if you've never read the file before. You have read the file before, then read only the relevant lines.
+
 ## Source Code For Bevy 0.16.1 We Use
 
 Before you begin troubleshooting, make note of the features that are involved in this interaction, then search the bevy source code located here for those features and read their .rs files to make sure we fully understand how they work.

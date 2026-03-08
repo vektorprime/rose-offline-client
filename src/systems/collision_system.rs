@@ -172,7 +172,7 @@ pub fn collision_player_system(
         // Check if player is flying - if so, skip ground collision and use position directly
         let is_flying = flight_state.map_or(false, |fs| fs.is_flying);
         
-        if is_flying {
+      if is_flying {
             // When flying, sync transform directly from position (including Y/height)
             // Position is in centimeters: x=right, y=forward, z=up
             // Transform is in meters: x=right, y=up, z=back
@@ -194,7 +194,7 @@ pub fn collision_player_system(
             let cast_origin = transform.translation + Vec3::new(0.0, 1.2, 0.0);
             let cast_direction = translation_delta.normalize();
             let ball_collider = Collider::ball(collider_radius);
-
+ 
             if let Some((_, distance)) = rapier_context.cast_shape(
                 cast_origin + cast_direction * collider_radius,
                 Quat::default(),
