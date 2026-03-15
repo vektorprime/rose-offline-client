@@ -45,9 +45,9 @@ Use your web search tools if you're stuck and the source code review is not help
 
 If something is too difficult, break it down into as many steps as needed steps. NEVER give up on a task due to difficulty.
 
-## Lessons Learned in pitfalls.md
+## Lessons Learned in pitfalls folder
 
-When you fix an issue AND the user confirms it's resolved, note the interaction and details in pitfalls.md so that future work can benefit from the lessons learned. Do not edit pitfalls.md until the user confirms the issue is fixed. Your notes should be short and concise.
+When you fix an issue AND the user confirms it's resolved, note the interaction and details in the pitfalls folder in a .md file so that future work can benefit from the lessons learned. Do not edit create or modify pitfall .md documents until the user confirms the issue is fixed. Your notes should be short and concise.
 
 
 ## Issue Tracking

@@ -1560,7 +1560,20 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     }
 
     // ui_drag_and_drop_system uses EguiContexts
-    app.add_systems(Update, ui_drag_and_drop_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    // Must run AFTER all UI systems that handle drop targets, otherwise it takes dragged_item
+    // before those systems can detect and process the drop
+    app.add_systems(
+        Update,
+        ui_drag_and_drop_system
+            .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+            .after(ui_hotbar_system)
+            .after(ui_inventory_system)
+            .after(ui_npc_store_system)
+            .after(ui_personal_store_system)
+            .after(ui_bank_system)
+            .after(ui_skill_list_system)
+            .after(ui_skill_tree_system),
+    );
 
     // Setup network
     let (network_thread_tx, network_thread_rx) =
