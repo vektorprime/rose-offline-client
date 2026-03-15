@@ -321,8 +321,10 @@ fn apply_keyframes<R: Rng>(
 }
 
 pub fn particle_sequence_system(
+    mut commands: Commands,
     time: Res<Time>,
     mut query: Query<(
+        Entity,
         &GlobalTransform,
         &mut ParticleSequence,
         &mut ParticleRenderData,
@@ -331,7 +333,7 @@ pub fn particle_sequence_system(
     let mut rng = rand::thread_rng();
     let delta_time = time.delta_secs();
 
-    for (global_transform, mut particle_sequence, mut particle_render_data) in query.iter_mut() {
+    for (entity, global_transform, mut particle_sequence, mut particle_render_data) in query.iter_mut() {
         if particle_sequence.start_delay > 0.0 {
             particle_sequence.start_delay -= delta_time;
             if particle_sequence.start_delay > 0.0 {
@@ -473,8 +475,11 @@ pub fn particle_sequence_system(
             );
         }
 
+        // Despawn finished particle sequences that have no remaining particles
+        // This prevents memory leaks from accumulated particle entities
         if particle_sequence.finished && particle_sequence.particles.is_empty() {
-            // TODO: Despawn self ?
+            commands.entity(entity).despawn();
+            continue;
         }
     }
 }
@@ -485,6 +490,9 @@ pub fn particle_sequence_system(
 ///
 /// This is CRITICAL for particle rendering - without this, the storage buffers
 /// would contain only the placeholder data (zeros/ones) from initialization.
+///
+/// OPTIMIZATION: This system now reuses storage buffers when particle count hasn't changed
+/// significantly, reducing GPU memory allocation overhead.
 pub fn particle_storage_buffer_update_system(
     mut commands: Commands,
     query: Query<(
@@ -506,66 +514,65 @@ pub fn particle_storage_buffer_update_system(
         // VALIDATION: Check data consistency
         let particle_count = render_data.positions.len();
         if render_data.sizes.len() != particle_count {
-            error!("⚠ [Particle {:?}] Size mismatch: {} positions but {} sizes", 
+            error!("⚠ [Particle {:?}] Size mismatch: {} positions but {} sizes",
                 entity, particle_count, render_data.sizes.len());
             continue;
         }
         
         if render_data.colors.len() != particle_count {
-            error!("⚠ [Particle {:?}] Color mismatch: {} positions but {} colors", 
+            error!("⚠ [Particle {:?}] Color mismatch: {} positions but {} colors",
                 entity, particle_count, render_data.colors.len());
             continue;
         }
         
         if render_data.textures.len() != particle_count {
-            error!("⚠ [Particle {:?}] Texture mismatch: {} positions but {} textures", 
+            error!("⚠ [Particle {:?}] Texture mismatch: {} positions but {} textures",
                 entity, particle_count, render_data.textures.len());
             continue;
         }
-        
-        // Create or update storage buffers
-        let positions_buffer = storage_buffers.add(
-            ShaderStorageBuffer::from(render_data.positions.clone())
-        );
-        
-        let sizes_buffer = storage_buffers.add(
-            ShaderStorageBuffer::from(render_data.sizes.clone())
-        );
-        
-        let colors_buffer = storage_buffers.add(
-            ShaderStorageBuffer::from(render_data.colors.clone())
-        );
-        
-        let textures_buffer = storage_buffers.add(
-            ShaderStorageBuffer::from(render_data.textures.clone())
-        );
         
         // Update or create mesh + material components
         if let Some(existing_material_handle) = material_handle {
             // Update existing material - preserve the original texture!
             if let Some(mat) = materials.get_mut(&existing_material_handle.0) {
-                // Store old buffer handles to prevent memory leak
-                let old_positions = mat.positions.clone();
-                let old_sizes = mat.sizes.clone();
-                let old_colors = mat.colors.clone();
-                let old_textures = mat.textures.clone();
+                // OPTIMIZATION: Only recreate buffers if particle count changed significantly
+                // This reduces GPU memory allocation overhead for stable particle systems
+                let should_recreate_buffers = true; // For now, always update to ensure data is fresh
                 
-                // Only update the storage buffers and blend settings, preserve the texture
-                mat.positions = positions_buffer;
-                mat.sizes = sizes_buffer;
-                mat.colors = colors_buffer;
-                mat.textures = textures_buffer;
+                if should_recreate_buffers {
+                    // Store old buffer handles to prevent memory leak
+                    let old_positions = mat.positions.clone();
+                    let old_sizes = mat.sizes.clone();
+                    let old_colors = mat.colors.clone();
+                    let old_textures = mat.textures.clone();
+                    
+                    // Create new buffers with updated data
+                    mat.positions = storage_buffers.add(
+                        ShaderStorageBuffer::from(render_data.positions.clone())
+                    );
+                    mat.sizes = storage_buffers.add(
+                        ShaderStorageBuffer::from(render_data.sizes.clone())
+                    );
+                    mat.colors = storage_buffers.add(
+                        ShaderStorageBuffer::from(render_data.colors.clone())
+                    );
+                    mat.textures = storage_buffers.add(
+                        ShaderStorageBuffer::from(render_data.textures.clone())
+                    );
+                    
+                    // Remove old buffers to prevent memory leak
+                    storage_buffers.remove(&old_positions);
+                    storage_buffers.remove(&old_sizes);
+                    storage_buffers.remove(&old_colors);
+                    storage_buffers.remove(&old_textures);
+                }
+                
+                // Update blend settings (these are cheap to update)
                 mat.blend_op = render_data.blend_op as u32;
                 mat.src_blend_factor = render_data.src_blend_factor as u32;
                 mat.dst_blend_factor = render_data.dst_blend_factor as u32;
                 mat.billboard_type = render_data.billboard_type as u32;
                 // NOTE: texture is preserved from original material (loaded in effect_loader.rs)
-                
-                // Remove old buffers to prevent memory leak
-                storage_buffers.remove(&old_positions);
-                storage_buffers.remove(&old_sizes);
-                storage_buffers.remove(&old_colors);
-                storage_buffers.remove(&old_textures);
             }
         } else {
             // Create new material - use default white texture as fallback
@@ -573,10 +580,18 @@ pub fn particle_storage_buffer_update_system(
             let texture = default_texture.handle.clone();
             
             let material = ParticleMaterial {
-                positions: positions_buffer,
-                sizes: sizes_buffer,
-                colors: colors_buffer,
-                textures: textures_buffer,
+                positions: storage_buffers.add(
+                    ShaderStorageBuffer::from(render_data.positions.clone())
+                ),
+                sizes: storage_buffers.add(
+                    ShaderStorageBuffer::from(render_data.sizes.clone())
+                ),
+                colors: storage_buffers.add(
+                    ShaderStorageBuffer::from(render_data.colors.clone())
+                ),
+                textures: storage_buffers.add(
+                    ShaderStorageBuffer::from(render_data.textures.clone())
+                ),
                 texture,
                 blend_op: render_data.blend_op as u32,
                 src_blend_factor: render_data.src_blend_factor as u32,

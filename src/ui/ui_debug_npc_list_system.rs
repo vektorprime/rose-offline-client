@@ -134,7 +134,7 @@ pub fn ui_debug_npc_list_system(
                         .npcs
                         .iter()
                         .filter_map(|npc_data| {
-                            if re.is_match(npc_data.name) {
+                            if re.is_match(&npc_data.name) {
                                 Some(npc_data.id)
                             } else {
                                 None
@@ -180,7 +180,7 @@ pub fn ui_debug_npc_list_system(
                                 });
 
                                 row.col(|ui| {
-                                    ui.label(npc_data.name);
+                                    ui.label(npc_data.name.as_str());
                                 });
 
                                 row.col(|ui| {

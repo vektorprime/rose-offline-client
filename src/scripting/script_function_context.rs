@@ -1,6 +1,6 @@
 use bevy::{
     ecs::system::SystemParam,
-    prelude::{EventWriter, Query, With},
+    prelude::{Commands, Query, With},
 };
 
 use rose_game_common::components::{
@@ -14,7 +14,8 @@ use crate::{
     events::{BankEvent, ChatboxEvent, ClanDialogEvent, NpcStoreEvent, SystemFuncEvent},
 };
 
-// NOTE: ScriptFunctionContext contains all of the queries and event writers needed by script functions.
+// NOTE: ScriptFunctionContext contains all of the queries and Commands needed by script functions.
+// Commands::queue() is used to defer event dispatching, avoiding lifetime constraints of EventWriter.
 
 #[derive(SystemParam)]
 pub struct ScriptFunctionContext<'w, 's> {
@@ -42,10 +43,43 @@ pub struct ScriptFunctionContext<'w, 's> {
     pub query_player_clan: Query<'w, 's, &'static ClanMembership, With<PlayerCharacter>>,
     pub query_npc: Query<'w, 's, &'static Npc>,
 
-    // Event writers for script functions
-    pub bank_events: EventWriter<'w, BankEvent>,
-    pub chatbox_events: EventWriter<'w, ChatboxEvent>,
-    pub clan_dialog_events: EventWriter<'w, ClanDialogEvent>,
-    pub npc_store_events: EventWriter<'w, NpcStoreEvent>,
-    pub script_system_events: EventWriter<'w, SystemFuncEvent>,
+    // Commands for deferred event dispatching via Commands::queue()
+    pub commands: Commands<'w, 's>,
+}
+
+impl<'w, 's> ScriptFunctionContext<'w, 's> {
+    /// Queue a BankEvent to be dispatched later
+    pub fn queue_bank_event(&mut self, event: BankEvent) {
+        self.commands.queue(|w: &mut bevy::prelude::World| {
+            w.send_event(event);
+        });
+    }
+
+    /// Queue a ChatboxEvent to be dispatched later
+    pub fn queue_chatbox_event(&mut self, event: ChatboxEvent) {
+        self.commands.queue(|w: &mut bevy::prelude::World| {
+            w.send_event(event);
+        });
+    }
+
+    /// Queue a ClanDialogEvent to be dispatched later
+    pub fn queue_clan_dialog_event(&mut self, event: ClanDialogEvent) {
+        self.commands.queue(|w: &mut bevy::prelude::World| {
+            w.send_event(event);
+        });
+    }
+
+    /// Queue a NpcStoreEvent to be dispatched later
+    pub fn queue_npc_store_event(&mut self, event: NpcStoreEvent) {
+        self.commands.queue(|w: &mut bevy::prelude::World| {
+            w.send_event(event);
+        });
+    }
+
+    /// Queue a SystemFuncEvent to be dispatched later
+    pub fn queue_system_func_event(&mut self, event: SystemFuncEvent) {
+        self.commands.queue(|w: &mut bevy::prelude::World| {
+            w.send_event(event);
+        });
+    }
 }

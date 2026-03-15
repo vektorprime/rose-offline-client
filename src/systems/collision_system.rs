@@ -168,9 +168,17 @@ pub fn collision_player_system(
             return;
         };
 
+    let mut entity_count = 0;
     for (entity, mut position, mut transform, flight_state) in query_collision_entity.iter_mut() {
+        entity_count += 1;
         // Check if player is flying - if so, skip ground collision and use position directly
         let is_flying = flight_state.map_or(false, |fs| fs.is_flying);
+        
+        // DIAGNOSTIC: Log first iteration to verify CollisionPlayer is present
+        if entity_count == 1 {
+            log::info!("[RESPAWN_COLLISION_DIAG] Processing entity {:?} with CollisionPlayer, pos=({:.2}, {:.2}, {:.2}), transform_y={:.2}",
+                entity, position.x, position.y, position.z, transform.translation.y);
+        }
         
       if is_flying {
             // When flying, sync transform directly from position (including Y/height)

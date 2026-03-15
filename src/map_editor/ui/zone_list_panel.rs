@@ -103,7 +103,7 @@ pub fn editor_zone_list_panel(
                 let zone_name = game_data
                     .zone_list
                     .get_zone(current)
-                    .map(|z| z.name)
+                    .map(|z| z.name.as_str())
                     .unwrap_or("Unknown");
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(format!("Current Zone: {} ({})", 
@@ -142,7 +142,7 @@ pub fn editor_zone_list_panel(
                                 });
                                 
                                 row.col(|ui| {
-                                    ui.label(zone_data.name);
+                                    ui.label(&zone_data.name);
                                 });
                                 
                                 row.col(|ui| {
@@ -209,7 +209,7 @@ fn update_filtered_zones(state: &mut ZoneListPanelState, game_data: &GameData) {
         .iter()
         .filter_map(|zone_data| {
             if let Some(ref re) = filter_re {
-                if re.is_match(zone_data.name) || re.is_match(&zone_data.id.get().to_string()) {
+                if re.is_match(&zone_data.name) || re.is_match(&zone_data.id.get().to_string()) {
                     Some(zone_data.id)
                 } else {
                     None

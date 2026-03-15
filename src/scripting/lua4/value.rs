@@ -1,4 +1,4 @@
-use std::{any::Any, cmp::Ordering, sync::Arc};
+use std::{any::Any, cmp::Ordering, collections::HashMap, sync::Arc};
 
 use num_traits::ToPrimitive;
 
@@ -10,7 +10,7 @@ pub enum Lua4Value {
     UserData(Arc<dyn Any + Send + Sync>),
     Number(f64),
     String(String),
-    Table,
+    Table { fields: HashMap<String, Lua4Value>, array: Vec<Lua4Value> },
     Closure(Arc<Lua4Function>, Vec<Lua4Value>),
     RustClosure(String),
 }
@@ -69,7 +69,13 @@ impl PartialEq for Lua4Value {
                     false
                 }
             }
-            Lua4Value::Table => todo!("Implement LuaValue::Table"),
+            Lua4Value::Table { fields, array } => {
+                if let Lua4Value::Table { fields: other_fields, array: other_array } = other {
+                    fields == other_fields && array == other_array
+                } else {
+                    false
+                }
+            }
             Lua4Value::UserData(_) => false,
             Lua4Value::Closure(_, _) => false,
             Lua4Value::RustClosure(_) => false,

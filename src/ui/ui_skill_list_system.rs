@@ -1,4 +1,5 @@
 use bevy::prelude::{Assets, Entity, EventWriter, Local, Query, Res, ResMut, With};
+use bevy::ecs::query::QueryData;
 use bevy_egui::{egui, EguiContexts};
 
 use rose_data::AbilityType;
@@ -11,7 +12,7 @@ use crate::{
     events::PlayerCommandEvent,
     resources::{GameData, UiResources},
     ui::{
-        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem, SkillTooltipType},
+        tooltips::{PlayerTooltipQuery, SkillTooltipType},
         ui_add_skill_tooltip,
         widgets::{DataBindings, Dialog, DrawTextTrait, Widget},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop, UiStateWindows,
@@ -61,7 +62,7 @@ fn ui_add_skill_list_slot(
     pos: egui::Pos2,
     skill_slot: SkillSlot,
     player: &(&CharacterInfo, &SkillList, &SkillPoints, &Cooldowns),
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     ui_state_dnd: &mut UiStateDragAndDrop,
@@ -138,7 +139,7 @@ pub fn ui_skill_list_system(
     } else {
         return;
     };
-    let player_tooltip_data = query_player_tooltip.get_single().ok();
+    let player_tooltip_data_ref = query_player_tooltip.get_single().ok();
 
     let (_, character_info, skill_list, skill_points, cooldowns) = player;
 
@@ -234,17 +235,39 @@ pub fn ui_skill_list_system(
                             if skill_data.level > 0 {
                                 ui.add_label_at(
                                     egui::pos2(start_x + 46.0, start_y + 5.0),
-                                    format!("{} (Lv: {})", skill_data.name, skill_data.level),
+                                    format!("{} (Lv: {})", skill_data.name.as_str(), skill_data.level),
+                                );
+
+                                // Skill level up button
+                                let button_pos = egui::pos2(start_x + 200.0, start_y + 5.0);
+                                let button_rect = egui::Rect::from_min_size(
+                                    button_pos,
+                                    egui::vec2(20.0, 20.0),
+                                );
+                                let response = ui.allocate_rect(button_rect, egui::Sense::click());
+                                if response.clicked() {
+                                    player_command_events.write(PlayerCommandEvent::LevelUpSkill(skill_slot));
+                                }
+                                ui.painter().text(
+                                    button_pos + egui::vec2(10.0, 10.0),
+                                    egui::Align2::CENTER_CENTER,
+                                    "+",
+                                    egui::FontId::default(),
+                                    if response.hovered() {
+                                        egui::Color32::YELLOW
+                                    } else {
+                                        egui::Color32::WHITE
+                                    },
                                 );
                             } else {
                                 ui.add_label_at(
                                     egui::pos2(start_x + 46.0, start_y + 5.0),
-                                    skill_data.name,
+                                    skill_data.name.as_str(),
                                 );
                             }
 
                             // Skill use ability values
-                            if !skill_data.use_ability.is_empty() {
+                           if !skill_data.use_ability.is_empty() {
                                 ui.allocate_ui_at_rect(
                                     egui::Rect::from_min_size(
                                         ui.min_rect().min
@@ -259,12 +282,12 @@ pub fn ui_skill_list_system(
                                                 let mut color = egui::Color32::RED;
 
                                                 if let Some(player_tooltip_data) =
-                                                    player_tooltip_data.as_ref()
+                                                     player_tooltip_data_ref.as_ref()
                                                 {
                                                     if matches!(ability_type, AbilityType::Mana) {
                                                         let use_mana_rate = (100
                                                             - player_tooltip_data
-                                                                .0
+                                                                .ability_values
                                                                 .get_save_mana())
                                                             as f32
                                                             / 100.0;
@@ -273,35 +296,29 @@ pub fn ui_skill_list_system(
                                                     }
 
                                                     if let Some(current_value) =
-                                                        ability_values_get_value(
-                                                            ability_type,
-                                                            player_tooltip_data.0,
-                                                            Some(
-                                                                player_tooltip_data.1,
-                                                            ),
-                                                            Some(
-                                                                player_tooltip_data.2,
-                                                            ),
-                                                            Some(player_tooltip_data.3),
-                                                            Some(player_tooltip_data.5),
-                                                            Some(player_tooltip_data.6),
-                                                            Some(player_tooltip_data.7),
-                                                            Some(player_tooltip_data.8),
-                                                            Some(player_tooltip_data.10),
-                                                            Some(player_tooltip_data.11),
-                                                            Some(player_tooltip_data.12),
-                                                            Some(player_tooltip_data.13),
-                                                            Some(
-                                                                player_tooltip_data
-                                                                    .14,
-                                                            ),
-                                                        )
-                                                    {
-                                                        if current_value >= value {
-                                                            color = egui::Color32::GREEN;
+                                                         ability_values_get_value(
+                                                             ability_type,
+                                                             player_tooltip_data.ability_values,
+                                                             Some(player_tooltip_data.character_info),
+                                                             Some(player_tooltip_data.experience_points),
+                                                             Some(player_tooltip_data.guild_membership),
+                                                             Some(player_tooltip_data.health_points),
+                                                             Some(player_tooltip_data.inventory),
+                                                             Some(player_tooltip_data.level),
+                                                             Some(player_tooltip_data.mana_points),
+                                                             Some(player_tooltip_data.move_speed),
+                                                             Some(player_tooltip_data.skill_points),
+                                                             Some(player_tooltip_data.stamina),
+                                                             Some(player_tooltip_data.stat_points),
+                                                             Some(player_tooltip_data.team),
+                                                             Some(player_tooltip_data.union_membership),
+                                                         )
+                                                        {
+                                                            if current_value >= value {
+                                                                color = egui::Color32::GREEN;
+                                                            }
                                                         }
-                                                    }
-                                                }
+                                                   }
 
                                                 ui.colored_label(
                                                     color,
@@ -327,7 +344,7 @@ pub fn ui_skill_list_system(
                             ui.min_rect().min + egui::vec2(start_x, start_y + 3.0),
                             skill_slot,
                             &(character_info, skill_list, skill_points, cooldowns),
-                            player_tooltip_data.as_ref(),
+                            player_tooltip_data_ref.as_ref(),
                             &game_data,
                             &ui_resources,
                             &mut ui_state_dnd,

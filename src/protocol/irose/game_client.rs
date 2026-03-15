@@ -1293,7 +1293,7 @@ impl GameClient {
                 connection
                     .write_packet(Packet::from(&PacketClientLevelUpSkill {
                         skill_slot,
-                        next_skill_idx: SkillId::new(1).unwrap(), // TODO: next_skill_idx
+                        next_skill_idx: SkillId::new(0).unwrap(), // 0 means server will use current_skill_idx + 1
                     }))
                     .await?
             }

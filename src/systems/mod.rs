@@ -15,6 +15,7 @@ mod chat_bubble_update_system;
 mod chat_bubble_cleanup_system;
 mod clan_system;
 mod client_entity_event_system;
+mod chat_command_system;
 mod collision_system;
 mod command_system;
 mod conversation_dialog_system;
@@ -44,6 +45,7 @@ mod login_connection_system;
 mod login_system;
 mod model_viewer_system;
 mod monster_chatter_system;
+mod monster_separation_system;
 mod move_destination_effect_system;
 mod move_speed_command_system;
 mod move_speed_set_system;
@@ -65,6 +67,7 @@ mod personal_store_model_system;
 mod ping_command_system;
 mod player_command_system;
 mod projectile_system;
+mod quest_scroll_event_system;
 mod quest_trigger_system;
 mod spawn_effect_system;
 mod spawn_projectile_system;
@@ -102,6 +105,7 @@ pub use chat_bubble_update_system::chat_bubble_update_system;
 pub use chat_bubble_cleanup_system::{chat_bubble_cleanup_system, chat_bubble_orphan_cleanup_system};
 pub use clan_system::clan_system;
 pub use client_entity_event_system::client_entity_event_system;
+pub use chat_command_system::{parse_chat_input, ChatType, ParsedChatInput};
 pub use collision_system::{
     collision_height_only_system, collision_player_system, collision_player_system_join_zone,
 };
@@ -158,6 +162,7 @@ pub use model_viewer_system::{
     model_viewer_enter_system, model_viewer_exit_system, model_viewer_system,
 };
 pub use monster_chatter_system::{monster_chatter_system, add_monster_chatter_system};
+pub use monster_separation_system::monster_separation_system;
 pub use move_destination_effect_system::move_destination_effect_system;
 pub use move_speed_command_system::{parse_move_speed_command, move_speed_command_system};
 pub use move_speed_set_system::move_speed_set_system;

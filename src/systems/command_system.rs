@@ -407,6 +407,15 @@ pub fn command_system(
         let vehicle_active_motion_completed = vehicle_active_motion
             .as_ref()
             .map_or(true, |animation| animation.completed());
+            
+        // DIAGNOSTIC: Log animation state for player characters
+        if player_character.is_some() {
+            log::info!("[RESPAWN_CMD_DIAG] Player command: {:?}, next_command: {:?}, dead: {:?}",
+                command.as_ref(), next_command.as_ref(), dead.is_some());
+            log::info!("[RESPAWN_CMD_DIAG] Animation completed: {}, requires_anim_complete: {}",
+                active_motion_completed, requires_animation_complete);
+        }
+        
         if !next_command.is_die()
             && requires_animation_complete
             && ((vehicle.is_none() && !active_motion_completed)

@@ -236,19 +236,22 @@ fn validate_particle_materials(
         }
         
         // Validate texture
-        if images.get(&material.texture).is_none() {
+        let texture_loaded = images.get(&material.texture).is_some();
+        if !texture_loaded {
             warn!("⚠ [ParticleMaterial {:?}] Texture not loaded yet", id);
             warn!("   This is normal during startup but may cause rendering issues");
+            // Don't set has_error for texture - it loads asynchronously
+            // but don't add to warned_materials either so we check again next frame
         } else {
            //  info!("[ParticleMaterial]   ✓ Texture loaded: {:?}", material.texture.id());
         }
         
-        if !has_error {
+        if !has_error && texture_loaded {
             debug!("✓ [ParticleMaterial {:?}] All assets validated", id);
+            // Only mark as warned when ALL assets (including texture) are loaded
+            // This prevents spam while ensuring we validate again if texture wasn't ready
+            warned_materials.insert(id);
         }
-        
-        // Mark as warned so we don't spam logs
-        warned_materials.insert(id);
     }
     
     // Clear the warned materials set periodically to prevent unbounded growth

@@ -3,8 +3,9 @@ use bevy::asset::{
     AssetApp, AssetServer,
 };
 use bevy::app::App;
-use bevy::prelude::{Plugin, Res, Resource};
+use bevy::prelude::{Plugin, Res, Resource, Event};
 use std::{
+    collections::HashMap,
     future::Future,
     io::{Cursor, Seek},
     path::{Path, PathBuf},
@@ -176,12 +177,44 @@ impl std::io::Seek for CursorWrapper {
     }
 }
 
+/// Global file cache shared between all VfsAssetIo instances
+/// This cache persists file data in memory to avoid repeated disk/VFS reads
+static VFS_FILE_CACHE: std::sync::OnceLock<std::sync::RwLock<HashMap<String, Arc<Vec<u8>>>>> = std::sync::OnceLock::new();
+
+/// Get or initialize the global file cache
+fn get_file_cache() -> &'static std::sync::RwLock<HashMap<String, Arc<Vec<u8>>>> {
+    VFS_FILE_CACHE.get_or_init(|| std::sync::RwLock::new(HashMap::new()))
+}
+
+/// Clear the global VFS file cache
+/// Call this when switching zones to free memory
+pub fn clear_vfs_file_cache() {
+    if let Ok(mut cache) = get_file_cache().write() {
+        let count = cache.len();
+        cache.clear();
+        log::info!("[VFS CACHE] Cleared {} cached files from memory", count);
+    }
+}
+
+/// Get cache statistics
+pub fn get_vfs_cache_stats() -> (usize, usize) {
+    if let Ok(cache) = get_file_cache().read() {
+        let count = cache.len();
+        let total_bytes: usize = cache.values().map(|v| v.len()).sum();
+        (count, total_bytes)
+    } else {
+        (0, 0)
+    }
+}
+
 #[derive(Resource)]
 pub struct VfsAssetIo {
     vfs: Arc<VirtualFilesystem>,
     /// Base path for real filesystem fallback - files here take priority over VFS
     base_path: PathBuf,
     read_stats: std::sync::Mutex<VfsReadStats>,
+    /// Whether to use the global file cache (default: true)
+    use_cache: bool,
 }
 
 impl VfsAssetIo {
@@ -191,6 +224,19 @@ impl VfsAssetIo {
             vfs,
             base_path,
             read_stats: std::sync::Mutex::new(VfsReadStats::default()),
+            use_cache: true,
+        }
+    }
+    
+    /// Create a new VfsAssetIo without caching (for special cases)
+    #[allow(dead_code)]
+    pub fn new_without_cache(vfs: Arc<VirtualFilesystem>, base_path: PathBuf) -> Self {
+        log::info!("[VFS ASSET IO] Creating new VfsAssetIo instance (no cache) with base_path: {:?}", base_path);
+        Self {
+            vfs,
+            base_path,
+            read_stats: std::sync::Mutex::new(VfsReadStats::default()),
+            use_cache: false,
         }
     }
     
@@ -209,6 +255,32 @@ impl VfsAssetIo {
             largest_file_size: s.largest_file_size,
             largest_file_path: s.largest_file_path.clone(),
         })
+    }
+    
+    /// Try to get a file from the cache
+    fn get_from_cache(&self, path: &str) -> Option<Arc<Vec<u8>>> {
+        if !self.use_cache {
+            return None;
+        }
+        
+        if let Ok(cache) = get_file_cache().read() {
+            cache.get(path).cloned()
+        } else {
+            None
+        }
+    }
+    
+    /// Store a file in the cache
+    fn store_in_cache(&self, path: &str, data: Vec<u8>) -> Arc<Vec<u8>> {
+        let arc_data = Arc::new(data);
+        
+        if self.use_cache {
+            if let Ok(mut cache) = get_file_cache().write() {
+                cache.insert(path.to_string(), arc_data.clone());
+            }
+        }
+        
+        arc_data
     }
 }
 
@@ -259,20 +331,41 @@ impl AssetReader for VfsAssetIo {
                 log::warn!("[VFS DEBUG] Failed to read shader from local filesystem: \"{}\"", path_str);
             }
 
+            // CHECK CACHE FIRST - This is the key optimization!
+            // If the file is already in memory, return it directly without disk/VFS access
+            if let Some(cached_data) = self.get_from_cache(path_str) {
+                // Log cache hit (only for DDS and model files to reduce noise)
+                if path_str.to_uppercase().ends_with(".DDS") ||
+                   path_str.to_uppercase().ends_with(".ZMS") ||
+                   path_str.to_uppercase().ends_with(".ROSE") {
+                    log::debug!("[VFS CACHE HIT] {} (size: {})", path_str, format_bytes(cached_data.len()));
+                }
+                
+                // Track read statistics (as cache hit)
+                if let Ok(mut stats) = self.read_stats.lock() {
+                    stats.log_file_read(path_str, cached_data.len());
+                }
+                
+                // Clone the Arc's data for VecReader
+                return Ok(VecReader::new((*cached_data).clone()));
+            }
+
             // PRIORITY: Real filesystem takes priority over VFS
             // This allows saved map editor modifications to be loaded instead of original VFS files
             let real_filesystem_path = self.base_path.join(path_str);
             if real_filesystem_path.exists() {
                 match std::fs::read(&real_filesystem_path) {
                     Ok(data) => {
-                        log::info!("[VFS] Loaded from real filesystem (priority): {} (size: {})", path_str, format_bytes(data.len()));
+                        log::info!("[VFS] Loaded from real filesystem: {} (size: {})", path_str, format_bytes(data.len()));
                         
                         // Track read statistics
                         if let Ok(mut stats) = self.read_stats.lock() {
                             stats.log_file_read(path_str, data.len());
                         }
                         
-                        return Ok(VecReader::new(data));
+                        // Store in cache for future access
+                        let cached = self.store_in_cache(path_str, data);
+                        return Ok(VecReader::new((*cached).clone()));
                     }
                     Err(e) => {
                         log::warn!("[VFS] File exists at {:?} but failed to read: {}", real_filesystem_path, e);
@@ -294,7 +387,9 @@ impl AssetReader for VfsAssetIo {
                                 stats.log_file_read(path_str, size);
                             }
                             
-                            Ok(VecReader::new(buffer))
+                            // Store in cache for future access
+                            let cached = self.store_in_cache(path_str, buffer);
+                            Ok(VecReader::new((*cached).clone()))
                         }
                         VfsFile::View(view) => {
                             let size = view.len();
@@ -306,7 +401,9 @@ impl AssetReader for VfsAssetIo {
                                 stats.log_file_read(path_str, size);
                             }
                             
-                            Ok(VecReader::new(data))
+                            // Store in cache for future access
+                            let cached = self.store_in_cache(path_str, data);
+                            Ok(VecReader::new((*cached).clone()))
                         }
                     }
                 }
@@ -314,7 +411,9 @@ impl AssetReader for VfsAssetIo {
                     // Fallback to local filesystem if not found in VFS (for non-base_path files)
                     if let Ok(data) = std::fs::read(path) {
                         //log::info!("[VFS DEBUG] File not in VFS, but found on local filesystem: \"{}\"", path_str);
-                        return Ok(VecReader::new(data));
+                        // Store in cache
+                        let cached = self.store_in_cache(path_str, data);
+                        return Ok(VecReader::new((*cached).clone()));
                     }
 
                     log::warn!("[VFS DIAGNOSTIC] VFS file not found for path: {}", path_str);

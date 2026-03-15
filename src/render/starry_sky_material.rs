@@ -432,8 +432,7 @@ pub fn update_starry_sky_night_factor(
 ) {
     use crate::resources::ZoneTimeState;
 
-    // DEBUG OVERRIDE: Set to true to force night mode for testing stars
-    // TODO: Set back to false after testing
+    // Set to true to force night mode for testing stars
     const FORCE_NIGHT_MODE: bool = false;
 
     // Frame counter for throttling logs

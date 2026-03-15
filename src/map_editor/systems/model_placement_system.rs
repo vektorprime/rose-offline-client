@@ -373,6 +373,7 @@ fn place_model_at_position(
                 lightmap_params: Vec3::new(0.0, 0.0, 1.0).extend(0.0), // No lightmap for placed objects
                 lightmap_texture: None,
                 specular_texture: None, // No specular for placed objects
+                blink_state: 0, // Default to eyes open
             },
         });
 

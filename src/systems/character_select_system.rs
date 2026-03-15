@@ -27,7 +27,7 @@ use crate::{
         CharacterModel, ColliderParent, COLLISION_FILTER_CLICKABLE, COLLISION_GROUP_CHARACTER,
         COLLISION_GROUP_PLAYER,
     },
-    events::{CharacterSelectEvent, GameConnectionEvent, LoadZoneEvent, WorldConnectionEvent},
+    events::{CharacterSelectEvent, GameConnectionEvent, LoadZoneEvent, MessageBoxEvent, WorldConnectionEvent},
     resources::{
         AppState, CharacterList, CharacterSelectState, GameData, ServerConfiguration,
         WorldConnection,
@@ -165,6 +165,7 @@ pub fn character_select_system(
     mut game_connection_events: EventReader<GameConnectionEvent>,
     mut world_connection_events: EventReader<WorldConnectionEvent>,
     mut load_zone_events: EventWriter<LoadZoneEvent>,
+    mut message_box_events: EventWriter<MessageBoxEvent>,
     mut join_zone_id: Local<Option<ZoneId>>,
     query_camera: Query<
         (Entity, &Camera, &GlobalTransform, Option<&CameraAnimation>),
@@ -201,26 +202,39 @@ pub fn character_select_system(
             }
             WorldConnectionEvent::CreateCharacterError { error } => match error {
                 CreateCharacterError::Failed => {
-                    // TODO: Show modal error dialog with error message
-                    // character_select_state.create_character_error_message =
-                    //    "Unknown error creating character".into();
+                    message_box_events.send(MessageBoxEvent::Show {
+                        message: "Unknown error creating character".to_string(),
+                        modal: true,
+                        ok: None,
+                        cancel: None,
+                    });
                     *character_select_state = CharacterSelectState::CharacterCreate;
                 }
                 CreateCharacterError::AlreadyExists => {
-                    // TODO: Show modal error dialog with error message
-                    // character_select_state.create_character_error_message =
-                    //    "Character name already exists".into();
+                    message_box_events.send(MessageBoxEvent::Show {
+                        message: "Character name already exists".to_string(),
+                        modal: true,
+                        ok: None,
+                        cancel: None,
+                    });
                     *character_select_state = CharacterSelectState::CharacterCreate;
                 }
                 CreateCharacterError::NoMoreSlots => {
-                    // TODO: Show modal error dialog with error message
-                    //character_select_state.create_character_error_message =
-                    //    "Cannot create more characters".into();
+                    message_box_events.send(MessageBoxEvent::Show {
+                        message: "Cannot create more characters".to_string(),
+                        modal: true,
+                        ok: None,
+                        cancel: None,
+                    });
                     *character_select_state = CharacterSelectState::CharacterCreate;
                 }
                 CreateCharacterError::InvalidValue => {
-                    // TODO: Show modal error dialog with error message
-                    // character_select_state.create_character_error_message = "Invalid value".into();
+                    message_box_events.send(MessageBoxEvent::Show {
+                        message: "Invalid value".to_string(),
+                        modal: true,
+                        ok: None,
+                        cancel: None,
+                    });
                     *character_select_state = CharacterSelectState::CharacterCreate;
                 }
             },
@@ -255,7 +269,12 @@ pub fn character_select_system(
                 }
             }
             WorldConnectionEvent::DeleteCharacterError { name: _ } => {
-                // TODO: Show delete character error message
+                message_box_events.send(MessageBoxEvent::Show {
+                    message: "Failed to delete character".to_string(),
+                    modal: true,
+                    ok: None,
+                    cancel: None,
+                });
             }
         }
     }

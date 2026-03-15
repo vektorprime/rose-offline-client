@@ -19,7 +19,7 @@ use rose_data::{
 use rose_game_common::{
     components::{
         AbilityValues, BasicStatType, BasicStats, CharacterInfo, ClanPoints, DroppedItem,
-        Equipment, ExperiencePoints, HealthPoints, Hotbar, Inventory, ItemDrop, ItemSlot, Level,
+        Equipment, ExperiencePoints, GuildMembership, HealthPoints, Hotbar, Inventory, ItemDrop, ItemSlot, Level,
         ManaPoints, Money, MoveMode, MoveSpeed, Npc, QuestState, SkillList, Stamina, StatPoints,
         StatusEffects, StatusEffectsRegen,
     },
@@ -39,7 +39,7 @@ use crate::{
     components::{
         Bank, Clan, ClanMember, ClanMembership, ClientEntity, ClientEntityName, ClientEntityType,
         CollisionHeightOnly, CollisionPlayer, Command, CommandCastSkillTarget, Cooldowns, Dead,
-        DirtDashEffect, FacingDirection, NextCommand, PartyInfo, PartyOwner, PassiveRecoveryTime, PendingDamage,
+        DirtDashEffect, FacingDirection, ItemDropOwner, ItemDropRemainingTime, MonsterSeparation, NextCommand, PartyInfo, PartyOwner, PassiveRecoveryTime, PendingDamage,
         PendingDamageList, PendingSkillEffect, PendingSkillEffectList, PendingSkillTarget,
         PendingSkillTargetList, PersonalStore, PlayerCharacter, Position, VisibleStatusEffects,
     },
@@ -213,10 +213,12 @@ pub fn game_connection_system(
                         character_data.mana_points,
                         character_data.stat_points,
                         character_data.skill_points,
-                        character_data.union_membership,
                         character_data.stamina,
+                        GuildMembership::default(),
                     ))
                     .id();
+                // Add UnionMembership separately to stay within Bevy's 16-component tuple limit
+                commands.entity(player_entity).insert(character_data.union_membership);
 
                 // Add command and movement components
                 commands.entity(player_entity).insert((
@@ -589,6 +591,7 @@ pub fn game_connection_system(
                         ClientEntity::new(entity_id, ClientEntityType::Monster),
                         CollisionHeightOnly,
                         FacingDirection::default(),
+                        MonsterSeparation::default(),
                         PendingDamageList::default(),
                         PendingSkillEffectList::default(),
                         PendingSkillTargetList::default(),
@@ -607,7 +610,7 @@ pub fn game_connection_system(
                     world.resource_mut::<ClientEntityList>().add(entity_id, entity);
                 });
             }
-            Ok(ServerMessage::SpawnEntityItemDrop { entity_id, dropped_item, position, remaining_time: _, owner_entity_id: _ }) => {
+            Ok(ServerMessage::SpawnEntityItemDrop { entity_id, dropped_item, position, remaining_time, owner_entity_id }) => {
                 let name = match &dropped_item {
                     DroppedItem::Item(item) => game_data
                         .items
@@ -625,11 +628,12 @@ pub fn game_connection_system(
                     // Get terrain height at spawn position
                     let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
 
-                    // TODO: Use message.remaining_time, message.owner_entity_id ?
                     let entity = world
                         .spawn((
                         ClientEntityName::new(name),
                         ItemDrop::with_dropped_item(dropped_item),
+                        ItemDropRemainingTime::new(remaining_time),
+                        ItemDropOwner::new(owner_entity_id),
                         Position::new(position),
                         ClientEntity::new(entity_id, ClientEntityType::ItemDrop),
                         CollisionHeightOnly,
@@ -648,15 +652,22 @@ pub fn game_connection_system(
                 });
             }
             Ok(ServerMessage::MoveEntity { entity_id, target_entity_id, distance: _, x, y, z, move_mode }) => {
+                log::info!("[RESPAWN_MOVE_DIAG] Received MoveEntity from server: entity_id={:?}, pos=({},{},{})", entity_id, x, y, z);
+                
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     let target_entity = target_entity_id
                         .and_then(|id| client_entity_list.get(id));
 
+                    log::info!("[RESPAWN_MOVE_DIAG] Found entity {:?}, inserting NextCommand::with_move", entity);
                     commands.entity(entity).insert(NextCommand::with_move(
                         Vec3::new(x, y, z as f32),
                         target_entity,
                         move_mode,
                     ));
+                } else {
+                    log::warn!("[RESPAWN_MOVE_DIAG] Entity not found in client_entity_list! entity_id={:?}", entity_id);
+                    log::warn!("[RESPAWN_MOVE_DIAG] Player entity_id={:?}, player_entity={:?}",
+                        client_entity_list.player_entity_id, client_entity_list.player_entity);
                 }
             }
             Ok(ServerMessage::AdjustPosition { entity_id, position }) => {
@@ -765,16 +776,32 @@ pub fn game_connection_system(
                                 player.remove::<Dead>()
                                     .insert(Command::with_stop())
                                     .insert(NextCommand::with_stop());
+                                    
+                                log::info!("[RESPAWN_DIAG] Removed Dead component, set commands to Stop");
                             }
                             
+                            // DIAGNOSTIC: Track CollisionPlayer state
+                            log::info!("[RESPAWN_DIAG] Setting position to ({}, {}, 0) and transform y={}", x, y, final_spawn_y);
+                            
+                            // Note: We explicitly do NOT remove CollisionPlayer here.
+                            // The collision system needs to continue processing the player for:
+                            // 1. Ground snapping (to fix the elevated position)
+                            // 2. Movement collision detection
+                            // Previously this removed CollisionPlayer expecting JoinZone to re-add it,
+                            // but JoinZone isn't sent when respawning in the same zone.
                             player.insert((
                                 Position::new(Vec3::new(x, y, 0.0)),
                                 Transform::from_xyz(x / 100.0, final_spawn_y, -y / 100.0),
-                            )).remove::<ClientEntity>().remove::<CollisionPlayer>();
+                            ));
+                            
+                            log::info!("[RESPAWN_DIAG] Position and transform updated, CollisionPlayer preserved");
                         }
                     });
 
                     // Despawn all non-player entities
+                    let player_entity_id = client_entity_list.player_entity_id;
+                    let player_entity = client_entity_list.player_entity;
+                    
                     for (client_entity_id, client_entity) in
                         client_entity_list.client_entities.iter().enumerate()
                     {
@@ -788,6 +815,15 @@ pub fn game_connection_system(
                         }
                     }
                     client_entity_list.clear();
+                    
+                    // Re-add player to the entity list if they exist
+                    // This is needed because JoinZone might not be sent when respawning in the same zone
+                    if let (Some(entity_id), Some(entity)) = (player_entity_id, player_entity) {
+                        client_entity_list.add(entity_id, entity);
+                        client_entity_list.player_entity_id = Some(entity_id);
+                        client_entity_list.player_entity = Some(entity);
+                        log::info!("[RESPAWN_DIAG] Re-added player to client_entity_list: entity_id={:?}, entity={:?}", entity_id, entity);
+                    }
 
                     // Load next zone
                     let _ = load_zone_events.write(LoadZoneEvent::new(zone_id));
@@ -1167,12 +1203,20 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::UpdateSpeed { entity_id, run_speed, passive_attack_speed: _ }) => {
-                // TODO: Use passive_attack_speed ?
+            Ok(ServerMessage::UpdateSpeed { entity_id, run_speed, passive_attack_speed }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands
                         .entity(entity)
                         .insert(MoveSpeed::new(run_speed as f32));
+                    
+                    // Update passive_attack_speed in AbilityValues
+                    commands.queue(move |world: &mut World| {
+                        if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+                            if let Some(mut ability_values) = entity_mut.get_mut::<AbilityValues>() {
+                                ability_values.passive_attack_speed = passive_attack_speed;
+                            }
+                        }
+                    });
                 }
             }
             Ok(ServerMessage::UpdateStatusEffects { entity_id, status_effects: update_status_effects, updated_values }) => {
@@ -2068,7 +2112,7 @@ pub fn game_connection_system(
                 let item_name = game_data
                     .items
                     .get_base_item(item.get_item_reference())
-                    .map(|item_data| item_data.name);
+                    .map(|item_data| item_data.name.as_str().to_owned());
 
                 if let (Some(member_entity), Some(item_name)) = (member_entity, item_name) {
                     commands.queue(move |world: &mut World| {
@@ -2347,10 +2391,15 @@ pub fn game_connection_system(
             Ok(ServerMessage::MoveToggle {
                 entity_id,
                 move_mode,
-                .. // TODO: run_speed
+                run_speed,
             }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.entity(entity).insert(move_mode);
+                    
+                    // Apply run_speed if provided
+                    if let Some(speed) = run_speed {
+                        commands.entity(entity).insert(MoveSpeed::new(speed as f32));
+                    }
                 }
             }
             Ok(ServerMessage::ChangeNpcId { entity_id, npc_id }) => {
@@ -2442,16 +2491,16 @@ pub fn game_connection_system(
             Ok(ServerMessage::ClanCreateError { error }) =>  {
                 match error {
                     ClanCreateError::Failed => {
-                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error.into(), modal: false, ok: None, cancel: None });
+                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error.as_str().into(), modal: false, ok: None, cancel: None });
                     },
                     ClanCreateError::NameExists => {
-                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_name.into(), modal: false, ok: None, cancel: None });
+                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_name.as_str().into(), modal: false, ok: None, cancel: None });
                     },
                     ClanCreateError::NoPermission => {
-                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_permission.into(), modal: false, ok: None, cancel: None });
+                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_permission.as_str().into(), modal: false, ok: None, cancel: None });
                     },
                     ClanCreateError::UnmetCondition => {
-                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_condition.into(), modal: false, ok: None, cancel: None });
+                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_condition.as_str().into(), modal: false, ok: None, cancel: None });
                     },
                 }
             }
@@ -2520,8 +2569,13 @@ pub fn game_connection_system(
     };
 
     if let Err(error) = result {
-        // TODO: Store error somewhere to display to user
         log::warn!("Game server connection error: {}", error);
+        message_box_events.write(MessageBoxEvent::Show {
+            message: format!("Connection to game server lost: {}", error),
+            modal: true,
+            ok: None,
+            cancel: None,
+        });
         commands.remove_resource::<GameConnection>();
     }
 }

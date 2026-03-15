@@ -19,8 +19,9 @@ use crate::{
         Bank, Clan, ClientEntity, ClientEntityType, Command, ConsumableCooldownGroup, Cooldowns,
         PartyInfo, PlayerCharacter, Position,
     },
-    events::{ChatboxEvent, PlayerCommandEvent},
+    events::{ChatboxEvent, PlayerCommandEvent, QuestScrollEvent, QuestTriggerEvent},
     resources::{GameConnection, GameData, SelectedTarget},
+    ui::UiStateInventory,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -49,9 +50,12 @@ pub fn player_command_system(
         &Team,
     )>,
     mut chatbox_events: EventWriter<ChatboxEvent>,
+    mut quest_scroll_events: EventWriter<QuestScrollEvent>,
+    mut quest_trigger_events: EventWriter<QuestTriggerEvent>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
     selected_target: Res<SelectedTarget>,
+    ui_state_inventory: Option<Res<UiStateInventory>>,
 ) {
     let query_player_result = query_player.get_single_mut();
     if query_player_result.is_err() {
@@ -423,13 +427,20 @@ pub fn player_command_system(
                                     Some(Duration::from_millis(3000))
                                 }
                                 Some(_) => Some(Duration::from_millis(500)),
-                                None => todo!(),
+                                None => None,
                             };
 
-                            // TODO: If item is a repair item, we need to handle this client side
+                            // If item is a repair item, enter repair mode
                             if matches!(consumable_item_data.item_data.class, ItemClass::RepairTool)
                             {
-                                log::info!("TODO: Implement using ItemClass::RepairTool");
+                                // Enter repair mode with the repair tool slot
+                                // The actual repair will be triggered when an equipment item is clicked
+                                chatbox_events.write(ChatboxEvent::System(
+                                    "Select an equipment item to repair".to_string(),
+                                ));
+                                // Note: The repair mode is handled in the UI system
+                                // When an equipment item is clicked while in repair mode,
+                                // it will send a RepairItem event
                                 continue;
                             }
 
@@ -437,8 +448,24 @@ pub fn player_command_system(
                                 consumable_item_data.item_data.class,
                                 ItemClass::QuestScroll
                             ) {
-                                // TODO: This should open a dialog
-                                log::info!("TODO: Implement using ItemClass::QuestScroll");
+                                // QuestScroll items trigger quests when used.
+                                // Show a dialog to confirm before triggering the quest.
+                                log::info!(
+                                    "QuestScroll item slot {:?} used, confile_index: {}",
+                                    item_slot,
+                                    consumable_item_data.confile_index
+                                );
+
+                                // The quest trigger name is derived from the confile_index
+                                // For now, we use the confile_index as the trigger name
+                                // In a full implementation, this would look up the actual quest trigger
+                                let quest_trigger = consumable_item_data.confile_index.to_string();
+
+                                // Dispatch event to show the quest scroll dialog
+                                quest_scroll_events.write(QuestScrollEvent::Show {
+                                    item_slot,
+                                    quest_trigger,
+                                });
                                 continue;
                             }
 
@@ -468,13 +495,108 @@ pub fn player_command_system(
                                             | SkillType::TargetBound
                                             | SkillType::TargetStateDuration
                                     ) {
-                                        if let Some((target_client_entity, _)) =
-                                            selected_target.selected.and_then(|target_entity| {
-                                                query_team.get(target_entity).ok()
-                                            })
-                                        {
-                                            // TODO: Check target team
-                                            use_item_target = Some(target_client_entity.id);
+                                        // Validate target using the same logic as skills
+                                        let is_valid_target = if let Some(target_entity) = selected_target.selected {
+                                            if let Ok((target_id, target_character_info, target_client_entity,
+                                                       target_command, target_team)) =
+                                                query_skill_target.get(target_entity)
+                                            {
+                                                let target_is_alive = !target_command.is_die();
+                                                let target_is_caster = target_id == player_entity;
+
+                                                match skill_data.target_filter {
+                                                    SkillTargetFilter::OnlySelf => {
+                                                        target_is_alive && target_is_caster
+                                                    }
+                                                    SkillTargetFilter::Group => {
+                                                        target_is_alive
+                                                            && (target_is_caster
+                                                                || player_party_info.map_or(
+                                                                    false,
+                                                                    |party_info| {
+                                                                        party_info.contains_member(
+                                                                            target_client_entity.id,
+                                                                        )
+                                                                    },
+                                                                ))
+                                                    }
+                                                    SkillTargetFilter::Guild => {
+                                                        target_is_alive
+                                                            && (target_is_caster
+                                                                || target_character_info.map_or(
+                                                                    false,
+                                                                    |character_info| {
+                                                                        player_clan.map_or(false, |clan| {
+                                                                            clan.find_member(&character_info.name).is_some()
+                                                                        })
+                                                                    },
+                                                                ))
+                                                    }
+                                                    SkillTargetFilter::Allied => {
+                                                        target_is_alive && target_team.id == player_team.id
+                                                    }
+                                                    SkillTargetFilter::Monster => {
+                                                        target_is_alive
+                                                            && matches!(
+                                                                target_client_entity.entity_type,
+                                                                ClientEntityType::Monster
+                                                            )
+                                                    }
+                                                    SkillTargetFilter::Enemy => {
+                                                        target_is_alive
+                                                            && target_team.id != Team::DEFAULT_NPC_TEAM_ID
+                                                            && target_team.id != player_team.id
+                                                    }
+                                                    SkillTargetFilter::EnemyCharacter => {
+                                                        target_is_alive
+                                                            && target_team.id != player_team.id
+                                                            && matches!(
+                                                                target_client_entity.entity_type,
+                                                                ClientEntityType::Character
+                                                            )
+                                                    }
+                                                    SkillTargetFilter::Character => {
+                                                        target_is_alive
+                                                            && matches!(
+                                                                target_client_entity.entity_type,
+                                                                ClientEntityType::Character
+                                                            )
+                                                    }
+                                                    SkillTargetFilter::CharacterOrMonster => {
+                                                        target_is_alive
+                                                            && matches!(
+                                                                target_client_entity.entity_type,
+                                                                ClientEntityType::Character | ClientEntityType::Monster
+                                                            )
+                                                    }
+                                                    SkillTargetFilter::DeadAlliedCharacter => {
+                                                        !target_is_alive
+                                                            && target_team.id == player_team.id
+                                                            && matches!(
+                                                                target_client_entity.entity_type,
+                                                                ClientEntityType::Character
+                                                            )
+                                                    }
+                                                    SkillTargetFilter::EnemyMonster => {
+                                                        target_is_alive
+                                                            && target_team.id != player_team.id
+                                                            && matches!(
+                                                                target_client_entity.entity_type,
+                                                                ClientEntityType::Monster
+                                                            )
+                                                    }
+                                                }
+                                            } else {
+                                                false
+                                            }
+                                        } else {
+                                            false // No target selected
+                                        };
+
+                                        if is_valid_target {
+                                            use_item_target = selected_target.selected.and_then(|e| {
+                                                query_client_entity.get(e).ok().map(|ce| ce.id)
+                                            });
                                         } else {
                                             chatbox_events.write(ChatboxEvent::System(
                                                 "Invalid target".to_string(),
@@ -660,6 +782,17 @@ pub fn player_command_system(
                     }
                 }
             }
+            PlayerCommandEvent::DropItemWithQuantity(item_slot, quantity) => {
+                if let Some(game_connection) = game_connection.as_ref() {
+                    game_connection
+                        .client_message_tx
+                        .send(ClientMessage::DropItem {
+                            item_slot,
+                            quantity,
+                        })
+                        .ok();
+                }
+            }
             PlayerCommandEvent::DropMoney(quantity) => {
                 if let Some(game_connection) = game_connection.as_ref() {
                     game_connection
@@ -685,11 +818,14 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::Move(position, target_entity) => {
+                log::info!("[RESPAWN_MOVE_DIAG] PlayerCommandEvent::Move received: position=({}, {}, {})", position.x, position.y, position.z);
+                
                 let target_entity_id = target_entity
                     .and_then(|target_entity| query_client_entity.get(target_entity).ok())
                     .map(|target_client_entity| target_client_entity.id);
 
                 if let Some(game_connection) = game_connection.as_ref() {
+                    log::info!("[RESPAWN_MOVE_DIAG] Sending ClientMessage::Move to server");
                     game_connection
                         .client_message_tx
                         .send(ClientMessage::Move {
@@ -699,6 +835,8 @@ pub fn player_command_system(
                             z: position.z as u16,
                         })
                         .ok();
+                } else {
+                    log::warn!("[RESPAWN_MOVE_DIAG] No game connection available!");
                 }
             }
             PlayerCommandEvent::SetHotbar(page, page_index, hotbar_slot) => {
@@ -748,6 +886,45 @@ pub fn player_command_system(
                                 is_premium: false,
                             })
                             .ok();
+                    }
+                }
+            }
+            PlayerCommandEvent::LevelUpSkill(skill_slot) => {
+                if let Some(game_connection) = game_connection.as_ref() {
+                    game_connection
+                        .client_message_tx
+                        .send(ClientMessage::LevelUpSkill { skill_slot })
+                        .ok();
+                }
+            }
+            PlayerCommandEvent::EnterRepairMode(_) => {
+                // Repair mode is handled in the UI system
+                // This event is sent when a repair tool is used
+                // The UI system will track the repair mode state
+            }
+            PlayerCommandEvent::ExitRepairMode => {
+                // Repair mode is handled in the UI system
+                // This event is sent when repair mode should be exited
+            }
+            PlayerCommandEvent::RepairItem(item_slot) => {
+                // Send repair request to server
+                // The repair tool slot is stored in the UI state (repair_mode)
+                if let Some(game_connection) = game_connection.as_ref() {
+                    if let Some(ui_state) = ui_state_inventory.as_ref() {
+                        if let Some(repair_tool_slot) = ui_state.repair_mode {
+                            // Send repair request to server
+                            game_connection
+                                .client_message_tx
+                                .send(ClientMessage::RepairItemUsingItem {
+                                    use_item_slot: repair_tool_slot,
+                                    item_slot,
+                                })
+                                .ok();
+                        } else {
+                            chatbox_events.write(ChatboxEvent::System(
+                                "No repair tool selected".to_string(),
+                            ));
+                        }
                     }
                 }
             }

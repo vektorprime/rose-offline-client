@@ -14,7 +14,7 @@ use rose_game_common::{
 };
 
 use crate::{
-    components::PlayerCharacter,
+    components::{Clan, PlayerCharacter},
     resources::{GameConnection, GameData, UiResources},
     ui::{
         widgets::{DataBindings, Dialog, DrawTextTrait},
@@ -64,6 +64,7 @@ pub struct PlayerQuery<'w> {
     move_speed: &'w MoveSpeed,
     stamina: &'w Stamina,
     stat_points: &'w StatPoints,
+    clan: Option<&'w Clan>,
 }
 
 pub fn ui_character_info_system(
@@ -141,7 +142,10 @@ pub fn ui_character_info_system(
                                 .string_database
                                 .get_job_name(player.character_info.job),
                         );
-                        // ui.add_label_at(egui::pos2(59.0, 109.0), ""); // TODO: Clan name
+                        ui.add_label_at(
+                            egui::pos2(59.0, 109.0),
+                            player.clan.map_or("", |clan| clan.name.as_str()),
+                        );
                         ui.add_label_at(
                             egui::pos2(59.0, 172.0),
                             &format!("{}", player.level.level),

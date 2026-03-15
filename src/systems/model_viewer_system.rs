@@ -244,6 +244,12 @@ pub fn model_viewer_system(
                         revive_zone_id: ZoneId::new(22).unwrap(),
                         revive_position: Vec3::new(5200.0, 1.7, -5200.0),
                         unique_id: 0,
+                        head_size: 100,
+                        body_size: 100,
+                        pvp_flag: 0,
+                        save_mana: 0,
+                        drop_rate: 0,
+                        current_planet: 1,
                     };
 
                     let mut equipment = Equipment::default();

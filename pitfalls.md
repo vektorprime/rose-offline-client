@@ -4,6 +4,37 @@ This document records issues encountered during development and their solutions,
 
 ---
 
+## MoveEntity Not Sent After Player Respawn (Fixed 2026-03-15)
+
+### Problem
+After player death and respawn, `PlayerCommandEvent::Move` was being sent to the server but no `MoveEntity` response was received back, preventing player movement.
+
+### Root Cause
+When respawning in the **same zone**, the VFS zone loader skipped spawning the zone (to prevent memory leaks) but **did not send `ZoneEvent::Loaded`**. This broke the chain:
+1. Without `ZoneEvent::Loaded`, `game_zone_change_system` never sent `JoinZoneRequest` to the server
+2. Without `JoinZoneRequest`, the server never re-added `ClientEntity`, `ClientEntitySector`, `ClientEntityVisibility` components
+3. The server's `server_messages_system` query requires these components to route messages to clients
+4. Without these components, `MoveEntity` responses could not be sent to the player
+
+### Solution
+In `src/zone_loader.rs`, when skipping zone spawn because zone already exists, still send `ZoneEvent::Loaded`:
+```rust
+if already_loaded.contains(&event.zone_id.get()) {
+    log::warn!("[ZONE LOADED FROM VFS] Zone {} already exists, skipping spawn", ...);
+    // FIX: Still send ZoneEvent::Loaded so JoinZoneRequest is sent to server
+    zone_events.write(ZoneEvent::Loaded(event.zone_id));
+    continue;
+}
+```
+
+### Files Modified
+- `src/zone_loader.rs` - Added `ZoneEvent::Loaded` when zone already exists
+
+### Lesson Learned
+When optimizing to skip work (like skipping zone spawn when already loaded), ensure all **side effects** (like events) still occur. The non-VFS path correctly sent `ZoneEvent::Loaded` for cached zones, but the VFS path missed this.
+
+---
+
 ## Depth of Field Not Visible (Fixed 2026-02-12)
 
 ### Problem

@@ -8,7 +8,9 @@ use crate::components::Position;
 #[derive(Event, Clone)]
 pub enum PlayerCommandEvent {
     UseSkill(SkillSlot),
+    LevelUpSkill(SkillSlot),
     DropItem(ItemSlot),
+    DropItemWithQuantity(ItemSlot, usize),
     UseItem(ItemSlot),
     UseHotbar(usize, usize),
     SetHotbar(usize, usize, Option<HotbarSlot>),
@@ -23,4 +25,7 @@ pub enum PlayerCommandEvent {
     DropMoney(usize),
     BankDepositItem(ItemSlot),
     BankWithdrawItem(usize),
+    EnterRepairMode(ItemSlot), // Enter repair mode with the repair tool slot
+    ExitRepairMode,            // Exit repair mode
+    RepairItem(ItemSlot),      // Repair an equipment item
 }

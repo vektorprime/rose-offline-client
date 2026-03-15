@@ -1,6 +1,6 @@
 use bevy::{
     ecs::event::EventWriter,
-    prelude::{Assets, Events, Local, Query, Res, ResMut, With, World},
+    prelude::{Assets, Events, Local, Query, Res, ResMut, Resource, With, World},
 };
 use bevy_egui::{egui, EguiContexts};
 use enum_map::{enum_map, EnumMap};
@@ -15,7 +15,7 @@ use crate::{
     events::{NumberInputDialogEvent, PlayerCommandEvent},
     resources::{GameData, UiResources},
     ui::{
-        tooltips::PlayerTooltipQuery,
+        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog, Widget},
         DialogInstance, DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop,
@@ -45,6 +45,7 @@ const IID_BTN_MINIMIZE: i32 = 213;
 const IID_BTN_MAXIMIZE: i32 = 214;
 const IID_PANE_INVEN: i32 = 300;
 
+#[derive(Resource)]
 pub struct UiStateInventory {
     dialog_instance: DialogInstance,
     item_slot_map: EnumMap<InventoryPageType, Vec<ItemSlot>>,
@@ -52,6 +53,7 @@ pub struct UiStateInventory {
     current_vehicle_tab: i32,
     current_inventory_tab: i32,
     minimised: bool,
+    pub repair_mode: Option<ItemSlot>, // Stores the repair tool slot when in repair mode
 }
 
 impl Default for UiStateInventory {
@@ -67,6 +69,7 @@ impl Default for UiStateInventory {
             current_vehicle_tab: IID_TAB_INVEN_PAT,
             current_inventory_tab: IID_TAB_INVEN_EQUIP,
             minimised: false,
+            repair_mode: None,
         }
     }
 }
@@ -219,12 +222,14 @@ fn ui_add_inventory_slot(
     inventory_slot: ItemSlot,
     pos: egui::Pos2,
     player: &(&Equipment, &Inventory, &Cooldowns),
-    player_tooltip_data: Option<&PlayerTooltipQuery>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     item_slot_map: &mut EnumMap<InventoryPageType, Vec<ItemSlot>>,
     ui_state_dnd: &mut UiStateDragAndDrop,
     player_command_events: &mut EventWriter<PlayerCommandEvent>,
+    number_input_dialog_events: &mut EventWriter<NumberInputDialogEvent>,
+    repair_mode: &mut Option<ItemSlot>,
 ) {
     let drag_accepts = match inventory_slot {
         ItemSlot::Inventory(page_type, _) => match page_type {
@@ -290,9 +295,26 @@ fn ui_add_inventory_slot(
                 equip_ammo_inventory_slot = Some(inventory_slot);
             }
             ItemSlot::Inventory(InventoryPageType::Consumables, _) => {
+                // Check if this is a repair tool
+                if let Some(ref item) = item {
+                    if let Some(item_data) = game_data.items.get_base_item(item.get_item_reference()) {
+                        if matches!(item_data.class, rose_data::ItemClass::RepairTool) {
+                            // Enter repair mode with this repair tool
+                            *repair_mode = Some(inventory_slot);
+                            player_command_events.send(PlayerCommandEvent::EnterRepairMode(inventory_slot));
+                            return;
+                        }
+                    }
+                }
                 use_inventory_slot = Some(inventory_slot);
             }
             ItemSlot::Equipment(equipment_index) => {
+                // If in repair mode, repair this equipment item
+                if let Some(repair_tool_slot) = repair_mode {
+                    player_command_events.send(PlayerCommandEvent::RepairItem(inventory_slot));
+                    *repair_mode = None; // Exit repair mode after repair
+                    return;
+                }
                 unequip_equipment_index = Some(equipment_index);
             }
             ItemSlot::Ammo(ammo_index) => {
@@ -305,6 +327,14 @@ fn ui_add_inventory_slot(
     }
 
     if let Some(item) = item {
+        // Check if item is stackable before entering the closure
+        let is_stackable = item.is_stackable_item();
+        let item_quantity = if is_stackable {
+            Some(item.get_quantity() as usize)
+        } else {
+            None
+        };
+
         let response = response.context_menu(|ui| {
             if matches!(
                 inventory_slot,
@@ -345,7 +375,33 @@ fn ui_add_inventory_slot(
             }
 
             if matches!(inventory_slot, ItemSlot::Inventory(_, _)) && ui.button("Drop").clicked() {
-                drop_inventory_slot = Some(inventory_slot);
+                // Check if item is stackable and show quantity dialog
+                if is_stackable {
+                    if let Some(quantity) = item_quantity {
+                        let inventory_slot_clone = inventory_slot;
+                        number_input_dialog_events.write(NumberInputDialogEvent::Show {
+                            max_value: Some(quantity),
+                            modal: false,
+                            ok: Some(Box::new(move |commands, quantity| {
+                                commands.queue(move |world: &mut World| {
+                                    let mut player_command_events =
+                                        world.resource_mut::<Events<PlayerCommandEvent>>();
+                                    let _ = player_command_events.send(
+                                        PlayerCommandEvent::DropItemWithQuantity(
+                                            inventory_slot_clone,
+                                            quantity,
+                                        ),
+                                    );
+                                });
+                            })),
+                            cancel: None,
+                        });
+                    } else {
+                        drop_inventory_slot = Some(inventory_slot);
+                    }
+                } else {
+                    drop_inventory_slot = Some(inventory_slot);
+                }
             }
         });
     }
@@ -545,6 +601,8 @@ pub fn ui_inventory_system(
                                         &mut ui_state_inventory.item_slot_map,
                                         &mut ui_state_dnd,
                                         &mut player_command_events,
+                                        &mut number_input_dialog_events,
+                                        &mut ui_state_inventory.repair_mode,
                                     );
                                 }
                             }
@@ -576,6 +634,8 @@ pub fn ui_inventory_system(
                                         &mut ui_state_inventory.item_slot_map,
                                         &mut ui_state_dnd,
                                         &mut player_command_events,
+                                        &mut number_input_dialog_events,
+                                        &mut ui_state_inventory.repair_mode,
                                     );
                                 }
                             }
@@ -610,6 +670,8 @@ pub fn ui_inventory_system(
                                 &mut ui_state_inventory.item_slot_map,
                                 &mut ui_state_dnd,
                                 &mut player_command_events,
+                                &mut number_input_dialog_events,
+                                &mut ui_state_inventory.repair_mode,
                             );
                         }
 

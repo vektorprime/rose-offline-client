@@ -455,6 +455,7 @@ fn load_material_for_part(
             lightmap_params: Vec3::new(0.0, 0.0, 1.0).extend(0.0),
             lightmap_texture: None,
             specular_texture: None,
+            blink_state: 0, // Default to eyes open
         },
     });
     

@@ -1,3 +1,4 @@
+use bevy::ecs::query::QueryData;
 use bevy::{
     math::Vec3Swizzles,
     prelude::{Assets, Entity, EventReader, EventWriter, Local, Query, Res, ResMut, With},
@@ -50,7 +51,7 @@ fn ui_add_bank_slot(
     bank_slot_index: usize,
     pos: egui::Pos2,
     player: &(&Bank, &CharacterInfo, &Position),
-    player_tooltip_data: Option<&PlayerTooltipQuery>,
+    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     ui_state_dnd: &mut UiStateDragAndDrop,
@@ -204,7 +205,7 @@ pub fn ui_bank_system(
                             IID_BTN_TAB3,
                             &format!("{} {}", game_data.client_strings.bank_tab, 3),
                         ),
-                        (IID_BTN_TAB4, game_data.client_strings.bank_tab_premium),
+                        (IID_BTN_TAB4, &game_data.client_strings.bank_tab_premium),
                     ],
                     ..Default::default()
                 },

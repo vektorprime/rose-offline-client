@@ -324,9 +324,10 @@ use crate::{
         COLLISION_GROUP_ZONE_WARP_OBJECT, COLLISION_GROUP_ZONE_WATER,
         WaterSpawnedEvent,
     },
-    effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect},
+    effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect, EffectCache},
     events::{LoadZoneEvent, ZoneEvent, ZoneLoadedFromVfsEvent},
     map_editor::components::EditorSelectable,
+    vfs_asset_io::clear_vfs_file_cache,
     render::{
         MESH_ATTRIBUTE_UV_1, ParticleMaterial, RoseEffectExtension, RoseObjectExtension, TerrainMaterial,
         WaterMaterial,
@@ -1201,6 +1202,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
     pub water_spawned_events: EventWriter<'w, WaterSpawnedEvent>,
     pub terrain_noise: Res<'w, crate::terrain::GlobalTerrainNoise>,
+    pub effect_cache: Res<'w, EffectCache>,
 }
 
 pub struct CachedZone {
@@ -1617,6 +1619,10 @@ pub fn zone_loader_system(
                 
                 // Despawn other zones first
                 if loading_zone.despawn_other_zones {
+                    // Clear the VFS file cache when switching zones to free memory
+                    // This removes all cached DDS textures and model files from memory
+                    clear_vfs_file_cache();
+                    
                     // log::info!("[ZONE LOADER SYSTEM] Despawning other zones");
                     for cached_zone in zone_loader_cache
                         .cache
@@ -1837,6 +1843,9 @@ pub fn zone_loaded_from_vfs_system(
             log::warn!("[ZONE LOADED FROM VFS] Zone {} already exists, skipping spawn to prevent memory leak",
                 event.zone_id.get());
             skipped_count += 1;
+            // FIX: Still send ZoneEvent::Loaded so JoinZoneRequest is sent to server
+            // This is critical for respawn scenarios where the player needs to re-join the zone
+            zone_events.write(ZoneEvent::Loaded(event.zone_id));
             continue;
         }
         
@@ -1853,6 +1862,10 @@ pub fn zone_loaded_from_vfs_system(
         let despawn_other_zones = true;
         
         if despawn_other_zones {
+            // Clear the VFS file cache when switching zones to free memory
+            // This removes all cached DDS textures and model files from memory
+            clear_vfs_file_cache();
+            
             // log::info!("[ZONE LOADED FROM VFS] Despawning other zones");
             for cached_zone in zone_loader_cache
                 .cache
@@ -2010,6 +2023,7 @@ pub fn spawn_zone(
         memory_tracking,
         ref mut water_spawned_events,
         terrain_noise,
+        effect_cache,
     } = params;
 
     let zone_list_entry = game_data
@@ -2280,6 +2294,7 @@ pub fn spawn_zone(
                             storage_buffers.as_mut(),
                             effect_object,
                             ifo_object_id,
+                            effect_cache,
                         );
                         commands.entity(zone_entity).add_child(object_entity);
                         effect_object_count += 1;
@@ -2937,6 +2952,7 @@ fn spawn_object(
                     lightmap_params: Vec3::new(lightmap_uv_offset.x, lightmap_uv_offset.y, lightmap_uv_scale).extend(0.0),
                     lightmap_texture: lightmap_texture.clone(),
                     specular_texture: Some(specular_texture.image.clone()),
+                    blink_state: 0, // Default to eyes open
                 },
             });
 
@@ -2981,7 +2997,7 @@ fn spawn_object(
 
             // Determine if this part should cast shadows based on material transparency
             // Opaque and alpha-masked materials cast shadows, alpha-blended materials don't
-            let is_transparent = zsc_material.alpha_enabled && zsc_material.alpha_test.is_none();
+            let is_transparent = zsc_material.alpha_enabled && !zsc_material.z_write_enabled;
             
             let part_entity = commands.spawn((
                 EditorSelectable,
@@ -3246,6 +3262,7 @@ fn spawn_animated_object(
         },
         extension: RoseEffectExtension {
             animation_texture: Some(motion_texture_handle.clone()),
+            animation_state: crate::render::EffectMeshAnimationUniform::default(),
         },
     });
 
@@ -3298,6 +3315,7 @@ fn spawn_effect_object(
     storage_buffers: &mut Assets<bevy::render::storage::ShaderStorageBuffer>,
     effect_object: &IfoEffectObject,
     ifo_object_id: usize,
+    effect_cache: &EffectCache,
 ) -> Entity {
     let object = &effect_object.object;
     let object_transform = Transform::default()
@@ -3349,6 +3367,8 @@ fn spawn_effect_object(
         (&effect_object.effect_path).into(),
         false,
         Some(effect_object_entity),
+        Some(effect_cache),
+        Some(Vec3::new(object.position.x, object.position.z, -object.position.y) / 100.0),
     );
 
     effect_object_entity

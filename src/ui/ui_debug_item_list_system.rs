@@ -96,7 +96,7 @@ pub fn ui_debug_item_list_system(
                                 game_data
                                     .items
                                     .get_gem_item(ui_state_debug_item_list.spawn_gem)
-                                    .map_or("None", |item_data| item_data.item_data.name),
+                                    .map_or("None", |item_data| item_data.item_data.name.as_str()),
                             )
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(
@@ -118,7 +118,7 @@ pub fn ui_debug_item_list_system(
                                     ui.selectable_value(
                                         &mut ui_state_debug_item_list.spawn_gem,
                                         item_reference.item_number,
-                                        item_data.name,
+                                        item_data.name.as_str(),
                                     );
                                 }
                             });
@@ -257,7 +257,7 @@ pub fn ui_debug_item_list_system(
                         if item_data.name.is_empty()
                             || !filter_name_re
                                 .as_ref()
-                                .map_or(true, |re| re.is_match(item_data.name))
+                                .map_or(true, |re| re.is_match(&item_data.name))
                         {
                             None
                         } else {
@@ -394,7 +394,7 @@ pub fn ui_debug_item_list_system(
                                 });
 
                                 row.col(|ui| {
-                                    ui.label(item_data.name);
+                                    ui.label(&item_data.name);
                                 });
 
                                 row.col(|ui| match app_state.get() {

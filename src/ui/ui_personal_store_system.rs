@@ -13,7 +13,7 @@ use crate::{
     events::{MessageBoxEvent, PersonalStoreEvent},
     resources::{GameConnection, GameData, UiResources},
     ui::{
-        tooltips::PlayerTooltipQuery,
+        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop,
@@ -54,7 +54,7 @@ fn ui_add_store_item_slot(
     price: &Money,
     is_sell_item: bool,
     slot_index: usize,
-    player_tooltip_data: Option<&PlayerTooltipQuery<'_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     message_box_events: &mut EventWriter<MessageBoxEvent>,
@@ -90,7 +90,7 @@ fn ui_add_store_item_slot(
         message_box_events.write(MessageBoxEvent::Show {
             message: format!(
                 "Are you sure you want to buy {} for {} Zuly?",
-                item_data.as_ref().map(|x| x.name).unwrap_or(""),
+                item_data.as_ref().map(|x| x.name.as_str()).unwrap_or(""),
                 price.0
             ),
             modal: false,

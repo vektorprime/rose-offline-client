@@ -9,7 +9,7 @@ use crate::{
     components::PlayerCharacter,
     resources::{GameData, SelectedTarget, UiResources},
     ui::{
-        tooltips::PlayerTooltipQuery,
+        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog, DrawTextTrait},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateWindows,
@@ -29,7 +29,7 @@ fn add_equipped_weapon_slot(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
     player: &(Entity, &AbilityValues, &CharacterInfo, &Level, &HealthPoints, &ManaPoints, &ExperiencePoints, &Equipment),
-    player_tooltip_data: Option<&PlayerTooltipQuery<'_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
 ) {

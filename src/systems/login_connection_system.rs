@@ -7,7 +7,7 @@ use rose_game_common::{
 use rose_network_common::ConnectionError;
 
 use crate::{
-    events::NetworkEvent,
+    events::{MessageBoxEvent, NetworkEvent},
     resources::{
         Account, LoginConnection, ServerList, ServerListGameServer, ServerListWorldServer,
     },
@@ -19,6 +19,7 @@ pub fn login_connection_system(
     login_connection: Option<Res<LoginConnection>>,
     mut server_list: Option<ResMut<ServerList>>,
     mut network_events: EventWriter<NetworkEvent>,
+    mut message_box_events: EventWriter<MessageBoxEvent>,
 ) {
     if login_connection.is_none() {
         return;
@@ -118,8 +119,13 @@ pub fn login_connection_system(
     };
 
     if let Err(error) = result {
-        // TODO: Store error somewhere to display to user
         log::warn!("Login server connection error: {}", error);
+        message_box_events.write(MessageBoxEvent::Show {
+            message: format!("Connection to login server lost: {}", error),
+            modal: true,
+            ok: None,
+            cancel: None,
+        });
         commands.remove_resource::<LoginConnection>();
     }
 }

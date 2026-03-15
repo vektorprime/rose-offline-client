@@ -1,11 +1,12 @@
-use bevy::prelude::{Query, Res, Time};
+use bevy::prelude::{Commands, Query, Res, Time};
 use rand::Rng;
 
 use crate::{
-    components::{CharacterBlinkTimer, CharacterModel, CharacterModelPart, Dead},
+    components::{BlinkClip, CharacterBlinkTimer, CharacterModel, CharacterModelPart, Dead},
 };
 
 pub fn character_model_blink_system(
+    mut commands: Commands,
     mut query_characters: Query<(&CharacterModel, &mut CharacterBlinkTimer, Option<&Dead>)>,
     time: Res<Time>,
 ) {
@@ -43,10 +44,18 @@ pub fn character_model_blink_system(
         }
 
         if changed {
-            // TODO: Character face blinking removed with old material system
-            // This functionality needs to be reimplemented with new ExtendedMaterial pattern
-            // The ObjectMaterialClipFace component was used to control which faces to render
-            // for blinking eyes (First or Last faces)
+            // Apply BlinkClip component to face mesh entities when state changes
+            // This tracks blink state per entity for potential shader-based clipping
+            let blink_clip = if blink_timer.is_open { 
+                BlinkClip::EyesOpen 
+            } else { 
+                BlinkClip::EyesClosed 
+            };
+
+            // Insert the BlinkClip component on all face model part entities
+            for &face_entity in character_model.model_parts[CharacterModelPart::CharacterFace].1.iter() {
+                commands.entity(face_entity).insert(blink_clip);
+            }
         }
     }
 }

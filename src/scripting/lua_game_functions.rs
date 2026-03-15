@@ -148,7 +148,7 @@ fn GF_openBank(
 ) -> Vec<Lua4Value> {
     (|| -> Option<()> {
         let npc_client_entity_id = ClientEntityId(parameters.get(0)?.to_usize().ok()?);
-        context.bank_events.write(BankEvent::OpenBankFromClientEntity { client_entity_id: npc_client_entity_id });
+        context.queue_bank_event(BankEvent::OpenBankFromClientEntity { client_entity_id: npc_client_entity_id });
         Some(())
     })();
     vec![]
@@ -162,7 +162,7 @@ fn GF_openStore(
 ) -> Vec<Lua4Value> {
     (|| -> Option<()> {
         let npc_client_entity_id = ClientEntityId(parameters.get(0)?.to_usize().ok()?);
-        context.npc_store_events.write(NpcStoreEvent::OpenClientEntityStore(npc_client_entity_id));
+        context.queue_npc_store_event(NpcStoreEvent::OpenClientEntityStore(npc_client_entity_id));
         Some(())
     })();
     vec![]
@@ -174,6 +174,6 @@ fn GF_organizeClan(
     context: &mut ScriptFunctionContext,
     _parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
-    context.clan_dialog_events.write(ClanDialogEvent::Open);
+    context.queue_clan_dialog_event(ClanDialogEvent::Open);
     vec![]
 }

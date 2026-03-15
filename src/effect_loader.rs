@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+
 use bevy::{
     asset::RenderAssetUsages,
     math::{Quat, Vec3},
     pbr::{ExtendedMaterial, MeshMaterial3d, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Commands, Entity, GlobalTransform, Mesh3d, Transform, Visibility,
+        AssetServer, Assets, Commands, Entity, GlobalTransform, Mesh3d, Resource, Transform, Visibility,
     },
     render::{
         alpha::AlphaMode,
@@ -19,6 +22,7 @@ use rose_file_readers::{EftFile, EftMesh, EftParticle, PtlFile, VfsPath, Virtual
 use crate::{
     animation::MeshAnimation,
     animation::{TransformAnimation, ZmoTextureAssetLoader},
+    audio::{AudioSource, GlobalSound, SoundGain, SpatialSound},
     components::{Effect, EffectMesh, EffectParticle, ParticleSequence},
     render::{
         ParticleMaterial, RoseEffectExtension,
@@ -26,6 +30,66 @@ use crate::{
     },
     zms_asset_loader::ZmsNoSkinAssetLoader,
 };
+
+/// Cache for loaded effect files to avoid repeated disk I/O
+/// This significantly improves performance when spawning the same effects multiple times
+#[derive(Resource, Clone)]
+pub struct EffectCache {
+    cache: Arc<RwLock<HashMap<String, Arc<EftFile>>>>,
+}
+
+impl Default for EffectCache {
+    fn default() -> Self {
+        Self {
+            cache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+impl EffectCache {
+    /// Create a new empty cache
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Get a cached effect file if available
+    pub fn get(&self, path: &str) -> Option<Arc<EftFile>> {
+        self.cache.read().ok()?.get(path).cloned()
+    }
+
+    /// Insert an effect file into the cache
+    pub fn insert(&self, path: String, eft_file: EftFile) {
+        if let Ok(mut cache) = self.cache.write() {
+            cache.insert(path, Arc::new(eft_file));
+        }
+    }
+
+    /// Insert an Arc-wrapped effect file into the cache
+    pub fn insert_arc(&self, path: String, eft_file: Arc<EftFile>) {
+        if let Ok(mut cache) = self.cache.write() {
+            cache.insert(path, eft_file);
+        }
+    }
+
+    /// Clear all cached effect files (useful for zone transitions)
+    pub fn clear(&self) {
+        if let Ok(mut cache) = self.cache.write() {
+            let count = cache.len();
+            cache.clear();
+            log::info!("[EffectCache] Cleared {} cached effects", count);
+        }
+    }
+
+    /// Get the number of cached effects
+    pub fn len(&self) -> usize {
+        self.cache.read().map(|c| c.len()).unwrap_or(0)
+    }
+
+    /// Check if the cache is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
 
 pub fn spawn_effect(
     vfs: &VirtualFilesystem,
@@ -38,12 +102,27 @@ pub fn spawn_effect(
     effect_path: VfsPath,
     manual_despawn: bool,
     effect_entity: Option<Entity>,
+    effect_cache: Option<&EffectCache>,
+    effect_position: Option<Vec3>,
 ) -> Option<Entity> {
-    // TODO: We need caching to avoid loading from file every time
-    let eft_file = vfs.read_file::<EftFile, _>(effect_path).ok()?;
+    // Use cache to avoid loading from file every time
+    let path_str = effect_path.path().to_string_lossy().into_owned();
+    let eft_file = if let Some(cache) = effect_cache {
+        if let Some(cached) = cache.get(&path_str) {
+            cached
+        } else {
+            // Load from disk and cache
+            let loaded = Arc::new(vfs.read_file::<EftFile, _>(&effect_path).ok()?);
+            cache.insert_arc(path_str, Arc::clone(&loaded));
+            loaded
+        }
+    } else {
+        // No cache available, load directly
+        Arc::new(vfs.read_file::<EftFile, _>(&effect_path).ok()?)
+    };
 
     let mut child_entities = Vec::with_capacity(eft_file.particles.len());
-    for eft_particle in eft_file.particles {
+    for eft_particle in &eft_file.particles {
         if let Some(particle_entity) = spawn_particle(
             vfs,
             commands,
@@ -57,7 +136,7 @@ pub fn spawn_effect(
         }
     }
 
-    for eft_particle in eft_file.meshes {
+    for eft_particle in &eft_file.meshes {
         if let Some(mesh_entity) =
             spawn_mesh(commands, asset_server, effect_mesh_materials, &eft_particle)
         {
@@ -65,9 +144,50 @@ pub fn spawn_effect(
         }
     }
 
-    // I do not think any .eft actually uses sound_file
-    // TODO: eft_file.sound_file
-    // TODO: eft_file.sound_repeat_count
+    // Load and play effect sound if present
+    if let Some(sound_file) = &eft_file.sound_file {
+        let sound_path = sound_file.path().to_string_lossy().into_owned();
+        if !sound_path.is_empty() && sound_path != "NULL" {
+            let audio_source: bevy::asset::Handle<AudioSource> = asset_server.load(&sound_path);
+            let repeating = eft_file.sound_repeat_count == 0; // 0 means infinite repeat
+            
+            // Use spatial sound if position is provided, otherwise use global sound
+            if let Some(position) = effect_position {
+                let sound_entity = if repeating {
+                    commands.spawn((
+                        SpatialSound::new_repeating(audio_source),
+                        Transform::from_translation(position),
+                        GlobalTransform::from_translation(position),
+                        SoundGain::default(),
+                    ))
+                } else {
+                    commands.spawn((
+                        SpatialSound::new(audio_source),
+                        Transform::from_translation(position),
+                        GlobalTransform::from_translation(position),
+                        SoundGain::default(),
+                    ))
+                };
+                
+                child_entities.push(sound_entity.id());
+            } else {
+                // Global sound (no spatial positioning)
+                let sound_entity = if repeating {
+                    commands.spawn((
+                        GlobalSound::new_repeating(audio_source),
+                        SoundGain::default(),
+                    ))
+                } else {
+                    commands.spawn((
+                        GlobalSound::new(audio_source),
+                        SoundGain::default(),
+                    ))
+                };
+                
+                child_entities.push(sound_entity.id());
+            }
+        }
+    }
 
     if let Some(effect_entity) = effect_entity {
         commands
@@ -212,6 +332,7 @@ fn spawn_mesh(
                                 path.path().to_str().unwrap(),
                             ))
                         }),
+                        animation_state: crate::render::EffectMeshAnimationUniform::default(),
                     },
                 });
 

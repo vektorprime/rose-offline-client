@@ -5,7 +5,7 @@ Use only Windows commands, not linux commands
 
 Do NOT try to parse output with "head" like this "cargo build 2>&1 | head -100"
 
-Do NOT try to parse cargo build with select-string like this "cargo build 2>&1 | Select-Object -First 100"
+Do NOT try to parse output with select-string like this "cargo build 2>&1 | Select-Object -First 100" instead prefer findstr.
 
 Do NOT run "cargo build --release" only run "cargo build"
 
@@ -13,7 +13,7 @@ Do NOT run "cargo run" ask the user for output of the compiled software
 
 Do NOT run "cargo clean" without asking the user for permission.
 
-You MUST run "Cargo run" inside of a subtask where it was requested. It should not run in the same task it was requested on. Report back the errors or failures, not warnings.
+You MUST run "Cargo build" inside of a subtask where it was requested. It should not run in the same task it was requested on. Report back the errors or failures, not warnings.
 
 ## Reading files
 Prefer to read the whole file if you've never read the file before. You have read the file before, then read only the relevant lines.
@@ -29,8 +29,13 @@ C:\Users\vicha\RustroverProjects\bevy-collection\wgpu-24.0.5
 ## What To Do When Stuck
 
 ### Old Working Version Of The Game
+An older, working verison of the game developed in C++ is here for reference
+E:\cpp\client\src
+
 An older, working version of the game that uses Bevy 0.11 is here for reference
 C:\Users\vicha\RustroverProjects\exjam-rose-offline-client\rose-offline-client
+
+
 
 ### Web Search
 Use your web search tools if you're stuck and the source code review is not helping
@@ -53,3 +58,6 @@ When working on an issue, note what you attempted in a .md file dedicated to the
 ## Finishing
 
 Before ending a task, confirm that "cargo build" is successful.
+
+
+You MUST run "Cargo build" inside of a subtask where it was requested. It should not run in the same task it was requested on. Report back the errors or failures, not warnings. Instruct the sub task that they are the sub task so that we do not get stuck in an infinite loop of assigning sub tasks. Use this "You are the sub task, you must not delegate the cargo build to any other sub task, you must perform it and then report back with attempt_completion."

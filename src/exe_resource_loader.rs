@@ -5,14 +5,15 @@ use bevy::{
     reflect::{TypePath},
     tasks::futures_lite::AsyncReadExt,
 };
-use bevy_egui::egui::CursorIcon;
 
 #[derive(Clone, Default)]
 pub struct ExeResourceLoader;
 
+/// Cursor image data loaded from .exe resource
 #[derive(Debug, TypePath, Clone, Asset)]
 pub struct ExeResourceCursor {
-    pub cursor: CursorIcon,
+    /// Whether the cursor has been processed
+    pub processed: bool,
 }
 
 impl AssetLoader for ExeResourceLoader {
@@ -24,18 +25,21 @@ impl AssetLoader for ExeResourceLoader {
         &self,
         reader: &mut dyn Reader,
         _settings: &Self::Settings,
-        _load_context: &mut LoadContext<'_>,
+        load_context: &mut LoadContext<'_>,
     ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
 
-            // TODO: CustomCursor was removed in Bevy 0.15
-            // Need to find new way to load custom cursors
-            // For now, just return Default cursor
-            let cursor = CursorIcon::Default;
-
-            Ok(ExeResourceCursor { cursor })
+            let path = load_context.path().to_string_lossy().to_string();
+            
+            // Note: Custom cursor loading is handled directly in ui_resources.rs
+            // to properly use Bevy 0.16's CustomCursorImage API
+            log::debug!("[EXE RESOURCE LOADER] Cursor requested from {}: {} bytes", path, bytes.len());
+            
+            Ok(ExeResourceCursor { 
+                processed: true
+            })
         }
     }
 

@@ -442,7 +442,7 @@ fn render_item_spawner_popup(
                                 ui.label(format!("{}", item_id));
                                 
                                 // Name
-                                ui.label(item_data.name);
+                                ui.label(&item_data.name);
                                 
                                 // Spawn button
                                 if ui.button("Give").clicked() {
@@ -495,7 +495,7 @@ fn update_filtered_items(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameDa
         .filter_map(|(item_reference, item_data)| {
             // Filter out items with empty names or names that don't match filter
             if item_data.name.is_empty()
-                || !filter_name_re.as_ref().map_or(true, |re| re.is_match(item_data.name))
+                || !filter_name_re.as_ref().map_or(true, |re| re.is_match(&item_data.name))
             {
                 None
             } else {

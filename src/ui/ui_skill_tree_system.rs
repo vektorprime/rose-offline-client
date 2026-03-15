@@ -1,3 +1,4 @@
+use bevy::ecs::query::QueryData;
 use bevy::prelude::{Assets, Entity, EventWriter, Local, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 
@@ -8,7 +9,7 @@ use crate::{
     components::PlayerCharacter,
     resources::{GameData, UiResources, UiSpriteSheetType},
     ui::{
-        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem, SkillTooltipType},
+        tooltips::{PlayerTooltipQuery, SkillTooltipType},
         ui_add_skill_tooltip,
         widgets::{DataBindings, Dialog, DrawWidget, Skill, Widget},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateWindows,
@@ -33,7 +34,7 @@ fn ui_add_skill_tree_slot(
     pos: egui::Pos2,
     skill: &Skill,
     player: &(&CharacterInfo, &SkillList, &SkillPoints),
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
 ) -> egui::Response {
@@ -124,7 +125,7 @@ fn ui_add_skill_tree_slot(
 fn draw_skill_slots(
     ui: &mut egui::Ui,
     player: &(&CharacterInfo, &SkillList, &SkillPoints),
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     widgets: &[Widget],

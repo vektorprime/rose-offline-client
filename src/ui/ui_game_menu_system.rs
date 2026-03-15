@@ -3,7 +3,7 @@ use bevy::prelude::{Assets, EventWriter, Local, Res, ResMut};
 use bevy_egui::{egui, EguiContexts};
 
 use crate::{
-    events::CharacterSelectEvent,
+    events::{CharacterSelectEvent, MessageBoxEvent},
     resources::UiResources,
     ui::{
         widgets::{DataBindings, Dialog},
@@ -35,6 +35,7 @@ pub fn ui_game_menu_system(
     ui_resources: Res<UiResources>,
     mut ui_sound_events: EventWriter<UiSoundEvent>,
     mut character_select_events: EventWriter<CharacterSelectEvent>,
+    mut message_box_events: EventWriter<MessageBoxEvent>,
     dialog_assets: Res<Assets<Dialog>>,
 ) {
     let dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_game_menu) {
@@ -130,7 +131,12 @@ pub fn ui_game_menu_system(
     }
 
     if response_button_community.map_or(false, |r| r.clicked()) {
-        // TODO: Community dialog
+        message_box_events.send(MessageBoxEvent::Show {
+            message: "Community features are not yet implemented.".to_string(),
+            modal: true,
+            ok: None,
+            cancel: None,
+        });
         ui_state_windows.menu_open = false;
     }
 
@@ -140,12 +146,22 @@ pub fn ui_game_menu_system(
     }
 
     if response_button_help.map_or(false, |r| r.clicked()) {
-        // TODO: Help dialog
+        message_box_events.send(MessageBoxEvent::Show {
+            message: "Help documentation is not yet available.".to_string(),
+            modal: true,
+            ok: None,
+            cancel: None,
+        });
         ui_state_windows.menu_open = false;
     }
 
     if response_button_info.map_or(false, |r| r.clicked()) {
-        // TODO: Info dialog
+        message_box_events.send(MessageBoxEvent::Show {
+            message: "Game information dialog is not yet implemented.".to_string(),
+            modal: true,
+            ok: None,
+            cancel: None,
+        });
         ui_state_windows.menu_open = false;
     }
 

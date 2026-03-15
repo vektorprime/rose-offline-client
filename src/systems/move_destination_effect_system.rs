@@ -11,7 +11,7 @@ use bevy::{
 use rose_data::EffectFileId;
 
 use crate::{
-    effect_loader::spawn_effect,
+    effect_loader::{spawn_effect, EffectCache},
     events::MoveDestinationEffectEvent,
     render::{ParticleMaterial, RoseEffectExtension},
     resources::{GameData, VfsResource},
@@ -29,6 +29,7 @@ pub fn move_destination_effect_system(
     game_data: Res<GameData>,
     asset_server: Res<AssetServer>,
     vfs_resource: Res<VfsResource>,
+    effect_cache: Res<EffectCache>,
     mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
@@ -69,6 +70,8 @@ pub fn move_destination_effect_system(
                         effect_file_path,
                         true,
                         Some(effect_entity),
+                        Some(&effect_cache),
+                        Some(*position),
                     );
                 }
             }

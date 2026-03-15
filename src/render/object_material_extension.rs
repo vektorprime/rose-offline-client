@@ -3,6 +3,7 @@
 //! This extension adds ROSE-specific features to Bevy's StandardMaterial:
 //! - Lightmap support with UV offset and scale
 //! - Specular map support
+//! - Blink state uniform for character face blinking (shader integration pending)
 //!
 //! Note: Zone lighting has been temporarily removed to simplify the rendering
 //! pipeline. It can be added back later once basic rendering is confirmed working.
@@ -19,6 +20,7 @@ use bevy::render::render_resource::{
 /// Extends StandardMaterial with:
 /// - Lightmap texture and parameters
 /// - Specular map texture
+/// - Blink state (for character face eye clipping)
 #[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
 pub struct RoseObjectExtension {
     /// Lightmap parameters: x = offset_x, y = offset_y, z = scale, w = unused
@@ -34,6 +36,12 @@ pub struct RoseObjectExtension {
     #[texture(103)]
     #[sampler(104)]
     pub specular_texture: Option<Handle<Image>>,
+
+    /// Blink state for character face eye clipping
+    /// 0 = eyes open, 1 = eyes closed (blinking)
+    /// Note: Vertex shader integration requires custom pipeline beyond ExtendedMaterial capabilities
+    #[uniform(105)]
+    pub blink_state: u32,
 }
 
 impl Default for RoseObjectExtension {
@@ -42,6 +50,7 @@ impl Default for RoseObjectExtension {
             lightmap_params: Vec4::new(0.0, 0.0, 1.0, 0.0),
             lightmap_texture: None,
             specular_texture: None,
+            blink_state: 0, // Default to eyes open
         }
     }
 }

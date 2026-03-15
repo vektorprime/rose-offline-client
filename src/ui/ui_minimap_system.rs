@@ -148,7 +148,7 @@ pub fn ui_minimap_system(
             ui_state.last_player_position = Vec2::default();
         }
 
-        let zone_name = zone_data.map_or("???", |zone_data| zone_data.name);
+        let zone_name = zone_data.map_or("???", |zone_data| zone_data.name.as_str());
         let ctx = egui_context.ctx_mut();
         ui_state.zone_name_text_galley = Some(generate_text_galley(
             ctx,
@@ -424,7 +424,7 @@ pub fn ui_minimap_system(
                             ),
                             egui::Sense::hover(),
                         );
-                        response.on_hover_text(npc_data.name);
+                        response.on_hover_text(npc_data.name.as_str());
                     }
                 }
 

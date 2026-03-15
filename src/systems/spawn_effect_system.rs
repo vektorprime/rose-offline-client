@@ -12,7 +12,7 @@ use rose_file_readers::VfsPath;
 
 use crate::{
     components::DummyBoneOffset,
-    effect_loader::spawn_effect,
+    effect_loader::{spawn_effect, EffectCache},
     events::{SpawnEffect, SpawnEffectData, SpawnEffectEvent},
     resources::GameData,
     render::{ParticleMaterial, RoseEffectExtension},
@@ -40,6 +40,7 @@ pub fn spawn_effect_system(
     game_data: Res<GameData>,
     asset_server: Res<AssetServer>,
     vfs_resource: Res<VfsResource>,
+    effect_cache: Res<EffectCache>,
     mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
@@ -61,6 +62,8 @@ pub fn spawn_effect_system(
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         Some(*effect_entity),
+                        Some(&effect_cache),
+                        None, // No position for InEntity effects
                     );
                 }
             }
@@ -79,6 +82,8 @@ pub fn spawn_effect_system(
                             effect_file_path,
                             spawn_effect_data.manual_despawn,
                             None,
+                            Some(&effect_cache),
+                            Some(at_global_transform.translation()),
                         ) {
                             commands
                                 .entity(effect_entity)
@@ -116,6 +121,8 @@ pub fn spawn_effect_system(
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         None,
+                        Some(&effect_cache),
+                        None, // No position for OnEntity effects (child of entity)
                     ) {
                         commands.entity(link_entity).add_child(effect_entity);
                     }
@@ -135,6 +142,8 @@ pub fn spawn_effect_system(
                         effect_file_path,
                         spawn_effect_data.manual_despawn,
                         None,
+                        Some(&effect_cache),
+                        Some(transform.translation),
                     ) {
                         commands.entity(effect_entity).insert(*transform);
                     }

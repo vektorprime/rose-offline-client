@@ -85,7 +85,7 @@ pub fn ui_debug_zone_list_system(
                     .filter_map(|zone_data| {
                         if !filter_name_re
                             .as_ref()
-                            .map_or(true, |re| re.is_match(zone_data.name))
+                            .map_or(true, |re| re.is_match(&zone_data.name))
                         {
                             None
                         } else {
@@ -124,7 +124,7 @@ pub fn ui_debug_zone_list_system(
                             });
 
                             row.col(|ui| {
-                                ui.label(zone_data.name);
+                                ui.label(zone_data.name.as_str());
                             });
 
                             row.col(|ui| match app_state.get() {

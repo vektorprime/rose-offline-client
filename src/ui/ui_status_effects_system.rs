@@ -72,7 +72,7 @@ pub fn ui_status_effects_system(
                                             remaining_time.as_secs()
                                         ));
                                     } else {
-                                        response.on_hover_text(status_effect_data.name);
+                                        response.on_hover_text(&status_effect_data.name);
                                     }
                                 }
                             }

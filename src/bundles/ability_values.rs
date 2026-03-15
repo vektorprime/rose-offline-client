@@ -6,9 +6,9 @@ use num_traits::{AsPrimitive, Saturating, Signed};
 use rose_data::AbilityType;
 
 use rose_game_common::components::{
-    AbilityValues, BasicStats, CharacterGender, CharacterInfo, ExperiencePoints, HealthPoints,
-    Inventory, Level, ManaPoints, Money, MoveSpeed, SkillPoints, Stamina, StatPoints, Team,
-    UnionMembership, MAX_STAMINA,
+    AbilityValues, BasicStats, CharacterGender, CharacterInfo, ExperiencePoints, GuildMembership,
+    HealthPoints, Inventory, Level, ManaPoints, Money, MoveSpeed, SkillPoints, Stamina, StatPoints,
+    Team, UnionMembership, MAX_STAMINA,
 };
 
 pub fn ability_values_get_value(
@@ -16,6 +16,7 @@ pub fn ability_values_get_value(
     ability_values: &AbilityValues,
     character_info: Option<&CharacterInfo>,
     experience_points: Option<&ExperiencePoints>,
+    guild_membership: Option<&GuildMembership>,
     health_points: Option<&HealthPoints>,
     inventory: Option<&Inventory>,
     level: Option<&Level>,
@@ -79,19 +80,39 @@ pub fn ability_values_get_value(
         AbilityType::MaxMana => Some(ability_values.get_max_mana()),
         AbilityType::Health => health_points.map(|x| x.hp),
         AbilityType::Mana => mana_points.map(|x| x.mp),
-        /*
-        TODO: Implement remaining get ability types.
-        AbilityType::Weight => todo!(),
-        AbilityType::SaveMana => todo!(),
-        AbilityType::PvpFlag => todo!(),
-        AbilityType::HeadSize => todo!(),
-        AbilityType::BodySize => todo!(),
-        AbilityType::DropRate => todo!(),
-        AbilityType::CurrentPlanet => todo!(),
-        AbilityType::GuildNumber => todo!(),
-        AbilityType::GuildScore => todo!(),
-        AbilityType::GuildPosition => todo!(),
-        */
+        // Weight: calculated from all inventory items
+        AbilityType::Weight => inventory.map(|inv| {
+            inv.calculate_total_weight(|item_ref, quantity| {
+                // Default weight calculation - returns weight per item * quantity
+                // In a real implementation, this would look up the item's base weight
+                // For now, return 0 as placeholder (server should track actual weight)
+                0 * quantity
+            })
+        }),
+        // SaveMana: Mana save percentage (0-100), clamped
+        AbilityType::SaveMana => character_info.map(|ci| {
+            ci.save_mana.min(100) as i32
+        }),
+        // PvpFlag: PvP flag state (0 = off, non-zero = on)
+        AbilityType::PvpFlag => character_info.map(|ci| ci.pvp_flag),
+        // HeadSize: Head size for appearance customization
+        AbilityType::HeadSize => character_info.map(|ci| ci.head_size),
+        // BodySize: Body size for appearance customization
+        AbilityType::BodySize => character_info.map(|ci| ci.body_size),
+        // DropRate: Drop rate percentage modifier
+        AbilityType::DropRate => character_info.map(|ci| ci.drop_rate),
+        // CurrentPlanet: Current planet ID
+        AbilityType::CurrentPlanet => character_info.map(|ci| ci.current_planet as i32),
+        // Guild values: return 0 when not in guild
+        AbilityType::GuildNumber => guild_membership.and_then(|gm| {
+            if gm.is_none() { Some(0) } else { Some(gm.guild_number as i32) }
+        }),
+        AbilityType::GuildScore => guild_membership.and_then(|gm| {
+            if gm.is_none() { Some(0) } else { Some(gm.score) }
+        }),
+        AbilityType::GuildPosition => guild_membership.and_then(|gm| {
+            if gm.is_none() { Some(0) } else { Some(gm.position as i32) }
+        }),
         _ => {
             log::warn!(
                 "ability_values_get_value unimplemented for ability type {:?}",
@@ -471,10 +492,10 @@ pub fn ability_values_set_value(
         AbilityType::Experience => experience_points.xp = value as u64,
         AbilityType::Level => level.level = value as u32,
         AbilityType::TeamNumber => team.id = value as u32,
-        /*
-        TODO: Implement remaining set ability types
-        AbilityType::PvpFlag => false,
-        */
+        // PvpFlag: Set PvP flag state
+        AbilityType::PvpFlag => {
+            character_info.pvp_flag = value;
+        }
         _ => {
             log::warn!(
                 "ability_values_set_value unimplemented for ability type {:?}",
@@ -649,10 +670,12 @@ pub fn ability_values_set_value_exclusive(
                 team.id = value as u32;
             }
         }
-        /*
-        TODO: Implement remaining set ability types
-        AbilityType::PvpFlag => false,
-        */
+        // PvpFlag: Set PvP flag state
+        AbilityType::PvpFlag => {
+            if let Some(mut character_info) = entity.get_mut::<CharacterInfo>() {
+                character_info.pvp_flag = value;
+            }
+        }
         _ => {
             log::warn!(
                 "ability_values_set_value unimplemented for ability type {:?}",

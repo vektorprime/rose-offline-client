@@ -9,7 +9,7 @@ use crate::{
     components::PlayerCharacter,
     events::{ChatboxEvent, FlightToggleEvent, PingRequestEvent, PingState},
     resources::{GameConnection, UiResources},
-    systems::{is_fly_command, is_ping_command},
+    systems::{parse_chat_input, is_fly_command, is_ping_command},
     ui::{
         widgets::{DataBindings, Dialog},
         UiSoundEvent,
@@ -161,6 +161,36 @@ pub fn ui_chatbox_system(
                     0.0,
                     egui::TextFormat {
                         color: CHAT_COLOR_WHISPER,
+                        ..Default::default()
+                    },
+                );
+            }
+            ChatboxEvent::Party(name, text) => {
+                ui_state_chatbox.textbox_layout_job.append(
+                    &format!("{}> {}\n", name, text),
+                    0.0,
+                    egui::TextFormat {
+                        color: CHAT_COLOR_PARTY,
+                        ..Default::default()
+                    },
+                );
+            }
+            ChatboxEvent::Clan(name, text) => {
+                ui_state_chatbox.textbox_layout_job.append(
+                    &format!("{}> {}\n", name, text),
+                    0.0,
+                    egui::TextFormat {
+                        color: CHAT_COLOR_CLAN,
+                        ..Default::default()
+                    },
+                );
+            }
+            ChatboxEvent::Allied(name, text) => {
+                ui_state_chatbox.textbox_layout_job.append(
+                    &format!("{}> {}\n", name, text),
+                    0.0,
+                    egui::TextFormat {
+                        color: CHAT_COLOR_ALLIED,
                         ..Default::default()
                     },
                 );
@@ -459,8 +489,19 @@ pub fn ui_chatbox_system(
                         }
                         ui_state_chatbox.textbox_text.clear();
                     } else {
-                        // Send all other commands (including /mspeed) to the server
-                        // TODO: Parse text line to decide whether its chat, shout, etc
+                        // Parse the chat input to detect chat type for logging
+                        let parsed = parse_chat_input(&ui_state_chatbox.textbox_text);
+                        
+                        // Log the parsed result for debugging
+                        tracing::debug!(
+                            "Chat sent - Type: {:?}, Target: {:?}, Message: '{}'",
+                            parsed.chat_type,
+                            parsed.target,
+                            parsed.message
+                        );
+                        
+                        // Send the full text to the server (including prefix)
+                        // The server handles prefix routing to appropriate chat channels
                         if let Some(game_connection) = game_connection.as_ref() {
                             game_connection
                                 .client_message_tx

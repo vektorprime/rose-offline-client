@@ -8,7 +8,7 @@ use bevy_egui::{egui, EguiContexts};
 
 use rose_data::{Item, NpcData, NpcStoreTabData, NpcStoreTabId};
 use rose_game_common::{
-    components::{AbilityValues, Inventory, ItemSlot, Npc},
+    components::{AbilityValues, Inventory, InventoryPageType, ItemSlot, Npc, INVENTORY_PAGE_SIZE},
     messages::{
         client::{ClientMessage, NpcStoreBuyItem},
         ClientEntityId,
@@ -86,7 +86,7 @@ fn ui_add_store_item_slot(
     store_tab_slot: usize,
     buy_list: &mut [Option<PendingBuyItem>; NUM_BUY_ITEMS],
     player: Option<&(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     world_rates: Option<&Res<WorldRates>>,
@@ -207,7 +207,7 @@ fn ui_add_buy_item_slot(
     buy_list: &mut [Option<PendingBuyItem>; NUM_BUY_ITEMS],
     buy_slot_index: usize,
     player: Option<&(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     world_rates: Option<&Res<WorldRates>>,
@@ -309,7 +309,7 @@ fn ui_add_sell_item_slot(
     sell_list: &mut [Option<PendingSellItem>; NUM_SELL_ITEMS],
     sell_slot_index: usize,
     player: Option<&(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     world_rates: Option<&Res<WorldRates>>,
@@ -646,9 +646,27 @@ pub fn ui_npc_store_system(
     if response_ok.map_or(false, |x| x.clicked()) {
         let can_afford_transaction =
             player.map_or(true, |player| transaction_cost <= player.1.money.0);
-        // TODO: Check inventory space
 
-        if can_afford_transaction {
+        // Check inventory space for buy items
+        let has_inventory_space = player.map_or(true, |player| {
+            let inventory = &player.1;
+            let num_buy_items = ui_state.buy_list.iter().filter(|x| x.is_some()).count();
+
+            // Count empty slots in inventory (only check Consumables, Materials pages for store items)
+            let mut empty_slots = 0;
+            for page_type in [InventoryPageType::Consumables, InventoryPageType::Materials] {
+                for slot_index in 0..INVENTORY_PAGE_SIZE {
+                    let item_slot = ItemSlot::Inventory(page_type, slot_index);
+                    if inventory.get_item(item_slot).is_none() {
+                        empty_slots += 1;
+                    }
+                }
+            }
+
+            empty_slots >= num_buy_items
+        });
+
+        if can_afford_transaction && has_inventory_space {
             let mut buy_items = Vec::new();
             let mut sell_items = Vec::new();
 
@@ -674,9 +692,16 @@ pub fn ui_npc_store_system(
                     })
                     .ok();
             }
-        } else {
+        } else if !can_afford_transaction {
             message_box_events.write(MessageBoxEvent::Show {
                 message: "You do not have enough Zuly for this transaction.".to_string(),
+                modal: true,
+                ok: Some(Box::new(|_| {})),
+                cancel: None,
+            });
+        } else {
+            message_box_events.write(MessageBoxEvent::Show {
+                message: "You do not have enough inventory space for this transaction.".to_string(),
                 modal: true,
                 ok: Some(Box::new(|_| {})),
                 cancel: None,

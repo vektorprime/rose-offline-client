@@ -1,6 +1,7 @@
 mod angelic_wings;
 mod bank;
 mod bird;
+mod blink_clip;
 mod blood_effect;
 mod character_model;
 mod character_model_blink_timer;
@@ -22,7 +23,9 @@ mod facing_direction;
 mod fish;
 mod flight;
 mod item_drop_model;
+mod item_drop_timer;
 mod model_height;
+mod monster_separation;
 mod name_tag_entity;
 mod night_time_effect;
 mod npc_model;
@@ -50,6 +53,7 @@ mod skinned_mesh_target_bone;
 
 pub use bank::Bank;
 pub use bird::{Bird, BirdMesh, BirdSettings, BirdWingLeft, BirdWingRight};
+pub use blink_clip::{sync_blink_clip_to_state, update_blink_clip_state, BlinkClip, BlinkClipPlugin, BlinkClipState, BlinkUniform};
 pub use character_model::{CharacterModel, CharacterModelPart, CharacterModelPartIndex};
 pub use character_model_blink_timer::CharacterBlinkTimer;
 pub use chat_bubble::{ChatBubble, ChatBubbleBackground, ChatBubbleEntity, ChatBubbleText, MonsterChatter};
@@ -80,7 +84,9 @@ pub use event_object::EventObject;
 pub use facing_direction::FacingDirection;
 pub use fish::{Fish, FishSettings, FishWaterRef, FishMesh, WaterSpawnedEvent};
 pub use item_drop_model::ItemDropModel;
+pub use item_drop_timer::{ItemDropOwner, ItemDropRemainingTime};
 pub use model_height::ModelHeight;
+pub use monster_separation::MonsterSeparation;
 pub use name_tag_entity::{
     NameTag, NameTagEntity, NameTagHealthbarBackground, NameTagHealthbarForeground, NameTagName,
     NameTagTargetMark, NameTagType, RemoveNameTagCommand,

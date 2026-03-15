@@ -8,7 +8,7 @@ use crate::{
     components::PlayerCharacter,
     resources::{GameData, UiResources},
     ui::{
-        tooltips::PlayerTooltipQuery,
+        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog, Widget},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateWindows,
@@ -32,7 +32,7 @@ const IID_PANE_QUESTINFO: i32 = 200;
 fn ui_add_quest_item_slot(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
-    player_tooltip_data: Option<&PlayerTooltipQuery<'_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
     item: Option<&Item>,
     game_data: &GameData,
     ui_resources: &UiResources,
@@ -186,7 +186,7 @@ pub fn ui_quest_list_system(
                                         ui.painter().text(
                                             text_pos,
                                             egui::Align2::LEFT_TOP,
-                                            quest_data.name,
+                                            quest_data.name.as_str(),
                                             egui::FontId::default(),
                                             egui::Color32::YELLOW
                                         );
@@ -194,7 +194,7 @@ pub fn ui_quest_list_system(
                                         ui.painter().text(
                                             text_pos,
                                             egui::Align2::LEFT_TOP,
-                                            quest_data.name,
+                                            quest_data.name.as_str(),
                                             egui::FontId::default(),
                                             egui::Color32::WHITE
                                         );
@@ -240,14 +240,15 @@ pub fn ui_quest_list_system(
                                 |ui| {
                                     ui.horizontal_top(|ui| {
                                         ui.add(egui::Label::new(
-                                            egui::RichText::new(quest_data.name)
+                                            egui::RichText::new(quest_data.name.as_str())
                                                 .color(egui::Color32::YELLOW),
                                         ));
                                     })
                                 },
                             );
 
-                            // TODO: Add quest icon
+                            // Quest icon cannot be added - no UiSpriteSheetType::Quest available
+                            // Would require loading a quest icon sprite sheet (e.g., questicon.tsi)
 
                             if let Some(Widget::Listbox(listbox)) =
                                 dialog.get_widget(IID_LIST_QUESTINFO)
@@ -258,7 +259,7 @@ pub fn ui_quest_list_system(
                                     egui::ScrollArea::vertical().auto_shrink([false; 2]).show(
                                         ui,
                                         |ui| {
-                                            ui.label(quest_data.description);
+                                            ui.label(quest_data.description.as_str());
                                         },
                                     );
                                 });

@@ -153,28 +153,28 @@ pub fn ui_clan_system(
                     Some(&mut IID_TAB_INFO) => {
                         ui.add_label_at(
                             egui::pos2(15.0, 73.0),
-                            egui::RichText::new(game_data.client_strings.clan_name)
+                            egui::RichText::new(game_data.client_strings.clan_name.as_str())
                                 .color(egui::Color32::BLACK),
                         );
                         ui.add_label_at(egui::pos2(88.0, 73.0), &clan.name);
 
                         ui.add_label_at(
                             egui::pos2(15.0, 94.0),
-                            egui::RichText::new(game_data.client_strings.clan_level)
+                            egui::RichText::new(game_data.client_strings.clan_level.as_str())
                                 .color(egui::Color32::BLACK),
                         );
                         ui.add_label_at(egui::pos2(88.0, 94.0), format!("{}", clan.level.0));
 
                         ui.add_label_at(
                             egui::pos2(15.0, 115.0),
-                            egui::RichText::new(game_data.client_strings.clan_point)
+                            egui::RichText::new(game_data.client_strings.clan_point.as_str())
                                 .color(egui::Color32::BLACK),
                         );
                         ui.add_label_at(egui::pos2(88.0, 115.0), format!("{}", clan.points.0));
 
                         ui.add_label_at(
                             egui::pos2(15.0, 135.0),
-                            egui::RichText::new(game_data.client_strings.clan_slogan)
+                            egui::RichText::new(game_data.client_strings.clan_slogan.as_str())
                                 .color(egui::Color32::BLACK),
                         );
                         ui.add_label_in(
@@ -187,7 +187,7 @@ pub fn ui_clan_system(
 
                         ui.add_label_at(
                             egui::pos2(15.0, 187.0),
-                            egui::RichText::new(game_data.client_strings.clan_money)
+                            egui::RichText::new(game_data.client_strings.clan_money.as_str())
                                 .color(egui::Color32::BLACK),
                         );
                         ui.add_label_at(egui::pos2(88.0, 187.0), format!("{}", clan.money.0));
@@ -197,7 +197,7 @@ pub fn ui_clan_system(
                             .calculate_clan_max_members(clan.level.0);
                         ui.add_label_at(
                             egui::pos2(15.0, 208.0),
-                            egui::RichText::new(game_data.client_strings.clan_member_count)
+                            egui::RichText::new(game_data.client_strings.clan_member_count.as_str())
                                 .color(egui::Color32::BLACK),
                         );
                         ui.add_label_at(
@@ -211,7 +211,7 @@ pub fn ui_clan_system(
 
                         ui.add_label_at(
                             egui::pos2(15.0, 248.0),
-                            egui::RichText::new(game_data.client_strings.clan_ally)
+                            egui::RichText::new(game_data.client_strings.clan_ally.as_str())
                                 .color(egui::Color32::BLACK),
                         );
 

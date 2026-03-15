@@ -13,7 +13,7 @@ use crate::{
     events::PlayerCommandEvent,
     resources::{GameData, UiResources},
     ui::{
-        tooltips::{PlayerTooltipQuery, SkillTooltipType},
+        tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem, SkillTooltipType},
         ui_add_item_tooltip, ui_add_skill_tooltip,
         ui_inventory_system::GetItem,
         widgets::{DataBindings, Dialog, Widget},
@@ -68,7 +68,7 @@ fn ui_add_hotbar_slot(
     pos: egui::Pos2,
     hotbar_index: (usize, usize),
     player: &mut PlayerQueryItem,
-    player_tooltip_data: Option<&PlayerTooltipQuery>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     ui_state_dnd: &mut UiStateDragAndDrop,

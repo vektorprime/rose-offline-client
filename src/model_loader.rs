@@ -35,7 +35,7 @@ use crate::{
         ItemDropModel, NpcModel, PersonalStoreModel, VehicleModel,
     },
     // diagnostics::render_diagnostics::{log_alpha_blend_mesh_setup_simple},
-    effect_loader::spawn_effect,
+    effect_loader::{spawn_effect, EffectCache},
     render::{
         ParticleMaterial, TrailEffect, RoseEffectExtension,
         object_material_extension::RoseObjectExtension,
@@ -78,6 +78,7 @@ pub fn create_rose_object_material(
             lightmap_params: Vec4::new(lightmap_offset.x, lightmap_offset.y, lightmap_scale, 0.0),
             lightmap_texture,
             specular_texture,
+            blink_state: 0, // Default to eyes open
         },
     })
 }
@@ -91,6 +92,7 @@ pub struct ModelLoader {
     npc_database: Arc<NpcDatabase>,
     trail_effect_image: Handle<Image>,
     specular_image: Handle<Image>,
+    effect_cache: EffectCache,
 
     // Male
     skeleton_male: ZmdFile,
@@ -139,6 +141,7 @@ impl ModelLoader {
         npc_database: Arc<NpcDatabase>,
         trail_effect_image: Handle<Image>,
         specular_image: Handle<Image>,
+        effect_cache: EffectCache,
     ) -> Result<ModelLoader, anyhow::Error> {
         Ok(ModelLoader {
             // Male
@@ -186,6 +189,7 @@ impl ModelLoader {
             npc_database,
             trail_effect_image,
             specular_image,
+            effect_cache,
         })
     }
 
@@ -320,6 +324,8 @@ impl ModelLoader {
                         effect_path.into(),
                         false,
                         None,
+                        Some(&self.effect_cache),
+                        None, // No position for bone-attached effects
                     ) {
                         commands.entity(*dummy_bone_entity).add_child(effect_entity);
                         model_parts.push(effect_entity);
@@ -607,9 +613,12 @@ impl ModelLoader {
             asset_server,
             particle_materials,
             effect_mesh_materials,
+            storage_buffers,
+            meshes,
             effect_file.into(),
             false,
             None,
+            Some(&self.effect_cache),
         )?;
 
         commands
@@ -1059,6 +1068,8 @@ impl ModelLoader {
                         effect_path.into(),
                         false,
                         None,
+                        Some(&self.effect_cache),
+                        None, // No position for bone-attached effects
                     ) {
                                     commands.entity(*dummy_bone_entity).add_child(effect_entity);
                                     model_parts[vehicle_part_index].1.push(effect_entity);

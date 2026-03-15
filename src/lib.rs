@@ -64,6 +64,7 @@ pub mod components;
 pub mod debug;
 pub mod diagnostics;
 pub mod effect_loader;
+use effect_loader::EffectCache;
 pub mod events;
 pub mod exe_resource_loader;
 pub mod graphics;
@@ -86,14 +87,14 @@ pub mod blood_effect_plugin;
 
 use audio::OddioPlugin;
 use diagnostics::RenderDiagnosticsPlugin;
-use events::{
-    BankEvent, CharacterSelectEvent, ChatBubbleEvent, ChatboxEvent, ClanDialogEvent, ClientEntityEvent,
-    ConversationDialogEvent, FlightToggleEvent, GameConnectionEvent, HitEvent, LoadZoneEvent, LoginEvent,
-    MessageBoxEvent, MoveDestinationEffectEvent, MoveSpeedSetEvent, NetworkEvent, NpcStoreEvent,
-    NumberInputDialogEvent, PartyEvent, PingRequestEvent, PingResponseEvent, PingState, PersonalStoreEvent,
-    PlayerCommandEvent, QuestTriggerEvent, SpawnEffectEvent, SpawnProjectileEvent, SystemFuncEvent,
-    UseItemEvent, WorldConnectionEvent, ZoneEvent, ZoneLoadedFromVfsEvent,
-    };
+  use events::{
+     BankEvent, CharacterSelectEvent, ChatBubbleEvent, ChatboxEvent, ClanDialogEvent, ClientEntityEvent,
+     ConversationDialogEvent, FlightToggleEvent, GameConnectionEvent, HitEvent, LoadZoneEvent, LoginEvent,
+     MessageBoxEvent, MoveDestinationEffectEvent, MoveSpeedSetEvent, NetworkEvent, NpcStoreEvent,
+     NumberInputDialogEvent, PartyEvent, PingRequestEvent, PingResponseEvent, PingState, PersonalStoreEvent,
+     PlayerCommandEvent, QuestScrollEvent, QuestTriggerEvent, SpawnEffectEvent, SpawnProjectileEvent, SystemFuncEvent,
+     UseItemEvent, WorldConnectionEvent, ZoneEvent, ZoneLoadedFromVfsEvent,
+     };
 use model_loader::ModelLoader;
 use render::{
     RoseRenderPlugin,
@@ -161,7 +162,7 @@ use systems::{
     passive_recovery_system, pending_damage_system, pending_skill_effect_system,
     personal_store_model_add_collider_system, personal_store_model_system, player_command_system,
     projectile_system, quest_trigger_system, spawn_effect_system, spawn_projectile_system,
-    status_effect_system, system_func_event_system, update_position_system, use_item_event_system,
+    status_effect_system, system_func_event_system, monster_separation_system, update_position_system, use_item_event_system,
     vehicle_model_system, vehicle_sound_system, visible_status_effects_system,
     world_connection_system, world_time_system, zone_time_system, zone_viewer_enter_system,
     // DISABLED: color_grading_time_of_day_system conflicts with Bevy 0.16 Atmosphere
@@ -856,6 +857,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // Bevy 0.16 Deferred Rendering
     app.insert_resource(DefaultOpaqueRendererMethod::deferred());
 
+    // Effect cache for performance - prevents reloading effect files from disk
+    app.init_resource::<effect_loader::EffectCache>();
+
     app.register_asset_loader(ZmsAssetLoader)
         .init_asset::<ZmsMaterialNumFaces>()
         .register_asset_loader(ZmsNoSkinAssetLoader)
@@ -1020,6 +1024,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_event::<PingResponseEvent>()
         .add_event::<PersonalStoreEvent>()
         .add_event::<PlayerCommandEvent>()
+        .add_event::<QuestScrollEvent>()
         .add_event::<QuestTriggerEvent>()
         .add_event::<SystemFuncEvent>()
         .add_event::<SpawnEffectEvent>()
@@ -1483,6 +1488,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, command_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, facing_direction_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, update_position_system.run_if(in_state(AppState::Game)));
+    app.add_systems(Update, monster_separation_system.run_if(in_state(AppState::Game)).after(update_position_system));
     app.add_systems(Update, collision_height_only_system.run_if(in_state(AppState::Game)));
     // CRITICAL: collision_player_system_join_zone must run BEFORE collision_player_system
     // - join_zone uses a long raycast (Y=100000) to find initial ground height on spawn
@@ -1835,6 +1841,7 @@ fn load_common_game_data(
             game_data.npcs.clone(),
             asset_server.load("3DDATA/EFFECT/TRAIL.DDS"),
             asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS"),
+            EffectCache::default(),
         )
         .expect("Failed to create model loader"),
     );

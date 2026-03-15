@@ -15,7 +15,6 @@ use crate::{
 };
 
 // After 10 seconds, apply skill effects regardless
-#[allow(dead_code)]
 const MAX_SKILL_EFFECT_AGE: f32 = 10.0;
 
 fn apply_skill_effect(
@@ -60,6 +59,7 @@ fn apply_skill_effect(
                 let ability_value = ability_values_get_value(
                     skill_add_ability.ability_type,
                     ability_values,
+                    None,
                     None,
                     None,
                     Some(health_points),
@@ -216,32 +216,54 @@ pub fn pending_skill_effect_system(
         }
     }
 
-    // TODO: Apply expired skill effects
-    /*
-    for (caster_entity, mut pending_skill_effect_list) in query_defender.iter_mut() {
+    // Apply expired skill effects
+    let delta_time = time.delta_secs();
+    for (
+        target_entity,
+        ability_values,
+        mut health_points,
+        mut mana_points,
+        move_speed,
+        mut pending_skill_effect_list,
+        mut status_effects,
+    ) in query_target.iter_mut()
+    {
         let mut i = 0;
-        while i < pending_skill_effect_list.len() {
-            let mut pending_skill_effect = &mut pending_skill_effect_list[i];
+        while i < pending_skill_effect_list.pending_skill_effects.len() {
+            let pending_skill_effect = &mut pending_skill_effect_list.pending_skill_effects[i];
             pending_skill_effect.age += delta_time;
 
             if pending_skill_effect.age > MAX_SKILL_EFFECT_AGE {
                 let pending_skill_effect =
-                    pending_skill_effect_list.remove(i);
+                    pending_skill_effect_list.pending_skill_effects.remove(i);
 
-                if let Ok((
-                    _,
-                    defender_pending_skill_effect_list,
-                    defender_health_points,
-                    defender_status_effects,
-                    defender_mana_points,
-                    defender_stamina,
-                )) = query_defender.get_mut(pending_skill_target.defender_entity)
+                if let Some(skill_data) =
+                    game_data.skills.get_skill(pending_skill_effect.skill_id)
                 {
+                    hit_events.write(HitEvent::with_skill_effect(
+                        pending_skill_effect.caster_entity.unwrap_or(target_entity),
+                        target_entity,
+                        pending_skill_effect.skill_id,
+                    ));
+
+                    apply_skill_effect(
+                        skill_data,
+                        &game_data,
+                        Instant::now(),
+                        target_entity,
+                        ability_values,
+                        health_points.as_mut(),
+                        mana_points.as_deref_mut(),
+                        move_speed,
+                        pending_skill_effect_list.as_mut(),
+                        status_effects.as_mut(),
+                        pending_skill_effect.caster_intelligence,
+                        pending_skill_effect.effect_success,
+                    );
                 }
             } else {
                 i += 1;
             }
         }
     }
-    */
 }

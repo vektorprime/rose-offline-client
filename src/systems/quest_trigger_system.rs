@@ -32,6 +32,35 @@ pub fn quest_trigger_system(
                     }
                 }
             }
+            QuestTriggerEvent::UseQuestScroll(item_reference, trigger_hash) => {
+                // This event is dispatched when a quest scroll item is used.
+                // It allows for client-side dialog showing before triggering the quest.
+                
+                // Note: Full implementation requires confile parsing to extract quest information
+                // (title, description) and display in a modal dialog. Since confile parsing isn't
+                // implemented yet, we fall back to DoTrigger behavior which validates conditions
+                // on client side and sends QuestTrigger to server.
+                
+                log::info!(
+                    "QuestScroll item {:?} used for trigger {:?}, showing dialog not yet implemented",
+                    item_reference,
+                    trigger_hash
+                );
+                
+                // Fall back to DoTrigger behavior for now - check conditions and send QuestTrigger
+                if let Ok(true) =
+                    quest_check_conditions(&script_resources, &mut script_context, trigger_hash)
+                {
+                    if let Some(game_connection) = script_resources.game_connection.as_ref() {
+                        game_connection
+                            .client_message_tx
+                            .send(ClientMessage::QuestTrigger {
+                                trigger: trigger_hash,
+                            })
+                            .ok();
+                    }
+                }
+            }
         }
     }
 }

@@ -361,6 +361,12 @@ pub fn ui_character_create_system(
                     revive_zone_id: ZoneId::new(1).unwrap(),
                     revive_position: Vec3::new(5200.0, 5200.0, 0.0),
                     unique_id: 0,
+                    head_size: 100,
+                    body_size: 100,
+                    pvp_flag: 0,
+                    save_mana: 0,
+                    drop_rate: 0,
+                    current_planet: 1,
                 },
                 Equipment::new(),
                 Transform::from_translation(Vec3::new(5200.05, 7.47, -5200.18))

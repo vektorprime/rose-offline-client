@@ -120,8 +120,8 @@ pub fn ui_debug_skill_list_system(
                     if (ui_state_debug_skill_list.filter_castable
                         && skill_data.casting_motion_id.is_none())
                         || !filter_name_re
-                            .as_ref()
-                            .map_or(true, |re| re.is_match(skill_data.name))
+                                .as_ref()
+                                .map_or(true, |re| re.is_match(&skill_data.name))
                     {
                         continue;
                     } else {
@@ -193,7 +193,7 @@ pub fn ui_debug_skill_list_system(
                                 });
 
                                 row.col(|ui| {
-                                    ui.label(skill_data.name);
+                                    ui.label(skill_data.name.clone());
                                 });
 
                                 row.col(|ui| {

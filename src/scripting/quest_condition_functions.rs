@@ -57,6 +57,7 @@ fn quest_condition_ability_value(
         player_stats.0,
         Some(player_stats.1),
         Some(player_stats.3),
+        None, // GuildMembership is not in the tuple
         Some(player_mutable.0),
         Some(player_mutable.3),
         Some(player_stats.4),
