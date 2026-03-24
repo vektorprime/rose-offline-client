@@ -1,5 +1,5 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, Commands, EventWriter, Local, Res};
+use bevy::prelude::{Assets, Commands, MessageWriter, Local, Res};
 use bevy_egui::{egui, EguiContexts};
 
 use crate::{
@@ -21,13 +21,13 @@ pub struct UiStateServerSelect {
 pub fn ui_server_select_system(
     mut commands: Commands,
     mut ui_state: Local<UiStateServerSelect>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut egui_context: EguiContexts,
     login_state: Res<LoginState>,
     dialog_assets: Res<Assets<Dialog>>,
     server_list: Option<Res<ServerList>>,
     ui_resources: Res<UiResources>,
-    mut login_events: EventWriter<LoginEvent>,
+    mut login_events: MessageWriter<LoginEvent>,
 ) {
     if !matches!(*login_state, LoginState::ServerSelect) {
         return;
@@ -49,7 +49,7 @@ pub fn ui_server_select_system(
     let mut try_select_server = false;
 
     let screen_size = egui_context
-        .ctx_mut()
+        .ctx_mut().unwrap()
         .input(|input| input.screen_rect().size());
     let position = egui::pos2(screen_size.x - dialog.width - 60.0, 100.0);
 
@@ -62,7 +62,7 @@ pub fn ui_server_select_system(
         .default_width(dialog.width)
         .default_height(dialog.height)
         .fixed_pos(position)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {

@@ -1,6 +1,6 @@
 //! Save System for Map Editor
 //!
-//! This module provides Bevy systems and events for saving zone data.
+//! This module provides Bevy systems and messages for saving zone data.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -18,8 +18,8 @@ use crate::zone_loader::ZoneLoaderAsset;
 use super::ifo_export::{export_ifo_block, ExportStats};
 use super::ifo_types::*;
 
-/// Event to trigger saving a zone
-#[derive(Event, Debug, Clone)]
+/// Message to trigger saving a zone
+#[derive(Message, Debug, Clone)]
 pub struct SaveZoneEvent {
     /// Zone ID to save
     pub zone_id: u16,
@@ -139,7 +139,7 @@ pub struct SavePlugin;
 impl Plugin for SavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SaveStatus>()
-            .add_event::<SaveZoneEvent>()
+            .add_message::<SaveZoneEvent>()
             .add_systems(Update, save_zone_system);
         
         log::info!("[SavePlugin] Save system initialized");
@@ -148,7 +148,7 @@ impl Plugin for SavePlugin {
 
 /// System to handle save zone events
 pub fn save_zone_system(
-    mut events: EventReader<SaveZoneEvent>,
+    mut events: MessageReader<SaveZoneEvent>,
     mut save_status: ResMut<SaveStatus>,
     mut map_editor_state: ResMut<crate::map_editor::resources::MapEditorState>,
     mut deleted_zone_objects: ResMut<DeletedZoneObjects>,

@@ -1,5 +1,5 @@
 use bevy::asset::{
-    io::{AssetReader, AssetReaderError, AsyncSeekForward, AssetSource, AssetSourceId, Reader, VecReader},
+    io::{AssetReader, AssetReaderError, AssetSourceBuilder, AssetSourceId, Reader, VecReader},
     AssetApp, AssetServer,
 };
 use bevy::app::App;
@@ -539,7 +539,7 @@ impl Plugin for VfsAssetReaderPlugin {
         // Register VFS as the default asset source
         app.register_asset_source(
             AssetSourceId::Default,
-            AssetSource::build().with_reader(move || {
+            AssetSourceBuilder::new(move || {
                 //log::info!("[VFS ASSET READER PLUGIN] Creating new VfsAssetIo instance");
                 let vfs_clone = vfs.clone();
                 let base_path_clone = base_path.clone();
@@ -563,7 +563,7 @@ impl Plugin for VfsAssetReaderPlugin {
             .clone();
         app.register_asset_source(
             AssetSourceId::from("zone_loader"),
-            AssetSource::build().with_reader(move || {
+            AssetSourceBuilder::new(move || {
                 //log::info!("[VFS ASSET READER PLUGIN] Creating VfsAssetIo for zone_loader source");
                 let vfs_clone = vfs_for_zone_loader.clone();
                 let base_path_clone = base_path_for_zone_loader.clone();

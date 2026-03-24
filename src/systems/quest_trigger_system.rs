@@ -1,4 +1,4 @@
-use bevy::prelude::EventReader;
+use bevy::prelude::MessageReader;
 use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
 };
 
 pub fn quest_trigger_system(
-    mut quest_trigger_events: EventReader<QuestTriggerEvent>,
+    mut quest_trigger_events: MessageReader<QuestTriggerEvent>,
     mut script_context: ScriptFunctionContext,
     script_resources: ScriptFunctionResources,
 ) {

@@ -2,11 +2,10 @@ use bevy::{
     asset::Assets,
     pbr::MeshMaterial3d,
     prelude::*,
-    render::{
-        mesh::Mesh3d,
-    },
 };
-use bevy_procedural_grass::{grass::grass::{Blade, GrassColor}, prelude::*};
+use bevy_mesh::Mesh3d;
+// DISABLED: bevy_procedural_grass is not compatible with Bevy 0.18
+// use bevy_procedural_grass::{grass::grass::{Blade, GrassColor}, prelude::*};
 use crate::components::{GrassBlade, PlayerCharacter, Season, SeasonMarker, SummerFlower, TerrainMeshForGrass};
 use crate::events::LoadZoneEvent;
 use crate::resources::{CurrentZone, SeasonMaterials, SeasonSettings, SummerSettings};
@@ -64,7 +63,7 @@ pub fn summer_vegetation_system(
     }
 
     // Get player position for player-relative spawning
-    let Ok(player_transform) = player_query.get_single() else {
+    let Ok(player_transform) = player_query.single() else {
         if *frame_counter % 60 == 0 {
             //info!("[SummerSystem] Returning early - no player found");
         }
@@ -278,7 +277,7 @@ pub fn vegetation_sway_system(
     let wind_dir = settings.wind_direction;
 
     // Get camera transform for billboard behavior
-    let Ok(camera_transform) = camera_query.get_single() else {
+    let Ok(camera_transform) = camera_query.single() else {
         return;
     };
     let camera_pos = camera_transform.translation();
@@ -350,158 +349,163 @@ pub fn vegetation_sway_system(
     }
 }
 
-/// Spawns procedural grass on terrain blocks during summer season.
-/// This system uses bevy_procedural_grass for GPU-based grass rendering.
-/// Grass starts hidden and will be shown by the visibility system.
-///
-/// This system polls for terrain entities rather than relying on event timing,
-/// since terrain entities are spawned via commands which defer entity creation.
-pub fn spawn_procedural_grass_system(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    terrain_query: Query<(Entity, &Transform), With<TerrainMeshForGrass>>,
-    summer_settings: Res<SummerSettings>,
-    season_settings: Res<SeasonSettings>,
-    existing_grass: Query<(), With<Grass>>, // To prevent duplicate spawning
-) {
-    // Only spawn during summer
-    if season_settings.current_season != Season::Summer {
-        return;
-    }
-    
-    // Skip if grass already exists
-    if !existing_grass.is_empty() {
-        return;
-    }
-    
-    // Skip if no terrain to place grass on
-    if terrain_query.is_empty() {
-        return;
-    }
-    
-    info!("[ProceduralGrass] Spawning procedural grass on {} terrain blocks", terrain_query.iter().len());
-    
-    // Spawn grass on each terrain block - PARENT to terrain entity like fish are parented to zone
-    for terrain_entity in terrain_query.iter().map(|(e, _)| e) {
-        let grass_entity = commands.spawn((
-            GrassBundle {
-                grass: Grass {
-                    entity: Some(terrain_entity),
-                    density: summer_settings.grass_density,
-                    color: GrassColor::default(),
-                    blade: Blade {
-                        length: summer_settings.blade_length,
-                        width: summer_settings.blade_width,
-                        tilt: summer_settings.blade_tilt,
-                        tilt_variance: summer_settings.blade_tilt_variance,
-                        p1_flexibility: summer_settings.blade_p1_flexibility,
-                        p2_flexibility: summer_settings.blade_p2_flexibility,
-                        curve: summer_settings.blade_curve,
-                        specular: 0.02,
-                    },
-                },
-                lod: GrassLODMesh::new(meshes.add(GrassMesh::mesh(3))),
-                transform: Transform::default(), // Parented to terrain, so use identity transform
-                visibility: Visibility::Hidden, // Start hidden, visibility system will show it
-                ..default()
-            },
-            SeasonMarker(Season::Summer), // Mark for cleanup when season changes
-        )).id();
-        
-        // Parent grass to terrain entity (like fish are parented to zone)
-        commands.entity(terrain_entity).add_child(grass_entity);
-    }
-}
+// DISABLED: bevy_procedural_grass is not compatible with Bevy 0.18
+// /// Spawns procedural grass on terrain blocks during summer season.
+// /// This system uses bevy_procedural_grass for GPU-based grass rendering.
+// /// Grass starts hidden and will be shown by the visibility system.
+// ///
+// /// This system polls for terrain entities rather than relying on event timing,
+// /// since terrain entities are spawned via commands which defer entity creation.
+// pub fn spawn_procedural_grass_system(
+//     mut commands: Commands,
+//     mut meshes: ResMut<Assets<Mesh>>,
+//     terrain_query: Query<(Entity, &Transform), With<TerrainMeshForGrass>>,
+//     summer_settings: Res<SummerSettings>,
+//     season_settings: Res<SeasonSettings>,
+//     existing_grass: Query<(), With<Grass>>, // To prevent duplicate spawning
+// ) {
+//     // Only spawn during summer
+//     if season_settings.current_season != Season::Summer {
+//         return;
+//     }
+//
+//     // Skip if grass already exists
+//     if !existing_grass.is_empty() {
+//         return;
+//     }
+//
+//     // Skip if no terrain to place grass on
+//     if terrain_query.is_empty() {
+//         return;
+//     }
+//
+//     info!("[ProceduralGrass] Spawning procedural grass on {} terrain blocks", terrain_query.iter().len());
+//
+//     // Spawn grass on each terrain block - PARENT to terrain entity like fish are parented to zone
+//     for terrain_entity in terrain_query.iter().map(|(e, _)| e) {
+//         let grass_entity = commands.spawn((
+//             GrassBundle {
+//                 grass: Grass {
+//                     entity: Some(terrain_entity),
+//                     density: summer_settings.grass_density,
+//                     color: GrassColor::default(),
+//                     blade: Blade {
+//                         length: summer_settings.blade_length,
+//                         width: summer_settings.blade_width,
+//                         tilt: summer_settings.blade_tilt,
+//                         tilt_variance: summer_settings.blade_tilt_variance,
+//                         p1_flexibility: summer_settings.blade_p1_flexibility,
+//                         p2_flexibility: summer_settings.blade_p2_flexibility,
+//                         curve: summer_settings.blade_curve,
+//                         specular: 0.02,
+//                     },
+//                 },
+//                 lod: GrassLODMesh::new(meshes.add(GrassMesh::mesh(3))),
+//                 transform: Transform::default(), // Parented to terrain, so use identity transform
+//                 visibility: Visibility::Hidden, // Start hidden, visibility system will show it
+//                 ..default()
+//             },
+//             SeasonMarker(Season::Summer), // Mark for cleanup when season changes
+//         )).id();
+//
+//         // Parent grass to terrain entity (like fish are parented to zone)
+//         commands.entity(terrain_entity).add_child(grass_entity);
+//     }
+// }
 
-/// Synchronizes wind settings from SeasonSettings/SummerSettings to GrassWind resource
-/// This connects the game's wind settings to the procedural grass wind simulation
-pub fn sync_grass_wind_system(
-    season_settings: Res<SeasonSettings>,
-    summer_settings: Res<SummerSettings>,
-    mut grass_wind: ResMut<GrassWind>,
-) {
-    // Skip if settings haven't changed
-    if !season_settings.is_changed() && !summer_settings.is_changed() {
-        return;
-    }
-    
-    // Calculate wind direction angle from Vec2
-    let wind_angle = season_settings.wind_direction.y.atan2(season_settings.wind_direction.x);
-    
-    // Map settings to GrassWind parameters
-    grass_wind.wind_data.speed = 0.1 + (season_settings.wind_strength * 0.1);
-    grass_wind.wind_data.amplitude = summer_settings.wind_intensity * 2.0;
-    grass_wind.wind_data.direction = wind_angle;
-    grass_wind.wind_data.frequency = 1.0;
-    grass_wind.wind_data.oscillation = 1.5 * season_settings.wind_strength;
-}
+// DISABLED: bevy_procedural_grass is not compatible with Bevy 0.18
+// /// Synchronizes wind settings from SeasonSettings/SummerSettings to GrassWind resource
+// /// This connects the game's wind settings to the procedural grass wind simulation
+// pub fn sync_grass_wind_system(
+//     season_settings: Res<SeasonSettings>,
+//     summer_settings: Res<SummerSettings>,
+//     mut grass_wind: ResMut<GrassWind>,
+// ) {
+//     // Skip if settings haven't changed
+//     if !season_settings.is_changed() && !summer_settings.is_changed() {
+//         return;
+//     }
+//
+//     // Calculate wind direction angle from Vec2
+//     let wind_angle = season_settings.wind_direction.y.atan2(season_settings.wind_direction.x);
+//
+//     // Map settings to GrassWind parameters
+//     grass_wind.wind_data.speed = 0.1 + (season_settings.wind_strength * 0.1);
+//     grass_wind.wind_data.amplitude = summer_settings.wind_intensity * 2.0;
+//     grass_wind.wind_data.direction = wind_angle;
+//     grass_wind.wind_data.frequency = 1.0;
+//     grass_wind.wind_data.oscillation = 1.5 * season_settings.wind_strength;
+// }
 
-/// Controls visibility of procedural grass based on season settings
-pub fn grass_visibility_system(
-    season_settings: Res<SeasonSettings>,
-    mut grass_query: Query<&mut Visibility, With<Grass>>,
-) {
-    // Determine if grass should be visible
-    let should_show = season_settings.enabled
-        && season_settings.current_season == Season::Summer;
-    
-    // Update visibility of all grass entities
-    for mut visibility in grass_query.iter_mut() {
-        *visibility = if should_show {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-    }
-}
+// DISABLED: bevy_procedural_grass is not compatible with Bevy 0.18
+// /// Controls visibility of procedural grass based on season settings
+// pub fn grass_visibility_system(
+//     season_settings: Res<SeasonSettings>,
+//     mut grass_query: Query<&mut Visibility, With<Grass>>,
+// ) {
+//     // Determine if grass should be visible
+//     let should_show = season_settings.enabled
+//         && season_settings.current_season == Season::Summer;
+//
+//     // Update visibility of all grass entities
+//     for mut visibility in grass_query.iter_mut() {
+//         *visibility = if should_show {
+//             Visibility::Visible
+//         } else {
+//             Visibility::Hidden
+//         };
+//     }
+// }
 
-/// Removes procedural grass entities when leaving summer season
-pub fn cleanup_grass_on_season_change(
-    mut commands: Commands,
-    season_settings: Res<SeasonSettings>,
-    grass_query: Query<Entity, With<Grass>>,
-) {
-    // Only cleanup when season changes and is not summer
-    if !season_settings.is_changed() {
-        return;
-    }
-    
-    if season_settings.current_season != Season::Summer {
-        // Despawn all grass entities
-        for entity in grass_query.iter() {
-            commands.entity(entity).despawn();
-        }
-        info!("Cleaned up procedural grass - season changed to {:?}", season_settings.current_season);
-    }
-}
+// DISABLED: bevy_procedural_grass is not compatible with Bevy 0.18
+// /// Removes procedural grass entities when leaving summer season
+// pub fn cleanup_grass_on_season_change(
+//     mut commands: Commands,
+//     season_settings: Res<SeasonSettings>,
+//     grass_query: Query<Entity, With<Grass>>,
+// ) {
+//     // Only cleanup when season changes and is not summer
+//     if !season_settings.is_changed() {
+//         return;
+//     }
+//
+//     if season_settings.current_season != Season::Summer {
+//         // Despawn all grass entities
+//         for entity in grass_query.iter() {
+//             commands.entity(entity).despawn();
+//         }
+//         info!("Cleaned up procedural grass - season changed to {:?}", season_settings.current_season);
+//     }
+// }
 
-/// Cleans up procedural grass and terrain markers on zone transitions
-/// This ensures fresh grass is spawned in the new zone
-pub fn cleanup_grass_on_zone_change(
-    mut commands: Commands,
-    mut zone_events: EventReader<LoadZoneEvent>,
-    grass_query: Query<Entity, With<Grass>>,
-    _terrain_marker_query: Query<Entity, With<TerrainMeshForGrass>>,
-) {
-    // Check for zone change events
-    let mut zone_changed = false;
-    for _event in zone_events.read() {
-        zone_changed = true;
-        break;
-    }
-    
-    if !zone_changed {
-        return;
-    }
-    
-    // Despawn all grass entities
-    for entity in grass_query.iter() {
-        commands.entity(entity).despawn();
-    }
-    
-    // Note: We don't despawn TerrainMeshForGrass entities as they are part of 
-    // the zone's terrain blocks which are managed by the zone loader.
-    // The marker component will be re-added when new terrain is spawned.
-    
-    info!("Cleaned up procedural grass on zone change");
-}
+// DISABLED: bevy_procedural_grass is not compatible with Bevy 0.18
+// /// Cleans up procedural grass and terrain markers on zone transitions
+// /// This ensures fresh grass is spawned in the new zone
+// pub fn cleanup_grass_on_zone_change(
+//     mut commands: Commands,
+//     mut zone_events: MessageReader<LoadZoneEvent>,
+//     grass_query: Query<Entity, With<Grass>>,
+//     _terrain_marker_query: Query<Entity, With<TerrainMeshForGrass>>,
+// ) {
+//     // Check for zone change events
+//     let mut zone_changed = false;
+//     for _event in zone_events.read() {
+//         zone_changed = true;
+//         break;
+//     }
+//
+//     if !zone_changed {
+//         return;
+//     }
+//
+//     // Despawn all grass entities
+//     for entity in grass_query.iter() {
+//         commands.entity(entity).despawn();
+//     }
+//
+//     // Note: We don't despawn TerrainMeshForGrass entities as they are part of
+//     // the zone's terrain blocks which are managed by the zone loader.
+//     // The marker component will be re-added when new terrain is spawned.
+//
+//     info!("Cleaned up procedural grass on zone change");
+// }

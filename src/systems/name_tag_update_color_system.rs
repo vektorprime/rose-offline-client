@@ -25,7 +25,7 @@ pub fn name_tag_update_color_system(
     query_team: Query<&Team>,
     mut query_name_rects: Query<&mut WorldUiRect, With<NameTagName>>,
 ) {
-    let player = if let Ok(player) = query_player.get_single() {
+    let player = if let Ok(player) = query_player.single() {
         player
     } else {
         return;
@@ -36,7 +36,7 @@ pub fn name_tag_update_color_system(
             NameTagType::Npc => continue,
             NameTagType::Character => {
                 if query_team
-                    .get(parent.get())
+                    .get(parent.0)
                     .map_or(false, |team| team.id != player.team.id)
                 {
                     Color::Srgba(Srgba::RED)
@@ -47,8 +47,8 @@ pub fn name_tag_update_color_system(
             NameTagType::Monster => {
                 let color = get_monster_name_tag_color(
                     Some(player.level),
-                    query_level.get(parent.get()).ok(),
-                    query_team.get(parent.get()).ok(),
+                    query_level.get(parent.0).ok(),
+                    query_team.get(parent.0).ok(),
                 )
                 .to_array();
 

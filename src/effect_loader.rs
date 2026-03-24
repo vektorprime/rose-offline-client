@@ -10,12 +10,15 @@ use bevy::{
     },
     render::{
         alpha::AlphaMode,
-        primitives::Aabb,
         render_resource::{BlendFactor, BlendOperation},
         storage::ShaderStorageBuffer,
-        view::{ViewVisibility, InheritedVisibility},
     },
 };
+use bevy_camera::{
+    primitives::Aabb,
+    visibility::{ViewVisibility, InheritedVisibility},
+};
+use bevy_mesh::{Mesh, PrimitiveTopology};
 use bytemuck::{Pod, Zeroable};
 use rose_file_readers::{EftFile, EftMesh, EftParticle, PtlFile, VfsPath, VirtualFilesystem};
 
@@ -481,8 +484,8 @@ fn spawn_particle(
                     let particle_vertex_count = num_particles * 6;
                     let particle_positions: Vec<[f32; 3]> = vec![[0.0, 0.0, 0.0]; particle_vertex_count];
                     let particle_mesh = meshes.add(
-                        bevy::prelude::Mesh::new(bevy::render::mesh::PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-                            .with_inserted_attribute(bevy::prelude::Mesh::ATTRIBUTE_POSITION, particle_positions)
+                        Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+                            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, particle_positions)
                     );
 
                     let mut entity_comands = child_builder.spawn((

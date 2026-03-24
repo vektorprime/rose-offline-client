@@ -116,12 +116,12 @@ pub fn ui_debug_command_viewer_system(
         return;
     }
 
-    let ctx = egui_context.ctx_mut();
+    let ctx = egui_context.ctx_mut().unwrap();
     egui::Window::new("Command Viewer")
         .resizable(false)
         .open(&mut ui_state_debug_windows.command_viewer_open)
         .show(ctx, |ui| {
-            if let Ok(command) = query_player.get_single() {
+            if let Ok(command) = query_player.single() {
                 if ui_state_debug_command_viewer.current_command.as_ref() == Some(command) {
                     ui_state_debug_command_viewer.current_duration += time.delta_secs();
                 } else {

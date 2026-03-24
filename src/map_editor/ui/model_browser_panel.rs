@@ -203,10 +203,10 @@ pub fn model_browser_panel_system(
     available_models: Res<AvailableModels>,
     mut selected_model: ResMut<SelectedModel>,
 ) {
-    let ctx = contexts.ctx_mut();
+    let ctx = contexts.ctx_mut().unwrap();
     
     editor_model_browser_panel(
-        ctx,
+        &*ctx,
         &map_editor_state,
         &available_models,
         &mut selected_model,

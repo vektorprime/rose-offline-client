@@ -281,20 +281,21 @@ use    bevy::{
         asset::{Asset, AssetLoader, Assets, io::Reader, LoadContext, LoadState},
         ecs::system::SystemParam,
         math::{Quat, Vec2, Vec3},
-        pbr::{ExtendedMaterial, NotShadowCaster, NotShadowReceiver, StandardMaterial},
+        pbr::{ExtendedMaterial, StandardMaterial},
+        light::{NotShadowCaster, NotShadowReceiver},
         prelude::{
-            AssetServer, Color, Commands, Entity, EventReader, EventWriter, GlobalTransform, Handle,
+            AssetServer, Color, Commands, Entity, MessageReader, MessageWriter, GlobalTransform, Handle,
             Image, Local, Res, ResMut, Resource, Transform, UntypedHandle, Visibility, With,
             Mesh3d, MeshMaterial3d,
         },
         reflect::TypePath,
         render::{
             alpha::AlphaMode,
-            mesh::{Indices, Mesh, PrimitiveTopology},
-            primitives::Aabb,
-            render_asset::RenderAssetUsages,
-            view::{ViewVisibility, InheritedVisibility, RenderLayers},
         },
+        mesh::{Indices, Mesh, PrimitiveTopology},
+        camera::primitives::Aabb,
+        asset::RenderAssetUsages,
+        camera::visibility::{ViewVisibility, InheritedVisibility, RenderLayers},
         image::ImageLoaderSettings,
         tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
     };
@@ -557,6 +558,7 @@ impl ZoneLoaderAsset {
     }
 }
 
+#[derive(Default, TypePath)]
 pub struct ZoneLoader;
 
 static ZONE_LIST: OnceLock<Arc<ZoneList>> = OnceLock::new();
@@ -1165,7 +1167,16 @@ async fn load_block_files_direct(
 
     let new_terrain_mesh = if use_new_terrain {
         let mesh_path = VfsPath::from(zone_path.join(format!("block_{}_{}.mesh.bin", block_x, block_y)));
-        read_bytes_with_priority(vfs, base_path, &mesh_path).ok()
+        match read_bytes_with_priority(vfs, base_path, &mesh_path) {
+            Ok(data) => {
+                log::info!("[LOAD BLOCK FILES DIRECT] Found new terrain mesh for block {}_{}: {} bytes", block_x, block_y, data.len());
+                Some(data)
+            }
+            Err(e) => {
+                log::warn!("[LOAD BLOCK FILES DIRECT] New terrain mesh NOT FOUND for block {}_{}: {:?}", block_x, block_y, e);
+                None
+            }
+        }
     } else {
         None
     };
@@ -1200,7 +1211,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
     pub render_config: Res<'w, crate::resources::RenderConfiguration>,
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,
-    pub water_spawned_events: EventWriter<'w, WaterSpawnedEvent>,
+    pub water_spawned_events: MessageWriter<'w, WaterSpawnedEvent>,
     pub terrain_noise: Res<'w, crate::terrain::GlobalTerrainNoise>,
     pub effect_cache: Res<'w, EffectCache>,
 }
@@ -1276,9 +1287,9 @@ pub struct ZoneLoaderCache {
 pub fn zone_loader_system(
     mut zone_loader_cache: Local<ZoneLoaderCache>,
     mut loading_zones: Local<Vec<LoadingZone>>,
-    mut load_zone_events: EventReader<LoadZoneEvent>,
-    mut zone_events: EventWriter<ZoneEvent>,
-    mut zone_loaded_from_vfs_events: EventWriter<ZoneLoadedFromVfsEvent>,
+    mut load_zone_events: MessageReader<LoadZoneEvent>,
+    mut zone_events: MessageWriter<ZoneEvent>,
+    mut zone_loaded_from_vfs_events: MessageWriter<ZoneLoadedFromVfsEvent>,
     mut zone_load_receiver: ResMut<ZoneLoadChannelReceiver>,
     zone_load_sender: Res<ZoneLoadChannelSender>,
     mut spawn_zone_params: SpawnZoneParams,
@@ -1286,6 +1297,7 @@ pub fn zone_loader_system(
 ) {
     let _span = info_span!("zone_loader_system").entered();
     let use_new_terrain = spawn_zone_params.render_config.use_new_terrain;
+    log::info!("[ZONE LOADER SYSTEM] use_new_terrain = {}", use_new_terrain);
     let has_load_events = load_zone_events.len() > 0;
     let has_loading_zones = !loading_zones.is_empty();
 
@@ -1779,9 +1791,9 @@ pub fn zone_loader_system(
 /// CRITICAL FIX: Process ALL events, not just one, to prevent event queue buildup
 /// CRITICAL FIX: Deduplicate events and prevent spawning already-loaded zones
 pub fn zone_loaded_from_vfs_system(
-    mut events: EventReader<ZoneLoadedFromVfsEvent>,
+    mut events: MessageReader<ZoneLoadedFromVfsEvent>,
     mut zone_loader_cache: Local<ZoneLoaderCache>,
-    mut zone_events: EventWriter<ZoneEvent>,
+    mut zone_events: MessageWriter<ZoneEvent>,
     mut debug_inspector_state: ResMut<DebugInspector>,
     mut spawn_zone_params: SpawnZoneParams,
     // CRITICAL FIX: Query existing zones to prevent duplicate spawning
@@ -1994,6 +2006,8 @@ pub fn spawn_zone(
     log::info!("[SPAWN ZONE] spawn_zone called for zone_id: {}", zone_data.zone_id.get());
     log::info!("[SPAWN ZONE] Zone path: {:?}", zone_data.zone_path);
     log::info!("[SPAWN ZONE] Number of blocks: {}", zone_data.blocks.len());
+    let new_terrain_blocks = zone_data.blocks.iter().filter(|b| b.as_ref().map(|b| b.new_terrain_mesh.is_some()).unwrap_or(false)).count();
+    log::info!("[SPAWN ZONE] Blocks with new_terrain_mesh: {}", new_terrain_blocks);
     log::info!("[SPAWN ZONE] Number of NPCs: {}", zone_data.npcs.len());
     log::info!("[SPAWN ZONE] ===========================================");
     
@@ -2025,6 +2039,7 @@ pub fn spawn_zone(
         terrain_noise,
         effect_cache,
     } = params;
+    log::info!("[SPAWN ZONE] render_config.use_new_terrain: {}", render_config.use_new_terrain);
 
     let zone_list_entry = game_data
         .zone_list
@@ -2109,6 +2124,7 @@ pub fn spawn_zone(
     for block_y in 0..64 {
         for block_x in 0..64 {
             if let Some(block_data) = zone_data.blocks[block_x + block_y * 64].as_ref() {
+                log::info!("[SPAWN ZONE] Processing block {}_{}, new_terrain_mesh: {:?}", block_x, block_y, block_data.new_terrain_mesh.is_some());
                 let terrain_entity = if render_config.use_new_terrain && block_data.new_terrain_mesh.is_some() {
                     spawn_new_terrain(
                         commands,
@@ -2824,7 +2840,7 @@ fn spawn_object(
             InheritedVisibility::default(),
             ViewVisibility::default(),
         Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
-        bevy::render::view::RenderLayers::layer(0),
+        bevy::camera::visibility::RenderLayers::layer(0),
         RigidBody::Fixed,
     ));
 
@@ -2986,8 +3002,9 @@ fn spawn_object(
             }
 
             // CRITICAL FIX: Validate material handle before spawning
-            let material_id = material.id();
-            let is_material_weak = material.is_weak();
+            // Note: is_weak() was removed in Bevy 0.17, removing this check
+            // let material_id = material.id();
+            // let is_material_weak = material.is_weak();
 
             // Verify material is strong
             // if material.is_weak() {

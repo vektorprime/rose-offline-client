@@ -35,43 +35,78 @@ struct VertexOutput {
 
 // Water material bind group (group 2 - material bindings)
 // Texture array with 25 water animation frames
-@group(2) @binding(0)
+@group(#{MATERIAL_BIND_GROUP}) @binding(0)
 var water_array_texture: binding_array<texture_2d<f32>, 25>;
-@group(2) @binding(1)
+@group(#{MATERIAL_BIND_GROUP}) @binding(1)
 var water_array_sampler: sampler;
 
-// Lighting uniforms (passed from WaterMaterial struct)
-@group(2) @binding(2)
-var<uniform> light_direction: vec4<f32>;  // xyz = direction, w = unused
-@group(2) @binding(3)
-var<uniform> ambient_color: vec4<f32>;
-@group(2) @binding(4)
-var<uniform> diffuse_color: vec4<f32>;
+// wgpu 27 forbids combining binding arrays with uniform buffers in the same bind group.
+// Pack all per-material values into a read-only storage buffer:
+// [0] light_direction (vec4)
+// [1] ambient_color (vec4)
+// [2] diffuse_color (vec4)
+// [3] settings_1: foam_intensity, foam_threshold, sss_intensity, refraction_strength
+// [4] settings_2: wave_speed, fresnel_strength, specular_intensity, padding
+// [5] fog_color (vec4)
+// [6] fog_params: density, min_density, max_density, padding
+@group(#{MATERIAL_BIND_GROUP}) @binding(2)
+var<storage, read> water_material_data: array<vec4<f32>, 7>;
 
-// Fog uniforms (passed from WaterMaterial struct, synced with zone lighting)
-struct FogUniforms {
-    fog_color: vec4<f32>,
-    fog_params: vec4<f32>,  // x = density, y = min_density, z = max_density, w = unused
+fn light_direction_value() -> vec3<f32> {
+    return water_material_data[0].xyz;
 }
-@group(2) @binding(6)
-var<uniform> fog_uniforms: FogUniforms;
 
-// Water settings uniform (passed from WaterMaterial struct)
-// Layout matches WaterSettings struct in water_settings.rs
-struct WaterSettingsUniform {
-    // First vec4: foam_intensity, foam_threshold, sss_intensity, refraction_strength
-    foam_intensity: f32,
-    foam_threshold: f32,
-    sss_intensity: f32,
-    refraction_strength: f32,
-    // Second vec4: wave_speed, fresnel_strength, specular_intensity, padding
-    wave_speed: f32,
-    fresnel_strength: f32,
-    specular_intensity: f32,
-    _padding: f32,
+fn ambient_color_value() -> vec3<f32> {
+    return water_material_data[1].rgb;
 }
-@group(2) @binding(5)
-var<uniform> water_settings: WaterSettingsUniform;
+
+fn diffuse_color_value() -> vec3<f32> {
+    return water_material_data[2].rgb;
+}
+
+fn foam_intensity_value() -> f32 {
+    return water_material_data[3].x;
+}
+
+fn foam_threshold_value() -> f32 {
+    return water_material_data[3].y;
+}
+
+fn sss_intensity_value() -> f32 {
+    return water_material_data[3].z;
+}
+
+fn refraction_strength_value() -> f32 {
+    return water_material_data[3].w;
+}
+
+fn wave_speed_value() -> f32 {
+    return water_material_data[4].x;
+}
+
+fn fresnel_strength_value() -> f32 {
+    return water_material_data[4].y;
+}
+
+fn specular_intensity_value() -> f32 {
+    return water_material_data[4].z;
+}
+
+fn fog_color_value() -> vec3<f32> {
+    return water_material_data[5].rgb;
+}
+
+fn fog_density_value() -> f32 {
+    return water_material_data[6].x;
+}
+
+fn fog_min_density_value() -> f32 {
+    return water_material_data[6].y;
+}
+
+fn fog_max_density_value() -> f32 {
+    return water_material_data[6].z;
+}
 
 // Fresnel-Schlick approximation for angle-dependent reflectivity
 // F0 is the reflectance at normal incidence (0.02 for water)
@@ -351,11 +386,11 @@ fn apply_zone_fog(fragment_color: vec3<f32>, world_position: vec4<f32>) -> vec3<
     let camera_to_fragment = world_position.xyz - view.world_position.xyz;
     let view_z = length(camera_to_fragment);
     
-    // Get fog parameters from uniforms (synced with zone lighting)
-    let fog_density = fog_uniforms.fog_params.x;
-    let fog_min_density = fog_uniforms.fog_params.y;
-    let fog_max_density = fog_uniforms.fog_params.z;
-    let fog_color = fog_uniforms.fog_color.rgb;
+    // Get fog parameters from storage buffer (synced with zone lighting)
+    let fog_density = fog_density_value();
+    let fog_min_density = fog_min_density_value();
+    let fog_max_density = fog_max_density_value();
+    let fog_color = fog_color_value();
     
     // Calculate exponential fog amount
     // Using the same formula as zone_lighting.wgsl for consistency
@@ -396,7 +431,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     // === PROCEDURAL WAVE NORMALS (calculate early for refraction) ===
     // Calculate wave normal based on world position for consistent wave patterns
     // Use wave_speed from settings to control animation speed
-    let wave_time = globals.time * 2.0 * water_settings.wave_speed;
+    let wave_time = globals.time * 2.0 * wave_speed_value();
     
     // Use world position XZ for wave calculation (water is on XZ plane)
     let wave_pos = in.world_position.xz * 0.5; // Scale down for larger waves
@@ -419,7 +454,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     
     // === PHASE 3: PSEUDO-REFRACTION ===
     // Apply UV distortion based on wave normal for a refraction-like effect
-    let refracted_uv = apply_refraction(in.uv0, wave_normal, wave_time, water_settings.refraction_strength);
+    let refracted_uv = apply_refraction(in.uv0, wave_normal, wave_time, refraction_strength_value());
     
     // Animate water at 10 FPS (same as original)
     // globals.time is in seconds, wrap it to avoid precision issues
@@ -436,13 +471,13 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     // Blend between frames
     let water_color = mix(color1, color2, blend);
     
-    // === LIGHTING (using uniforms instead of zone_lighting) ===
-    let light_dir = normalize(light_direction.xyz);
+    // === LIGHTING (using material storage buffer instead of zone_lighting) ===
+    let light_dir = normalize(light_direction_value());
     
     // Apply ambient and diffuse lighting to water
     let diffuse = max(dot(N, light_dir), 0.0);
-    let ambient_light = ambient_color.rgb;
-    let diffuse_light = diffuse_color.rgb * diffuse;
+    let ambient_light = ambient_color_value();
+    let diffuse_light = diffuse_color_value() * diffuse;
     let lighting = saturate(ambient_light + diffuse_light);
     
     // Apply lighting to water color
@@ -462,7 +497,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     // Apply fresnel_strength from settings with a boost multiplier
     // reflection_boost increased to 2.0 for more prominent reflections
     let reflection_boost = 2.0;
-    let fresnel = base_fresnel * water_settings.fresnel_strength * reflection_boost;
+    let fresnel = base_fresnel * fresnel_strength_value() * reflection_boost;
     
     // === SPECULAR SUN HIGHLIGHTS ===
     // Calculate specular highlight using Blinn-Phong half vector
@@ -473,11 +508,11 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     // Add specular highlight to color (bright sun reflection)
     // Use specular_intensity from settings with boost for more visible highlights
     let specular_boost = 1.3;
-    let specular_color = vec3<f32>(spec * water_settings.specular_intensity * specular_boost);
+    let specular_color = vec3<f32>(spec * specular_intensity_value() * specular_boost);
     
     // === PHASE 3: SUBSURFACE SCATTERING ===
     // Calculate SSS for light passing through water
-    let sss_contribution = calculate_sss(view_dir, light_dir, N, water_settings.sss_intensity);
+    let sss_contribution = calculate_sss(view_dir, light_dir, N, sss_intensity_value());
     
     // === PHASE 3: FOAM EFFECTS (IMPROVED) ===
     // Calculate wave height for foam (reuse wave position)
@@ -485,7 +520,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     
     // Calculate foam factor using improved Voronoi-based noise
     // Pass world position XZ for stable, natural foam patterns
-    let foam_factor = calculate_foam(current_wave_height, wave_time, in.uv0, in.world_position.xz, water_settings.foam_threshold);
+    let foam_factor = calculate_foam(current_wave_height, wave_time, in.uv0, in.world_position.xz, foam_threshold_value());
     
     // === WATER EDGE SPLASH EFFECT (IMPROVED) ===
     // Calculate splash/foam where water meets terrain using full world position
@@ -520,7 +555,7 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     
     // Blend in foam on wave crests and edges (total_foam combines both)
     // Use foam_intensity from settings
-    final_color = mix(final_color, foam_color, total_foam * water_settings.foam_intensity);
+    final_color = mix(final_color, foam_color, total_foam * foam_intensity_value());
     
     // === APPLY ZONE FOG ===
     // Apply fog from zone lighting to integrate water with the scene
@@ -538,6 +573,6 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     let final_alpha = mix(clamped_base_alpha, 1.0, fresnel * 0.5) + total_foam * 0.2;
     
     // Final color with additive blending (handled by blend state in material)
-    // Fog is now applied via fog_uniforms (binding 6)
+    // Fog is provided via material storage buffer
     return vec4<f32>(final_color, saturate(final_alpha));
 }

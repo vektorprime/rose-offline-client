@@ -119,8 +119,8 @@ pub fn editor_properties_panel(
     pending_edits: &mut PendingPropertyEdits,
     name_query: &Query<&Name>,
     transform_query: &Query<&Transform>,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
-    duplicate_event_writer: &mut EventWriter<DuplicateSelectedEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
+    duplicate_event_writer: &mut MessageWriter<DuplicateSelectedEvent>,
 ) {
     egui::SidePanel::right("properties_panel")
         .default_width(300.0)
@@ -267,8 +267,8 @@ fn single_object_properties_standalone(
     pending_edits: &mut PendingPropertyEdits,
     name_query: &Query<&Name>,
     transform_query: &Query<&Transform>,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
-    duplicate_event_writer: &mut EventWriter<DuplicateSelectedEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
+    duplicate_event_writer: &mut MessageWriter<DuplicateSelectedEvent>,
 ) {
     // Initialize pending edits when switching to a new entity
     if pending_edits.editing_entity != Some(entity) {
@@ -421,8 +421,8 @@ fn multi_object_properties(
 fn multi_object_properties_standalone(
     ui: &mut egui::Ui,
     map_editor_state: &MapEditorState,
-    _event_writer: &mut EventWriter<PropertyChangeEvent>,
-    duplicate_event_writer: &mut EventWriter<DuplicateSelectedEvent>,
+    _event_writer: &mut MessageWriter<PropertyChangeEvent>,
+    duplicate_event_writer: &mut MessageWriter<DuplicateSelectedEvent>,
 ) {
     let count = map_editor_state.selection_count();
     
@@ -551,7 +551,7 @@ fn transform_editor_standalone(
     ui: &mut egui::Ui,
     entity: Entity,
     pending_edits: &mut PendingPropertyEdits,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
     _map_editor_state: &MapEditorState,
 ) {
     // Position
@@ -673,7 +673,7 @@ fn zone_object_editor_standalone(
     ui: &mut egui::Ui,
     entity: Entity,
     entity_data: &EntityDataQuery,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
     _map_editor_state: &MapEditorState,
 ) {
     if let Ok(zone_object) = entity_data.zone_objects.get(entity) {
@@ -755,7 +755,7 @@ fn zone_object_editor_inner_with_events(
     ui: &mut egui::Ui,
     entity: Entity,
     zone_object: &ZoneObject,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
 ) {
     ui.label(egui::RichText::new("Object Info:").strong());
     
@@ -854,7 +854,7 @@ fn event_object_editor_standalone(
     ui: &mut egui::Ui,
     entity: Entity,
     entity_data: &EntityDataQuery,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
     _map_editor_state: &MapEditorState,
 ) {
     if let Ok(event_object) = entity_data.event_objects.get(entity) {
@@ -888,7 +888,7 @@ fn event_object_editor_inner_with_events(
     ui: &mut egui::Ui,
     entity: Entity,
     event_object: &EventObject,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
 ) {
     ui.label(egui::RichText::new("Event Object Properties:").strong());
     
@@ -939,7 +939,7 @@ fn warp_object_editor_standalone(
     ui: &mut egui::Ui,
     entity: Entity,
     entity_data: &EntityDataQuery,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
     _map_editor_state: &MapEditorState,
 ) {
     if let Ok(warp_object) = entity_data.warp_objects.get(entity) {
@@ -969,7 +969,7 @@ fn warp_object_editor_inner_with_events(
     ui: &mut egui::Ui,
     entity: Entity,
     warp_object: &WarpObject,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
 ) {
     ui.label(egui::RichText::new("Warp Object Properties:").strong());
     
@@ -1033,7 +1033,7 @@ fn collision_editor_standalone(
     ui: &mut egui::Ui,
     entity: Entity,
     entity_data: &EntityDataQuery,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
     _map_editor_state: &MapEditorState,
 ) {
     if let Ok(zone_object) = entity_data.zone_objects.get(entity) {
@@ -1117,7 +1117,7 @@ fn collision_editor_inner_with_events(
     ui: &mut egui::Ui,
     entity: Entity,
     zone_object: &ZoneObject,
-    event_writer: &mut EventWriter<PropertyChangeEvent>,
+    event_writer: &mut MessageWriter<PropertyChangeEvent>,
 ) {
     if let Some(part) = get_collision_part(zone_object) {
         ui.label(egui::RichText::new("Collision Shape:").strong());

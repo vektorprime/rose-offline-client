@@ -1,9 +1,9 @@
-use bevy::prelude::{Entity, Event};
+use bevy::prelude::{Entity, Message};
 
 use rose_data::Item;
 use rose_game_common::components::Money;
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum PersonalStoreEvent {
     OpenEntityStore(Entity),
     SetItemList {

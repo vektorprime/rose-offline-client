@@ -1,10 +1,10 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, Commands, EventWriter, Events, Local, Res, ResMut};
+use bevy::prelude::{Assets, Commands, Local, MessageWriter, Messages, Res, ResMut};
 use bevy_egui::{
     egui,
     egui::{
-        epaint::text::cursor::{CCursor, Cursor, PCursor, RCursor},
-        text::CursorRange,
+        epaint::text::cursor::CCursor,
+        text_selection::CCursorRange,
     },
     EguiContexts,
 };
@@ -51,9 +51,9 @@ pub struct UiStateMessageBox {
 pub fn ui_number_input_dialog_system(
     mut commands: Commands,
     mut ui_state: Local<UiStateMessageBox>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut egui_context: EguiContexts,
-    mut number_input_dialog_events: ResMut<Events<NumberInputDialogEvent>>,
+    mut number_input_dialog_events: ResMut<Messages<NumberInputDialogEvent>>,
     dialog_assets: Res<Assets<Dialog>>,
     ui_resources: Res<UiResources>,
 ) {
@@ -91,7 +91,7 @@ pub fn ui_number_input_dialog_system(
         egui::Area::new(egui::Id::new("modal_ninput"))
             .interactable(true)
             .fixed_pos(egui::Pos2::ZERO)
-            .show(egui_context.ctx_mut(), |ui| {
+            .show(egui_context.ctx_mut().unwrap(), |ui| {
                 let interceptor_rect = ui.ctx().input(|input| input.screen_rect());
 
                 ui.allocate_response(interceptor_rect.size(), egui::Sense::click_and_drag());
@@ -112,7 +112,7 @@ pub fn ui_number_input_dialog_system(
     };
 
     let screen_size = egui_context
-        .ctx_mut()
+        .ctx_mut().unwrap()
         .input(|input| input.screen_rect().size());
     let default_x = screen_size.x / 2.0 - dialog.width / 2.0;
     let default_y = screen_size.y / 2.0 - dialog.height / 2.0;
@@ -147,7 +147,7 @@ pub fn ui_number_input_dialog_system(
         false
     };
 
-    let response = area.show(egui_context.ctx_mut(), |ui| {
+    let response = area.show(egui_context.ctx_mut().unwrap(), |ui| {
         let response = ui.allocate_response(
             egui::vec2(dialog.width, dialog.height),
             egui::Sense::hover(),
@@ -196,20 +196,9 @@ pub fn ui_number_input_dialog_system(
             if let Some(mut state) =
                 egui::text_edit::TextEditState::load(&response_editbox.ctx, response_editbox.id)
             {
-                state.cursor.set_range(Some(CursorRange::one(Cursor {
-                    ccursor: CCursor {
-                        index: text_length,
-                        prefer_next_row: false,
-                    },
-                    rcursor: RCursor {
-                        row: 0,
-                        column: text_length,
-                    },
-                    pcursor: PCursor {
-                        paragraph: 0,
-                        offset: text_length,
-                        prefer_next_row: false,
-                    },
+                state.cursor.set_char_range(Some(CCursorRange::one(CCursor {
+                    index: text_length,
+                    prefer_next_row: false,
                 })));
                 state.store(&response_editbox.ctx, response_editbox.id);
             }

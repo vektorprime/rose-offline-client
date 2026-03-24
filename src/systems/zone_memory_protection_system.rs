@@ -6,7 +6,7 @@
 //! 3. Suggesting cleanup actions
 
 use bevy::prelude::*;
-use bevy::render::mesh::Mesh3d;
+use bevy_mesh::Mesh3d;
 use bevy::pbr::MeshMaterial3d;
 
 use crate::components::ZoneObject;

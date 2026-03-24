@@ -29,11 +29,11 @@ pub fn parse_move_speed_command(message: &str) -> Option<f32> {
 /// The chatbox system should check messages before sending to the server
 /// using the [`parse_move_speed_command`] helper function, and if it returns Some,
 /// send a [`MoveSpeedSetEvent`] instead of sending the chat message.
-/// 
+///
 /// This system provides a standalone way to process move speed commands
 /// if needed for other input methods.
 pub fn move_speed_command_system(
-    mut move_speed_events: EventWriter<MoveSpeedSetEvent>,
+    mut move_speed_events: MessageWriter<MoveSpeedSetEvent>,
     player_query: Query<Entity, With<PlayerCharacter>>,
 ) {
     // This system can be used for alternative command input methods

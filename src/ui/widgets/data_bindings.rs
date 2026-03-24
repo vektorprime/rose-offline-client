@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use bevy::prelude::EventWriter;
+use bevy::prelude::MessageWriter;
 use bevy_egui::egui;
 
 use rose_data::SoundId;
@@ -39,7 +39,7 @@ pub struct DataBindings<'a, 'w> {
         ),
     )],
     pub response: &'a mut [(i32, &'a mut Option<egui::Response>)],
-    pub sound_events: Option<&'a mut EventWriter<'w, UiSoundEvent>>,
+    pub sound_events: Option<&'a mut MessageWriter<'w, UiSoundEvent>>,
 }
 
 impl<'a, 'w> DataBindings<'a, 'w> {

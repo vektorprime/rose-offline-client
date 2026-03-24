@@ -6,8 +6,10 @@
 
 use bevy::pbr::{MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, StandardMaterial};
 use bevy::prelude::*;
+use bevy::mesh::MeshVertexBufferLayoutRef;
+use bevy::image::Image;
 use bevy::render::render_resource::*;
-use bevy::render::mesh::MeshVertexBufferLayoutRef;
+use bevy_shader::ShaderRef;
 
 /// Animation flags for effect mesh animation
 pub const EFFECT_MESH_ANIMATION_FLAG_POSITION: u32 = 0x1;

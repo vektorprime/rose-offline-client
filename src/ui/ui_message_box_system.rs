@@ -1,5 +1,5 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, Commands, EventWriter, Events, Local, Res, ResMut};
+use bevy::prelude::{Assets, Commands, Local, MessageWriter, Messages, Res, ResMut};
 use bevy_egui::{egui, EguiContexts};
 // use bevy_inspector_egui::egui::text::LayoutJob;  // Disabled due to version conflict
 use egui::text::LayoutJob;
@@ -39,9 +39,9 @@ pub struct UiStateMessageBox {
 pub fn ui_message_box_system(
     mut commands: Commands,
     mut ui_state: Local<UiStateMessageBox>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut egui_context: EguiContexts,
-    mut message_box_events: ResMut<Events<MessageBoxEvent>>,
+    mut message_box_events: ResMut<Messages<MessageBoxEvent>>,
     dialog_assets: Res<Assets<Dialog>>,
     ui_resources: Res<UiResources>,
 ) {
@@ -113,7 +113,7 @@ pub fn ui_message_box_system(
         egui::Area::new(egui::Id::new("modal_msgbox"))
             .interactable(true)
             .fixed_pos(egui::Pos2::ZERO)
-            .show(egui_context.ctx_mut(), |ui| {
+            .show(egui_context.ctx_mut().unwrap(), |ui| {
                 let interceptor_rect = ui.ctx().input(|input| input.screen_rect());
 
                 ui.allocate_response(interceptor_rect.size(), egui::Sense::click_and_drag());
@@ -140,19 +140,21 @@ pub fn ui_message_box_system(
             continue;
         };
 
-        let (message_galley, num_image_middle) = egui_context.ctx_mut().fonts(|fonts| {
-            let message_galley = fonts.layout_job(active_message_box.message_layout_job.clone());
+        let (message_galley, num_image_middle) = {
+            let ctx = egui_context.ctx_mut().unwrap();
+            let painter = ctx.layer_painter(egui::LayerId::background());
+            let message_galley = painter.layout_job(active_message_box.message_layout_job.clone());
             let message_size = message_galley.size();
             let num_image_middle = 1 + (message_size.y / image_middle_height) as usize;
             (message_galley, num_image_middle)
-        });
+        };
 
         let dialog_width = dialog.width;
         let dialog_height =
             image_top_height + image_middle_height * num_image_middle as f32 + image_bottom_height;
 
         let screen_size = egui_context
-            .ctx_mut()
+            .ctx_mut().unwrap()
             .input(|input| input.screen_rect().size());
         let default_x = (screen_size.x / 2.0 - dialog.width / 2.0) + (i * 20) as f32;
         let default_y = (screen_size.y / 2.0 - dialog_height / 2.0) + (i * 20) as f32;
@@ -212,7 +214,7 @@ pub fn ui_message_box_system(
             active_message_box.has_set_position = true;
         }
 
-        area.show(egui_context.ctx_mut(), |ui| {
+        area.show(egui_context.ctx_mut().unwrap(), |ui| {
             let response = ui.allocate_response(
                 egui::vec2(dialog_width, dialog_height),
                 egui::Sense::hover(),

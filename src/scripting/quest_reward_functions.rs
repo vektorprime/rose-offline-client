@@ -47,7 +47,7 @@ fn quest_reward_add_item(
     }
     let item_reference = item_reference.unwrap();
 
-    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+    let Ok(mut quest_state) = script_context.query_quest.single_mut() else {
         return false;
     };
 
@@ -91,7 +91,7 @@ fn quest_reward_remove_item(
     }
     let item_reference = item_reference.unwrap();
 
-    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+    let Ok(mut quest_state) = script_context.query_quest.single_mut() else {
         return false;
     };
 
@@ -119,7 +119,7 @@ fn quest_reward_select_quest(
     quest_context: &mut QuestFunctionContext,
     quest_id: usize,
 ) -> bool {
-    let Ok(quest_state) = script_context.query_quest.get_single() else {
+    let Ok(quest_state) = script_context.query_quest.single() else {
         return false;
     };
 
@@ -136,7 +136,7 @@ fn quest_reward_remove_selected_quest(
     script_context: &mut ScriptFunctionContext,
     quest_context: &mut QuestFunctionContext,
 ) -> bool {
-    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+    let Ok(mut quest_state) = script_context.query_quest.single_mut() else {
         return false;
     };
 
@@ -159,7 +159,7 @@ fn quest_reward_add_quest(
     quest_context: &mut QuestFunctionContext,
     quest_id: usize,
 ) -> bool {
-    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+    let Ok(mut quest_state) = script_context.query_quest.single_mut() else {
         return false;
     };
 
@@ -187,7 +187,7 @@ fn quest_reward_change_selected_quest_id(
     quest_id: usize,
     keep_data: bool,
 ) -> bool {
-    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+    let Ok(mut quest_state) = script_context.query_quest.single_mut() else {
         return false;
     };
 
@@ -217,10 +217,10 @@ fn quest_reward_set_health_mana_percent(
     health_percent: i32,
     mana_percent: i32,
 ) -> bool {
-    let Ok(player_stats) = script_context.query_player_stats.get_single() else {
+    let Ok(player_stats) = script_context.query_player_stats.single() else {
         return false;
     };
-    let Ok(mut player_mutable) = script_context.query_player_mutable.get_single_mut() else {
+    let Ok(mut player_mutable) = script_context.query_player_mutable.single_mut() else {
         return false;
     };
 
@@ -238,7 +238,7 @@ fn quest_reward_set_quest_switch(
     switch_id: usize,
     value: bool,
 ) -> bool {
-    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+    let Ok(mut quest_state) = script_context.query_quest.single_mut() else {
         return false;
     };
 

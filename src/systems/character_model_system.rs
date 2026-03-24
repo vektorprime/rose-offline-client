@@ -1,7 +1,7 @@
 use bevy::{
+    mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{AssetServer, Assets, Changed, Commands, Entity, Or, Query, Res, ResMut},
-    render::mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
 };
 
 use crate::render::object_material_extension::RoseObjectExtension;

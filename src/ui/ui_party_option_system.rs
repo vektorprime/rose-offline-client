@@ -1,5 +1,5 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, EventWriter, Local, Query, Res, ResMut, With};
+use bevy::prelude::{Assets, Local, MessageWriter, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::messages::{client::ClientMessage, PartyItemSharing, PartyXpSharing};
@@ -44,7 +44,7 @@ impl Default for UiStatePartyOptionSystem {
 pub fn ui_party_option_system(
     mut ui_state: Local<UiStatePartyOptionSystem>,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut egui_context: EguiContexts,
     mut query_party_info: Query<&PartyInfo, With<PlayerCharacter>>,
     ui_resources: Res<UiResources>,
@@ -64,7 +64,7 @@ pub fn ui_party_option_system(
         return;
     };
 
-    let party_info = if let Ok(party_info) = query_party_info.get_single_mut() {
+    let party_info = if let Ok(party_info) = query_party_info.single_mut() {
         party_info
     } else {
         return;
@@ -94,7 +94,7 @@ pub fn ui_party_option_system(
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {

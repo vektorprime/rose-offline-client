@@ -10,10 +10,10 @@ pub fn name_tag_update_healthbar_system(
     query_health: Query<(&HealthPoints, &AbilityValues)>,
 ) {
     for (parent, name_tag_healthbar_fg, mut rect) in query_nametag_healthbar.iter_mut() {
-        let parent_entity: Entity = parent.get();
+        let parent_entity: Entity = parent.0;
         if let Ok((health_points, ability_values)) = query_parent
             .get(parent_entity)
-            .and_then(|parent| query_health.get(parent.get()))
+            .and_then(|parent| query_health.get(parent.0))
         {
             let health_percent =
                 (health_points.hp as f32 / ability_values.get_max_health() as f32).max(0.0);

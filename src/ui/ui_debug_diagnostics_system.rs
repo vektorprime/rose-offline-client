@@ -19,7 +19,7 @@ pub fn ui_debug_diagnostics_system(
         .vscroll(true)
         .resizable(false)
         .anchor(egui::Align2::RIGHT_BOTTOM, [-10.0, -10.0])
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             egui::Grid::new("diagnostics_grid")
                 .num_columns(3)
                 .show(ui, |ui| {

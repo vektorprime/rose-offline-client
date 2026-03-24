@@ -11,34 +11,35 @@ use bevy::{
     asset::{load_internal_asset, weak_handle, Handle},
     core_pipeline::{
         core_3d::graph::{Core3d, Node3d},
-        fullscreen_vertex_shader::fullscreen_shader_vertex_state,
+        FullscreenShader,
     },
     ecs::query::QueryItem,
     prelude::*,
     render::{
-        camera::Camera,
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_graph::{
-            NodeRunError, RenderGraphApp as _, RenderGraphContext, ViewNode, ViewNodeRunner,
+            NodeRunError, RenderGraphExt as _, RenderGraphContext, ViewNode, ViewNodeRunner,
         },
         render_resource::{
             binding_types::{sampler, texture_2d, uniform_buffer},
-            BindGroupEntries, BindGroupLayout, BindGroupLayoutEntries, CachedRenderPipelineId,
+            BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntries, CachedRenderPipelineId,
             ColorTargetState, ColorWrites, DynamicUniformBuffer, FilterMode, FragmentState,
             Operations, PipelineCache, RenderPassColorAttachment, RenderPassDescriptor,
-            RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, Shader,
+            RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
             ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines,
             TextureFormat, TextureSampleType,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         view::{ExtractedView, ViewTarget},
-        Render, RenderApp, RenderSet,
+        Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
     },
     time::Time,
     transform::components::GlobalTransform,
     utils::default,
 };
+use bevy_camera::Camera;
+use bevy_shader::Shader;
 
 use crate::resources::WaterSettings;
 
@@ -116,10 +117,12 @@ pub struct CameraUnderwaterState {
 /// GPU pipeline data for the underwater effect
 #[derive(Resource)]
 pub struct UnderwaterEffectPipeline {
-    /// Bind group layout for the underwater effect
-    bind_group_layout: BindGroupLayout,
+    /// Bind group layout descriptor for the underwater effect
+    bind_group_layout: BindGroupLayoutDescriptor,
     /// Sampler for reading the source texture
     source_sampler: Sampler,
+    /// Fullscreen shader for vertex state
+    fullscreen_shader: FullscreenShader,
 }
 
 /// A key that uniquely identifies an underwater effect pipeline
@@ -209,7 +212,7 @@ impl ViewNode for UnderwaterEffectNode {
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (view_target, pipeline_id, _underwater_state, uniform_offset): QueryItem<'w, Self::ViewQuery>,
+        (view_target, pipeline_id, _underwater_state, uniform_offset): QueryItem<'w, '_, Self::ViewQuery>,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
         let pipeline_cache = world.resource::<PipelineCache>();
@@ -235,6 +238,7 @@ impl ViewNode for UnderwaterEffectNode {
                 view: post_process.destination,
                 resolve_target: None,
                 ops: Operations::default(),
+                depth_slice: None,
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
@@ -242,9 +246,10 @@ impl ViewNode for UnderwaterEffectNode {
         };
 
         // Create bind group with source texture, sampler, and uniforms
+        let bind_group_layout = pipeline_cache.get_bind_group_layout(&underwater_pipeline.bind_group_layout);
         let bind_group = render_context.render_device().create_bind_group(
-            Some("underwater_effect bind group"),
-            &underwater_pipeline.bind_group_layout,
+            "underwater_effect bind group",
+            &bind_group_layout,
             &BindGroupEntries::sequential((
                 post_process.source,
                 &underwater_pipeline.source_sampler,
@@ -306,7 +311,7 @@ impl Plugin for UnderwaterEffectPlugin {
                     prepare_underwater_effect_pipelines,
                     prepare_underwater_effect_uniforms,
                 )
-                    .in_set(RenderSet::Prepare),
+                    .in_set(RenderSystems::Prepare),
             )
             .add_render_graph_node::<ViewNodeRunner<UnderwaterEffectNode>>(
                 Core3d,
@@ -325,10 +330,11 @@ impl Plugin for UnderwaterEffectPlugin {
 impl FromWorld for UnderwaterEffectPipeline {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.resource::<RenderDevice>();
+        let fullscreen_shader = world.resource::<FullscreenShader>().clone();
 
-        // Create bind group layout
-        let bind_group_layout = render_device.create_bind_group_layout(
-            Some("underwater_effect bind group layout"),
+        // Create bind group layout descriptor
+        let bind_group_layout = BindGroupLayoutDescriptor::new(
+            "underwater_effect bind group layout",
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
                 (
@@ -353,6 +359,7 @@ impl FromWorld for UnderwaterEffectPipeline {
         UnderwaterEffectPipeline {
             bind_group_layout,
             source_sampler,
+            fullscreen_shader,
         }
     }
 }
@@ -364,11 +371,11 @@ impl SpecializedRenderPipeline for UnderwaterEffectPipeline {
         RenderPipelineDescriptor {
             label: Some("underwater_effect".into()),
             layout: vec![self.bind_group_layout.clone()],
-            vertex: fullscreen_shader_vertex_state(),
+            vertex: self.fullscreen_shader.to_vertex_state(),
             fragment: Some(FragmentState {
                 shader: UNDERWATER_EFFECT_SHADER_HANDLE,
                 shader_defs: vec![],
-                entry_point: "fragment_main".into(),
+                entry_point: Some("fragment_main".into()),
                 targets: vec![Some(ColorTargetState {
                     format: key.texture_format,
                     blend: None,

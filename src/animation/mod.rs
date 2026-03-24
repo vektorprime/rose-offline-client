@@ -1,6 +1,6 @@
 use bevy::{
     prelude::{App, AssetApp, IntoScheduleConfigs, Plugin, PostUpdate, SystemSet},
-    transform::TransformSystem,
+    transform::TransformSystems,
 };
 
 mod animation_state;
@@ -39,7 +39,7 @@ impl Plugin for RoseAnimationPlugin {
             .init_asset_loader::<ZmoAssetLoader>()
             .init_asset_loader::<ZmoTextureAssetLoader>();
 
-        app.add_event::<AnimationFrameEvent>();
+        app.add_message::<AnimationFrameEvent>();
 
         app.register_type::<AnimationState>()
             .register_type::<CameraAnimation>()
@@ -49,7 +49,7 @@ impl Plugin for RoseAnimationPlugin {
 
         app.configure_sets(
             PostUpdate,
-            RoseAnimationSystem.before(TransformSystem::TransformPropagate),
+            RoseAnimationSystem.before(TransformSystems::Propagate),
         )
         .add_systems(
             PostUpdate,

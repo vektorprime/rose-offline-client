@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use bevy::prelude::*;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
-use bevy::render::mesh::Mesh3d;
+use bevy_mesh::Mesh3d;
 
 /// Resource for tracking detailed zone loading diagnostics
 #[derive(Resource, Default, Debug)]
@@ -319,7 +319,7 @@ pub fn zone_child_visibility_diagnostic_system(
             }
             log::info!("  Has Mesh: {}", has_mesh);
             if let Some(parent) = parent {
-                log::info!("  Parent: {:?}", parent.get());
+                log::info!("  Parent: {:?}", parent.parent());
             }
                 if let Some(mesh) = mesh_handle {
                     log::info!("  Mesh Handle: {:?}", mesh);

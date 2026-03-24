@@ -23,7 +23,7 @@ pub fn wound_visibility_system(
         (Entity, &HealthPoints, &AbilityValues, Option<&mut GashWounds>),
         Without<Dead>,
     >,
-    mut blood_events: EventWriter<BloodEffectEvent>,
+    mut blood_events: MessageWriter<BloodEffectEvent>,
     config: Res<BloodEffectConfig>,
 ) {
     if !config.enable_blood || !config.show_wounds {
@@ -74,7 +74,7 @@ pub fn wound_visibility_system(
 /// - [`BloodEffectEvent::CleanupWounds`] - Removes wound visuals
 pub fn wound_spawn_system(
     mut commands: Commands,
-    mut blood_events: EventReader<BloodEffectEvent>,
+    mut blood_events: MessageReader<BloodEffectEvent>,
     query_wounds: Query<(Entity, &WoundVisual)>,
     config: Res<BloodEffectConfig>,
 ) {

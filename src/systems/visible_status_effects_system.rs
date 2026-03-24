@@ -1,6 +1,6 @@
 use bevy::{
     prelude::{
-        Changed, Commands, ViewVisibility, InheritedVisibility, Entity, EventWriter, GlobalTransform, Query, Res,
+        Changed, Commands, ViewVisibility, InheritedVisibility, Entity, GlobalTransform, MessageWriter, Query, Res,
         Transform, Visibility,
     },
 };
@@ -18,7 +18,7 @@ pub fn visible_status_effects_system(
         (Entity, &StatusEffects, &mut VisibleStatusEffects),
         Changed<StatusEffects>,
     >,
-    mut spawn_effect_events: EventWriter<SpawnEffectEvent>,
+    mut spawn_effect_events: MessageWriter<SpawnEffectEvent>,
     game_data: Res<GameData>,
 ) {
     for (entity, status_effects, mut visible_status_effects) in query_status_effects.iter_mut() {

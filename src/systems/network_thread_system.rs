@@ -1,4 +1,4 @@
-use bevy::prelude::{Commands, EventReader, Res};
+use bevy::prelude::{Commands, MessageReader, Res};
 
 use rose_game_common::{
     data::Password,
@@ -16,7 +16,7 @@ use crate::{
 pub fn network_thread_system(
     mut commands: Commands,
     network_thread: Res<NetworkThread>,
-    mut network_events: EventReader<NetworkEvent>,
+    mut network_events: MessageReader<NetworkEvent>,
 ) {
     for event in network_events.read() {
         match *event {

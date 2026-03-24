@@ -60,7 +60,7 @@ pub fn ui_debug_client_entity_list_system(
         .resizable(true)
         .default_height(400.0)
         .open(&mut ui_state_debug_windows.client_entity_list_open)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             egui::Grid::new("client_entity_list_filter")
                 .num_columns(2)
                 .striped(true)

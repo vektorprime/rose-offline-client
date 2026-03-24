@@ -6,12 +6,12 @@ use bevy::{
     input::ButtonInput,
     prelude::{
         AssetServer, Camera, Camera3d, Commands, Component, ViewVisibility, InheritedVisibility,
-        Entity, EventReader, EventWriter, GlobalTransform, Handle, Local,
+        Entity, MessageReader, MessageWriter, GlobalTransform, Handle, Local,
         MouseButton, NextState, Query, Res, ResMut, Resource, Vec2, Visibility, With, World,
     },
-    render::mesh::skinning::SkinnedMesh,
-    window::{CursorGrabMode, PrimaryWindow, Window},
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
+use bevy_mesh::skinning::SkinnedMesh;
 use bevy_egui::{egui, EguiContexts};
 use bevy_rapier3d::{
     plugin::context::systemparams::ReadRapierContext,
@@ -48,15 +48,15 @@ pub struct CharacterSelectModelList {
 
 pub fn character_select_enter_system(
     mut commands: Commands,
-    mut query_window: Query<&mut Window, With<PrimaryWindow>>,
+    mut query_cursor_options: Query<&mut CursorOptions, With<PrimaryWindow>>,
     query_cameras: Query<Entity, With<Camera3d>>,
     asset_server: Res<AssetServer>,
     game_data: Res<GameData>,
 ) {
     log::info!("[CHAR_SELECT] Enter system called - setting up character select screen");
-    if let Ok(mut window) = query_window.get_single_mut() {
-        window.cursor_options.grab_mode = CursorGrabMode::None;
-        window.cursor_options.visible = true;
+    if let Ok(mut cursor_options) = query_cursor_options.single_mut() {
+        cursor_options.grab_mode = CursorGrabMode::None;
+        cursor_options.visible = true;
     }
 
     // Reset camera
@@ -162,10 +162,10 @@ pub fn character_select_system(
     mut app_state: ResMut<NextState<AppState>>,
     mut character_select_state: ResMut<CharacterSelectState>,
     mut egui_context: EguiContexts,
-    mut game_connection_events: EventReader<GameConnectionEvent>,
-    mut world_connection_events: EventReader<WorldConnectionEvent>,
-    mut load_zone_events: EventWriter<LoadZoneEvent>,
-    mut message_box_events: EventWriter<MessageBoxEvent>,
+    mut game_connection_events: MessageReader<GameConnectionEvent>,
+    mut world_connection_events: MessageReader<WorldConnectionEvent>,
+    mut load_zone_events: MessageWriter<LoadZoneEvent>,
+    mut message_box_events: MessageWriter<MessageBoxEvent>,
     mut join_zone_id: Local<Option<ZoneId>>,
     query_camera: Query<
         (Entity, &Camera, &GlobalTransform, Option<&CameraAnimation>),
@@ -188,7 +188,7 @@ pub fn character_select_system(
     for event in world_connection_events.read() {
         match event {
             WorldConnectionEvent::CreateCharacterSuccess { character_slot: _ } => {
-                if let Ok((camera_entity, _, _, _)) = query_camera.get_single() {
+                if let Ok((camera_entity, _, _, _)) = query_camera.single() {
                     commands.entity(camera_entity).insert(CameraAnimation::once(
                         asset_server.load("3DDATA/TITLE/CAMERA01_OUTCREATE01.ZMO"),
                     ));
@@ -202,7 +202,7 @@ pub fn character_select_system(
             }
             WorldConnectionEvent::CreateCharacterError { error } => match error {
                 CreateCharacterError::Failed => {
-                    message_box_events.send(MessageBoxEvent::Show {
+                    message_box_events.write(MessageBoxEvent::Show {
                         message: "Unknown error creating character".to_string(),
                         modal: true,
                         ok: None,
@@ -211,7 +211,7 @@ pub fn character_select_system(
                     *character_select_state = CharacterSelectState::CharacterCreate;
                 }
                 CreateCharacterError::AlreadyExists => {
-                    message_box_events.send(MessageBoxEvent::Show {
+                    message_box_events.write(MessageBoxEvent::Show {
                         message: "Character name already exists".to_string(),
                         modal: true,
                         ok: None,
@@ -220,7 +220,7 @@ pub fn character_select_system(
                     *character_select_state = CharacterSelectState::CharacterCreate;
                 }
                 CreateCharacterError::NoMoreSlots => {
-                    message_box_events.send(MessageBoxEvent::Show {
+                    message_box_events.write(MessageBoxEvent::Show {
                         message: "Cannot create more characters".to_string(),
                         modal: true,
                         ok: None,
@@ -229,7 +229,7 @@ pub fn character_select_system(
                     *character_select_state = CharacterSelectState::CharacterCreate;
                 }
                 CreateCharacterError::InvalidValue => {
-                    message_box_events.send(MessageBoxEvent::Show {
+                    message_box_events.write(MessageBoxEvent::Show {
                         message: "Invalid value".to_string(),
                         modal: true,
                         ok: None,
@@ -269,7 +269,7 @@ pub fn character_select_system(
                 }
             }
             WorldConnectionEvent::DeleteCharacterError { name: _ } => {
-                message_box_events.send(MessageBoxEvent::Show {
+                message_box_events.write(MessageBoxEvent::Show {
                     message: "Failed to delete character".to_string(),
                     modal: true,
                     ok: None,
@@ -281,7 +281,7 @@ pub fn character_select_system(
 
     match character_select_state {
         CharacterSelectState::Entering => {
-            let camera_result = query_camera.get_single();
+            let camera_result = query_camera.single();
             let camera_motion = camera_result.ok().and_then(|(_, _, _, m)| m);
             let camera_completed = camera_motion.map_or(true, |animation| animation.completed());
             log::info!("[CHAR_SELECT] Entering state - camera_completed: {}, auto_login: {}",
@@ -296,18 +296,20 @@ pub fn character_select_system(
         CharacterSelectState::CharacterSelect(_) => {}
         CharacterSelectState::CharacterCreate => {}
         CharacterSelectState::CharacterCreating => {
+            let ctx = egui_context.ctx_mut().unwrap();
             egui::Window::new("Creating character...")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .collapsible(false)
-                .show(egui_context.ctx_mut(), |ui| {
+                .show(&*ctx, |ui| {
                     ui.label("Creating character");
                 });
         }
         CharacterSelectState::ConnectingGameServer => {
+            let ctx = egui_context.ctx_mut().unwrap();
             egui::Window::new("Connecting...")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .collapsible(false)
-                .show(egui_context.ctx_mut(), |ui| {
+                .show(&*ctx, |ui| {
                     ui.label("Connecting to game");
                 });
 
@@ -315,7 +317,7 @@ pub fn character_select_system(
                 let &GameConnectionEvent::Connected(zone_id) = event;
 
                 // Start camera animation
-                if let Ok((camera_entity, _, _, _)) = query_camera.get_single() {
+                if let Ok((camera_entity, _, _, _)) = query_camera.single() {
                     commands.entity(camera_entity).insert(CameraAnimation::once(
                         asset_server.load("3DDATA/TITLE/CAMERA01_INGAME01.ZMO"),
                     ));
@@ -326,7 +328,7 @@ pub fn character_select_system(
             }
         }
         CharacterSelectState::Leaving => {
-            let camera_motion = query_camera.get_single().ok().and_then(|(_, _, _, m)| m);
+            let camera_motion = query_camera.single().ok().and_then(|(_, _, _, m)| m);
             if camera_motion.map_or(true, |animation| animation.completed())
                 || server_configuration.auto_login
             {
@@ -342,7 +344,7 @@ pub fn character_select_system(
 pub fn character_select_event_system(
     mut commands: Commands,
     mut character_select_state: ResMut<CharacterSelectState>,
-    mut character_select_events: EventReader<CharacterSelectEvent>,
+    mut character_select_events: MessageReader<CharacterSelectEvent>,
     character_list: Option<Res<CharacterList>>,
     world_connection: Option<Res<WorldConnection>>,
 ) {
@@ -430,7 +432,7 @@ pub fn character_select_input_system(
     query_window: Query<&Window, With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     query_entities: Query<(Option<&ColliderParent>, Option<&CharacterSelectCharacter>)>,
-    mut character_select_events: EventWriter<CharacterSelectEvent>,
+    mut character_select_events: MessageWriter<CharacterSelectEvent>,
 ) {
     // Get the single rapier context
     let Ok(rapier_context) = rapier_context.single() else {
@@ -438,13 +440,13 @@ pub fn character_select_input_system(
     };
 
     // Only process input when egui is not using the mouse
-    let ctx = egui_ctx.ctx_mut();
+    let ctx = egui_ctx.ctx_mut().unwrap();
     if ctx.is_pointer_over_area() || ctx.is_using_pointer() {
         return;
     }
 
     // Get cursor position from window
-    let Ok(window) = query_window.get_single() else {
+    let Ok(window) = query_window.single() else {
         return;
     };
 
@@ -469,7 +471,7 @@ pub fn character_select_input_system(
     input_state.last_click_time = Some(now);
 
     // Get camera for raycasting
-    let Ok((camera, camera_transform)) = query_camera.get_single() else {
+    let Ok((camera, camera_transform)) = query_camera.single() else {
         return;
     };
 

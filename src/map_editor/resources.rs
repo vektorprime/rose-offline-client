@@ -8,8 +8,8 @@ use std::collections::HashSet;
 /// Maximum number of undo actions to keep in history
 const MAX_UNDO_HISTORY: usize = 100;
 
-/// Event to request duplication of selected entities
-#[derive(Event, Debug, Clone)]
+/// Message to request duplication of selected entities
+#[derive(Message, Debug, Clone)]
 pub struct DuplicateSelectedEvent {
     /// Optional offset to apply to duplicated entities
     pub offset: Vec3,

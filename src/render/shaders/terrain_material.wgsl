@@ -30,16 +30,18 @@ struct VertexOutput {
 }
 
 // Terrain material bind group (group 2 - material bindings)
-@group(2) @binding(0)
+@group(#{MATERIAL_BIND_GROUP}) @binding(0)
 var tile_array_texture: binding_array<texture_2d<f32>, 100>;
-@group(2) @binding(1)
+@group(#{MATERIAL_BIND_GROUP}) @binding(1)
 var tile_array_sampler: sampler;
-@group(2) @binding(2)
-var<uniform> light_direction: vec4<f32>;
-@group(2) @binding(3)
-var<uniform> light_color: vec4<f32>;
-@group(2) @binding(4)
-var<uniform> ambient_color: vec4<f32>;
+
+// wgpu 27 forbids mixing binding arrays with uniform buffers in one bind group.
+// Terrain lighting is therefore packed into a read-only storage buffer:
+// [0] = light_direction (vec4)
+// [1] = light_color (vec4)
+// [2] = ambient_color (vec4)
+@group(#{MATERIAL_BIND_GROUP}) @binding(2)
+var<storage, read> terrain_lighting: array<vec4<f32>, 3>;
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
@@ -112,7 +114,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // layer2.a determines how much of layer2 to show (0 = all layer1, 1 = all layer2)
     let terrain_color = mix(layer1, layer2, layer2.a);
 
-    // Apply dynamic lighting from uniforms
+    // Apply dynamic lighting from storage buffer
+    let light_direction = terrain_lighting[0];
+    let light_color = terrain_lighting[1];
+    let ambient_color = terrain_lighting[2];
+
     let normal = normalize(in.world_normal);
     let light_dir = normalize(light_direction.xyz);
     

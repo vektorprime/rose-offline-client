@@ -1,5 +1,5 @@
 use bevy::{
-    pbr::DirectionalLightShadowMap,
+    light::DirectionalLightShadowMap,
     prelude::{Camera, DirectionalLight, Entity, GlobalTransform, Mat4, Query, Res, Vec3, With},
 };
 
@@ -14,15 +14,15 @@ pub fn directional_light_system(
     views: Query<(Entity, &GlobalTransform), With<Camera>>,
     shadow_map: Res<DirectionalLightShadowMap>,
 ) {
-    let lookat_position = if let Ok(player_transform) = query_player.get_single() {
+    let lookat_position = if let Ok(player_transform) = query_player.single() {
         player_transform.translation()
-    } else if let Ok((_, camera_transform)) = views.get_single() {
+    } else if let Ok((_, camera_transform)) = views.single() {
         camera_transform.translation()
     } else {
         return;
     };
 
-    if let Ok(light_transform) = query_light.get_single() {
+    if let Ok(light_transform) = query_light.single() {
         let light_direction = light_transform.forward();
         let view = Mat4::look_at_rh(Vec3::ZERO, *light_direction, Vec3::Y);
         let projected = view.mul_vec4(lookat_position.extend(1.0));
@@ -36,7 +36,7 @@ pub fn directional_light_system(
             -projected.z - PROJECTION_HALF_DEPTH,
         );
 
-        let view_transform = light_transform.compute_matrix();
+        let view_transform = light_transform.to_matrix();
         let view_projection = projection * view_transform.inverse();
 
         // In Bevy 0.13, cascades are built automatically by the built-in systems

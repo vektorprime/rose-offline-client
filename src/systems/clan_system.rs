@@ -30,7 +30,7 @@ pub fn clan_system(
         }
     }
 
-    if let Ok((character_info, &level)) = query_player_updated.get_single() {
+    if let Ok((character_info, &level)) = query_player_updated.single() {
         if let Some(world_connection) = world_connection.as_ref() {
             world_connection
                 .client_message_tx

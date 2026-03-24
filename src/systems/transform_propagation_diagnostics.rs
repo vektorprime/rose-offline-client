@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::transform::TransformSystem;
+use bevy::transform::TransformSystems;
 
 /// Diagnostic system to check if transform propagation is running
 /// This helps diagnose why GlobalTransform is not being computed from Transform

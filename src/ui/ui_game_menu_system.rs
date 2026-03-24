@@ -1,5 +1,5 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, EventWriter, Local, Res, ResMut};
+use bevy::prelude::{Assets, Local, MessageWriter, Res, ResMut};
 use bevy_egui::{egui, EguiContexts};
 
 use crate::{
@@ -33,9 +33,9 @@ pub fn ui_game_menu_system(
     mut ui_state_windows: ResMut<UiStateWindows>,
     mut ui_state: Local<UiGameMenuState>,
     ui_resources: Res<UiResources>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
-    mut character_select_events: EventWriter<CharacterSelectEvent>,
-    mut message_box_events: EventWriter<MessageBoxEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
+    mut character_select_events: MessageWriter<CharacterSelectEvent>,
+    mut message_box_events: MessageWriter<MessageBoxEvent>,
     dialog_assets: Res<Assets<Dialog>>,
 ) {
     let dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_game_menu) {
@@ -63,7 +63,7 @@ pub fn ui_game_menu_system(
         .fixed_pos([dialog.adjust_x, dialog.adjust_y])
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {
@@ -131,7 +131,7 @@ pub fn ui_game_menu_system(
     }
 
     if response_button_community.map_or(false, |r| r.clicked()) {
-        message_box_events.send(MessageBoxEvent::Show {
+        message_box_events.write(MessageBoxEvent::Show {
             message: "Community features are not yet implemented.".to_string(),
             modal: true,
             ok: None,
@@ -146,7 +146,7 @@ pub fn ui_game_menu_system(
     }
 
     if response_button_help.map_or(false, |r| r.clicked()) {
-        message_box_events.send(MessageBoxEvent::Show {
+        message_box_events.write(MessageBoxEvent::Show {
             message: "Help documentation is not yet available.".to_string(),
             modal: true,
             ok: None,
@@ -156,7 +156,7 @@ pub fn ui_game_menu_system(
     }
 
     if response_button_info.map_or(false, |r| r.clicked()) {
-        message_box_events.send(MessageBoxEvent::Show {
+        message_box_events.write(MessageBoxEvent::Show {
             message: "Game information dialog is not yet implemented.".to_string(),
             modal: true,
             ok: None,
@@ -170,8 +170,8 @@ pub fn ui_game_menu_system(
         ui_state_windows.menu_open = false;
     }
 
-    if !egui_context.ctx_mut().wants_keyboard_input() {
-        egui_context.ctx_mut().input_mut(|input| {
+    if !egui_context.ctx_mut().unwrap().wants_keyboard_input() {
+        egui_context.ctx_mut().unwrap().input_mut(|input| {
             if input.consume_key(egui::Modifiers::ALT, egui::Key::A) {
                 ui_state_windows.character_info_open = !ui_state_windows.character_info_open;
             }

@@ -1,6 +1,7 @@
 use bevy::{
     prelude::{App, Plugin},
-    render::{mesh::MeshVertexAttribute, render_resource::VertexFormat},
+    render::render_resource::VertexFormat,
+    mesh::MeshVertexAttribute,
 };
 
 // Custom terrain material with texture array support

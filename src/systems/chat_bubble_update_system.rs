@@ -23,7 +23,7 @@ pub fn chat_bubble_update_system(
 
         // Check if bubble should be despawned
         if chat_bubble.remaining_time <= 0.0 {
-            commands.entity(bubble_entity).despawn_recursive();
+            commands.entity(bubble_entity).despawn();
             continue;
         }
 

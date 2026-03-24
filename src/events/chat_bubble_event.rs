@@ -1,7 +1,7 @@
-use bevy::{prelude::{Event, Color, Entity}, reflect::Reflect};
+use bevy::{prelude::{Message, Color, Entity}, reflect::Reflect};
 
-/// Event to trigger spawning a chat bubble
-#[derive(Event, Reflect)]
+/// Message to trigger spawning a chat bubble
+#[derive(Message, Reflect)]
 pub struct ChatBubbleEvent {
     /// Entity to attach the bubble to, if known
     pub target_entity: Option<Entity>,

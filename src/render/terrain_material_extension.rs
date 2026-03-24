@@ -8,6 +8,7 @@
 use bevy::pbr::{MaterialExtension, StandardMaterial};
 use bevy::prelude::*;
 use bevy::render::render_resource::*;
+use bevy_shader::ShaderRef;
 
 /// Maximum number of terrain textures supported
 pub const TERRAIN_MAX_TEXTURES: usize = 4;

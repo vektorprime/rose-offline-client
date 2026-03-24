@@ -29,7 +29,7 @@ pub fn undo_redo_system(
     }
     
     // Check if egui wants keyboard input
-    let ctx = egui_contexts.ctx_mut();
+    let ctx = egui_contexts.ctx_mut().unwrap();
     if ctx.wants_keyboard_input() {
         return;
     }
@@ -112,7 +112,7 @@ fn apply_undo(
         
         EditorAction::AddEntity { entity } => {
             // Undo add = delete the entity
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
             map_editor_state.deselect_entity(entity);
             map_editor_state.push_redo(EditorAction::AddEntity { entity });
             log::info!("[UndoRedo] Undid entity addition (despawned {:?})", entity);
@@ -120,7 +120,7 @@ fn apply_undo(
         
         EditorAction::AddEntities { entities } => {
             for entity in &entities {
-                commands.entity(*entity).despawn_recursive();
+                commands.entity(*entity).despawn();
                 map_editor_state.deselect_entity(*entity);
             }
             map_editor_state.push_redo(EditorAction::AddEntities { entities: entities.clone() });
@@ -279,14 +279,14 @@ fn apply_redo(
         
         EditorAction::DeleteEntity { entity, .. } => {
             // Redo delete = despawn the entity
-            commands.entity(entity).despawn_recursive();
+            commands.entity(entity).despawn();
             map_editor_state.deselect_entity(entity);
             log::info!("[UndoRedo] Redid entity deletion (despawned {:?})", entity);
         }
         
         EditorAction::DeleteEntities { entities } => {
             for (entity, ..) in &entities {
-                commands.entity(*entity).despawn_recursive();
+                commands.entity(*entity).despawn();
                 map_editor_state.deselect_entity(*entity);
             }
             log::info!("[UndoRedo] Redid deletion of {} entities", entities.len());

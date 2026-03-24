@@ -326,7 +326,7 @@ fn load_ui_spritesheet(
     for (tsi_texture_index, tsi_texture) in tsi_file.textures.iter().enumerate() {
         let texture_path = format!("3ddata/control/res/{}", tsi_texture.filename).to_lowercase();
         let handle = asset_server.load(&texture_path);
-        let texture_id = egui_context.add_image(handle.clone());
+        let texture_id = egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(handle.clone()));
         loaded_textures.push(UiTexture {
             handle,
             texture_id,
@@ -431,7 +431,7 @@ pub fn update_ui_resources(
                     } else {
                         let handle = asset_server
                             .load(format!("3ddata/control/res/{}", &skill_widget.image).to_lowercase());
-                        let texture_id = egui_context.add_image(handle.clone());
+                        let texture_id = egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(handle.clone()));
                         skill_widget.ui_texture = Some(UiTexture {
                             handle: handle.clone(),
                             texture_id,
@@ -490,13 +490,13 @@ pub fn load_ui_resources(
         );
     }
 
-    let mut style = (*egui_context.ctx_mut().style()).clone();
+    let mut style = (*egui_context.ctx_mut().unwrap().style()).clone();
     style.visuals.window_fill = egui::Color32::from_rgba_unmultiplied(10, 10, 10, 220);
     style.visuals.window_stroke = egui::Stroke::NONE;
     style.visuals.popup_shadow = egui::epaint::Shadow::NONE;
     style.visuals.window_shadow = egui::epaint::Shadow::NONE;
     style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::WHITE;
-    egui_context.ctx_mut().set_style(style);
+    egui_context.ctx_mut().unwrap().set_style(style);
 
     commands.init_resource::<UiRequestedCursor>();
     commands.insert_resource(UiResources {
@@ -514,7 +514,7 @@ pub fn load_ui_resources(
             UiSpriteSheetType::ClanMarkBackground => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/clanback.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
             UiSpriteSheetType::MinimapArrow => {
                 let handle = asset_server.load("3ddata/control/res/minimap_arrow.tga");
-                let texture_id = egui_context.add_image(handle.clone());
+                let texture_id = egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(handle.clone()));
                 Some(UiSpriteSheet {
                     sprites: vec![
                         TsiSprite { texture_id: 0, left: 0, top: 0, right: 0, bottom: 0, name: String::default() },
@@ -527,7 +527,7 @@ pub fn load_ui_resources(
             }
             UiSpriteSheetType::ItemSocketEmpty => {
                 let handle = asset_server.load("3ddata/control/res/soket.dds");
-                let texture_id = egui_context.add_image(handle.clone());
+                let texture_id = egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(handle.clone()));
                 Some(UiSpriteSheet {
                     sprites: vec![
                         TsiSprite { texture_id: 0, left: 0, top: 0, right: 0, bottom: 0, name: String::default() },

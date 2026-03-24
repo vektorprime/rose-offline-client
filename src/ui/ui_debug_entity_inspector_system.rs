@@ -9,7 +9,7 @@ use crate::{components::PlayerCharacter, resources::DebugInspector, ui::UiStateD
 pub fn ui_debug_entity_inspector_system(world: &mut World) {
     let Ok(mut egui_context) = world
         .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
-        .get_single_mut(world)
+        .single_mut(world)
     else {
         return;
     };
@@ -33,7 +33,7 @@ pub fn ui_debug_entity_inspector_system(world: &mut World) {
                             if ui.button("Camera").clicked() {
                                 if let Ok(entity) = world
                                     .query_filtered::<Entity, With<Camera3d>>()
-                                    .get_single(world)
+                                    .single(world)
                                 {
                                     debug_inspector_state.entity = Some(entity);
                                 }
@@ -42,7 +42,7 @@ pub fn ui_debug_entity_inspector_system(world: &mut World) {
                             if ui.button("Player").clicked() {
                                 if let Ok(entity) = world
                                     .query_filtered::<Entity, With<PlayerCharacter>>()
-                                    .get_single(world)
+                                    .single(world)
                                 {
                                     debug_inspector_state.entity = Some(entity);
                                 }
@@ -51,7 +51,7 @@ pub fn ui_debug_entity_inspector_system(world: &mut World) {
                             if ui.button("Light").clicked() {
                                 if let Ok(entity) = world
                                     .query_filtered::<Entity, With<DirectionalLight>>()
-                                    .get_single(world)
+                                    .single(world)
                                 {
                                     debug_inspector_state.entity = Some(entity);
                                 }

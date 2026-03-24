@@ -1,11 +1,8 @@
 use bevy::{
-    asset::{io::Reader, AssetLoader, LoadContext},
+    asset::{io::Reader, AssetLoader, LoadContext, RenderAssetUsages},
     image::ImageSampler,
-    prelude::Image,
-    render::{
-        render_asset::RenderAssetUsages,
-        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureViewDescriptor, TextureViewDimension},
-    },
+    prelude::{Image, TypePath},
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureViewDescriptor, TextureViewDimension},
     tasks::futures_lite::AsyncReadExt,
 };
 use log::{info, warn, error};
@@ -16,7 +13,7 @@ use std::future::Future;
 /// 
 /// NOTE: All output is converted to R8G8B8A8 to avoid Bevy 0.13.2 issues with
 /// compressed texture pixel_size calculations that cause panics.
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct DdsImageLoader;
 
 impl AssetLoader for DdsImageLoader {
@@ -31,8 +28,8 @@ impl AssetLoader for DdsImageLoader {
         load_context: &mut LoadContext<'_>,
     ) -> impl Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
-        let asset_path = load_context.path().to_string_lossy().to_string();
-        let is_cube = load_context.asset_path().label() == Some("cube");
+        let asset_path = load_context.path().path().to_string_lossy().to_string();
+        let is_cube = load_context.path().label() == Some("cube");
 
         // Read all bytes from the reader
         let mut bytes = Vec::new();

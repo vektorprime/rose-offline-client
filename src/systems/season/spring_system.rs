@@ -1,8 +1,8 @@
 use bevy::{
     pbr::MeshMaterial3d,
     prelude::*,
-    render::mesh::Mesh3d,
 };
+use bevy_mesh::Mesh3d;
 use crate::components::{PlayerCharacter, Season, SeasonMarker, WeatherParticle, SpringFlower};
 use crate::resources::{SeasonMaterials, SeasonSettings, SpringSettings};
 
@@ -26,7 +26,7 @@ pub fn spring_rain_system(
     let dt = time.delta_secs();
 
     // Get player position for player-relative spawning
-    let Ok(player_transform) = player_query.get_single() else {
+    let Ok(player_transform) = player_query.single() else {
         return;
     };
     let player_pos = player_transform.translation();
@@ -85,7 +85,7 @@ pub fn spring_rain_system(
     }
 
     // Get camera transform for billboard behavior
-    let Ok(camera_transform) = camera_query.get_single() else {
+    let Ok(camera_transform) = camera_query.single() else {
         return;
     };
     let camera_pos = camera_transform.translation();
@@ -147,7 +147,7 @@ pub fn spawn_flower_system(
         return;
     }
 
-    let Ok(camera_transform) = camera_query.get_single() else {
+    let Ok(camera_transform) = camera_query.single() else {
         return;
     };
     let camera_pos = camera_transform.translation;

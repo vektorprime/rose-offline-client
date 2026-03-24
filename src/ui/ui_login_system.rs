@@ -1,6 +1,6 @@
 use bevy::{
     app::AppExit,
-    prelude::{Assets, EventWriter, Local, Res},
+    prelude::{Assets, Local, MessageWriter, Res},
 };
 use bevy_egui::{egui, EguiContexts};
 
@@ -30,14 +30,14 @@ pub struct UiStateLogin {
 #[allow(clippy::too_many_arguments)]
 pub fn ui_login_system(
     mut ui_state: Local<UiStateLogin>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut egui_context: EguiContexts,
     dialog_assets: Res<Assets<Dialog>>,
     login_state: Res<LoginState>,
     server_configuration: Res<ServerConfiguration>,
     ui_resources: Res<UiResources>,
-    mut exit_events: EventWriter<AppExit>,
-    mut login_events: EventWriter<LoginEvent>,
+    mut exit_events: MessageWriter<AppExit>,
+    mut login_events: MessageWriter<LoginEvent>,
 ) {
     ////log::info!("[UI LOGIN] ui_login_system running");
     
@@ -82,7 +82,7 @@ pub fn ui_login_system(
     let mut enter_pressed = false;
 
     let screen_size = egui_context
-        .ctx_mut()
+        .ctx_mut().unwrap()
         .input(|input| input.screen_rect().size());
     let position = egui::pos2(screen_size.x - dialog.width - 100.0, 100.0);
 
@@ -114,7 +114,7 @@ pub fn ui_login_system(
         .default_width(dialog.width)
         .default_height(dialog.height)
         .fixed_pos(position)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             ////log::info!("[UI LOGIN] Window opened, starting dialog.draw() with {} widgets", dialog.widgets.len());
             dialog.draw(
                 ui,

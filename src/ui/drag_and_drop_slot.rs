@@ -370,13 +370,11 @@ impl<'w> DragAndDropSlot<'w> {
                 }
 
                 if let Some(quantity) = self.quantity {
-                    let text_galley = ui.fonts(|fonts| {
-                        fonts.layout_no_wrap(
-                            format!("{}", quantity),
-                            FontId::monospace(12.0),
-                            Color32::WHITE,
-                        )
-                    });
+                    let text_galley = ui.painter().layout_no_wrap(
+                        format!("{}", quantity),
+                        FontId::monospace(12.0),
+                        Color32::WHITE,
+                    );
 
                     let qty_rect = Rect::from_min_max(
                         egui::Pos2::new(

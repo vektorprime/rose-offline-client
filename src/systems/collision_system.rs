@@ -1,7 +1,7 @@
 use bevy::{
     math::{Quat, Vec3},
     prelude::{
-        Assets, Commands, Entity, EventWriter, Query, Res, State, Time, Transform, With,
+        Assets, Commands, Entity, MessageWriter, Query, Res, State, Time, Transform, With,
     },
 };
 use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter};
@@ -142,7 +142,7 @@ pub fn collision_player_system(
         With<CollisionPlayer>,
     >,
     mut query_event_object: Query<&mut EventObject>,
-    mut quest_trigger_events: EventWriter<QuestTriggerEvent>,
+    mut quest_trigger_events: MessageWriter<QuestTriggerEvent>,
     mut query_warp_object: Query<&mut WarpObject>,
     query_collider_parent: Query<&ColliderParent>,
     current_zone: Option<Res<CurrentZone>>,
@@ -174,11 +174,11 @@ pub fn collision_player_system(
         // Check if player is flying - if so, skip ground collision and use position directly
         let is_flying = flight_state.map_or(false, |fs| fs.is_flying);
         
-        // DIAGNOSTIC: Log first iteration to verify CollisionPlayer is present
-        if entity_count == 1 {
-            log::info!("[RESPAWN_COLLISION_DIAG] Processing entity {:?} with CollisionPlayer, pos=({:.2}, {:.2}, {:.2}), transform_y={:.2}",
-                entity, position.x, position.y, position.z, transform.translation.y);
-        }
+        // DIAGNOSTIC: Disabled - Log first iteration to verify CollisionPlayer is present
+        // if entity_count == 1 {
+        //     log::info!("[RESPAWN_COLLISION_DIAG] Processing entity {:?} with CollisionPlayer, pos=({:.2}, {:.2}, {:.2}), transform_y={:.2}",
+        //         entity, position.x, position.y, position.z, transform.translation.y);
+        // }
         
       if is_flying {
             // When flying, sync transform directly from position (including Y/height)

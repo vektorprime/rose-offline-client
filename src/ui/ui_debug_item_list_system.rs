@@ -59,7 +59,7 @@ pub fn ui_debug_item_list_system(
         .resizable(true)
         .default_height(300.0)
         .open(&mut ui_state_debug_windows.item_list_open)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             let mut filter_changed = false;
 
             egui::Grid::new("item_list_controls_grid")
@@ -376,7 +376,7 @@ pub fn ui_debug_item_list_system(
                                                 {
                                                     let query = query_set.p1();
                                                     let player_tooltip_data =
-                                                        query.get_single().ok();
+                                                        query.single().ok();
                                                     ui_add_item_tooltip(
                                                         ui,
                                                         &game_data,

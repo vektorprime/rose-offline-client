@@ -5,10 +5,10 @@ use bevy::{
     },
     math::{Quat, Vec2, Vec3},
     prelude::{
-        BevyError, Component, Entity, EventReader, GlobalTransform, Local, MouseButton, Query, Res, Time,
-        Transform, With,
+        BevyError, Component, Entity, GlobalTransform, Local, MessageReader, MouseButton, Query, Res, Time,
+        Transform, With, Window,
     },
-    window::{CursorGrabMode, PrimaryWindow, Window},
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 use bevy_egui::EguiContexts;
 use bevy_rapier3d::{
@@ -75,9 +75,9 @@ pub fn orbit_camera_system(
     mut control_state: Local<CameraControlState>,
     mut query: Query<(&mut OrbitCamera, &mut Transform)>,
     query_global_transform: Query<&GlobalTransform>,
-    mut mouse_motion_events: EventReader<MouseMotion>,
-    mut mouse_wheel_reader: EventReader<MouseWheel>,
-    mut query_window: Query<&mut Window, With<PrimaryWindow>>,
+    mut mouse_motion_events: MessageReader<MouseMotion>,
+    mut mouse_wheel_reader: MessageReader<MouseWheel>,
+    mut query_window: Query<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
     mut egui_ctx: EguiContexts,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
@@ -91,11 +91,11 @@ pub fn orbit_camera_system(
     if time.elapsed().as_secs_f32() % 1.0 < time.delta().as_secs_f32() {
         //log::info!("[CAMERA] Orbit camera system running");
     }
-    let Ok(mut window) = query_window.get_single_mut() else {
+    let Ok((mut window, mut cursor_options)) = query_window.single_mut() else {
         return Ok(());
     };
 
-    let (mut orbit_camera, mut camera_transform) = if let Ok((a, b)) = query.get_single_mut() {
+    let (mut orbit_camera, mut camera_transform) = if let Ok((a, b)) = query.single_mut() {
         (a, b)
     } else {
         if control_state.is_dragging {
@@ -104,8 +104,8 @@ pub fn orbit_camera_system(
                 window.set_cursor_position(Some(saved_cursor_position));
             }
 
-            window.cursor_options.grab_mode = CursorGrabMode::None;
-            window.cursor_options.visible = true;
+            cursor_options.grab_mode = CursorGrabMode::None;
+            cursor_options.visible = true;
             control_state.is_dragging = false;
         }
 
@@ -138,7 +138,7 @@ pub fn orbit_camera_system(
         return Ok(());
     }
 
-    let allow_mouse_input = control_state.is_dragging || !egui_ctx.ctx_mut().wants_pointer_input();
+    let allow_mouse_input = control_state.is_dragging || !egui_ctx.ctx_mut().unwrap().wants_pointer_input();
     let right_pressed = mouse_buttons.pressed(MouseButton::Right);
     let mut drag_delta = Vec2::ZERO;
     let mut zoom_multiplier = 1.0;
@@ -150,8 +150,8 @@ pub fn orbit_camera_system(
             }
 
             if !control_state.is_dragging {
-                window.cursor_options.grab_mode = CursorGrabMode::Locked;
-                window.cursor_options.visible = false;
+                cursor_options.grab_mode = CursorGrabMode::Locked;
+                cursor_options.visible = false;
                 control_state.saved_cursor_position = window.cursor_position();
             }
         }
@@ -163,8 +163,8 @@ pub fn orbit_camera_system(
                 window.set_cursor_position(Some(saved_cursor_position));
             }
 
-            window.cursor_options.grab_mode = CursorGrabMode::None;
-            window.cursor_options.visible = true;
+            cursor_options.grab_mode = CursorGrabMode::None;
+            cursor_options.visible = true;
         }
 
         control_state.is_dragging = false;

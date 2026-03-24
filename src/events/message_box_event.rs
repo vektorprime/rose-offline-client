@@ -1,6 +1,6 @@
-use bevy::prelude::{Commands, Event};
+use bevy::prelude::{Commands, Message};
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum MessageBoxEvent {
     Show {
         message: String,

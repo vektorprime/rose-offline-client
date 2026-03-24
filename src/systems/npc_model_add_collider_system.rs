@@ -6,11 +6,9 @@ use bevy::{
         AssetServer, Assets, Commands, Entity, GlobalTransform, Query, Res,
         Transform, With, Without,
     },
-    render::{
-        mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
-        primitives::Aabb,
-    },
 };
+use bevy_camera::primitives::Aabb;
+use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 use bevy_rapier3d::prelude::{Collider, CollisionGroups};
 
 use rose_data::NpcMotionAction;
@@ -44,7 +42,7 @@ pub fn npc_model_add_collider_system(
                     min = Some(min.map_or_else(|| aabb.min(), |min| min.min(aabb.min())));
                     max = Some(max.map_or_else(|| aabb.max(), |max| max.max(aabb.max())));
                 }
-                Ok(None) | Err(QueryEntityError::EntityDoesNotExist(_)) => {
+                Ok(None) | Err(QueryEntityError::NotSpawned(_)) => {
                     all_parts_loaded = false;
                     break;
                 }

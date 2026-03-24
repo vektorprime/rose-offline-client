@@ -1,6 +1,6 @@
-use bevy::prelude::Event;
+use bevy::prelude::Message;
 
-#[derive(Event)]
+#[derive(Message)]
 #[allow(clippy::enum_variant_names)]
 pub enum NetworkEvent {
     ConnectLogin {

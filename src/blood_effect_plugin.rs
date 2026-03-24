@@ -61,7 +61,7 @@ impl Plugin for BloodEffectPlugin {
         app.init_resource::<BloodEffectConfig>();
 
         // Register the blood effect event
-        app.add_event::<BloodEffectEvent>();
+        app.add_message::<BloodEffectEvent>();
 
         // Add the sub-plugins
         app.add_plugins((BloodSpatterPlugin, GashWoundPlugin));

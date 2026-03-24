@@ -74,12 +74,12 @@ pub fn editor_picking_system(
     };
 
     // Skip if egui wants pointer input (mouse is over UI)
-    if egui_ctx.ctx_mut().wants_pointer_input() {
+    if egui_ctx.ctx_mut().unwrap().wants_pointer_input() {
         return;
     }
 
     // Get the primary window
-    let Ok(window) = query_window.get_single() else {
+    let Ok(window) = query_window.single() else {
         return;
     };
 

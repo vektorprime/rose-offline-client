@@ -107,12 +107,12 @@ fn debug_inspector_picking_system(
         return Ok(());
     }
 
-    let Ok(window) = query_window.get_single() else {
+    let Ok(window) = query_window.single() else {
         return Ok(());
     };
 
     let cursor_position = window.cursor_position();
-    if cursor_position.is_none() || egui_ctx.ctx_mut().wants_pointer_input() {
+    if cursor_position.is_none() || egui_ctx.ctx_mut().unwrap().wants_pointer_input() {
         // Mouse not in window, or is over UI
         return Ok(());
     }

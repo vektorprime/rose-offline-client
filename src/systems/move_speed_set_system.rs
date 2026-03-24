@@ -9,7 +9,7 @@ use rose_game_common::components::MoveSpeed;
 /// This system listens for [`MoveSpeedSetEvent`] events and updates the
 /// [`MoveSpeed`] component on the target entity.
 pub fn move_speed_set_system(
-    mut events: EventReader<MoveSpeedSetEvent>,
+    mut events: MessageReader<MoveSpeedSetEvent>,
     mut query: Query<&mut MoveSpeed, With<PlayerCharacter>>,
 ) {
     for event in events.read() {

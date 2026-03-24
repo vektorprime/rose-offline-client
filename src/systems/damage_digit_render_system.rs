@@ -35,7 +35,7 @@ pub fn create_damage_digit_material_system(
             positions: positions_buffer,
             sizes: sizes_buffer,
             uvs: uvs_buffer,
-            texture: pending.texture.clone_weak(),
+            texture: pending.texture.clone(),
         });
         
         // Remove the pending marker and add the actual material

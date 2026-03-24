@@ -7,9 +7,9 @@ use bevy::{
     },
     render::{
         alpha::AlphaMode,
-        mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
     },
 };
+use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 
 use crate::render::object_material_extension::RoseObjectExtension;
 use enum_map::EnumMap;

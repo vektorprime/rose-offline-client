@@ -1,4 +1,5 @@
-use bevy::{math::*, prelude::*, render::primitives::Aabb};
+use bevy::{math::*, prelude::*};
+use bevy_camera::primitives::Aabb;
 use num_derive::FromPrimitive;
 
 #[derive(Copy, Clone, FromPrimitive)]

@@ -11,8 +11,8 @@ use crate::components::{
 use crate::map_editor::components::SelectedInEditor;
 use crate::map_editor::resources::{EditorAction, MapEditorState};
 
-/// Events for property changes from the UI
-#[derive(Event, Debug, Clone)]
+/// Messages for property changes from the UI
+#[derive(Message, Debug, Clone)]
 pub enum PropertyChangeEvent {
     /// Transform position changed
     PositionChanged {
@@ -95,7 +95,7 @@ impl PendingPropertyChanges {
 
 /// System to process property change events and apply them to entities
 pub fn property_update_system(
-    mut events: EventReader<PropertyChangeEvent>,
+    mut events: MessageReader<PropertyChangeEvent>,
     mut map_editor_state: ResMut<MapEditorState>,
     mut transforms: Query<&mut Transform>,
     mut zone_objects: Query<&mut ZoneObject>,
@@ -606,7 +606,7 @@ pub struct PropertyUpdatePlugin;
 impl Plugin for PropertyUpdatePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PendingPropertyChanges>()
-            .add_event::<PropertyChangeEvent>()
+            .add_message::<PropertyChangeEvent>()
             .add_systems(Update, (
                 property_update_system,
                 apply_undo_system,

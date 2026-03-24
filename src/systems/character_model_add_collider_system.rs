@@ -5,11 +5,9 @@ use bevy::{
         Assets, Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Res,
         Transform, With, Without,
     },
-    render::{
-        mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
-        primitives::Aabb,
-    },
 };
+use bevy_camera::primitives::Aabb;
+use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 use bevy_rapier3d::prelude::{Collider, CollisionGroups};
 use log::info;
 
@@ -79,7 +77,7 @@ pub fn character_model_add_collider_system(
                     min = Some(min.map_or_else(|| aabb.min(), |min| min.min(aabb.min())));
                     max = Some(max.map_or_else(|| aabb.max(), |max| max.max(aabb.max())));
                 }
-                Ok(None) | Err(QueryEntityError::EntityDoesNotExist(_)) => {
+                Ok(None) | Err(QueryEntityError::NotSpawned(_)) => {
                     all_parts_loaded = false;
                     info!("AABB query failed for part entity {:?}: no AABB or no such entity", part_entity);
                     break;

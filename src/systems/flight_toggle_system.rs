@@ -12,7 +12,7 @@ use crate::events::FlightToggleEvent;
 /// Wing spawning is handled separately in the wing spawn system.
 pub fn flight_toggle_system(
     mut commands: Commands,
-    mut events: EventReader<FlightToggleEvent>,
+    mut events: MessageReader<FlightToggleEvent>,
     mut query: Query<(Entity, &mut FlightState), With<PlayerCharacter>>,
 ) {
     for event in events.read() {

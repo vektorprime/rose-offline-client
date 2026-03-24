@@ -1,12 +1,12 @@
 use bevy::{
-    ecs::event::EventWriter,
+    ecs::message::MessageWriter,
     prelude::{
         AssetServer, Assets, Camera3d, Commands, Entity,
         GlobalTransform, Local, Quat, Query, Res, ResMut, Transform, Vec3, Visibility,
         With,
     },
-    render::view::{ViewVisibility, InheritedVisibility},
 };
+use bevy_camera::visibility::{ViewVisibility, InheritedVisibility};
 use bevy_egui::{egui, EguiContexts};
 use rose_data::ZoneId;
 use rose_game_common::{
@@ -87,7 +87,7 @@ impl Default for UiCharacterCreateState {
 pub fn ui_character_create_system(
     mut commands: Commands,
     mut ui_state: Local<UiCharacterCreateState>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut character_select_state: ResMut<CharacterSelectState>,
     mut egui_context: EguiContexts,
     query_camera: Query<Entity, With<Camera3d>>,
@@ -136,8 +136,8 @@ pub fn ui_character_create_system(
     let mut response_next_startpos = None;
     let mut response_next_birthstone = None;
 
-    let screen_size = egui_context
-        .ctx_mut()
+    let ctx = egui_context.ctx_mut().unwrap();
+    let screen_size = ctx
         .input(|input| input.screen_rect().size());
 
     egui::Window::new("Character Create")
@@ -148,7 +148,7 @@ pub fn ui_character_create_system(
             screen_size.x / 4.0 - dialog.width / 2.0,
             screen_size.y / 2.0 - dialog.height / 2.0,
         ))
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(&*ctx, |ui| {
             dialog.draw(
                 ui,
                 DataBindings {
@@ -301,7 +301,7 @@ pub fn ui_character_create_system(
     }
 
     if response_cancel.map_or(false, |r| r.clicked()) {
-        if let Ok(camera_entity) = query_camera.get_single() {
+        if let Ok(camera_entity) = query_camera.single() {
             commands
                 .entity(camera_entity)
                 .insert(CameraAnimation::once(

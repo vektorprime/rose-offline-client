@@ -17,7 +17,7 @@ pub fn chat_bubble_cleanup_system(
     // Despawn any chat bubbles targeting removed entities
     for (bubble_entity, bubble_marker) in query_bubbles.iter() {
         if removed_entities.contains(&bubble_marker.target_entity) {
-            commands.entity(bubble_entity).despawn_recursive();
+            commands.entity(bubble_entity).despawn();
         }
     }
 }
@@ -32,7 +32,7 @@ pub fn chat_bubble_orphan_cleanup_system(
     for (bubble_entity, bubble_marker) in query_bubbles.iter() {
         // Check if target entity still exists
         if query_targets.get(bubble_marker.target_entity).is_err() {
-            commands.entity(bubble_entity).despawn_recursive();
+            commands.entity(bubble_entity).despawn();
         }
     }
 }

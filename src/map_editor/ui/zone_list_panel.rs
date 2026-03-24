@@ -3,7 +3,7 @@
 //! Provides a panel for switching between zones in the map editor.
 //! Based on the zone viewer's ui_debug_zone_list_system.rs
 
-use bevy::prelude::{EventWriter, Res, ResMut, Resource};
+use bevy::prelude::{MessageWriter, Res, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts};
 use regex::Regex;
 
@@ -57,7 +57,7 @@ pub fn editor_zone_list_panel(
     state: &mut ZoneListPanelState,
     game_data: &GameData,
     current_zone: Option<&CurrentZone>,
-    load_zone_events: &mut EventWriter<LoadZoneEvent>,
+    load_zone_events: &mut MessageWriter<LoadZoneEvent>,
 ) {
     if !state.is_open {
         return;
@@ -231,7 +231,7 @@ pub fn zone_list_panel_system(
     mut state: ResMut<ZoneListPanelState>,
     game_data: Res<GameData>,
     current_zone: Option<Res<CurrentZone>>,
-    mut load_zone_events: EventWriter<LoadZoneEvent>,
+    mut load_zone_events: MessageWriter<LoadZoneEvent>,
     map_editor_state: Res<crate::map_editor::resources::MapEditorState>,
 ) {
     // Only show when map editor is enabled
@@ -240,7 +240,7 @@ pub fn zone_list_panel_system(
     }
     
     editor_zone_list_panel(
-        egui_context.ctx_mut(),
+        &*egui_context.ctx_mut().unwrap(),
         &mut state,
         &game_data,
         current_zone.as_deref(),

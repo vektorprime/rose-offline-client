@@ -1,6 +1,6 @@
-use bevy::prelude::Event;
+use bevy::prelude::Message;
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum LoginEvent {
     Login { username: String, password: String },
     SelectServer { server_id: usize, channel_id: usize },

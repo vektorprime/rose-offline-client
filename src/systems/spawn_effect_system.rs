@@ -1,13 +1,11 @@
 use bevy::{
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Commands, EventReader, GlobalTransform, Query, Res, ResMut, Transform,
+        AssetServer, Assets, Commands, GlobalTransform, MessageReader, Query, Res, ResMut, Transform,
         Mesh,
     },
-    render::{
-        mesh::skinning::SkinnedMesh,
-    },
 };
+use bevy_mesh::skinning::SkinnedMesh;
 use rose_file_readers::VfsPath;
 
 use crate::{
@@ -34,7 +32,7 @@ fn get_effect_file_path<'a>(
 
 pub fn spawn_effect_system(
     mut commands: Commands,
-    mut events: EventReader<SpawnEffectEvent>,
+    mut events: MessageReader<SpawnEffectEvent>,
     query_transform: Query<&GlobalTransform>,
     query_skeleton: Query<(&SkinnedMesh, &DummyBoneOffset)>,
     game_data: Res<GameData>,

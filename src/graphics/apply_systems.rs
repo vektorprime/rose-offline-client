@@ -4,7 +4,9 @@
 //! actual render configuration (cameras, lights, etc.).
 
 use crate::graphics::*;
-use bevy::{core_pipeline::bloom::Bloom, core_pipeline::tonemapping::Tonemapping, pbr::{AmbientLight, CascadeShadowConfig, DirectionalLight, DirectionalLightShadowMap, ShadowFilteringMethod}, prelude::*, render::view::ColorGrading};
+use bevy::{core_pipeline::tonemapping::Tonemapping, prelude::*, render::view::ColorGrading};
+use bevy_light::{CascadeShadowConfig, DirectionalLight, DirectionalLightShadowMap, ShadowFilteringMethod};
+use bevy_post_process::bloom::Bloom;
 
 /// System that applies color grading settings (brightness, contrast, saturation, gamma)
 /// to all cameras with ColorGrading components.
@@ -177,7 +179,7 @@ pub fn apply_msaa_system(
 /// The brightness is multiplied by a base value of 80.0 (Bevy's default ambient brightness).
 pub fn apply_ambient_light_system(
     graphics_settings: Res<GraphicsSettings>,
-    mut ambient_light: ResMut<AmbientLight>,
+    mut ambient_light: ResMut<GlobalAmbientLight>,
 ) {
     // Skip if settings haven't changed
     if !graphics_settings.is_changed() {

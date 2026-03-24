@@ -1,6 +1,7 @@
 use bevy::asset::{AssetLoader, io::Reader, LoadContext};
 use std::future::Future;
 use bevy::tasks::futures_lite::AsyncReadExt;
+use bevy::reflect::TypePath;
 use lewton::{
     audio::AudioReadError, inside_ogg::OggStreamReader, samples::InterleavedSamples, VorbisError,
 };
@@ -9,7 +10,7 @@ use crate::audio::audio_source::AudioSource;
 
 use super::audio_source::StreamingAudioSource;
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct OggLoader;
 
 impl AssetLoader for OggLoader {

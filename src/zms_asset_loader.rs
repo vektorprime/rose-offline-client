@@ -9,13 +9,10 @@ use bevy::{
     ecs::component::Component,
     prelude::Mesh,
     reflect::TypePath,
-    render::{
-        mesh::{Indices, VertexAttributeValues},
-        render_asset::RenderAssetUsages,
-        render_resource::PrimitiveTopology,
-    },
     tasks::futures_lite::AsyncReadExt,
 };
+use bevy_mesh::{Indices, VertexAttributeValues, PrimitiveTopology};
+use bevy::asset::RenderAssetUsages;
 use log::info;
 use rose_file_readers::{RoseFile, ZmsFile};
 
@@ -30,10 +27,10 @@ pub struct ZmsMaterialNumFaces {
 #[derive(Component, Clone)]
 pub struct ZmsMaterialNumFacesHandle(pub bevy::prelude::Handle<ZmsMaterialNumFaces>);
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct ZmsAssetLoader;
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct ZmsNoSkinAssetLoader;
 
 impl AssetLoader for ZmsAssetLoader {
@@ -52,7 +49,7 @@ impl AssetLoader for ZmsAssetLoader {
             use bevy::tasks::futures_lite::AsyncReadExt;
             reader.read_to_end(&mut bytes).await?;
             
-            let asset_path = load_context.path().to_string_lossy();
+            let asset_path = load_context.path().path().to_string_lossy();
 
             match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(mut zms) => {
@@ -143,9 +140,9 @@ impl AssetLoader for ZmsAssetLoader {
                     if !zms.material_num_faces.is_empty() {
                         load_context.labeled_asset_scope(
                             "material_num_faces".to_string(),
-                            |_lc| ZmsMaterialNumFaces {
+                            |_lc| Ok::<ZmsMaterialNumFaces, anyhow::Error>(ZmsMaterialNumFaces {
                                 material_num_faces: zms.material_num_faces,
-                            },
+                            }),
                         );
                     }
 
@@ -253,9 +250,9 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
                     if !zms.material_num_faces.is_empty() {
                         load_context.labeled_asset_scope(
                             "material_num_faces".to_string(),
-                            |_lc| ZmsMaterialNumFaces {
+                            |_lc| Ok::<ZmsMaterialNumFaces, anyhow::Error>(ZmsMaterialNumFaces {
                                 material_num_faces: zms.material_num_faces,
-                            },
+                            }),
                         );
                     }
 

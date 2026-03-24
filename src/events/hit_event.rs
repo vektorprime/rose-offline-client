@@ -1,8 +1,8 @@
-use bevy::prelude::{Entity, Event};
+use bevy::prelude::{Entity, Message};
 
 use rose_data::{EffectId, SkillId};
 
-#[derive(Event)]
+#[derive(Message)]
 pub struct HitEvent {
     pub attacker: Entity,
     pub defender: Entity,

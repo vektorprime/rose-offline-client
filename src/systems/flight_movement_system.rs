@@ -67,7 +67,7 @@ pub fn flight_movement_system(
 
             // Get camera's view direction from its transform
             // The camera's forward() is the direction it's looking (-Z in view space)
-            let (forward, horizontal_forward) = if let Ok(camera_transform) = camera_query.get_single() {
+            let (forward, horizontal_forward) = if let Ok(camera_transform) = camera_query.single() {
                 // Camera forward is the direction the camera is looking
                 let camera_forward = camera_transform.forward();
                 

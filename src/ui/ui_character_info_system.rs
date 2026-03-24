@@ -1,7 +1,7 @@
 use bevy::{
     asset::Asset,
     ecs::query::QueryData,
-    prelude::{Assets, EventWriter, Local, Query, Res, ResMut, With},
+    prelude::{Assets, Local, MessageWriter, Query, Res, ResMut, With},
 };
 use bevy_egui::{egui, EguiContexts};
 
@@ -72,7 +72,7 @@ pub fn ui_character_info_system(
     query_player: Query<PlayerQuery, With<PlayerCharacter>>,
     mut ui_state: Local<UiStateCharacterInfo>,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     ui_resources: Res<UiResources>,
     dialog_assets: Res<Assets<Dialog>>,
     game_connection: Option<Res<GameConnection>>,
@@ -84,7 +84,7 @@ pub fn ui_character_info_system(
         return;
     };
 
-    let player = if let Ok(player) = query_player.get_single() {
+    let player = if let Ok(player) = query_player.single() {
         player
     } else {
         return;
@@ -106,7 +106,7 @@ pub fn ui_character_info_system(
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(&*egui_context.ctx_mut().unwrap(), |ui| {
             let need_xp = game_data
                 .ability_value_calculator
                 .calculate_levelup_require_xp(player.level.level);

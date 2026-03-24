@@ -1,7 +1,7 @@
 use bevy::ecs::query::QueryData;
 use bevy::{
     math::Vec3Swizzles,
-    prelude::{Assets, Entity, EventReader, EventWriter, Local, Query, Res, ResMut, With},
+    prelude::{Assets, Entity, Local, MessageReader, MessageWriter, Query, Res, ResMut, With},
 };
 use bevy_egui::{egui, EguiContexts};
 
@@ -51,11 +51,11 @@ fn ui_add_bank_slot(
     bank_slot_index: usize,
     pos: egui::Pos2,
     player: &(&Bank, &CharacterInfo, &Position),
-    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     ui_state_dnd: &mut UiStateDragAndDrop,
-    player_command_events: &mut EventWriter<PlayerCommandEvent>,
+    player_command_events: &mut MessageWriter<PlayerCommandEvent>,
 ) {
     let item = player
         .0
@@ -107,17 +107,17 @@ pub fn ui_bank_system(
     mut ui_state: Local<UiStateBank>,
     mut ui_state_dnd: ResMut<UiStateDragAndDrop>,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     ui_resources: Res<UiResources>,
     dialog_assets: Res<Assets<Dialog>>,
-    mut bank_events: EventReader<BankEvent>,
+    mut bank_events: MessageReader<BankEvent>,
     client_entity_list: Res<ClientEntityList>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
     query_player: Query<(&Bank, &CharacterInfo, &Position), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     query_position: Query<&Position>,
-    mut player_command_events: EventWriter<PlayerCommandEvent>,
+    mut player_command_events: MessageWriter<PlayerCommandEvent>,
 ) {
     let dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_bank) {
         dialog
@@ -152,12 +152,12 @@ pub fn ui_bank_system(
         return;
     }
 
-    let player = if let Ok(player) = query_player.get_single() {
+    let player = if let Ok(player) = query_player.single() {
         player
     } else {
         return;
     };
-    let player_tooltip_data = query_player_tooltip.get_single().ok();
+    let player_tooltip_data = query_player_tooltip.single().ok();
 
     if let Some(bank_position) = ui_state
         .bank_entity
@@ -179,13 +179,14 @@ pub fn ui_bank_system(
 
     let mut response_close_button = None;
 
+    let ctx = egui_context.ctx_mut().unwrap();
     egui::Window::new("Bank")
         .frame(egui::Frame::none())
         .title_bar(false)
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(&*ctx, |ui| {
             dialog.draw(
                 ui,
                 DataBindings {

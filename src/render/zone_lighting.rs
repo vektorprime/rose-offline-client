@@ -1,20 +1,19 @@
 use bevy::{
-    asset::{load_internal_asset, UntypedHandle, UntypedAssetId, Handle, weak_handle},
+    asset::{load_internal_asset, Handle, weak_handle},
     ecs::{
         component::Component,
         query::ROQueryItem,
         system::{lifetimeless::SRes, SystemParamItem},
     },
     math::{Vec3, Vec4},
-    pbr::{CascadeShadowConfig, FogVolume, VolumetricLight},
+    light::{CascadeShadowConfig, FogVolume, VolumetricLight},
     prelude::{
         AmbientLight, App, Color, Commands, DetectChanges, DirectionalLight, EulerRot,
-        FromWorld, IntoScheduleConfigs, Local, Plugin, Query, Quat, ReflectResource, Res, ResMut,
+        FromWorld, GlobalAmbientLight, IntoScheduleConfigs, Local, Plugin, Query, Quat, ReflectResource, Res, ResMut,
         Resource, Shader, Startup, Transform, Update, World, With, Without, LinearRgba,
         GlobalTransform, ColorToComponents, Dir3,
     },
     reflect::{Reflect, TypePath},
-    render::camera::Exposure,
     render::{
         render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
         render_resource::{
@@ -24,10 +23,11 @@ use bevy::{
             ShaderType,
         },
         renderer::{RenderDevice, RenderQueue},
-        view::RenderLayers,
-        Extract, ExtractSchedule, Render, RenderApp, RenderSet,
+        Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
     },
 };
+use bevy::camera::{Exposure};
+use bevy::camera::visibility::RenderLayers;
 use crate::graphics::{GraphicsSettings, ShadowQuality};
 use crate::resources::{ZoneTime, ZoneTimeState};
 use crate::render::starry_sky_material::MoonLight;
@@ -36,9 +36,7 @@ use crate::render::starry_sky_material::MoonLight;
 /// Used to query the fog volume for modifications or removal.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct VolumetricFogVolume;
-use std::any::TypeId;
 use std::sync::OnceLock;
-use uuid::Uuid;
 
 /// Mode for controlling how the time of day is determined.
 #[derive(Reflect, Clone, Copy, PartialEq, Debug, Default)]
@@ -78,9 +76,6 @@ impl Default for SkySettings {
 /// This allows the specialize method to access the layout without needing direct resource access.
 pub static ZONE_LIGHTING_BIND_GROUP_LAYOUT: OnceLock<BindGroupLayout> = OnceLock::new();
 
-pub const ZONE_LIGHTING_SHADER_HANDLE: UntypedHandle =
-    UntypedHandle::Weak(UntypedAssetId::Uuid { type_id: TypeId::of::<Shader>(), uuid: Uuid::from_u128(0x444949d32b35d5d9) });
-
 pub const ZONE_LIGHTING_SHADER_HANDLE_TYPED: Handle<Shader> =
     weak_handle!("444949d3-2b35-d5d9-0000-000000000000");
 
@@ -117,7 +112,7 @@ impl Plugin for ZoneLightingPlugin {
             // bevy::log::info!("[ZONE LIGHTING] Initializing render app systems");
             render_app
                 .add_systems(ExtractSchedule, extract_uniform_data)
-                .add_systems(Render, (prepare_uniform_data,).in_set(RenderSet::Prepare));
+                .add_systems(Render, (prepare_uniform_data,).in_set(RenderSystems::Prepare));
         } else {
             bevy::log::error!("[ZONE LIGHTING] FAILED to get render app - lighting will not work!");
         }
@@ -166,10 +161,9 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
 
     // bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=15000.0, shadows_enabled=true, VolumetricLight component added", light_entity);
 
-    // Bevy 0.14: AmbientLight is now a component that can be spawned as an entity
-    // or kept as a resource. Using as resource for global ambient light.
+    // Bevy 0.18: AmbientLight is now a component. GlobalAmbientLight is the resource form.
     // Using Bevy default values: Color::WHITE, brightness: 80.0
-    commands.insert_resource(AmbientLight::default());
+    commands.insert_resource(GlobalAmbientLight::default());
     
     //bevy::log::info!("[ZONE LIGHTING] Ambient light inserted: brightness=1.0");
 
@@ -272,7 +266,7 @@ fn update_volumetric_fog_system(
 /// brightness/color adjustments to take effect while still using zone lighting as a base.
 fn sync_zone_lighting_to_bevy_lights_system(
     mut zone_lighting: ResMut<ZoneLighting>,
-    mut ambient_light: ResMut<AmbientLight>,
+    mut ambient_light: ResMut<GlobalAmbientLight>,
     mut query_directional_light: Query<(&mut DirectionalLight, &GlobalTransform)>,
     graphics_settings: Option<Res<crate::graphics::GraphicsSettings>>,
 ) {
@@ -302,7 +296,7 @@ fn sync_zone_lighting_to_bevy_lights_system(
     ambient_light.color = final_color;
     ambient_light.brightness = final_brightness;
 
-    if let Ok((mut light, transform)) = query_directional_light.get_single_mut() {
+    if let Ok((mut light, transform)) = query_directional_light.single_mut() {
         // Sync directional light color from zone_lighting.character_diffuse_color
         let char_diffuse = zone_lighting.character_diffuse_color;
         light.color = Color::from(LinearRgba::new(char_diffuse.x, char_diffuse.y, char_diffuse.z, 1.0));
@@ -630,6 +624,7 @@ pub struct ZoneLightingUniformMeta {
     buffer: Buffer,
     bind_group: BindGroup,
     pub bind_group_layout: BindGroupLayout,
+    pub bind_group_layout_descriptor: BindGroupLayoutDescriptor,
 }
 
 impl FromWorld for ZoneLightingUniformMeta {
@@ -646,6 +641,20 @@ impl FromWorld for ZoneLightingUniformMeta {
         });
         //bevy::log::info!("[ZONE LIGHTING] Uniform buffer created: size={} bytes",
             //ZoneLightingUniformData::min_size().get());
+
+        let bind_group_layout_descriptor = BindGroupLayoutDescriptor::new(
+            "zone_lighting_uniform_layout",
+            &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX_FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(ZoneLightingUniformData::min_size()),
+                },
+                count: None,
+            }],
+        );
 
         let bind_group_layout =
             render_device.create_bind_group_layout(
@@ -680,6 +689,7 @@ impl FromWorld for ZoneLightingUniformMeta {
             buffer,
             bind_group,
             bind_group_layout,
+            bind_group_layout_descriptor,
         }
     }
 }
@@ -753,8 +763,8 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetZoneLightingBindGroup
 
     fn render<'w>(
         _: &P,
-        _: ROQueryItem<'w, Self::ViewQuery>,
-        _: Option<ROQueryItem<'w, Self::ItemQuery>>,
+        _: ROQueryItem<'w, '_, Self::ViewQuery>,
+        _: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
         meta: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {

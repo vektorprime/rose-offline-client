@@ -1,6 +1,6 @@
 use bevy::{
     asset::{AssetId, AssetLoader, io::Reader, LoadContext},
-    prelude::{AssetEvent, Assets, EventReader, Local, Res, ResMut},
+    prelude::{AssetEvent, Assets, Local, MessageReader, Res, ResMut, TypePath},
 };
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
     ui::widgets::{Dialog, LoadWidget},
 };
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct DialogLoader;
 
 /// Counter to track how many times dialog assets are loaded
@@ -27,7 +27,7 @@ impl AssetLoader for DialogLoader {
         load_context: &mut LoadContext<'_>,
     ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
-            let path = load_context.path().to_string_lossy().to_string();
+            let path = load_context.path().path().to_string_lossy().to_string();
             
             // SAFETY: This is only for diagnostic logging during single-threaded asset loading
             unsafe {
@@ -104,7 +104,7 @@ pub struct DialogsLoadState {
 }
 
 pub fn load_dialog_sprites_system(
-    mut ev_asset: EventReader<AssetEvent<Dialog>>,
+    mut ev_asset: MessageReader<AssetEvent<Dialog>>,
     mut assets: ResMut<Assets<Dialog>>,
     mut load_state: Local<DialogsLoadState>,
     ui_resources: Res<UiResources>,

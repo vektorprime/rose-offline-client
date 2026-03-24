@@ -32,7 +32,7 @@ pub fn ui_debug_render_system(
 
     egui::Window::new("Debug Render")
         .open(&mut ui_state_debug_windows.debug_render_open)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             ui.checkbox(&mut debug_render_config.colliders, "Show Colliders");
             if let Some(mut rapier_debug) = rapier_debug {
                 ui.checkbox(&mut rapier_debug.enabled, "Show Rapier Debug");

@@ -2,9 +2,9 @@ use bevy::{
     asset::Assets,
     ecs::query::QueryData,
     math::Vec3,
-    prelude::{AssetServer, Commands, Entity, EventReader, GlobalTransform, Query, Res, ResMut, Transform, With},
-    render::mesh::skinning::SkinnedMesh,
+    prelude::{AssetServer, Commands, Entity, MessageReader, GlobalTransform, Query, Res, ResMut, Transform, With},
 };
+use bevy_mesh::skinning::SkinnedMesh;
 
 use rose_data::{
     AmmoIndex, AnimationEventFlags, EquipmentIndex, ItemClass, SoundId, VehiclePartIndex,
@@ -78,7 +78,7 @@ fn spawn_sound(
 
 pub fn animation_sound_system(
     mut commands: Commands,
-    mut animation_frame_events: EventReader<AnimationFrameEvent>,
+    mut animation_frame_events: MessageReader<AnimationFrameEvent>,
     game_data: Res<GameData>,
     asset_server: Res<AssetServer>,
     current_zone: Option<Res<CurrentZone>>,
@@ -93,7 +93,7 @@ pub fn animation_sound_system(
 ) {
     // Get player position for sound prioritization
     let player_position = query_player
-        .get_single()
+        .single()
         .map(|transform| transform.translation())
         .unwrap_or(Vec3::ZERO);
 

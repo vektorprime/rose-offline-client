@@ -18,7 +18,7 @@ pub fn ui_status_effects_system(
     ui_resources: Res<UiResources>,
     time: Res<Time>,
 ) {
-    let player = if let Ok(player) = query_player.get_single() {
+    let player = if let Ok(player) = query_player.single() {
         player
     } else {
         return;
@@ -31,7 +31,7 @@ pub fn ui_status_effects_system(
         .frame(egui::Frame::none())
         .title_bar(false)
         .resizable(false)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             ui.horizontal_top(|ui| {
                 for (status_effect_type, active_status_effect) in
                     status_effects.active.iter()

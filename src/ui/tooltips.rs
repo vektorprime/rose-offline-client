@@ -201,7 +201,7 @@ fn add_equipment_item_add_appraisal(
 fn add_item_equip_requirement(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     item_data: &BaseItemData,
 ) {
     if let Some(job_class_id) = item_data.equip_job_class_requirement {
@@ -298,7 +298,7 @@ fn add_item_description(ui: &mut egui::Ui, game_data: &GameData, item_data: &Bas
 pub fn ui_add_item_tooltip(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem<'_, '_>>,
+    player: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     item: &Item,
 ) {
     ui.set_max_width(TOOLTIP_MAX_WIDTH);
@@ -767,7 +767,7 @@ fn add_skill_recover_xp(ui: &mut egui::Ui, game_data: &GameData, skill_data: &Sk
 fn add_skill_require_ability(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     skill_data: &SkillData,
 ) {
     if skill_data.required_ability.is_empty() {
@@ -815,7 +815,7 @@ fn add_skill_require_ability(
 fn add_skill_require_job(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     skill_data: &SkillData,
 ) {
     if let Some(job_class_id) = skill_data.required_job_class {
@@ -844,7 +844,7 @@ fn add_skill_require_job(
 fn add_skill_require_skill(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     skill_data: &SkillData,
 ) {
     if skill_data.required_skills.is_empty() {
@@ -889,7 +889,7 @@ fn add_skill_require_skill(
 fn add_skill_require_skill_point(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     skill_data: &SkillData,
 ) {
     if skill_data.learn_point_cost == 0 {
@@ -918,7 +918,7 @@ fn add_skill_require_skill_point(
 fn add_skill_require_equipment(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     skill_data: &SkillData,
 ) {
     if skill_data.required_ability.is_empty() {
@@ -959,7 +959,7 @@ fn add_skill_require_equipment(
 fn add_skill_requirements(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     skill_data: &SkillData,
 ) {
     add_skill_require_job(ui, game_data, player, skill_data);
@@ -972,7 +972,7 @@ fn add_skill_requirements(
 fn add_skill_status_effects(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     skill_data: &SkillData,
 ) {
     let prefix: &str = if matches!(skill_data.skill_type, SkillType::Passive) {
@@ -1091,7 +1091,7 @@ fn add_skill_steal_ability_value(ui: &mut egui::Ui, game_data: &GameData, skill_
 fn add_skill_summon_points(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    _player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    _player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     skill_data: &SkillData,
 ) {
     if let Some(summon_point_cost) = skill_data
@@ -1141,7 +1141,7 @@ fn add_skill_type_and_target(ui: &mut egui::Ui, game_data: &GameData, skill_data
 fn add_skill_use_ability_value(
     ui: &mut egui::Ui,
     game_data: &GameData,
-    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     skill_data: &SkillData,
 ) {
     for &(ability_type, mut value) in skill_data.use_ability.iter() {
@@ -1199,7 +1199,7 @@ pub fn ui_add_skill_tooltip(
     ui: &mut egui::Ui,
     tooltip_type: SkillTooltipType,
     game_data: &GameData,
-    player: Option<&PlayerTooltipQueryItem<'_, '_>>,
+    player: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     skill_id: SkillId,
 ) {
     ui.set_max_width(TOOLTIP_MAX_WIDTH);

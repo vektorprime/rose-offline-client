@@ -1,19 +1,19 @@
 use std::{ffi::OsString, num::NonZeroU16, path::PathBuf};
 
-use bevy::asset::{Asset, AssetLoader, io::Reader, LoadContext, UntypedAssetId, VisitAssetDependencies};
+use bevy::asset::{Asset, AssetLoader, io::Reader, LoadContext, RenderAssetUsages, UntypedAssetId, VisitAssetDependencies};
 use bevy::math::{Quat, Vec3};
-use bevy::prelude::{Handle, Image, Reflect};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::prelude::{Handle, Reflect, TypePath};
+use bevy_image::Image;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::tasks::futures_lite::AsyncReadExt;
 use log::info;
 
 use rose_file_readers::{RoseFile, ZmoChannel, ZmoFile};
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct ZmoAssetLoader;
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct ZmoTextureAssetLoader;
 
 #[derive(Reflect, Clone, Default)]
@@ -143,7 +143,7 @@ impl AssetLoader for ZmoAssetLoader {
         load_context: &mut LoadContext<'_>,
     ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
-            let asset_path = load_context.path().to_string_lossy();
+            let asset_path = load_context.path().path().to_string_lossy();
         // CRITICAL: Use log::error to ensure visibility
         //log::error!("[ZMO_LOADER] ========== LOAD CALLED ==========");
         //log::error!("[ZMO_LOADER] Loading ZMO animation asset: {}", asset_path);
@@ -270,7 +270,7 @@ impl AssetLoader for ZmoTextureAssetLoader {
         load_context: &mut LoadContext<'_>,
     ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
-            let asset_path = load_context.path().to_string_lossy();
+            let asset_path = load_context.path().path().to_string_lossy();
         log::error!("[ZMO_TEXTURE_LOADER] ========== LOAD CALLED ==========");
         log::error!("[ZMO_TEXTURE_LOADER] Loading ZMO texture asset: {}", asset_path);
         let mut bytes = Vec::new();

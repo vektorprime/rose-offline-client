@@ -99,14 +99,14 @@ pub fn spatial_sound_system(
     time: Res<Time>,
 ) {
     let player = &mut context.spatial;
-    let Ok(camera_transform) = camera.get_single() else {
+    let Ok(camera_transform) = camera.single() else {
         return;
     };
     let (_, camera_rotation, camera_position) = camera_transform.to_scale_rotation_translation();
 
     // Use player position as listener position (fallback to camera if no player exists)
     let listener_position = query_player
-        .get_single()
+        .single()
         .map_or(camera_position, |player_transform| {
             player_transform.translation()
         });

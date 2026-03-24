@@ -10,11 +10,11 @@
 //! - Custom shader material with glow effects
 
 use bevy::prelude::*;
-use bevy::render::mesh::{Mesh, Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::Face;
 use bevy::pbr::MeshMaterial3d;
 use bevy::render::alpha::AlphaMode;
+use bevy::asset::RenderAssetUsages;
+use bevy_mesh::{Mesh, Indices, PrimitiveTopology};
 
 use crate::components::{CharacterModel, CharacterModelPart, FlightState, PlayerCharacter, AngelicWings, WingSide};
 use crate::events::FlightToggleEvent;
@@ -49,7 +49,7 @@ pub fn wing_spawn_system(
     mut _commands: Commands,
     mut _meshes: ResMut<Assets<Mesh>>,
     mut _materials: ResMut<Assets<WingMaterial>>,
-    mut flight_events: EventReader<FlightToggleEvent>,
+    mut flight_events: MessageReader<FlightToggleEvent>,
     player_query: Query<(Entity, &CharacterModel), With<PlayerCharacter>>,
     mut flight_states: Query<&mut FlightState, With<PlayerCharacter>>,
 ) {

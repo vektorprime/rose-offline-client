@@ -5,7 +5,7 @@ use bevy::{
     input::ButtonInput,
     math::{Vec2, Vec3Swizzles},
     prelude::{
-        AssetServer, Camera3d, EventWriter, Handle, Image, KeyCode, Local, Query, Res, Transform,
+        AssetServer, Camera3d, Handle, Image, KeyCode, Local, MessageWriter, Query, Res, Transform,
         Vec3, With, Without,
     },
     window::PrimaryWindow,
@@ -131,6 +131,7 @@ fn generate_text_galley(
         valign: egui::Align::Center,
         extra_letter_spacing: 0.0,
         line_height: None,
+        expand_bg: 0.0,
     };
 
     let mut text_job = egui::text::LayoutJob::single_section(text, text_format);
@@ -139,7 +140,7 @@ fn generate_text_galley(
     text_job.wrap.max_rows = 1;
     text_job.wrap.break_anywhere = true;
 
-    ctx.fonts(|fonts| fonts.layout_job(text_job))
+    ctx.layer_painter(egui::LayerId::background()).layout_job(text_job)
 }
 
 /// Check if an entity is a monster (NPC with hostile team)
@@ -151,7 +152,7 @@ fn is_monster_entity(client_entity: &ClientEntity, team: &Team, player_team: &Te
 pub fn ui_minimap_system(
     mut egui_context: EguiContexts,
     mut ui_state: Local<UiStateMinimap>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     query_player: Query<(&Position, &Team, Option<&PartyInfo>), With<PlayerCharacter>>,
     query_characters: Query<(&CharacterInfo, &Position, &Team), Without<PlayerCharacter>>,
     // Query for monsters (NPCs that are hostile)
@@ -204,14 +205,14 @@ pub fn ui_minimap_system(
         None => return,
     };
 
-    let Ok(camera_transform) = query_camera.get_single() else {
+    let Ok(camera_transform) = query_camera.single() else {
         return;
     };
     let camera_forward_2d = camera_transform.forward().xz().normalize_or_zero();
     let camera_angle = -camera_forward_2d.angle_between(Vec2::Y);
 
     // If zone has changed, reload the minimap image
-    let pixels_per_point = egui_context.ctx_mut().pixels_per_point();
+    let pixels_per_point = egui_context.ctx_mut().unwrap().pixels_per_point();
     if ui_state.zone_id != Some(current_zone.id)
         || pixels_per_point != ui_state.zone_name_pixels_per_point
     {
@@ -229,7 +230,7 @@ pub fn ui_minimap_system(
             {
                 ui_state.minimap_image = asset_server.load(minimap_path.path().to_string_lossy().into_owned());
                 ui_state.minimap_texture =
-                    egui_context.add_image(ui_state.minimap_image.clone_weak());
+                    egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(ui_state.minimap_image.clone()));
             }
 
             ui_state.zone_id = Some(current_zone.id);
@@ -237,7 +238,7 @@ pub fn ui_minimap_system(
         }
 
         let zone_name = zone_data.map_or("???", |zone_data| zone_data.name.as_str());
-        let ctx = egui_context.ctx_mut();
+        let ctx = egui_context.ctx_mut().unwrap();
         ui_state.zone_name_text_galley = Some(generate_text_galley(
             ctx,
             ZONE_NAME_WIDTH,
@@ -316,7 +317,7 @@ pub fn ui_minimap_system(
     }
 
     let (player_position, player_team, player_party) =
-        if let Ok((player_position, player_team, player_party)) = query_player.get_single() {
+        if let Ok((player_position, player_team, player_party)) = query_player.single() {
             (Some(player_position), Some(player_team), player_party)
         } else {
             (None, None, None)
@@ -394,7 +395,7 @@ pub fn ui_minimap_system(
         .max_size(if minimised { egui::vec2(300.0, 25.0) } else { max_window_size })
         .default_width(dialog_width)
         .default_height(dialog_height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             // Update window size from actual ui size
             let actual_size = ui.min_rect().size();
             if !minimised && actual_size.x > 1.0 && actual_size.y > 1.0 {

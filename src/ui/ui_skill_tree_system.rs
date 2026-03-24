@@ -1,5 +1,5 @@
 use bevy::ecs::query::QueryData;
-use bevy::prelude::{Assets, Entity, EventWriter, Local, Query, Res, ResMut, With};
+use bevy::prelude::{Assets, Entity, MessageWriter, Local, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_data::SkillId;
@@ -34,7 +34,7 @@ fn ui_add_skill_tree_slot(
     pos: egui::Pos2,
     skill: &Skill,
     player: &(&CharacterInfo, &SkillList, &SkillPoints),
-    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
 ) -> egui::Response {
@@ -125,7 +125,7 @@ fn ui_add_skill_tree_slot(
 fn draw_skill_slots(
     ui: &mut egui::Ui,
     player: &(&CharacterInfo, &SkillList, &SkillPoints),
-    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     widgets: &[Widget],
@@ -159,7 +159,7 @@ pub fn ui_skill_tree_system(
     mut egui_context: EguiContexts,
     mut ui_state: Local<UiStateSkillTree>,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut query_player: Query<(Entity, &CharacterInfo, &SkillList, &SkillPoints), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     game_data: Res<GameData>,
@@ -173,12 +173,12 @@ pub fn ui_skill_tree_system(
         return;
     };
 
-    let player = if let Ok(player) = query_player.get_single() {
+    let player = if let Ok(player) = query_player.single() {
         player
     } else {
         return;
     };
-    let player_tooltip_data = query_player_tooltip.get_single().ok();
+    let player_tooltip_data = query_player_tooltip.single().ok();
 
     let (_, character_info, skill_list, skill_points) = player;
 
@@ -216,7 +216,7 @@ pub fn ui_skill_tree_system(
         .title_bar(false)
         .resizable(false)
         .default_size([dialog.width, dialog.height])
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {

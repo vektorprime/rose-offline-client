@@ -8,14 +8,17 @@ use bevy::{
         App, AssetServer, Camera, Camera3d, Commands, Entity, GlobalTransform,
         KeyCode, MouseButton, Plugin, Query, Res, ResMut, Transform, Update, Vec3, With,
         Mesh3d, MeshMaterial3d, Visibility, InheritedVisibility, ViewVisibility,
-        Name, Mesh, Assets, StandardMaterial, Color, Local, Handle, Quat,
+        Name, Assets, StandardMaterial, Color, Local, Handle, Quat,
     },
     window::{PrimaryWindow, Window},
-    pbr::{NotShadowCaster, NotShadowReceiver, ExtendedMaterial},
+    light::{NotShadowCaster, NotShadowReceiver},
+    pbr::ExtendedMaterial,
     math::primitives::Cuboid,
     ecs::schedule::IntoScheduleConfigs,
-    render::{alpha::AlphaMode, view::RenderLayers},
+    render::alpha::AlphaMode,
+    camera::visibility::RenderLayers,
 };
+use bevy_mesh::Mesh;
 use bevy_egui::EguiContexts;
 use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter, RigidBody, Collider, AsyncCollider, ComputedColliderShape};
 use bevy_rapier3d::plugin::context::systemparams::ReadRapierContext;
@@ -96,7 +99,7 @@ pub fn model_placement_system(
     };
     
     // Skip if egui wants pointer input (mouse is over UI)
-    if egui_ctx.ctx_mut().wants_pointer_input() {
+    if egui_ctx.ctx_mut().unwrap().wants_pointer_input() {
         return;
     }
     
@@ -117,7 +120,7 @@ pub fn model_placement_system(
     };
 
     // Get the primary window
-    let Ok(window) = query_window.get_single() else {
+    let Ok(window) = query_window.single() else {
         return;
     };
 
@@ -289,7 +292,7 @@ fn place_model_at_position(
     let object_entity = object_entity_commands.id();
     
     // Spawn each part of the object with mesh and material
-    let mut mesh_cache: Vec<Option<Handle<bevy::render::mesh::Mesh>>> = vec![None; zsc.meshes.len()];
+    let mut mesh_cache: Vec<Option<Handle<Mesh>>> = vec![None; zsc.meshes.len()];
     
     for (part_index, object_part) in object.parts.iter().enumerate() {
         let part_transform = Transform::default()
@@ -414,8 +417,8 @@ fn place_model_at_position(
         ));
 
         // Insert individually so the compiler identifies the exact failing component
-        part_cmd.insert(bevy::render::view::NoFrustumCulling);
-        part_cmd.insert(bevy::render::primitives::Aabb::from_min_max(
+        part_cmd.insert(bevy::camera::visibility::NoFrustumCulling);
+        part_cmd.insert(bevy::camera::primitives::Aabb::from_min_max(
             Vec3::splat(-100000.0),
             Vec3::splat(100000.0),
         ));
@@ -490,7 +493,7 @@ pub fn model_preview_system(
     }
     
     // Skip if egui wants pointer input
-    if egui_ctx.ctx_mut().wants_pointer_input() {
+    if egui_ctx.ctx_mut().unwrap().wants_pointer_input() {
         return;
     }
 
@@ -500,7 +503,7 @@ pub fn model_preview_system(
     };
 
     // Get window and cursor
-    let Ok(window) = query_window.get_single() else {
+    let Ok(window) = query_window.single() else {
         return;
     };
     let Some(cursor_position) = window.cursor_position() else {
@@ -619,7 +622,7 @@ pub fn add_to_zone_system(
     let zone_center_world = Vec3::new(5200.0, 0.0, -5200.0);
     let mut world_position = zone_center_world;
     
-    if let Ok((_camera, camera_transform)) = query_camera.get_single() {
+    if let Ok((_camera, camera_transform)) = query_camera.single() {
         let camera_pos = camera_transform.translation();
         let camera_forward = camera_transform.forward();
         

@@ -8,18 +8,18 @@
 
 use bevy::prelude::*;
 use bevy::math::Vec3;
-use bevy::render::mesh::{Mesh, Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::Face;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::render::alpha::AlphaMode;
+use bevy::asset::RenderAssetUsages;
+use bevy_mesh::{Mesh, Indices, PrimitiveTopology};
 use rand::Rng;
 
 use crate::components::{Fish, FishSettings, FishWaterRef, WaterSpawnedEvent};
 
 /// System to spawn fish when water is created
 pub fn spawn_fish_on_water_system(
-    mut events: EventReader<WaterSpawnedEvent>,
+    mut events: MessageReader<WaterSpawnedEvent>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -444,8 +444,8 @@ impl Plugin for FishPlugin {
             .register_type::<FishSettings>()
             // Add resources
             .init_resource::<FishSettings>()
-            // Add events
-            .add_event::<WaterSpawnedEvent>()
+            // Add messages
+            .add_message::<WaterSpawnedEvent>()
             // Add systems
             .add_systems(Update, (
                 spawn_fish_on_water_system,

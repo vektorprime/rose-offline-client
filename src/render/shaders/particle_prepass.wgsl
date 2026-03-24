@@ -7,35 +7,35 @@
 @group(0) @binding(0) var<uniform> view: View;
 
 // Same storage buffers as main shader
-@group(2) @binding(0)
+@group(#{MATERIAL_BIND_GROUP}) @binding(0)
 var<storage, read> positions: array<vec4<f32>>;
 
-@group(2) @binding(1)
+@group(#{MATERIAL_BIND_GROUP}) @binding(1)
 var<storage, read> sizes: array<vec2<f32>>;
 
-@group(2) @binding(2)
+@group(#{MATERIAL_BIND_GROUP}) @binding(2)
 var<storage, read> colors: array<vec4<f32>>;
 
-@group(2) @binding(3)
+@group(#{MATERIAL_BIND_GROUP}) @binding(3)
 var<storage, read> textures: array<vec4<f32>>;
 
 // Texture and sampler (even if not used in prepass, must match bindings)
-@group(2) @binding(4)
+@group(#{MATERIAL_BIND_GROUP}) @binding(4)
 var base_color_texture: texture_2d<f32>;
 
-@group(2) @binding(5)
+@group(#{MATERIAL_BIND_GROUP}) @binding(5)
 var base_color_sampler: sampler;
 
-@group(2) @binding(6)
+@group(#{MATERIAL_BIND_GROUP}) @binding(6)
 var<uniform> blend_op: u32;
 
-@group(2) @binding(7)
+@group(#{MATERIAL_BIND_GROUP}) @binding(7)
 var<uniform> src_blend_factor: u32;
 
-@group(2) @binding(8)
+@group(#{MATERIAL_BIND_GROUP}) @binding(8)
 var<uniform> dst_blend_factor: u32;
 
-@group(2) @binding(9)
+@group(#{MATERIAL_BIND_GROUP}) @binding(9)
 var<uniform> billboard_type: u32;
 
 struct VertexInput {

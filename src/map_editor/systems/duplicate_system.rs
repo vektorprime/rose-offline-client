@@ -5,8 +5,10 @@
 
 use bevy::{
     prelude::*,
-    pbr::{NotShadowCaster, ExtendedMaterial},
-    render::{alpha::AlphaMode, view::RenderLayers},
+    light::NotShadowCaster,
+    pbr::ExtendedMaterial,
+    render::alpha::AlphaMode,
+    camera::visibility::RenderLayers,
 };
 use bevy_rapier3d::prelude::{CollisionGroups, Group, RigidBody, Collider, AsyncCollider, ComputedColliderShape};
 
@@ -29,7 +31,7 @@ pub struct DuplicateSystemPlugin;
 
 impl Plugin for DuplicateSystemPlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<DuplicateSelectedEvent>()
+        app.add_message::<DuplicateSelectedEvent>()
             .add_systems(Update, handle_duplicate_event);
     }
 }
@@ -41,7 +43,7 @@ impl Plugin for DuplicateSystemPlugin {
 #[allow(clippy::too_many_arguments)]
 pub fn handle_duplicate_event(
     mut commands: Commands,
-    mut events: EventReader<DuplicateSelectedEvent>,
+    mut events: MessageReader<DuplicateSelectedEvent>,
     mut map_editor_state: ResMut<MapEditorState>,
     selected_entities: Query<Entity, With<SelectedInEditor>>,
     transforms: Query<&GlobalTransform>,
@@ -337,8 +339,8 @@ fn duplicate_child_parts(
             }
             
             // Add rendering components
-            part_commands.insert(bevy::render::view::NoFrustumCulling);
-            part_commands.insert(bevy::render::primitives::Aabb::from_min_max(
+            part_commands.insert(bevy::camera::visibility::NoFrustumCulling);
+            part_commands.insert(bevy::camera::primitives::Aabb::from_min_max(
                 Vec3::splat(-100000.0),
                 Vec3::splat(100000.0),
             ));

@@ -21,7 +21,7 @@ use crate::{
 /// This system queries for entities that just had the `Dead` component added
 /// and sends [`BloodEffectEvent::SpawnSpatter`] events to trigger visual effects.
 pub fn blood_spatter_on_death_system(
-    mut blood_events: EventWriter<BloodEffectEvent>,
+    mut blood_events: MessageWriter<BloodEffectEvent>,
     query_dead: Query<&GlobalTransform, (Added<Dead>, With<ModelHeight>)>,
     config: Res<BloodEffectConfig>,
 ) {
@@ -47,7 +47,7 @@ pub fn blood_spatter_on_death_system(
 /// - [`BloodEffectEvent::SpawnSpatter`] - Creates forward decal entities for blood
 pub fn blood_spatter_spawn_system(
     mut commands: Commands,
-    mut blood_events: EventReader<BloodEffectEvent>,
+    mut blood_events: MessageReader<BloodEffectEvent>,
     config: Res<BloodEffectConfig>,
     query_spatters: Query<Entity, With<BloodSpatter>>,
     mut images: ResMut<Assets<Image>>,

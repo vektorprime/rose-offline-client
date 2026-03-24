@@ -1,7 +1,7 @@
 use bevy::{
     math::Vec3Swizzles,
     prelude::{
-        Assets, Entity, EventReader, EventWriter, Events, Local, Query, Res, ResMut, With, World,
+        Assets, Entity, Local, MessageReader, MessageWriter, Messages, Query, Res, ResMut, With, World,
     },
 };
 use bevy_egui::{egui, EguiContexts};
@@ -54,10 +54,10 @@ fn ui_add_store_item_slot(
     price: &Money,
     is_sell_item: bool,
     slot_index: usize,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
-    message_box_events: &mut EventWriter<MessageBoxEvent>,
+    message_box_events: &mut MessageWriter<MessageBoxEvent>,
 ) {
     let item_data = game_data.items.get_base_item(item.get_item_reference());
 
@@ -97,10 +97,10 @@ fn ui_add_store_item_slot(
             ok: Some(Box::new(move |commands| {
                 commands.queue(move |world: &mut World| {
                     if let Some(mut personal_store_events) =
-                        world.get_resource_mut::<Events<PersonalStoreEvent>>()
+                        world.get_resource_mut::<Messages<PersonalStoreEvent>>()
                     {
                         personal_store_events
-                            .send(PersonalStoreEvent::BuyItem { slot_index, item });
+                            .write(PersonalStoreEvent::BuyItem { slot_index, item });
                     }
                 });
             })),
@@ -123,8 +123,8 @@ pub fn ui_personal_store_system(
     mut egui_context: EguiContexts,
     mut ui_state: Local<UiPersonalStoreState>,
     mut ui_state_dnd: ResMut<UiStateDragAndDrop>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
-    mut personal_store_events: EventReader<PersonalStoreEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
+    mut personal_store_events: MessageReader<PersonalStoreEvent>,
     query_personal_store: Query<(&ClientEntity, &PersonalStore, &Position), With<PersonalStore>>,
     query_player: Query<&Position, With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
@@ -132,7 +132,7 @@ pub fn ui_personal_store_system(
     dialog_assets: Res<Assets<Dialog>>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
-    mut message_box_events: EventWriter<MessageBoxEvent>,
+    mut message_box_events: MessageWriter<MessageBoxEvent>,
 ) {
     let ui_state = &mut *ui_state;
 
@@ -239,7 +239,7 @@ pub fn ui_personal_store_system(
         };
 
     // Ensure player still in distance of personal store
-    if let Ok(player_position) = query_player.get_single() {
+    if let Ok(player_position) = query_player.single() {
         if player_position
             .position
             .xy()
@@ -260,7 +260,7 @@ pub fn ui_personal_store_system(
     } else {
         return;
     };
-    let player_tooltip_data = query_player_tooltip.get_single().ok();
+    let player_tooltip_data = query_player_tooltip.single().ok();
 
     let mut response_close_button = None;
 
@@ -270,7 +270,7 @@ pub fn ui_personal_store_system(
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {

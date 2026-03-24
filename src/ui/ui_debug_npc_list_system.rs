@@ -58,7 +58,7 @@ pub fn ui_debug_npc_list_system(
         .resizable(true)
         .default_height(300.0)
         .open(&mut ui_state_debug_windows.npc_list_open)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             let mut filter_changed = false;
 
             egui::Grid::new("npc_list_controls_grid")

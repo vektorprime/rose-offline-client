@@ -1,5 +1,5 @@
 use bevy::{
-    ecs::{event::EventWriter, query::QueryData},
+    ecs::{message::MessageWriter, query::QueryData},
     prelude::{Assets, ButtonInput, KeyCode, Local, Query, Res, ResMut, With},
 };
 use bevy_egui::{egui, EguiContexts};
@@ -68,12 +68,12 @@ fn ui_add_hotbar_slot(
     pos: egui::Pos2,
     hotbar_index: (usize, usize),
     player: &mut PlayerQueryItem,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     ui_state_dnd: &mut UiStateDragAndDrop,
     use_slot: bool,
-    player_command_events: &mut EventWriter<PlayerCommandEvent>,
+    player_command_events: &mut MessageWriter<PlayerCommandEvent>,
 ) {
     let hotbar_slot = player.hotbar.pages[hotbar_index.0][hotbar_index.1].as_ref();
     let mut dropped_item = None;
@@ -199,10 +199,10 @@ pub fn ui_hotbar_system(
     mut egui_context: EguiContexts,
     mut ui_state_hot_bar: Local<UiStateHotBar>,
     mut ui_state_dnd: ResMut<UiStateDragAndDrop>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut query_player: Query<PlayerQuery, With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
-    mut player_command_events: EventWriter<PlayerCommandEvent>,
+    mut player_command_events: MessageWriter<PlayerCommandEvent>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
@@ -218,14 +218,14 @@ pub fn ui_hotbar_system(
         return;
     };
 
-    let mut player = if let Ok(player) = query_player.get_single_mut() {
+    let mut player = if let Ok(player) = query_player.single_mut() {
         player
     } else {
         return;
     };
-    let player_tooltip_data = query_player_tooltip.get_single().ok();
+    let player_tooltip_data = query_player_tooltip.single().ok();
 
-    let use_hotbar_index = if !egui_context.ctx_mut().wants_keyboard_input() {
+    let use_hotbar_index = if !egui_context.ctx_mut().unwrap().wants_keyboard_input() {
         if keyboard_input.just_pressed(KeyCode::F1) {
             Some(0)
         } else if keyboard_input.just_pressed(KeyCode::F2) {
@@ -257,7 +257,7 @@ pub fn ui_hotbar_system(
     let is_vertical = ui_state_hot_bar.is_vertical;
 
     let screen_size = egui_context
-        .ctx_mut()
+        .ctx_mut().unwrap()
         .input(|input| input.screen_rect().size());
     let default_position = egui::pos2(
         screen_size.x / 2.0 - dialog.width / 2.0,
@@ -271,7 +271,7 @@ pub fn ui_hotbar_system(
         .default_width(dialog.width)
         .default_height(dialog.height)
         .default_pos(default_position)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {

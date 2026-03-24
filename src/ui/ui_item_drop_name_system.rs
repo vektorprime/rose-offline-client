@@ -22,7 +22,7 @@ pub fn ui_item_drop_name_system(
     game_data: Res<GameData>,
     mut visible_names: Local<Vec<ItemDropName>>,
 ) {
-    let ctx = egui_context.ctx_mut();
+    let ctx = egui_context.ctx_mut().unwrap();
     let style = ctx.style();
     let screen_size = ctx.input(|input| input.screen_rect().size());
     let tooltip_painter = ctx.layer_painter(egui::LayerId::new(
@@ -30,7 +30,7 @@ pub fn ui_item_drop_name_system(
         egui::Id::new("item_drop_tooltips"),
     ));
 
-    let Ok((camera, camera_transform)) = query_camera.get_single() else {
+    let Ok((camera, camera_transform)) = query_camera.single() else {
         return;
     };
 
@@ -76,9 +76,7 @@ pub fn ui_item_drop_name_system(
             DroppedItem::Money(money) => (format!("{} Zuly", money.0), egui::Color32::YELLOW),
         };
 
-        let galley = ctx.fonts(|fonts| {
-            fonts.layout_no_wrap(text, egui::FontSelection::Default.resolve(&style), colour)
-        });
+        let galley = ctx.layer_painter(egui::LayerId::background()).layout_no_wrap(text, egui::FontSelection::Default.resolve(&style), colour);
         let pos = egui::pos2(
             screen_pos.x - galley.rect.width() / 2.0,
             screen_size.y - screen_pos.y,

@@ -1,17 +1,17 @@
-//! Events for the blood effects system.
+//! Messages for the blood effects system.
 //!
-//! These events are used to trigger blood effect spawning, updates, and cleanup.
+//! These messages are used to trigger blood effect spawning, updates, and cleanup.
 
 use bevy::{prelude::*, reflect::Reflect};
 
-/// Event triggered when blood effects should be spawned or updated.
+/// Message triggered when blood effects should be spawned or updated.
 ///
-/// This event enum covers all blood-related actions:
+/// This message enum covers all blood-related actions:
 /// - Spawning blood spatter decals on terrain
 /// - Showing gash wounds on damaged entities
 /// - Updating wound visibility based on HP changes
 /// - Cleaning up wounds when entities despawn
-#[derive(Event, Reflect, Clone, Debug)]
+#[derive(Message, Reflect, Clone, Debug)]
 pub enum BloodEffectEvent {
     /// Spawn blood spatter decals on terrain at the specified position.
     ///

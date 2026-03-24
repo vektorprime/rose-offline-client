@@ -1,4 +1,4 @@
-use bevy::prelude::{Assets, EventWriter, Local, Query, Res, ResMut, With};
+use bevy::prelude::{Assets, MessageWriter, Local, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_data::Item;
@@ -32,7 +32,7 @@ const IID_PANE_QUESTINFO: i32 = 200;
 fn ui_add_quest_item_slot(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     item: Option<&Item>,
     game_data: &GameData,
     ui_resources: &UiResources,
@@ -90,7 +90,7 @@ pub fn ui_quest_list_system(
     mut ui_state: Local<UiQuestListState>,
     mut egui_context: EguiContexts,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     query_player: Query<&QuestState, With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     game_data: Res<GameData>,
@@ -106,12 +106,12 @@ pub fn ui_quest_list_system(
     } else {
         return;
     };
-    let player_quest_state = if let Ok(player) = query_player.get_single() {
+    let player_quest_state = if let Ok(player) = query_player.single() {
         player
     } else {
         return;
     };
-    let player_tooltip_data = query_player_tooltip.get_single().ok();
+    let player_tooltip_data = query_player_tooltip.single().ok();
 
     let listbox_extent = if let Some(Widget::ZListbox(listbox)) = dialog.get_widget(IID_ZLIST_QUEST)
     {
@@ -139,7 +139,7 @@ pub fn ui_quest_list_system(
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {

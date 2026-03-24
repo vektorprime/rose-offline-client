@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::future::Future;
 
 use bevy::asset::{AssetLoader, io::Reader, LoadContext};
+use bevy::prelude::TypePath;
 use bevy::tasks::futures_lite::AsyncReadExt;
 use hound::WavReader;
 
@@ -9,7 +10,7 @@ use crate::audio::audio_source::AudioSource;
 
 use super::audio_source::AudioSourceDecoded;
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct WavLoader;
 
 impl AssetLoader for WavLoader {

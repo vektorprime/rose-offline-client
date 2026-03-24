@@ -38,7 +38,7 @@ pub fn ui_debug_zone_time_system(
 
     egui::Window::new("Zone Time")
         .open(&mut ui_state_debug_windows.zone_time_open)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             egui::Grid::new("zone_time_grid")
                 .num_columns(2)
                 .show(ui, |ui| {

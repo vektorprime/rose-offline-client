@@ -1,7 +1,7 @@
 use bevy::{
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, Entity, EventReader,
+        AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, Entity, MessageReader,
         GlobalTransform, Local, Res, ResMut, Transform, Visibility, Mesh,
     },
     render::{
@@ -25,7 +25,7 @@ pub struct MoveDestinationEffectSystemState {
 pub fn move_destination_effect_system(
     mut commands: Commands,
     mut state: Local<MoveDestinationEffectSystemState>,
-    mut events: EventReader<MoveDestinationEffectEvent>,
+    mut events: MessageReader<MoveDestinationEffectEvent>,
     game_data: Res<GameData>,
     asset_server: Res<AssetServer>,
     vfs_resource: Res<VfsResource>,

@@ -5,9 +5,9 @@ use bevy::{
     },
     math::{Quat, Vec2, Vec3},
     prelude::{
-        BevyError, Component, EventReader, KeyCode, Local, MouseButton, Query, Res, Time, Transform, With,
+        BevyError, Component, MessageReader, KeyCode, Local, MouseButton, Query, Res, Time, Transform, With,
     },
-    window::{CursorGrabMode, PrimaryWindow, Window},
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
 use bevy_egui::EguiContexts;
 use dolly::prelude::{CameraRig, LeftHanded, Position, Smooth, YawPitch};
@@ -49,22 +49,22 @@ pub fn free_camera_system(
     mut control_state: Local<CameraControlState>,
     mut query: Query<(&mut FreeCamera, &mut Transform)>,
     time: Res<Time>,
-    mut mouse_motion_events: EventReader<MouseMotion>,
-    mut mouse_wheel_reader: EventReader<MouseWheel>,
+    mut mouse_motion_events: MessageReader<MouseMotion>,
+    mut mouse_wheel_reader: MessageReader<MouseWheel>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
-    mut query_window: Query<&mut Window, With<PrimaryWindow>>,
+    mut query_window: Query<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
     mut egui_ctx: EguiContexts,
 ) -> Result<(), BevyError> {
     // Log camera system execution once per second to avoid spam
     //if time.elapsed().as_secs_f32() % 1.0 < time.delta().as_secs_f32() {
     //    log::info!("[CAMERA] Free camera system running");
     //}
-    let Ok(mut window) = query_window.get_single_mut() else {
+    let Ok((mut window, mut cursor_options)) = query_window.single_mut() else {
         return Ok(());
     };
 
-    let (mut free_camera, mut camera_transform) = if let Ok((a, b)) = query.get_single_mut() {
+    let (mut free_camera, mut camera_transform) = if let Ok((a, b)) = query.single_mut() {
         (a, b)
     } else {
         if control_state.is_dragging {
@@ -73,16 +73,16 @@ pub fn free_camera_system(
                 window.set_cursor_position(Some(saved_cursor_position));
             }
 
-            window.cursor_options.grab_mode = CursorGrabMode::None;
-            window.cursor_options.visible = true;
+            cursor_options.grab_mode = CursorGrabMode::None;
+            cursor_options.visible = true;
             control_state.is_dragging = false;
         }
 
         return Ok(());
     };
 
-    let allow_mouse_input = control_state.is_dragging || !egui_ctx.ctx_mut().wants_pointer_input();
-    let allow_keyboard_input = !egui_ctx.ctx_mut().wants_keyboard_input();
+    let allow_mouse_input = control_state.is_dragging || !egui_ctx.ctx_mut().unwrap().wants_pointer_input();
+    let allow_keyboard_input = !egui_ctx.ctx_mut().unwrap().wants_keyboard_input();
 
     let left_pressed = mouse_buttons.pressed(MouseButton::Left);
     let right_pressed = mouse_buttons.pressed(MouseButton::Right);
@@ -176,8 +176,8 @@ pub fn free_camera_system(
             .rotate_yaw_pitch(-sensitivity * cursor_delta.x, -sensitivity * cursor_delta.y);
 
         if !control_state.is_dragging {
-            window.cursor_options.grab_mode = CursorGrabMode::Locked;
-            window.cursor_options.visible = false;
+            cursor_options.grab_mode = CursorGrabMode::Locked;
+            cursor_options.visible = false;
             control_state.saved_cursor_position = window.cursor_position();
             control_state.is_dragging = true;
         }
@@ -186,8 +186,8 @@ pub fn free_camera_system(
             window.set_cursor_position(Some(saved_cursor_position));
         }
 
-        window.cursor_options.grab_mode = CursorGrabMode::None;
-        window.cursor_options.visible = true;
+        cursor_options.grab_mode = CursorGrabMode::None;
+        cursor_options.visible = true;
         control_state.is_dragging = false;
     }
 

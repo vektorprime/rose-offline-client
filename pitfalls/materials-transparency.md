@@ -171,3 +171,36 @@ Do NOT import modules with `@group(3)+` bind groups in `MaterialExtension` shade
 
 ### Lesson Learned
 `ExtendedMaterial<StandardMaterial, T>` shaders cannot access bind groups beyond the standard PBR pipeline layout (groups 0-2). Custom bind groups require a full custom `Material` implementation with specialized pipeline setup, not just a `MaterialExtension`.
+
+---
+
+## Particle Material Crash + Invisible Particles During Bevy 0.18 Upgrade (Fixed 2026-03-18)
+
+### Problem
+Attacking monsters triggered a wgpu validation crash for `premultiplied_alpha_mesh_pipeline`:
+- shader expected `@group(3) @binding(9)` but pipeline layout did not provide it.
+
+After removing the crash, particles became invisible.
+
+### Root Cause
+`ParticleMaterial` had a manual `AsBindGroup` implementation in [`src/render/particle_material.rs`](src/render/particle_material.rs) that bound placeholder buffers for storage bindings 0-3. This let pipeline creation progress but broke real particle data binding.
+
+Additionally, shader/material binding layout drift occurred during the upgrade (uniform binding expectations vs actual layout), causing the original validation error.
+
+### Solution
+1. Replaced manual `AsBindGroup` with derive-based bindings in [`ParticleMaterial`](src/render/particle_material.rs):
+   - `#[storage(0..3, read_only)]` for particle buffers
+   - `#[texture(4)]` + `#[sampler(5)]` for texture/sampler
+   - `#[uniform(6..9)]` for `blend_op`, `src_blend_factor`, `dst_blend_factor`, `billboard_type`
+2. Updated WGSL to match exactly in [`src/render/shaders/particle.wgsl`](src/render/shaders/particle.wgsl) and [`src/render/shaders/particle_prepass.wgsl`](src/render/shaders/particle_prepass.wgsl):
+   - storage bindings 0-3
+   - texture/sampler 4-5
+   - uniforms 6-9
+
+### Files Modified
+- [`src/render/particle_material.rs`](src/render/particle_material.rs)
+- [`src/render/shaders/particle.wgsl`](src/render/shaders/particle.wgsl)
+- [`src/render/shaders/particle_prepass.wgsl`](src/render/shaders/particle_prepass.wgsl)
+
+### Lesson Learned
+For Bevy 0.18 storage-buffer materials, avoid placeholder/manual bind groups unless absolutely necessary. Prefer derive-based [`AsBindGroup`](src/render/particle_material.rs) when the layout is straightforward, and keep WGSL binding indices in strict lockstep with Rust attributes.

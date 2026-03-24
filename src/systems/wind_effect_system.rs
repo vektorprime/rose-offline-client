@@ -146,7 +146,7 @@ pub fn wind_particle_spawn_system(
         emitter.spawn_timer.tick(time.delta());
 
         // Only spawn when timer finishes
-        if !emitter.spawn_timer.finished() {
+        if !emitter.spawn_timer.just_finished() {
             continue;
         }
 
@@ -268,7 +268,7 @@ pub fn wind_particle_update_system(
         particle.lifetime.tick(time.delta());
 
         // Check if particle should die
-        if particle.lifetime.finished() {
+        if particle.lifetime.just_finished() {
             commands.entity(entity).despawn();
             continue;
         }

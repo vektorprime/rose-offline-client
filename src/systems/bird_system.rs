@@ -7,9 +7,8 @@
 //! - Keeping birds within roam bounds
 //! - Birds face their flight direction
 
-use bevy::prelude::*;
-use bevy::render::mesh::{Mesh, Indices, PrimitiveTopology};
-use bevy::render::render_asset::RenderAssetUsages;
+use bevy::{asset::RenderAssetUsages, prelude::*};
+use bevy_mesh::{Mesh, Indices, PrimitiveTopology};
 use bevy::render::render_resource::Face;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use rand::Rng;
@@ -43,7 +42,7 @@ pub fn spawn_birds_on_zone_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     settings: Res<BirdSettings>,
-    mut zone_events: EventReader<ZoneEvent>,
+    mut zone_events: MessageReader<ZoneEvent>,
     zone_query: Query<(Entity, &Transform), With<Zone>>,
 ) {
     if !settings.enabled {

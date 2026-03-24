@@ -17,22 +17,23 @@ use bevy::{
     pbr::{
         Material, MaterialPipeline, MaterialPipelineKey, MeshPipelineKey,
     },
-    prelude::{App, Mesh, Plugin, Res, ResMut, Resource, Time, World},
+    prelude::{App, Plugin, Res, ResMut, Resource, Time, World},
     reflect::TypePath,
     render::{
         alpha::AlphaMode,
-        mesh::MeshVertexBufferLayoutRef,
         render_asset::RenderAssets,
         render_resource::*,
         renderer::RenderDevice,
         texture::{FallbackImage, GpuImage},
     },
 };
+use bevy_mesh::{Mesh, MeshVertexBufferLayoutRef};
+use bevy_shader::{Shader, ShaderRef};
 
 use crate::resources::WaterSettings;
 
 /// Shader handle for the water material shader
-pub const WATER_MATERIAL_SHADER_HANDLE: Handle<Shader> =
+pub const WATER_MATERIAL_SHADER_HANDLE: Handle<bevy_shader::Shader> =
     weak_handle!("333959e6-4b35-d5d9-0000-000000000000");
 
 /// Number of water animation frames
@@ -54,11 +55,8 @@ impl Plugin for WaterMaterialPlugin {
         app.init_asset::<WaterMaterial>();
         
         // Add the material plugin for rendering
-        app.add_plugins(bevy::pbr::MaterialPlugin::<WaterMaterial> {
-            prepass_enabled: false,  // Disable prepass for transparent water
-            shadows_enabled: false,  // Water doesn't cast shadows
-            ..Default::default()
-        });
+        // Note: prepass and shadows are controlled via enable_prepass() and enable_shadows() methods on Material trait
+        app.add_plugins(bevy::pbr::MaterialPlugin::<WaterMaterial>::default());
         
         // Register the water time resource
         app.init_resource::<WaterAnimationTime>();
@@ -150,8 +148,18 @@ impl Material for WaterMaterial {
         AlphaMode::Blend
     }
 
+    /// Disable prepass for transparent water
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    /// Water doesn't cast shadows
+    fn enable_shadows() -> bool {
+        false
+    }
+
     fn specialize(
-        _pipeline: &MaterialPipeline<Self>,
+        _pipeline: &MaterialPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
@@ -198,18 +206,28 @@ impl AsBindGroup for WaterMaterial {
     type Data = WaterMaterialKey;
     type Param = (SRes<RenderAssets<GpuImage>>, SRes<FallbackImage>);
 
-    fn label() -> Option<&'static str> {
-        Some("water_material")
+    fn label() -> &'static str {
+        "water_material"
+    }
+
+    fn bind_group_data(&self) -> Self::Data {
+        WaterMaterialKey {
+            texture_count: self.textures.len() as u32,
+        }
     }
 
     /// Override as_bind_group to create bind group with texture array and lighting uniforms
     fn as_bind_group(
         &self,
-        layout: &BindGroupLayout,
+        layout_descriptor: &BindGroupLayoutDescriptor,
         render_device: &RenderDevice,
+        pipeline_cache: &PipelineCache,
         (image_assets, fallback_image): &mut SystemParamItem<'_, '_, Self::Param>,
-    ) -> Result<PreparedBindGroup<Self::Data>, AsBindGroupError> {
+    ) -> Result<PreparedBindGroup, AsBindGroupError> {
         use std::ops::Deref;
+        
+        // Get the actual bind group layout from the pipeline cache
+        let layout = pipeline_cache.get_bind_group_layout(layout_descriptor);
         
         // Collect loaded textures
         let mut images = vec![];
@@ -237,67 +255,49 @@ impl AsBindGroup for WaterMaterial {
             ..Default::default()
         });
 
-        // Create uniform buffers for lighting data
-        // Light direction as vec4 (with padding for alignment)
-        let light_dir_data = Vec4::new(
-            self.light_direction.x,
-            self.light_direction.y,
-            self.light_direction.z,
-            0.0, // padding
-        );
-        let light_dir_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("water_light_direction_buffer"),
-            contents: bytemuck::cast_slice(&[light_dir_data]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        // Ambient color buffer
-        let ambient_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("water_ambient_color_buffer"),
-            contents: bytemuck::cast_slice(&[self.ambient_color]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        // Diffuse color buffer
-        let diffuse_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("water_diffuse_color_buffer"),
-            contents: bytemuck::cast_slice(&[self.diffuse_color]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        // Water settings uniform buffer
-        // Layout: foam_intensity, foam_threshold, sss_intensity, refraction_strength (vec4)
-        //         wave_speed, fresnel_strength, specular_intensity, _padding (vec4)
-        let settings_data_1 = Vec4::new(
-            self.settings.foam_intensity,
-            self.settings.foam_threshold,
-            self.settings.sss_intensity,
-            self.settings.refraction_strength,
-        );
-        let settings_data_2 = Vec4::new(
-            self.settings.wave_speed,
-            self.settings.fresnel_strength,
-            self.settings.specular_intensity,
-            0.0, // padding
-        );
-        let settings_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("water_settings_buffer"),
-            contents: bytemuck::cast_slice(&[settings_data_1, settings_data_2]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
-        // Fog settings uniform buffer
-        // Layout: fog_color (vec4), fog_params (vec4: density, min_density, max_density, padding)
-        let fog_params = Vec4::new(
-            self.fog_density,
-            self.fog_min_density,
-            self.fog_max_density,
-            0.0, // padding
-        );
-        let fog_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("water_fog_buffer"),
-            contents: bytemuck::cast_slice(&[self.fog_color, fog_params]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        // wgpu 27 forbids mixing binding arrays and uniform buffers in one bind group.
+        // Pack all non-texture data into a read-only storage buffer.
+        // Layout:
+        // [0] light_direction (vec4)
+        // [1] ambient_color (vec4)
+        // [2] diffuse_color (vec4)
+        // [3] settings_1: foam_intensity, foam_threshold, sss_intensity, refraction_strength
+        // [4] settings_2: wave_speed, fresnel_strength, specular_intensity, padding
+        // [5] fog_color (vec4)
+        // [6] fog_params: density, min_density, max_density, padding
+        let water_material_data = [
+            Vec4::new(
+                self.light_direction.x,
+                self.light_direction.y,
+                self.light_direction.z,
+                0.0,
+            ),
+            self.ambient_color,
+            self.diffuse_color,
+            Vec4::new(
+                self.settings.foam_intensity,
+                self.settings.foam_threshold,
+                self.settings.sss_intensity,
+                self.settings.refraction_strength,
+            ),
+            Vec4::new(
+                self.settings.wave_speed,
+                self.settings.fresnel_strength,
+                self.settings.specular_intensity,
+                0.0,
+            ),
+            self.fog_color,
+            Vec4::new(
+                self.fog_density,
+                self.fog_min_density,
+                self.fog_max_density,
+                0.0,
+            ),
+        ];
+        let water_material_data_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("water_material_data_buffer"),
+            contents: bytemuck::cast_slice(&water_material_data),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
 
         // Create bind group entries
@@ -312,35 +312,16 @@ impl AsBindGroup for WaterMaterial {
             },
             BindGroupEntry {
                 binding: 2,
-                resource: light_dir_buffer.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 3,
-                resource: ambient_buffer.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 4,
-                resource: diffuse_buffer.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 5,
-                resource: settings_buffer.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 6,
-                resource: fog_buffer.as_entire_binding(),
+                resource: water_material_data_buffer.as_entire_binding(),
             },
         ];
 
         // Create bind group
-        let bind_group = render_device.create_bind_group(Self::label(), layout, &entries);
+        let bind_group = render_device.create_bind_group(Self::label(), &layout, &entries);
 
         Ok(PreparedBindGroup {
             bindings: BindingResources(vec![]),
             bind_group,
-            data: WaterMaterialKey {
-                texture_count: self.textures.len() as u32,
-            },
         })
     }
 
@@ -351,7 +332,7 @@ impl AsBindGroup for WaterMaterial {
         _render_device: &RenderDevice,
         _param: &mut SystemParamItem<'_, '_, Self::Param>,
         _bindless: bool,
-    ) -> Result<UnpreparedBindGroup<Self::Data>, AsBindGroupError> {
+    ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
         // This should never be called since we override as_bind_group
         Err(AsBindGroupError::CreateBindGroupDirectly)
     }
@@ -379,56 +360,19 @@ impl AsBindGroup for WaterMaterial {
                 ty: BindingType::Sampler(SamplerBindingType::Filtering),
                 count: None,
             },
-            // Light direction uniform (vec3 with padding to vec4)
+            // Water material data in read-only storage buffer
+            // [0] light_direction
+            // [1] ambient_color
+            // [2] diffuse_color
+            // [3] water_settings_1
+            // [4] water_settings_2
+            // [5] fog_color
+            // [6] fog_params
             BindGroupLayoutEntry {
                 binding: 2,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            // Ambient color uniform (vec4)
-            BindGroupLayoutEntry {
-                binding: 3,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            // Diffuse color uniform (vec4)
-            BindGroupLayoutEntry {
-                binding: 4,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            // Water settings uniform (2x vec4 for 7 parameters + padding)
-            BindGroupLayoutEntry {
-                binding: 5,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            // Fog settings uniform (2x vec4: fog_color + fog_params)
-            BindGroupLayoutEntry {
-                binding: 6,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
+                    ty: BufferBindingType::Storage { read_only: true },
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },

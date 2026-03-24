@@ -1,6 +1,6 @@
 use bevy::{
-    ecs::{event::EventWriter, query::QueryData},
-    prelude::{Entity, EventReader, Query, Res},
+    ecs::{message::MessageWriter, query::QueryData},
+    prelude::{Entity, MessageReader, Query, Res},
 };
 
 use rose_data::{
@@ -27,10 +27,10 @@ pub struct EventEntity<'w> {
 }
 
 pub fn animation_effect_system(
-    mut animation_frame_events: EventReader<AnimationFrameEvent>,
-    mut spawn_effect_events: EventWriter<SpawnEffectEvent>,
-    mut spawn_projectile_events: EventWriter<SpawnProjectileEvent>,
-    mut hit_events: EventWriter<HitEvent>,
+    mut animation_frame_events: MessageReader<AnimationFrameEvent>,
+    mut spawn_effect_events: MessageWriter<SpawnEffectEvent>,
+    mut spawn_projectile_events: MessageWriter<SpawnProjectileEvent>,
+    mut hit_events: MessageWriter<HitEvent>,
     query_event_entity: Query<EventEntity>,
     game_data: Res<GameData>,
 ) {
@@ -491,7 +491,7 @@ fn show_casting_effect(
     entity: Entity,
     skill_data: &SkillData,
     casting_effect_index: usize,
-    spawn_effect_events: &mut EventWriter<SpawnEffectEvent>,
+    spawn_effect_events: &mut MessageWriter<SpawnEffectEvent>,
 ) {
     if let Some(casting_effect) = skill_data
         .casting_effects

@@ -30,7 +30,7 @@ use bevy::{
             TextureSampleType, TextureViewDimension,
         },
         render_asset::RenderAssets,
-        ExtractSchedule, Render, RenderApp, RenderSet,
+        ExtractSchedule, Render, RenderApp, RenderSystems,
     },
     platform::collections::HashMap,
 };

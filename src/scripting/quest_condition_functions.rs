@@ -35,10 +35,10 @@ fn quest_condition_ability_value(
     operator: QsdConditionOperator,
     compare_value: i32,
 ) -> bool {
-    let Ok(player_stats) = script_context.query_player_stats.get_single() else {
+    let Ok(player_stats) = script_context.query_player_stats.single() else {
         return false;
     };
-    let Ok(player_mutable) = script_context.query_player_mutable.get_single() else {
+    let Ok(player_mutable) = script_context.query_player_mutable.single() else {
         return false;
     };
 
@@ -81,7 +81,7 @@ fn quest_condition_check_switch(
     switch_id: usize,
     value: bool,
 ) -> bool {
-    let Ok(quest_state) = script_context.query_quest.get_single() else {
+    let Ok(quest_state) = script_context.query_quest.single() else {
         return false;
     };
 
@@ -115,10 +115,10 @@ fn quest_condition_quest_item(
             .decode_equipment_index(equipment_index.get())
     });
 
-    let Ok(quest_state) = script_context.query_quest.get_single() else {
+    let Ok(quest_state) = script_context.query_quest.single() else {
         return false;
     };
-    let Ok(player_mutable) = script_context.query_player_mutable.get_single() else {
+    let Ok(player_mutable) = script_context.query_player_mutable.single() else {
         return false;
     };
 
@@ -188,7 +188,7 @@ fn quest_condition_select_quest(
     quest_context: &mut QuestFunctionContext,
     quest_id: usize,
 ) -> bool {
-    let Ok(quest_state) = script_context.query_quest.get_single() else {
+    let Ok(quest_state) = script_context.query_quest.single() else {
         return false;
     };
 

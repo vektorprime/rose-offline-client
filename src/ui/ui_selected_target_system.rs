@@ -57,7 +57,7 @@ pub fn ui_selected_target_system(
                     .frame(egui::Frame::none())
                     .title_bar(false)
                     .resizable(false)
-                    .show(egui_context.ctx_mut(), |ui| {
+                    .show(egui_context.ctx_mut().unwrap(), |ui| {
                         let style = ui.style_mut();
                         style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::BLACK;
                         style.spacing.item_spacing = egui::Vec2::ZERO;

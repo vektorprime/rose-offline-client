@@ -1,4 +1,4 @@
-use bevy::prelude::{Commands, EventWriter, NextState, Res, ResMut, State};
+use bevy::prelude::{Commands, MessageWriter, NextState, Res, ResMut, State};
 
 use rose_game_common::messages::{client::ClientMessage, server::ServerMessage};
 use rose_network_common::ConnectionError;
@@ -14,9 +14,9 @@ pub fn world_connection_system(
     account: Option<Res<Account>>,
     app_state_current: Res<State<AppState>>,
     mut app_state_next: ResMut<NextState<AppState>>,
-    mut network_events: EventWriter<NetworkEvent>,
-    mut world_connection_events: EventWriter<WorldConnectionEvent>,
-    mut message_box_events: EventWriter<MessageBoxEvent>,
+    mut network_events: MessageWriter<NetworkEvent>,
+    mut world_connection_events: MessageWriter<WorldConnectionEvent>,
+    mut message_box_events: MessageWriter<MessageBoxEvent>,
 ) {
     let world_connection = if let Some(world_connection) = world_connection {
         world_connection

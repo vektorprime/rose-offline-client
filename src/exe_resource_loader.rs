@@ -6,7 +6,7 @@ use bevy::{
     tasks::futures_lite::AsyncReadExt,
 };
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, TypePath)]
 pub struct ExeResourceLoader;
 
 /// Cursor image data loaded from .exe resource
@@ -31,7 +31,7 @@ impl AssetLoader for ExeResourceLoader {
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
 
-            let path = load_context.path().to_string_lossy().to_string();
+            let path = load_context.path().path().to_string_lossy().to_string();
             
             // Note: Custom cursor loading is handled directly in ui_resources.rs
             // to properly use Bevy 0.16's CustomCursorImage API

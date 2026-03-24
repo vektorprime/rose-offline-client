@@ -10,27 +10,31 @@
 #import bevy_pbr::mesh_view_bindings view
 
 // === Uniforms ===
-// Time and Animation
-@group(2) @binding(0) var<uniform> time: f32;
-@group(2) @binding(1) var<uniform> speed: f32;
-@group(2) @binding(2) var<uniform> wind_direction: vec3<f32>;
+// NOTE: CloudMaterial uploads a single uniform buffer at material binding(0)
+// packed as 7 vec4 values (28 floats, 112 bytes). Keep this mapping in sync
+// with src/render/cloud_material.rs::as_bind_group().
+struct CloudUniforms {
+    data: array<vec4<f32>, 7>;
+}
 
-// Cloud Shape
-@group(2) @binding(3) var<uniform> density: f32;
-@group(2) @binding(4) var<uniform> coverage: f32;
-@group(2) @binding(5) var<uniform> noise_scale: f32;
-@group(2) @binding(6) var<uniform> noise_octaves: f32;
+@group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> cloud_uniforms: CloudUniforms;
 
-// Appearance
-@group(2) @binding(7) var<uniform> brightness: f32;
-@group(2) @binding(8) var<uniform> opacity: f32;
-@group(2) @binding(9) var<uniform> softness: f32;
-
-// Lighting
-@group(2) @binding(10) var<uniform> sun_direction: vec3<f32>;
-@group(2) @binding(11) var<uniform> sun_color: vec3<f32>;
-@group(2) @binding(12) var<uniform> ambient_color: vec3<f32>;
-@group(2) @binding(13) var<uniform> tod_factor: f32;
+fn cloud_time() -> f32 { return cloud_uniforms.data[0].x; }
+fn cloud_speed() -> f32 { return cloud_uniforms.data[0].y; }
+fn cloud_wind_direction() -> vec3<f32> {
+    return vec3<f32>(cloud_uniforms.data[0].z, cloud_uniforms.data[0].w, cloud_uniforms.data[1].x);
+}
+fn cloud_density_value() -> f32 { return cloud_uniforms.data[1].y; }
+fn cloud_coverage() -> f32 { return cloud_uniforms.data[1].z; }
+fn cloud_noise_scale() -> f32 { return cloud_uniforms.data[2].x; }
+fn cloud_noise_octaves() -> f32 { return cloud_uniforms.data[2].y; }
+fn cloud_brightness() -> f32 { return cloud_uniforms.data[3].x; }
+fn cloud_opacity() -> f32 { return cloud_uniforms.data[3].y; }
+fn cloud_softness() -> f32 { return cloud_uniforms.data[3].z; }
+fn cloud_sun_direction() -> vec3<f32> { return cloud_uniforms.data[4].xyz; }
+fn cloud_sun_color() -> vec3<f32> { return cloud_uniforms.data[5].xyz; }
+fn cloud_ambient_color() -> vec3<f32> { return cloud_uniforms.data[6].xyz; }
+fn cloud_tod_factor() -> f32 { return cloud_uniforms.data[6].w; }
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -129,13 +133,13 @@ fn fbm(p: vec3<f32>, octaves: f32) -> f32 {
 /// Returns density value (0-1) at a given position
 fn cloud_density(p: vec3<f32>) -> f32 {
     // Animate position with wind
-    let animated_p = p + wind_direction * time * speed;
+    let animated_p = p + cloud_wind_direction() * cloud_time() * cloud_speed();
     
     // Scale for cloud features
-    let scaled_p = animated_p * noise_scale * 0.001;
+    let scaled_p = animated_p * cloud_noise_scale() * 0.001;
     
     // Base cloud shape with fBm (returns values roughly in [-1, 1] range)
-    let base = fbm(scaled_p, noise_octaves);
+    let base = fbm(scaled_p, cloud_noise_octaves());
     
     // Add larger-scale coverage variation
     let coverage_noise = fbm(scaled_p * 0.3, 2.0);
@@ -147,11 +151,11 @@ fn cloud_density(p: vec3<f32>) -> f32 {
     // Apply coverage threshold
     // coverage = 0.0 means clear sky (high threshold), 1.0 means overcast (low threshold)
     // Invert coverage so higher coverage = more clouds
-    let threshold = 1.0 - coverage;
+    let threshold = 1.0 - cloud_coverage();
     let cloud_value = smoothstep(threshold - 0.15, threshold + 0.35, raw_density);
     
     // Apply density multiplier
-    return cloud_value * density;
+    return cloud_value * cloud_density_value();
 }
 
 /// Calculate cloud lighting
@@ -162,23 +166,24 @@ fn cloud_lighting(
     cloud_dens: f32,
 ) -> vec3<f32> {
     // Sun lighting with directional component
+    let sun_direction = cloud_sun_direction();
     let sun_dot = max(0.0, dot(vec3<f32>(0.0, 1.0, 0.0), sun_direction));
     
     // Direct sun lighting (brighter on sun-facing side)
-    let direct_light = sun_color * sun_dot * 1.5;
+    let direct_light = cloud_sun_color() * sun_dot * 1.5;
     
     // Ambient lighting (sky color)
-    let ambient_light = ambient_color * 0.5;
+    let ambient_light = cloud_ambient_color() * 0.5;
     
     // Edge lighting effect (clouds glow at edges when backlit)
     let edge_factor = 1.0 - cloud_dens;
-    let rim_light = sun_color * pow(edge_factor, 2.0) * max(0.0, -dot(view_dir, sun_direction)) * 0.5;
+    let rim_light = cloud_sun_color() * pow(edge_factor, 2.0) * max(0.0, -dot(view_dir, sun_direction)) * 0.5;
     
     // Combine lighting
     let total_light = direct_light + ambient_light + rim_light;
     
     // Apply brightness multiplier
-    return total_light * brightness;
+    return total_light * cloud_brightness();
 }
 
 // === Vertex Shader ===
@@ -211,16 +216,16 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     
     // Apply softness (feathering at edges)
-    let soft_dens = cloud_dens * (1.0 - softness * 0.5);
+    let soft_dens = cloud_dens * (1.0 - cloud_softness() * 0.5);
     
     // Calculate lighting
     let cloud_color = cloud_lighting(in.world_position, in.view_direction, cloud_dens);
     
     // Apply time-of-day factor
-    let final_color = cloud_color * tod_factor;
+    let final_color = cloud_color * cloud_tod_factor();
     
     // Final alpha with opacity multiplier - boost for visibility
-    let alpha = soft_dens * opacity * tod_factor * 2.0;
+    let alpha = soft_dens * cloud_opacity() * cloud_tod_factor() * 2.0;
     
     return vec4<f32>(final_color, alpha);
 }

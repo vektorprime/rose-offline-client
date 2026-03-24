@@ -16,10 +16,11 @@ use bevy::{
     },
     prelude::*,
     render::{
-        mesh::MeshVertexBufferLayoutRef,
-        render_resource::{RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError},
+        render_resource::{RenderPipelineDescriptor, SpecializedMeshPipelineError},
     },
 };
+use bevy_mesh::MeshVertexBufferLayoutRef;
+use bevy_shader::ShaderRef;
 
 use crate::render::object_material_extension::RoseObjectExtension;
 
@@ -41,20 +42,13 @@ pub type RoseObjectMaterial = ExtendedMaterial<StandardMaterial, RoseObjectExten
 
 /// Custom MaterialPlugin for RoseObjectMaterial
 /// Uses standard Bevy rendering without custom zone lighting
-pub struct RoseObjectMaterialPlugin {
-    /// Controls if the prepass is enabled for the Material.
-    pub prepass_enabled: bool,
-    /// Controls if shadows are enabled for the Material.
-    pub shadows_enabled: bool,
-}
+/// Note: In Bevy 0.18, prepass and shadows are controlled via enable_prepass() 
+/// and enable_shadows() methods on the Material trait
+pub struct RoseObjectMaterialPlugin;
 
 impl Default for RoseObjectMaterialPlugin {
     fn default() -> Self {
-        Self {
-            // Prepass and shadows enabled for proper depth rendering and shadow mapping
-            prepass_enabled: true,
-            shadows_enabled: true,
-        }
+        Self
     }
 }
 
@@ -63,11 +57,8 @@ impl Plugin for RoseObjectMaterialPlugin {
         bevy::log::info!("[ROSE OBJECT MATERIAL PLUGIN] Building standard MaterialPlugin");
 
         // Use the standard MaterialPlugin for the extended material
-        let mut material_plugin = MaterialPlugin::<RoseObjectMaterial>::default();
-        material_plugin.prepass_enabled = self.prepass_enabled;
-        material_plugin.shadows_enabled = self.shadows_enabled;
-        
-        app.add_plugins(material_plugin);
+        // Note: prepass and shadows are controlled via Material trait methods
+        app.add_plugins(MaterialPlugin::<RoseObjectMaterial>::default());
 
         bevy::log::info!("[ROSE OBJECT MATERIAL PLUGIN] Build complete");
     }

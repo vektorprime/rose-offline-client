@@ -1,5 +1,5 @@
 use bevy::{
-    ecs::{event::EventWriter, system::EntityCommands},
+    ecs::{message::MessageWriter, system::EntityCommands},
     math::{Vec3, Vec3Swizzles},
     prelude::{AssetServer, Commands, Entity, Handle, Mut, Or, Query, Res, With},
 };
@@ -342,9 +342,9 @@ pub fn command_system(
     asset_server: Res<AssetServer>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
-    mut conversation_dialog_events: EventWriter<ConversationDialogEvent>,
-    mut client_entity_events: EventWriter<ClientEntityEvent>,
-    mut personal_store_events: EventWriter<PersonalStoreEvent>,
+    mut conversation_dialog_events: MessageWriter<ConversationDialogEvent>,
+    mut client_entity_events: MessageWriter<ClientEntityEvent>,
+    mut personal_store_events: MessageWriter<PersonalStoreEvent>,
 ) {
     let mut rng = rand::thread_rng();
 
@@ -408,13 +408,13 @@ pub fn command_system(
             .as_ref()
             .map_or(true, |animation| animation.completed());
             
-        // DIAGNOSTIC: Log animation state for player characters
-        if player_character.is_some() {
-            log::info!("[RESPAWN_CMD_DIAG] Player command: {:?}, next_command: {:?}, dead: {:?}",
-                command.as_ref(), next_command.as_ref(), dead.is_some());
-            log::info!("[RESPAWN_CMD_DIAG] Animation completed: {}, requires_anim_complete: {}",
-                active_motion_completed, requires_animation_complete);
-        }
+        // DIAGNOSTIC: Disabled - Log animation state for player characters
+        // if player_character.is_some() {
+        //     log::info!("[RESPAWN_CMD_DIAG] Player command: {:?}, next_command: {:?}, dead: {:?}",
+        //         command.as_ref(), next_command.as_ref(), dead.is_some());
+        //     log::info!("[RESPAWN_CMD_DIAG] Animation completed: {}, requires_anim_complete: {}",
+        //         active_motion_completed, requires_animation_complete);
+        // }
         
         if !next_command.is_die()
             && requires_animation_complete

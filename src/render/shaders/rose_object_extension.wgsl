@@ -23,21 +23,21 @@
 
 // Extension bindings from RoseObjectExtension
 // Lightmap parameters: x = offset_x, y = offset_y, z = scale, w = unused
-@group(2) @binding(100)
+@group(#{MATERIAL_BIND_GROUP}) @binding(100)
 var<uniform> lightmap_params: vec4<f32>;
 
 // Lightmap texture and sampler
-@group(2) @binding(101)
+@group(#{MATERIAL_BIND_GROUP}) @binding(101)
 var lightmap_texture: texture_2d<f32>;
 
-@group(2) @binding(102)
+@group(#{MATERIAL_BIND_GROUP}) @binding(102)
 var lightmap_sampler: sampler;
 
 // Specular texture and sampler
-@group(2) @binding(103)
+@group(#{MATERIAL_BIND_GROUP}) @binding(103)
 var specular_texture: texture_2d<f32>;
 
-@group(2) @binding(104)
+@group(#{MATERIAL_BIND_GROUP}) @binding(104)
 var specular_sampler: sampler;
 
 #ifdef PREPASS_PIPELINE

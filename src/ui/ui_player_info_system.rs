@@ -1,4 +1,4 @@
-use bevy::prelude::{Assets, Entity, EventWriter, Query, Res, ResMut, With};
+use bevy::prelude::{Assets, Entity, MessageWriter, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 use rose_data::{AmmoIndex, EquipmentIndex, Item, ItemClass};
 use rose_game_common::components::{
@@ -29,7 +29,7 @@ fn add_equipped_weapon_slot(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
     player: &(Entity, &AbilityValues, &CharacterInfo, &Level, &HealthPoints, &ManaPoints, &ExperiencePoints, &Equipment),
-    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
 ) {
@@ -91,7 +91,7 @@ fn add_equipped_weapon_slot(
 pub fn ui_player_info_system(
     mut egui_context: EguiContexts,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     query_player: Query<(Entity, &AbilityValues, &CharacterInfo, &Level, &HealthPoints, &ManaPoints, &ExperiencePoints, &Equipment), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     game_data: Res<GameData>,
@@ -105,12 +105,12 @@ pub fn ui_player_info_system(
         return;
     };
 
-    let player = if let Ok(player) = query_player.get_single() {
+    let player = if let Ok(player) = query_player.single() {
         player
     } else {
         return;
     };
-    let player_tooltip_data = query_player_tooltip.get_single().ok();
+    let player_tooltip_data = query_player_tooltip.single().ok();
 
     let mut response_menu_button = None;
 
@@ -121,7 +121,7 @@ pub fn ui_player_info_system(
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             let hp = player.4.hp as f32 / player.1.get_max_health() as f32;
             let mp = player.5.mp as f32 / player.1.get_max_mana() as f32;
             let need_xp = game_data

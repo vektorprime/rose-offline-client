@@ -1,7 +1,7 @@
 use std::num::NonZeroU16;
 
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, EventReader, EventWriter, Local, Res, ResMut};
+use bevy::prelude::{Assets, Local, MessageReader, MessageWriter, Res, ResMut};
 use bevy_egui::{egui, EguiContexts};
 use rose_game_common::{components::ClanMark, messages::client::ClientMessage};
 
@@ -49,12 +49,12 @@ impl Default for UiCreateClanState {
 pub fn ui_create_clan_system(
     mut ui_state: Local<UiCreateClanState>,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut egui_context: EguiContexts,
     ui_resources: Res<UiResources>,
     dialog_assets: Res<Assets<Dialog>>,
-    mut clan_dialog_events: EventReader<ClanDialogEvent>,
-    mut message_box_events: EventWriter<MessageBoxEvent>,
+    mut clan_dialog_events: MessageReader<ClanDialogEvent>,
+    mut message_box_events: MessageWriter<MessageBoxEvent>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
 ) {
@@ -81,7 +81,7 @@ pub fn ui_create_clan_system(
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             let num_background_sprites = ui_resources.sprite_sheets
                 [UiSpriteSheetType::ClanMarkBackground]
                 .as_ref()

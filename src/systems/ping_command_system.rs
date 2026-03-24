@@ -12,13 +12,13 @@ pub fn is_ping_command(message: &str) -> bool {
 }
 
 /// System that handles ping command detection and initiates ping measurement.
-/// 
+///
 /// This system listens for PingRequestEvent and sends a ping message to the server
 /// while recording the timestamp for RTT calculation.
 pub fn ping_command_system(
-    mut ping_request_events: EventReader<PingRequestEvent>,
+    mut ping_request_events: MessageReader<PingRequestEvent>,
     mut ping_state: ResMut<PingState>,
-    mut chatbox_events: EventWriter<ChatboxEvent>,
+    mut chatbox_events: MessageWriter<ChatboxEvent>,
 ) {
     for _event in ping_request_events.read() {
         // Record the timestamp when we sent the ping
@@ -32,12 +32,12 @@ pub fn ping_command_system(
 }
 
 /// System that handles ping response from the server.
-/// 
+///
 /// This calculates the round-trip time and displays it to the user.
 pub fn ping_response_system(
-    mut ping_response_events: EventReader<PingResponseEvent>,
+    mut ping_response_events: MessageReader<PingResponseEvent>,
     mut ping_state: ResMut<PingState>,
-    mut chatbox_events: EventWriter<ChatboxEvent>,
+    mut chatbox_events: MessageWriter<ChatboxEvent>,
 ) {
     for event in ping_response_events.read() {
         ping_state.last_ping_ms = Some(event.ping_ms);
@@ -52,7 +52,7 @@ pub fn ping_response_system(
 /// This should be called when we receive any server message if we have a pending ping.
 pub fn ping_measurement_system(
     mut ping_state: ResMut<PingState>,
-    mut ping_response_events: EventWriter<PingResponseEvent>,
+    mut ping_response_events: MessageWriter<PingResponseEvent>,
     game_connection: Option<Res<crate::resources::GameConnection>>,
 ) {
     // If we have a pending ping and receive any server message, calculate RTT

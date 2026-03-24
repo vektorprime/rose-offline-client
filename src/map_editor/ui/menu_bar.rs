@@ -23,9 +23,9 @@ pub fn editor_menu_bar(
     map_editor_state: &MapEditorState,
     save_status: &SaveStatus,
     current_zone_id: Option<u16>,
-    save_events: &mut EventWriter<SaveZoneEvent>,
+    save_events: &mut MessageWriter<SaveZoneEvent>,
     zone_list_state: &mut ZoneListPanelState,
-    new_zone_events: &mut EventWriter<NewZoneEvent>,
+    new_zone_events: &mut MessageWriter<NewZoneEvent>,
     help_state: &mut HelpWindowState,
     selected_model: &mut SelectedModel,
 ) {
@@ -51,8 +51,8 @@ fn file_menu(
     map_editor_state: &MapEditorState,
     save_status: &SaveStatus,
     current_zone_id: Option<u16>,
-    save_events: &mut EventWriter<SaveZoneEvent>,
-    new_zone_events: &mut EventWriter<NewZoneEvent>,
+    save_events: &mut MessageWriter<SaveZoneEvent>,
+    new_zone_events: &mut MessageWriter<NewZoneEvent>,
     zone_list_state: &mut ZoneListPanelState,
 ) {
     ui.menu_button("File", |ui| {

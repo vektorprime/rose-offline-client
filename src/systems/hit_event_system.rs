@@ -1,6 +1,6 @@
 use bevy::{
     ecs::query::QueryData,
-    prelude::{Commands, Entity, EventReader, EventWriter, GlobalTransform, Query, Res, ResMut},
+    prelude::{Commands, Entity, MessageReader, MessageWriter, GlobalTransform, Query, Res, ResMut},
 };
 
 use rose_game_common::{
@@ -82,8 +82,8 @@ fn apply_damage(
 pub fn hit_event_system(
     mut commands: Commands,
     mut query_defender: Query<HitDefenderQuery>,
-    mut hit_events: EventReader<HitEvent>,
-    mut spawn_effect_events: EventWriter<SpawnEffectEvent>,
+    mut hit_events: MessageReader<HitEvent>,
+    mut spawn_effect_events: MessageWriter<SpawnEffectEvent>,
     mut client_entity_list: ResMut<ClientEntityList>,
     damage_digits_spawner: Res<DamageDigitsSpawner>,
     game_data: Res<GameData>,

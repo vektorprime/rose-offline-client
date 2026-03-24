@@ -166,7 +166,7 @@ impl DrawWidget for Button {
                     overflow_character: Some('…'),
                 };
 
-                let galley = ui.fonts(|fonts| fonts.layout_job(layout_job));
+                let galley = ui.painter().layout_job(layout_job);
                 let was_truncated = galley
                     .rows
                     .last()

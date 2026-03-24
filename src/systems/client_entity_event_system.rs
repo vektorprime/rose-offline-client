@@ -1,7 +1,7 @@
 use bevy::{
     math::Vec3,
     prelude::{
-        AssetServer, Commands, EventReader, EventWriter, GlobalTransform, Query, Res, ResMut, Transform, With,
+        AssetServer, Commands, MessageReader, MessageWriter, GlobalTransform, Query, Res, ResMut, Transform, With,
     },
 };
 
@@ -18,9 +18,9 @@ use crate::{
 
 pub fn client_entity_event_system(
     mut commands: Commands,
-    mut client_entity_events: EventReader<ClientEntityEvent>,
-    mut chatbox_events: EventWriter<ChatboxEvent>,
-    mut spawn_effect_events: EventWriter<SpawnEffectEvent>,
+    mut client_entity_events: MessageReader<ClientEntityEvent>,
+    mut chatbox_events: MessageWriter<ChatboxEvent>,
+    mut spawn_effect_events: MessageWriter<SpawnEffectEvent>,
     query_player: Query<&PlayerCharacter>,
     query_global_transform: Query<&GlobalTransform>,
     query_npc: Query<(&Npc, &GlobalTransform)>,
@@ -35,7 +35,7 @@ pub fn client_entity_event_system(
 
     // Get player position for sound prioritization
     let player_position = query_player_transform
-        .get_single()
+        .single()
         .map(|transform| transform.translation())
         .unwrap_or(Vec3::ZERO);
 

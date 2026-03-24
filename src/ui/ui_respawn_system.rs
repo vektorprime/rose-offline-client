@@ -1,5 +1,5 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, EventWriter, Query, Res, With};
+use bevy::prelude::{Assets, MessageWriter, Query, Res, With};
 use bevy_egui::{egui, EguiContexts};
 use rose_game_common::messages::client::ClientMessage;
 
@@ -19,7 +19,7 @@ pub fn ui_respawn_system(
     query_player_dead: Query<&Dead, With<PlayerCharacter>>,
     dialog_assets: Res<Assets<Dialog>>,
     ui_resources: Res<UiResources>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut egui_context: EguiContexts,
     game_connection: Option<Res<GameConnection>>,
 ) {
@@ -34,7 +34,7 @@ pub fn ui_respawn_system(
     };
 
     let screen_size = egui_context
-        .ctx_mut()
+        .ctx_mut().unwrap()
         .input(|input| input.screen_rect().size());
     let default_x = screen_size.x / 2.0 - dialog.width / 2.0;
     let default_y = screen_size.y / 2.0 - dialog.height / 2.0;
@@ -49,7 +49,7 @@ pub fn ui_respawn_system(
         .default_width(dialog.width)
         .default_height(dialog.height)
         .default_pos([default_x, default_y])
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {

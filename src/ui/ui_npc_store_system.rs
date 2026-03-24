@@ -1,7 +1,7 @@
 use bevy::{
     math::Vec3Swizzles,
     prelude::{
-        Assets, Entity, EventReader, EventWriter, Events, Local, Query, Res, ResMut, With, World,
+        Assets, Entity, Local, MessageReader, MessageWriter, Messages, Query, Res, ResMut, With, World,
     },
 };
 use bevy_egui::{egui, EguiContexts};
@@ -86,11 +86,11 @@ fn ui_add_store_item_slot(
     store_tab_slot: usize,
     buy_list: &mut [Option<PendingBuyItem>; NUM_BUY_ITEMS],
     player: Option<&(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     world_rates: Option<&Res<WorldRates>>,
-    number_input_dialog_events: &mut EventWriter<NumberInputDialogEvent>,
+    number_input_dialog_events: &mut MessageWriter<NumberInputDialogEvent>,
 ) {
     let item_reference =
         store_tab.and_then(|store_tab| store_tab.items.get(&(store_tab_slot as u16)));
@@ -156,8 +156,8 @@ fn ui_add_store_item_slot(
                     ok: Some(Box::new(move |commands, quantity| {
                         commands.queue(move |world: &mut World| {
                             let mut npc_store_events =
-                                world.resource_mut::<Events<NpcStoreEvent>>();
-                            let _ = npc_store_events.send(NpcStoreEvent::AddToBuyList {
+                                world.resource_mut::<Messages<NpcStoreEvent>>();
+                            let _ = npc_store_events.write(NpcStoreEvent::AddToBuyList {
                                 store_tab_index,
                                 store_tab_slot,
                                 quantity,
@@ -207,7 +207,7 @@ fn ui_add_buy_item_slot(
     buy_list: &mut [Option<PendingBuyItem>; NUM_BUY_ITEMS],
     buy_slot_index: usize,
     player: Option<&(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     world_rates: Option<&Res<WorldRates>>,
@@ -309,7 +309,7 @@ fn ui_add_sell_item_slot(
     sell_list: &mut [Option<PendingSellItem>; NUM_SELL_ITEMS],
     sell_slot_index: usize,
     player: Option<&(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
-    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     world_rates: Option<&Res<WorldRates>>,
@@ -387,8 +387,8 @@ pub fn ui_npc_store_system(
     mut egui_context: EguiContexts,
     mut ui_state: Local<UiNpcStoreState>,
     mut ui_state_dnd: ResMut<UiStateDragAndDrop>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
-    mut npc_store_events: EventReader<NpcStoreEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
+    mut npc_store_events: MessageReader<NpcStoreEvent>,
     query_player: Query<(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     query_npc: Query<(&Npc, &Position)>,
@@ -398,8 +398,8 @@ pub fn ui_npc_store_system(
     dialog_assets: Res<Assets<Dialog>>,
     ui_resources: Res<UiResources>,
     world_rates: Option<Res<WorldRates>>,
-    mut number_input_dialog_events: EventWriter<NumberInputDialogEvent>,
-    mut message_box_events: EventWriter<MessageBoxEvent>,
+    mut number_input_dialog_events: MessageWriter<NumberInputDialogEvent>,
+    mut message_box_events: MessageWriter<MessageBoxEvent>,
 ) {
     let ui_state = &mut *ui_state;
     let store_dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_npc_store) {
@@ -465,8 +465,8 @@ pub fn ui_npc_store_system(
         }
     }
 
-    let player = query_player.get_single().ok();
-    let player_tooltip_data = query_player_tooltip.get_single().ok();
+    let player = query_player.single().ok();
+    let player_tooltip_data = query_player_tooltip.single().ok();
     let npc = ui_state
         .owner_entity
         .and_then(|(owner_entity, _)| query_npc.get(owner_entity).ok());
@@ -486,7 +486,7 @@ pub fn ui_npc_store_system(
     let npc_data = npc_data.unwrap();
 
     let screen_size = egui_context
-        .ctx_mut()
+        .ctx_mut().unwrap()
         .input(|input| input.screen_rect().size());
 
     let mut response_close = None;
@@ -502,7 +502,7 @@ pub fn ui_npc_store_system(
             (screen_size.y - store_dialog.height) / 2.0,
         ])
         .default_size([store_dialog.width, store_dialog.height])
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             store_dialog.draw(
                 ui,
                 DataBindings {
@@ -586,7 +586,7 @@ pub fn ui_npc_store_system(
             (screen_size.y - store_dialog.height) / 2.0,
         ])
         .default_size([transaction_dialog.width, transaction_dialog.height])
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             transaction_dialog.draw(
                 ui,
                 DataBindings {

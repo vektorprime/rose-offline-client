@@ -41,7 +41,7 @@ pub fn npc_idle_sound_system(
 
     // Get player position for sound prioritization
     let player_position = query_player
-        .get_single()
+        .single()
         .map(|transform| transform.translation())
         .unwrap_or(Vec3::ZERO);
 

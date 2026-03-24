@@ -6,9 +6,9 @@ use bevy::{
         Handle, KeyCode, Local, Mesh, Mesh3d, MeshMaterial3d, Query, Res, ResMut, StandardMaterial, Time, Transform, Visibility, With,
     },
     math::primitives::Sphere,
-    render::view::{ViewVisibility, InheritedVisibility},
     window::{PrimaryWindow, Window},
 };
+use bevy_camera::visibility::{ViewVisibility, InheritedVisibility};
 use bevy_egui::{egui, EguiContexts};
 use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter, RapierContext, Restitution, RigidBody};
 use rand::prelude::SliceRandom;
@@ -77,13 +77,13 @@ pub fn ui_debug_physics_system(
     if !ui_state_debug_windows.debug_ui_open {
         return;
     }
-    let Ok(window) = query_primary_window.get_single() else {
+    let Ok(window) = query_primary_window.single() else {
         return;
     };
 
     egui::Window::new("Physics")
         .open(&mut ui_state_debug_windows.physics_open)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             egui::Grid::new("debug_physics")
                 .num_columns(2)
                 .show(ui, |ui| {
@@ -133,8 +133,8 @@ pub fn ui_debug_physics_system(
 
     if ui_state_debug_physics.spawn_balls
         && key_code_input.pressed(KeyCode::Digit1)
-        && !egui_context.ctx_mut().wants_keyboard_input()
-        && !egui_context.ctx_mut().wants_pointer_input()
+        && !egui_context.ctx_mut().unwrap().wants_keyboard_input()
+        && !egui_context.ctx_mut().unwrap().wants_pointer_input()
     {
         if ui_state_debug_physics.materials.is_empty() {
             // Initialise our materials
@@ -153,7 +153,7 @@ pub fn ui_debug_physics_system(
 
         let cursor_position = window.cursor_position();
         if let Some(cursor_position) = cursor_position {
-            let Ok((camera, camera_transform)) = query_camera.get_single() else {
+            let Ok((camera, camera_transform)) = query_camera.single() else {
                 return;
             };
 

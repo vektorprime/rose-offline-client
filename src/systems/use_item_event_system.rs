@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use bevy::prelude::{
-    AssetServer, Commands, Entity, EventReader, EventWriter, GlobalTransform, Query, Res,
+    AssetServer, Commands, Entity, GlobalTransform, MessageReader, MessageWriter, Query, Res,
     Transform,
 };
 
@@ -17,8 +17,8 @@ use crate::{
 
 pub fn use_item_event_system(
     mut commands: Commands,
-    mut events: EventReader<UseItemEvent>,
-    mut spawn_effect_events: EventWriter<SpawnEffectEvent>,
+    mut events: MessageReader<UseItemEvent>,
+    mut spawn_effect_events: MessageWriter<SpawnEffectEvent>,
     mut query: Query<(
         Entity,
         &GlobalTransform,

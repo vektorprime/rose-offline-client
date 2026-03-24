@@ -13,7 +13,7 @@ pub fn monster_chatter_system(
     mut commands: Commands,
     time: Res<Time<Virtual>>,
     mut query_entities: Query<(Entity, &mut MonsterChatter, Option<&ClientEntityName>, Option<&ClientEntity>, Option<&ModelHeight>), With<Npc>>,
-    mut chat_bubble_events: EventWriter<ChatBubbleEvent>,
+    mut chat_bubble_events: MessageWriter<ChatBubbleEvent>,
     phrases: Res<MonsterChatterPhrases>,
 ) {
     let delta = time.delta_secs();

@@ -1,6 +1,6 @@
-use bevy::prelude::{Event, Vec3};
+use bevy::prelude::{Message, Vec3};
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum MoveDestinationEffectEvent {
     Show { position: Vec3 },
     Hide,

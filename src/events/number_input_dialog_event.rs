@@ -1,6 +1,6 @@
-use bevy::prelude::{Commands, Event};
+use bevy::prelude::{Commands, Message};
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum NumberInputDialogEvent {
     Show {
         max_value: Option<usize>,

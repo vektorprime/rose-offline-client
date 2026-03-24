@@ -107,7 +107,7 @@ fn GF_getVariable(
     parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
     let variable_id = parameters[0].to_i32().unwrap();
-    let Ok(character) = context.query_player_stats.get_single() else {
+    let Ok(character) = context.query_player_stats.single() else {
         return vec![0.into()];
     };
 

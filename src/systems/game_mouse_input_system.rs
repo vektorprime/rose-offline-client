@@ -2,10 +2,10 @@ use bevy::{
     input::ButtonInput,
     math::Vec3,
     prelude::{
-        BevyError, Camera, Camera3d, Entity, EventWriter, GlobalTransform, Local, MouseButton, Query, Res, ResMut,
+        BevyError, Camera, Camera3d, Entity, MessageWriter, GlobalTransform, Local, MouseButton, Query, Res, ResMut,
         State, With,
     },
-    window::{CursorGrabMode, PrimaryWindow, Window},
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
 use bevy_egui::EguiContexts;
 use bevy_rapier3d::{
@@ -31,7 +31,7 @@ pub type PlayerQuery<'w> = (Entity, &'w Team, Option<&'w FlightState>);
 pub fn game_mouse_input_system(
     app_state: Res<State<AppState>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
-    query_window: Query<&Window, With<PrimaryWindow>>,
+    query_window: Query<(&Window, &CursorOptions), With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     rapier_context: ReadRapierContext,
     mut egui_ctx: EguiContexts,
@@ -44,7 +44,7 @@ pub fn game_mouse_input_system(
     )>,
     query_player: Query<PlayerQuery, With<PlayerCharacter>>,
     query_collider_parent: Query<&ColliderParent>,
-    mut player_command_events: EventWriter<PlayerCommandEvent>,
+    mut player_command_events: MessageWriter<PlayerCommandEvent>,
     mut selected_target: ResMut<SelectedTarget>,
 ) -> Result<(), BevyError> {
     let Ok(rapier_context) = rapier_context.single() else {
@@ -57,11 +57,11 @@ pub fn game_mouse_input_system(
     }
     selected_target.hover = None;
 
-    let Ok(window) = query_window.get_single() else {
+    let Ok((window, cursor_options)) = query_window.single() else {
         return Ok(());
     };
 
-    if !matches!(window.cursor_options.grab_mode, CursorGrabMode::None) {
+    if !matches!(cursor_options.grab_mode, CursorGrabMode::None) {
         // Cursor is currently grabbed
         return Ok(());
     }
@@ -71,11 +71,11 @@ pub fn game_mouse_input_system(
         return Ok(());
     };
 
-    if egui_ctx.ctx_mut().wants_pointer_input() {
+    if egui_ctx.ctx_mut().unwrap().wants_pointer_input() {
         return Ok(());
     }
 
-    let (_player_entity, player_team, player_flight_state) = if let Ok(result) = query_player.get_single() {
+    let (_player_entity, player_team, player_flight_state) = if let Ok(result) = query_player.single() {
         result
     } else {
         return Ok(());
@@ -85,7 +85,7 @@ pub fn game_mouse_input_system(
     // but still allow interaction with UI and entities
     let is_flying = player_flight_state.map_or(false, |fs| fs.is_flying);
     
-    let Ok((camera, camera_transform)) = query_camera.get_single() else {
+    let Ok((camera, camera_transform)) = query_camera.single() else {
         return Ok(());
     };
 

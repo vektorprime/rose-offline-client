@@ -4,16 +4,16 @@ use bevy::{
     asset::{Asset, AssetLoader, LoadContext, io::Reader, VisitAssetDependencies},
     math::{Quat, Vec3},
     prelude::{Handle, Image},
-    reflect::Reflect,
+    reflect::{Reflect, TypePath},
     render::render_asset::RenderAssetUsages,
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use rose_file_readers::{RoseFile, ZmoChannel, ZmoFile};
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct ZmoAssetLoader;
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub struct ZmoTextureAssetLoader;
 
 #[derive(Reflect, Clone, Default)]

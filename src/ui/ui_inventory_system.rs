@@ -1,6 +1,6 @@
 use bevy::{
-    ecs::event::EventWriter,
-    prelude::{Assets, Events, Local, Query, Res, ResMut, Resource, With, World},
+    ecs::message::MessageWriter,
+    prelude::{Assets, Local, Messages, Query, Res, ResMut, Resource, With, World},
 };
 use bevy_egui::{egui, EguiContexts};
 use enum_map::{enum_map, EnumMap};
@@ -222,13 +222,13 @@ fn ui_add_inventory_slot(
     inventory_slot: ItemSlot,
     pos: egui::Pos2,
     player: &(&Equipment, &Inventory, &Cooldowns),
-    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_>>,
+    player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     item_slot_map: &mut EnumMap<InventoryPageType, Vec<ItemSlot>>,
     ui_state_dnd: &mut UiStateDragAndDrop,
-    player_command_events: &mut EventWriter<PlayerCommandEvent>,
-    number_input_dialog_events: &mut EventWriter<NumberInputDialogEvent>,
+    player_command_events: &mut MessageWriter<PlayerCommandEvent>,
+    number_input_dialog_events: &mut MessageWriter<NumberInputDialogEvent>,
     repair_mode: &mut Option<ItemSlot>,
 ) {
     let drag_accepts = match inventory_slot {
@@ -301,7 +301,7 @@ fn ui_add_inventory_slot(
                         if matches!(item_data.class, rose_data::ItemClass::RepairTool) {
                             // Enter repair mode with this repair tool
                             *repair_mode = Some(inventory_slot);
-                            player_command_events.send(PlayerCommandEvent::EnterRepairMode(inventory_slot));
+                            player_command_events.write(PlayerCommandEvent::EnterRepairMode(inventory_slot));
                             return;
                         }
                     }
@@ -311,7 +311,7 @@ fn ui_add_inventory_slot(
             ItemSlot::Equipment(equipment_index) => {
                 // If in repair mode, repair this equipment item
                 if let Some(repair_tool_slot) = repair_mode {
-                    player_command_events.send(PlayerCommandEvent::RepairItem(inventory_slot));
+                    player_command_events.write(PlayerCommandEvent::RepairItem(inventory_slot));
                     *repair_mode = None; // Exit repair mode after repair
                     return;
                 }
@@ -385,8 +385,8 @@ fn ui_add_inventory_slot(
                             ok: Some(Box::new(move |commands, quantity| {
                                 commands.queue(move |world: &mut World| {
                                     let mut player_command_events =
-                                        world.resource_mut::<Events<PlayerCommandEvent>>();
-                                    let _ = player_command_events.send(
+                                        world.resource_mut::<Messages<PlayerCommandEvent>>();
+                                    let _ = player_command_events.write(
                                         PlayerCommandEvent::DropItemWithQuantity(
                                             inventory_slot_clone,
                                             quantity,
@@ -450,41 +450,41 @@ fn ui_add_inventory_slot(
     }
 
     if let Some(DragAndDropId::Bank(dropped_bank_slot_index)) = dropped_item {
-        player_command_events.send(PlayerCommandEvent::BankWithdrawItem(
+        player_command_events.write(PlayerCommandEvent::BankWithdrawItem(
             dropped_bank_slot_index,
         ));
     }
 
     if let Some(item_slot) = equip_equipment_inventory_slot {
-        player_command_events.send(PlayerCommandEvent::EquipEquipment(item_slot));
+        player_command_events.write(PlayerCommandEvent::EquipEquipment(item_slot));
     }
 
     if let Some(item_slot) = equip_ammo_inventory_slot {
-        player_command_events.send(PlayerCommandEvent::EquipAmmo(item_slot));
+        player_command_events.write(PlayerCommandEvent::EquipAmmo(item_slot));
     }
 
     if let Some(item_slot) = equip_vehicle_inventory_slot {
-        player_command_events.send(PlayerCommandEvent::EquipVehicle(item_slot));
+        player_command_events.write(PlayerCommandEvent::EquipVehicle(item_slot));
     }
 
     if let Some(ammo_index) = unequip_ammo_index {
-        player_command_events.send(PlayerCommandEvent::UnequipAmmo(ammo_index));
+        player_command_events.write(PlayerCommandEvent::UnequipAmmo(ammo_index));
     }
 
     if let Some(equipment_index) = unequip_equipment_index {
-        player_command_events.send(PlayerCommandEvent::UnequipEquipment(equipment_index));
+        player_command_events.write(PlayerCommandEvent::UnequipEquipment(equipment_index));
     }
 
     if let Some(vehicle_part_index) = unequip_vehicle_part_index {
-        player_command_events.send(PlayerCommandEvent::UnequipVehicle(vehicle_part_index));
+        player_command_events.write(PlayerCommandEvent::UnequipVehicle(vehicle_part_index));
     }
 
     if let Some(use_inventory_slot) = use_inventory_slot {
-        player_command_events.send(PlayerCommandEvent::UseItem(use_inventory_slot));
+        player_command_events.write(PlayerCommandEvent::UseItem(use_inventory_slot));
     }
 
     if let Some(drop_inventory_slot) = drop_inventory_slot {
-        player_command_events.send(PlayerCommandEvent::DropItem(drop_inventory_slot));
+        player_command_events.write(PlayerCommandEvent::DropItem(drop_inventory_slot));
     }
 
     if let Some((ItemSlot::Inventory(page_a, slot_a), ItemSlot::Inventory(page_b, slot_b))) =
@@ -511,14 +511,14 @@ pub fn ui_inventory_system(
     mut ui_state_inventory: Local<UiStateInventory>,
     mut ui_state_dnd: ResMut<UiStateDragAndDrop>,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     query_player: Query<(&Equipment, &Inventory, &Cooldowns), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     dialog_assets: Res<Assets<Dialog>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
-    mut player_command_events: EventWriter<PlayerCommandEvent>,
-    mut number_input_dialog_events: EventWriter<NumberInputDialogEvent>,
+    mut player_command_events: MessageWriter<PlayerCommandEvent>,
+    mut number_input_dialog_events: MessageWriter<NumberInputDialogEvent>,
 ) {
     let ui_state_inventory = &mut *ui_state_inventory;
     let dialog = if let Some(dialog) = ui_state_inventory
@@ -529,12 +529,12 @@ pub fn ui_inventory_system(
     } else {
         return;
     };
-    let player = if let Ok(player) = query_player.get_single() {
+    let player = if let Ok(player) = query_player.single() {
         player
     } else {
         return;
     };
-    let player_tooltip_data = query_player_tooltip.get_single().ok();
+    let player_tooltip_data = query_player_tooltip.single().ok();
 
     let mut response_close_button = None;
     let mut response_minimise_button = None;
@@ -550,7 +550,7 @@ pub fn ui_inventory_system(
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {
@@ -721,9 +721,9 @@ pub fn ui_inventory_system(
             ok: Some(Box::new(move |commands, amount| {
                 commands.queue(move |world: &mut World| {
                     if let Some(mut player_command_events) =
-                        world.get_resource_mut::<Events<PlayerCommandEvent>>()
+                        world.get_resource_mut::<Messages<PlayerCommandEvent>>()
                     {
-                        player_command_events.send(PlayerCommandEvent::DropMoney(amount));
+                        player_command_events.write(PlayerCommandEvent::DropMoney(amount));
                     }
                 });
             })),

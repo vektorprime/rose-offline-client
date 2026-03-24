@@ -111,15 +111,14 @@ pub fn editor_status_bar(
                 }
                 
                 // Open popup above the button (since status bar is at bottom)
-                let above = egui::AboveOrBelow::Above;
-                let close_behavior = egui::popup::PopupCloseBehavior::CloseOnClick;
-                egui::popup::popup_above_or_below_widget(
-                    ui,
-                    popup_id,
-                    &button_response,
-                    above,
-                    close_behavior,
-                    |ui| {
+                // Use the new Popup API (egui 0.33)
+                use egui::{Popup, PopupCloseBehavior, RectAlign};
+                Popup::from_toggle_button_response(&button_response)
+                    .id(popup_id)
+                    .close_behavior(PopupCloseBehavior::CloseOnClick)
+                    .align(RectAlign::TOP_START) // Above the button
+                    .width(button_response.rect.width())
+                    .show(|ui| {
                         ui.set_min_width(100.0);
                         
                         let modes = [
@@ -141,11 +140,10 @@ pub fn editor_status_bar(
                             
                             if ui.button(&label).clicked() {
                                 map_editor_state.editor_mode = mode;
-                                ui.memory_mut(|mem| mem.close_popup());
+                                ui.memory_mut(|mem| mem.close_popup(popup_id));
                             }
                         }
-                    },
-                );
+                    });
                 
                 ui.separator();
                 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bevy::{
     math::Vec3Swizzles,
-    prelude::{Assets, Entity, EventReader, Local, Query, Res, With},
+    prelude::{Assets, Entity, MessageReader, Local, Query, Res, With},
 };
 use bevy_egui::{egui, EguiContexts};
 use rose_file_readers::{ConFile, ConMessageType};
@@ -367,7 +367,7 @@ impl Default for UiConversationDialogState {
 pub fn conversation_dialog_system(
     mut current_dialog_state: Local<Option<ConversationDialogState>>,
     mut egui_context: EguiContexts,
-    mut conversation_dialog_events: EventReader<ConversationDialogEvent>,
+    mut conversation_dialog_events: MessageReader<ConversationDialogEvent>,
     mut lua_function_context: ScriptFunctionContext,
     mut ui_state: Local<UiConversationDialogState>,
     script_function_resources: ScriptFunctionResources,
@@ -502,7 +502,7 @@ pub fn conversation_dialog_system(
 
         // If player has moved away from NPC, close the dialog
         if let (Ok(player_position), Some(npc_position)) = (
-            query_player_position.get_single(),
+            query_player_position.single(),
             dialog_state
                 .owner_entity
                 .and_then(|entity| query_position.get(entity).ok()),
@@ -514,7 +514,7 @@ pub fn conversation_dialog_system(
         }
 
         let (message_galley, num_message_middle, num_response_middles) =
-            egui_context.ctx_mut().fonts(|fonts| {
+            egui_context.ctx_mut().unwrap().fonts_mut(|fonts| {
                 let message_galley =
                     fonts.layout_job(dialog_state.generated_dialog.message.clone());
 
@@ -554,6 +554,7 @@ pub fn conversation_dialog_system(
         let mut response_close_button = None;
         let screen_size = egui_context
             .ctx_mut()
+            .unwrap()
             .input(|input| input.screen_rect().size());
         let default_x = screen_size.x / 2.0 - dialog.width / 2.0;
         let default_y = screen_size.y / 2.0 - dialog_height / 2.0;
@@ -566,7 +567,7 @@ pub fn conversation_dialog_system(
             .min_width(dialog.width)
             .min_height(dialog_height)
             .default_pos([default_x, default_y])
-            .show(egui_context.ctx_mut(), |ui| {
+            .show(egui_context.ctx_mut().unwrap(), |ui| {
                 dialog.draw(
                     ui,
                     DataBindings {
@@ -665,7 +666,7 @@ pub fn conversation_dialog_system(
         }
 
         if selected_response.is_none() {
-            egui_context.ctx_mut().input(|input| {
+            egui_context.ctx_mut().unwrap().input(|input| {
                 for (index, &key) in [
                     egui::Key::Num1,
                     egui::Key::Num2,

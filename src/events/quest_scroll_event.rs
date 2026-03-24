@@ -1,8 +1,8 @@
-use bevy::prelude::Event;
+use bevy::prelude::Message;
 use rose_game_common::components::ItemSlot;
 
-/// Event for quest scroll dialog interaction
-#[derive(Event)]
+/// Message for quest scroll dialog interaction
+#[derive(Message)]
 pub enum QuestScrollEvent {
     /// Open a quest scroll dialog for the given item
     Show {

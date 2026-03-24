@@ -1,8 +1,8 @@
 use bevy::{
-    asset::{load_internal_asset, Handle},
+    asset::{load_internal_asset, weak_handle, Handle},
     core_pipeline::{
         core_3d::Opaque3d,
-        fullscreen_vertex_shader::fullscreen_shader_vertex_state,
+        FullscreenShader,
     },
     ecs::system::SystemParam,
     prelude::*,
@@ -14,15 +14,15 @@ use bevy::{
         render_resource::*,
         renderer::RenderContext,
         view::ViewTarget,
-        Render, RenderApp, RenderSet,
+        Render, RenderApp, RenderSystems,
     },
-    window::Window,
 };
+use bevy::window::Window;
 
 use std::borrow::Cow;
 
-pub const POST_PROCESSING_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 0x7894561230fedcba);
+pub const POST_PROCESSING_SHADER_HANDLE: Handle<Shader> =
+    weak_handle!("78945612-30fe-dcba-0000-000000000000");
 
 #[derive(Resource, Default, Clone)]
 pub struct PostProcessingSettings {
@@ -172,13 +172,13 @@ pub struct SetPostProcessingBindGroup<const I: usize>;
 
 impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetPostProcessingBindGroup<I> {
     type Param = SRes<PostProcessingPipeline>;
-    type ViewWorldQuery = ();
-    type ItemWorldQuery = ();
+    type ViewQuery = ();
+    type ItemQuery = ();
 
     fn render<'w>(
         _item: &P,
-        _view: ROQueryItem<'w, Self::ViewWorldQuery>,
-        _entity: ROQueryItem<'w, Self::ItemWorldQuery>,
+        _view: ROQueryItem<'w, '_, Self::ViewQuery>,
+        _entity: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
         pipeline: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {

@@ -58,3 +58,31 @@ _Pending testing - User needs to compile and run the game to verify if name tags
 ## Notes
 - VisibilityClass is from `bevy_render::view::VisibilityClass`
 - This component was introduced/changed in Bevy 0.16 to help classify entities in the visibility system
+
+---
+
+### Attempt 2: Bevy 0.18 Name Tag Regression (Font Atlas Extraction)
+**Date**: 2026-03-24
+**Status**: Implemented - Pending Testing
+
+**Observed Symptom**:
+- Name tags fail after Bevy 0.16 -> 0.18 upgrade.
+- Chat bubbles already include a Bevy 0.39-compatible glyph extraction path.
+
+**Hypothesis**:
+1. Name tags still used old direct RGBA glyph copy from egui atlas.
+2. In `bevy_egui 0.39`, atlas channel packing can differ; direct RGBA assumptions may produce transparent/incorrect glyphs.
+3. Name tag font upload forcing used a single shared egui `Area` id, which is less robust when many entities are pending.
+
+**Changes Made** (`src/systems/name_tag_system.rs`):
+- Updated glyph copy to robust coverage extraction:
+  - `coverage = max(r, g, b, a)`
+  - write output as white RGB + coverage alpha
+  - tint remains controlled by `WorldUiRect.color`
+- Changed forced egui upload id to be entity-specific:
+  - from `Id::new("nametag_font_upload")`
+  - to `Id::new(("nametag_font_upload", object.entity))`
+
+**Expected Effect**:
+- Name tag text texture generation should match the now-working chat bubble strategy on Bevy 0.18 / bevy_egui 0.39.
+- Reduced risk of missing glyph uploads when many tags are generated in the same frame.

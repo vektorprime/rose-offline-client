@@ -126,7 +126,7 @@ fn QF_findQuest(
     let result = || -> Option<i32> {
         let quest_id = parameters.get(0)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.get_single().ok()?;
+        let quest_state = context.query_quest.single().ok()?;
         quest_state
             .find_active_quest_index(quest_id)
             .map(|x| x as i32)
@@ -162,7 +162,7 @@ fn QF_getEpisodeVAR(
     let result = || -> Option<i32> {
         let var_id = parameters.get(0)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.get_single().ok()?;
+        let quest_state = context.query_quest.single().ok()?;
         Some(*quest_state.episode_variables.get(var_id)? as i32)
     }()
     .unwrap_or(-1);
@@ -179,7 +179,7 @@ fn QF_getJobVAR(
     let result = || -> Option<i32> {
         let var_id = parameters.get(0)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.get_single().ok()?;
+        let quest_state = context.query_quest.single().ok()?;
         Some(*quest_state.job_variables.get(var_id)? as i32)
     }()
     .unwrap_or(-1);
@@ -196,7 +196,7 @@ fn QF_getPlanetVAR(
     let result = || -> Option<i32> {
         let var_id = parameters.get(0)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.get_single().ok()?;
+        let quest_state = context.query_quest.single().ok()?;
         Some(*quest_state.planet_variables.get(var_id)? as i32)
     }()
     .unwrap_or(-1);
@@ -211,7 +211,7 @@ fn QF_getQuestCount(
     _parameters: Vec<Lua4Value>,
 ) -> Vec<Lua4Value> {
     let result = || -> Option<i32> {
-        let quest_state = context.query_quest.get_single().ok()?;
+        let quest_state = context.query_quest.single().ok()?;
         Some(
             quest_state
                 .active_quests
@@ -234,7 +234,7 @@ fn QF_getQuestID(
     let result = || -> Option<i32> {
         let quest_index = parameters.get(0)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.get_single().ok()?;
+        let quest_state = context.query_quest.single().ok()?;
         let quest = quest_state.get_quest(quest_index)?;
         Some(quest.quest_id as i32)
     }()
@@ -257,7 +257,7 @@ fn QF_getQuestItemQuantity(
             .game_data
             .data_decoder
             .decode_item_base1000(item_base1000)?;
-        let quest_state = context.query_quest.get_single().ok()?;
+        let quest_state = context.query_quest.single().ok()?;
         let quest = quest_state.find_active_quest(quest_id)?;
         for item in quest.items.iter().flatten() {
             if item.get_item_reference() == item_reference {
@@ -282,7 +282,7 @@ fn QF_getQuestSwitch(
         let quest_index = parameters.get(0)?.to_usize().ok()?;
         let quest_switch_id = parameters.get(1)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.get_single().ok()?;
+        let quest_state = context.query_quest.single().ok()?;
         let quest = quest_state.get_quest(quest_index)?;
         Some(*quest.switches.get(quest_switch_id)? as i32)
     }()
@@ -301,7 +301,7 @@ fn QF_getQuestVar(
         let quest_index = parameters.get(0)?.to_usize().ok()?;
         let quest_var_id = parameters.get(1)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.get_single().ok()?;
+        let quest_state = context.query_quest.single().ok()?;
         let quest = quest_state.get_quest(quest_index)?;
         Some(*quest.variables.get(quest_var_id)? as i32)
     }()
@@ -319,7 +319,7 @@ fn QF_getUserSwitch(
     let result = || -> Option<i32> {
         let switch_id = parameters.get(0)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.get_single().ok()?;
+        let quest_state = context.query_quest.single().ok()?;
         Some(*quest_state.quest_switches.get(switch_id)? as i32)
     }()
     .unwrap_or(-1);

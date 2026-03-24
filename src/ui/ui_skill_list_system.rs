@@ -1,4 +1,4 @@
-use bevy::prelude::{Assets, Entity, EventWriter, Local, Query, Res, ResMut, With};
+use bevy::prelude::{Assets, Entity, MessageWriter, Local, Query, Res, ResMut, With};
 use bevy::ecs::query::QueryData;
 use bevy_egui::{egui, EguiContexts};
 
@@ -62,11 +62,11 @@ fn ui_add_skill_list_slot(
     pos: egui::Pos2,
     skill_slot: SkillSlot,
     player: &(&CharacterInfo, &SkillList, &SkillPoints, &Cooldowns),
-    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_>>,
+    player_tooltip_data: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
     ui_state_dnd: &mut UiStateDragAndDrop,
-    player_command_events: &mut EventWriter<PlayerCommandEvent>,
+    player_command_events: &mut MessageWriter<PlayerCommandEvent>,
 ) {
     let skill = player.1.get_skill(skill_slot);
     let mut dropped_item = None;
@@ -119,8 +119,8 @@ pub fn ui_skill_list_system(
     mut ui_state_skill_list: Local<UiStateSkillList>,
     mut ui_state_dnd: ResMut<UiStateDragAndDrop>,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
-    mut player_command_events: EventWriter<PlayerCommandEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
+    mut player_command_events: MessageWriter<PlayerCommandEvent>,
     mut query_player: Query<(Entity, &CharacterInfo, &SkillList, &SkillPoints, &Cooldowns), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     game_data: Res<GameData>,
@@ -134,12 +134,12 @@ pub fn ui_skill_list_system(
         return;
     };
 
-    let player = if let Ok(skill_list) = query_player.get_single() {
+    let player = if let Ok(skill_list) = query_player.single() {
         skill_list
     } else {
         return;
     };
-    let player_tooltip_data_ref = query_player_tooltip.get_single().ok();
+    let player_tooltip_data_ref = query_player_tooltip.single().ok();
 
     let (_, character_info, skill_list, skill_points, cooldowns) = player;
 
@@ -161,7 +161,7 @@ pub fn ui_skill_list_system(
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {

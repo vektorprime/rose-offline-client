@@ -1,6 +1,6 @@
 use bevy::asset::Asset;
 use bevy::prelude::{
-    AssetServer, Assets, Camera3d, Commands, Entity, EventWriter, Local, Query, Res, ResMut, With,
+    AssetServer, Assets, Camera3d, Commands, Entity, Local, MessageWriter, Query, Res, ResMut, With,
 };
 use bevy_egui::{egui, EguiContexts};
 
@@ -42,8 +42,8 @@ pub fn ui_character_select_system(
     dialog_assets: Res<Assets<Dialog>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
-    mut character_select_events: EventWriter<CharacterSelectEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
+    mut character_select_events: MessageWriter<CharacterSelectEvent>,
 ) {
     let ui_state = &mut *ui_state;
     if !matches!(
@@ -63,7 +63,7 @@ pub fn ui_character_select_system(
     };
 
     let screen_size = egui_context
-        .ctx_mut()
+        .ctx_mut().unwrap()
         .input(|input| input.screen_rect().size());
 
     // Position buttons at bottom of screen - adjust both X and Y coordinates
@@ -100,7 +100,7 @@ pub fn ui_character_select_system(
         .resizable(false)
         .default_width(screen_size.x)
         .default_height(40.0)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(&*egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
                 DataBindings {
@@ -122,7 +122,7 @@ pub fn ui_character_select_system(
             character_list.characters.len() < game_data.character_select_positions.len()
         })
     {
-        if let Ok(camera_entity) = query_camera.get_single() {
+        if let Ok(camera_entity) = query_camera.single() {
             commands
                 .entity(camera_entity)
                 .insert(CameraAnimation::once(

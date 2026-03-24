@@ -1,4 +1,4 @@
-use bevy::prelude::{Entity, EventReader, EventWriter, Query, Res, Time};
+use bevy::prelude::{Entity, MessageReader, MessageWriter, Query, Res, Time};
 use std::time::Instant;
 
 use rose_data::{AbilityType, AnimationEventFlags, SkillData, StatusEffectType};
@@ -144,8 +144,8 @@ pub fn pending_skill_effect_system(
         &mut PendingSkillEffectList,
         &mut StatusEffects,
     )>,
-    mut animation_frame_events: EventReader<AnimationFrameEvent>,
-    mut hit_events: EventWriter<HitEvent>,
+    mut animation_frame_events: MessageReader<AnimationFrameEvent>,
+    mut hit_events: MessageWriter<HitEvent>,
     game_data: Res<GameData>,
     time: Res<Time>,
 ) {

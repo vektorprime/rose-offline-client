@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bevy::{
     math::Vec3Swizzles,
-    prelude::{Entity, EventReader, EventWriter, Query, Res, With},
+    prelude::{Entity, MessageReader, MessageWriter, Query, Res, With},
 };
 
 use rose_data::{
@@ -26,7 +26,7 @@ use crate::{
 
 #[allow(clippy::too_many_arguments)]
 pub fn player_command_system(
-    mut player_command_events: EventReader<PlayerCommandEvent>,
+    mut player_command_events: MessageReader<PlayerCommandEvent>,
     mut query_player: Query<(
         Entity,
         Option<&Bank>,
@@ -49,15 +49,15 @@ pub fn player_command_system(
         &Command,
         &Team,
     )>,
-    mut chatbox_events: EventWriter<ChatboxEvent>,
-    mut quest_scroll_events: EventWriter<QuestScrollEvent>,
-    mut quest_trigger_events: EventWriter<QuestTriggerEvent>,
+    mut chatbox_events: MessageWriter<ChatboxEvent>,
+    mut quest_scroll_events: MessageWriter<QuestScrollEvent>,
+    mut quest_trigger_events: MessageWriter<QuestTriggerEvent>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
     selected_target: Res<SelectedTarget>,
     ui_state_inventory: Option<Res<UiStateInventory>>,
 ) {
-    let query_player_result = query_player.get_single_mut();
+    let query_player_result = query_player.single_mut();
     if query_player_result.is_err() {
         return;
     }

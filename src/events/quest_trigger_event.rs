@@ -1,8 +1,8 @@
-use bevy::prelude::Event;
+use bevy::prelude::Message;
 
 use rose_data::{ItemReference, QuestTriggerHash};
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum QuestTriggerEvent {
     ApplyRewards(QuestTriggerHash),
     DoTrigger(QuestTriggerHash),

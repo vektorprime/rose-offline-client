@@ -7,14 +7,16 @@ use bevy::{
     prelude::{
         AssetServer, Assets, Color, Commands, Entity,
         GlobalTransform, Handle, Image, Mesh, Mesh3d, Resource, Transform, Visibility,
+        InheritedVisibility, ViewVisibility,
     },
     render::{
         alpha::AlphaMode,
-        mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes}, view::InheritedVisibility, view::NoFrustumCulling, view::ViewVisibility, primitives::Aabb,
         render_resource::Face,
         storage::ShaderStorageBuffer,
     },
 };
+use bevy_camera::{primitives::Aabb, visibility::NoFrustumCulling};
+use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 
 use enum_map::{enum_map, EnumMap};
 
@@ -570,7 +572,7 @@ impl ModelLoader {
                         ) / 100.0,
                         end_offset: Vec3::new(end_position.x, end_position.z, -end_position.y)
                             / 100.0,
-                        trail_texture: self.trail_effect_image.clone_weak(),
+                        trail_texture: self.trail_effect_image.clone(),
                         distance_per_point: 10.0 / 100.0,
                     },
                     Transform::default(),
@@ -1257,7 +1259,7 @@ fn spawn_skeleton(
 
     let inverse_bind_pose: Vec<Mat4> = bind_pose
         .iter()
-        .map(|x| x.compute_matrix().inverse())
+        .map(|x| x.to_matrix().inverse())
         .collect();
 
     assert!(!inverse_bind_pose.is_empty(), "Skeleton has no inverse bind poses!");

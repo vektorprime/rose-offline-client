@@ -1,6 +1,6 @@
-use bevy::prelude::Event;
+use bevy::prelude::Message;
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum ChatboxEvent {
     Say(String, String),
     Shout(String, String),

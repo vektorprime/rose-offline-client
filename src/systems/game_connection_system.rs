@@ -1,15 +1,15 @@
 use arrayvec::ArrayVec;
 use bevy::{
     asset::Assets,
-    ecs::event::Events,
+    ecs::message::Messages,
     math::{Quat, Vec3},
     prelude::{
-        Commands, Entity, EventWriter, GlobalTransform,
+        Commands, Entity, MessageWriter, GlobalTransform,
         Mut, NextState, Res, ResMut, State, Transform, Visibility, World,
     },
-    render::view::ViewVisibility,
+    camera::visibility::ViewVisibility,
 };
-use bevy::render::view::InheritedVisibility;
+use bevy::camera::visibility::InheritedVisibility;
 use crate::zone_loader::ZoneLoaderAsset;
 
 use rose_data::{
@@ -156,16 +156,16 @@ pub fn game_connection_system(
     app_state_current: Res<State<AppState>>,
     mut app_state_next: ResMut<NextState<AppState>>,
     mut client_entity_list: ResMut<ClientEntityList>,
-    mut chatbox_events: EventWriter<ChatboxEvent>,
-    mut chat_bubble_events: EventWriter<ChatBubbleEvent>,
-    mut game_connection_events: EventWriter<GameConnectionEvent>,
-    mut load_zone_events: EventWriter<LoadZoneEvent>,
-    mut use_item_events: EventWriter<UseItemEvent>,
-    mut client_entity_events: EventWriter<ClientEntityEvent>,
-    mut party_events: EventWriter<PartyEvent>,
-    mut personal_store_events: EventWriter<PersonalStoreEvent>,
-    mut quest_trigger_events: EventWriter<QuestTriggerEvent>,
-    mut message_box_events: EventWriter<MessageBoxEvent>,
+    mut chatbox_events: MessageWriter<ChatboxEvent>,
+    mut chat_bubble_events: MessageWriter<ChatBubbleEvent>,
+    mut game_connection_events: MessageWriter<GameConnectionEvent>,
+    mut load_zone_events: MessageWriter<LoadZoneEvent>,
+    mut use_item_events: MessageWriter<UseItemEvent>,
+    mut client_entity_events: MessageWriter<ClientEntityEvent>,
+    mut party_events: MessageWriter<PartyEvent>,
+    mut personal_store_events: MessageWriter<PersonalStoreEvent>,
+    mut quest_trigger_events: MessageWriter<QuestTriggerEvent>,
+    mut message_box_events: MessageWriter<MessageBoxEvent>,
 ) {
     // DIAGNOSTIC: Log whether CurrentZone resource exists at system entry
    // log::info!("[DIAG_RUN_CONDITION] game_connection_system entry - CurrentZone resource exists: {}", current_zone.is_some());
@@ -733,8 +733,8 @@ pub fn game_connection_system(
                                 let chat_message =
                                     format!("You have succeeded in hunting {}", name.as_str());
                                 let _ = world
-                                    .resource_mut::<Events<ChatboxEvent>>()
-                                    .send(ChatboxEvent::System(chat_message));
+                                    .resource_mut::<Messages<ChatboxEvent>>()
+                                    .write(ChatboxEvent::System(chat_message));
                             }
                         }
                     });
@@ -777,11 +777,11 @@ pub fn game_connection_system(
                                     .insert(Command::with_stop())
                                     .insert(NextCommand::with_stop());
                                     
-                                log::info!("[RESPAWN_DIAG] Removed Dead component, set commands to Stop");
+                                // log::info!("[RESPAWN_DIAG] Removed Dead component, set commands to Stop");
                             }
                             
-                            // DIAGNOSTIC: Track CollisionPlayer state
-                            log::info!("[RESPAWN_DIAG] Setting position to ({}, {}, 0) and transform y={}", x, y, final_spawn_y);
+                            // DIAGNOSTIC: Disabled - Track CollisionPlayer state
+                            // log::info!("[RESPAWN_DIAG] Setting position to ({}, {}, 0) and transform y={}", x, y, final_spawn_y);
                             
                             // Note: We explicitly do NOT remove CollisionPlayer here.
                             // The collision system needs to continue processing the player for:
@@ -794,7 +794,7 @@ pub fn game_connection_system(
                                 Transform::from_xyz(x / 100.0, final_spawn_y, -y / 100.0),
                             ));
                             
-                            log::info!("[RESPAWN_DIAG] Position and transform updated, CollisionPlayer preserved");
+                            // log::info!("[RESPAWN_DIAG] Position and transform updated, CollisionPlayer preserved");
                         }
                     });
 
@@ -822,7 +822,7 @@ pub fn game_connection_system(
                         client_entity_list.add(entity_id, entity);
                         client_entity_list.player_entity_id = Some(entity_id);
                         client_entity_list.player_entity = Some(entity);
-                        log::info!("[RESPAWN_DIAG] Re-added player to client_entity_list: entity_id={:?}, entity={:?}", entity_id, entity);
+                        // log::info!("[RESPAWN_DIAG] Re-added player to client_entity_list: entity_id={:?}, entity={:?}", entity_id, entity);
                     }
 
                     // Load next zone
@@ -840,13 +840,13 @@ pub fn game_connection_system(
                             let name = name.to_string();
                             let text_for_bubble = text.clone();
                             let _ = world
-                                .resource_mut::<Events<ChatboxEvent>>()
-                                .send(ChatboxEvent::Say(name.clone(), text));
+                                .resource_mut::<Messages<ChatboxEvent>>()
+                                .write(ChatboxEvent::Say(name.clone(), text));
                             
                             // Also send chat bubble event
                             let _ = world
-                                .resource_mut::<Events<ChatBubbleEvent>>()
-                                .send(ChatBubbleEvent::new(name, text_for_bubble)
+                                .resource_mut::<Messages<ChatBubbleEvent>>()
+                                .write(ChatBubbleEvent::new(name, text_for_bubble)
                                     .with_entity(chat_entity)
                                     .with_duration(8.0)
                                     .with_bubble_type(ChatBubbleType::Normal));
@@ -1290,7 +1290,7 @@ pub fn game_connection_system(
                             experience_points.xp = xp;
 
                             if xp > previous_xp {
-                                let _ = world.resource_mut::<Events<ChatboxEvent>>().send(
+                                let _ = world.resource_mut::<Messages<ChatboxEvent>>().write(
                                     ChatboxEvent::System(format!(
                                         "You have earned {} experience points.",
                                         xp - previous_xp
@@ -1835,8 +1835,8 @@ pub fn game_connection_system(
                                 invited_entity_name.as_str()
                             );
                             let _ = world
-                                .resource_mut::<Events<ChatboxEvent>>()
-                                .send(ChatboxEvent::System(message));
+                                .resource_mut::<Messages<ChatboxEvent>>()
+                                .write(ChatboxEvent::System(message));
                         }
                     });
                 }
@@ -1862,8 +1862,8 @@ pub fn game_connection_system(
                             let message =
                                 format!("{} has joined the party.", player_entity_name.as_str());
                             let _ = world
-                                .resource_mut::<Events<ChatboxEvent>>()
-                                .send(ChatboxEvent::System(message));
+                                .resource_mut::<Messages<ChatboxEvent>>()
+                                .write(ChatboxEvent::System(message));
                         }
                     });
                 }
@@ -1879,8 +1879,8 @@ pub fn game_connection_system(
                                 invited_entity_name.as_str()
                             );
                             let _ = world
-                                .resource_mut::<Events<ChatboxEvent>>()
-                                .send(ChatboxEvent::System(message));
+                                .resource_mut::<Messages<ChatboxEvent>>()
+                                .write(ChatboxEvent::System(message));
                         }
                     });
                 }
@@ -1905,8 +1905,8 @@ pub fn game_connection_system(
                                         &character_info.name
                                     );
                                     let _ = world
-                                        .resource_mut::<Events<ChatboxEvent>>()
-                                        .send(ChatboxEvent::System(message));
+                                        .resource_mut::<Messages<ChatboxEvent>>()
+                                        .write(ChatboxEvent::System(message));
                                 }
                             } else {
                                 party_info.owner = PartyOwner::Unknown;
@@ -1924,8 +1924,8 @@ pub fn game_connection_system(
                                             );
 
                                             let _ = world
-                                                .resource_mut::<Events<ChatboxEvent>>()
-                                                .send(ChatboxEvent::System(message));
+                                                .resource_mut::<Messages<ChatboxEvent>>()
+                                                .write(ChatboxEvent::System(message));
                                             break;
                                         }
                                     }
@@ -1971,9 +1971,9 @@ pub fn game_connection_system(
 
                         party_info.members.append(&mut members);
 
-                        let mut chatbox_events = world.resource_mut::<Events<ChatboxEvent>>();
+                        let mut chatbox_events = world.resource_mut::<Messages<ChatboxEvent>>();
                         for message in messages {
-                            let _ = chatbox_events.send(ChatboxEvent::System(message));
+                            let _ = chatbox_events.write(ChatboxEvent::System(message));
                         }
                     });
                 }
@@ -2008,8 +2008,8 @@ pub fn game_connection_system(
                                 party_info.members.remove(index);
 
                                 let _ = world
-                                    .resource_mut::<Events<ChatboxEvent>>()
-                                    .send(ChatboxEvent::System(message));
+                                    .resource_mut::<Messages<ChatboxEvent>>()
+                                    .write(ChatboxEvent::System(message));
                             }
                         }
                     });
@@ -2037,8 +2037,8 @@ pub fn game_connection_system(
                                         });
 
                                     let _ = world
-                                        .resource_mut::<Events<ChatboxEvent>>()
-                                        .send(ChatboxEvent::System(message));
+                                        .resource_mut::<Messages<ChatboxEvent>>()
+                                        .write(ChatboxEvent::System(message));
                                 }
                             }
                         }
@@ -2063,8 +2063,8 @@ pub fn game_connection_system(
                                 party_info.members.remove(index);
 
                                 let _ = world
-                                    .resource_mut::<Events<ChatboxEvent>>()
-                                    .send(ChatboxEvent::System(message));
+                                    .resource_mut::<Messages<ChatboxEvent>>()
+                                    .write(ChatboxEvent::System(message));
                             }
                         }
                     });
@@ -2124,8 +2124,8 @@ pub fn game_connection_system(
                                     item_name
                                 );
                                 let _ = world
-                                    .resource_mut::<Events<ChatboxEvent>>()
-                                    .send(ChatboxEvent::System(chat_message));
+                                    .resource_mut::<Messages<ChatboxEvent>>()
+                                    .write(ChatboxEvent::System(chat_message));
                             }
                         }
                     });
@@ -2140,17 +2140,17 @@ pub fn game_connection_system(
                             party_info.item_sharing = item_sharing;
                             party_info.xp_sharing = xp_sharing;
 
-                            let mut chatbox_events = world.resource_mut::<Events<ChatboxEvent>>();
+                            let mut chatbox_events = world.resource_mut::<Messages<ChatboxEvent>>();
                             let _ = chatbox_events
-                                .send(ChatboxEvent::System("Party rules have changed.".into()));
-                            let _ = chatbox_events.send(ChatboxEvent::System(format!(
+                                .write(ChatboxEvent::System("Party rules have changed.".into()));
+                            let _ = chatbox_events.write(ChatboxEvent::System(format!(
                                 "Experience points sharing: {}.",
                                 match xp_sharing {
                                     PartyXpSharing::EqualShare => "Equal Share",
                                     PartyXpSharing::DistributedByLevel => "Distributed by Level",
                                 }
                             )));
-                            let _ = chatbox_events.send(ChatboxEvent::System(format!(
+                            let _ = chatbox_events.write(ChatboxEvent::System(format!(
                                 "Item sharing: {}.",
                                 match item_sharing {
                                     PartyItemSharing::EqualLootDistribution =>
@@ -2304,8 +2304,8 @@ pub fn game_connection_system(
                                         )
                                     };
                                     let mut chatbox_events =
-                                        world.resource_mut::<Events<ChatboxEvent>>();
-                                    let _ = chatbox_events.send(ChatboxEvent::System(message));
+                                        world.resource_mut::<Messages<ChatboxEvent>>();
+                                    let _ = chatbox_events.write(ChatboxEvent::System(message));
                                 }
                             }
                         }
@@ -2316,8 +2316,8 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::BankOpen) => {
                 commands.queue(move |world: &mut World| {
-                    let mut chatbox_events = world.resource_mut::<Events<BankEvent>>();
-                    let _ = chatbox_events.send(BankEvent::Show);
+                    let mut chatbox_events = world.resource_mut::<Messages<BankEvent>>();
+                    let _ = chatbox_events.write(BankEvent::Show);
                 });
             }
             Ok(ServerMessage::BankSetItems { items }) => {
@@ -2335,8 +2335,8 @@ pub fn game_connection_system(
                     commands.queue(move |world: &mut World| {
                         world.entity_mut(player_entity).insert(Bank { slots });
 
-                        let mut chatbox_events = world.resource_mut::<Events<BankEvent>>();
-                        let _ = chatbox_events.send(BankEvent::Show);
+                        let mut chatbox_events = world.resource_mut::<Messages<BankEvent>>();
+                        let _ = chatbox_events.write(BankEvent::Show);
                     });
                 }
             }

@@ -1,5 +1,5 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, EventWriter, Handle, Local, Res};
+use bevy::prelude::{Assets, MessageWriter, Handle, Local, Res};
 
 use crate::{
     resources::UiResources,
@@ -8,7 +8,7 @@ use crate::{
 
 pub fn ui_window_sound_system(
     mut state: Local<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     next: Res<UiStateWindows>,
     ui_resources: Res<UiResources>,
     dialog_assets: Res<Assets<Dialog>>,

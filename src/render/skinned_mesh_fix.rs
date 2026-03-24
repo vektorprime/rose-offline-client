@@ -1,9 +1,6 @@
 use bevy::{
     prelude::*,
-    render::{
-        mesh::skinning::SkinnedMesh,
-        mesh::Mesh3d,
-    },
+    mesh::{Mesh3d, skinning::SkinnedMesh},
     asset::LoadState,
 };
 

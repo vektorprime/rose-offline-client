@@ -121,7 +121,7 @@ pub fn get_quest_variable(
     variable_type: QsdVariableType,
     variable_id: usize,
 ) -> Option<i32> {
-    let Ok(quest_state) = script_context.query_quest.get_single() else {
+    let Ok(quest_state) = script_context.query_quest.single() else {
         return None;
     };
     let active_quest = quest_context
@@ -169,7 +169,7 @@ pub fn set_quest_variable(
     variable_id: usize,
     value: i32,
 ) {
-    let Ok(mut quest_state) = script_context.query_quest.get_single_mut() else {
+    let Ok(mut quest_state) = script_context.query_quest.single_mut() else {
         return;
     };
     let active_quest = quest_context

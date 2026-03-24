@@ -1,15 +1,16 @@
 use std::ops::RangeInclusive;
 
 use bevy::{
-    asset::{AssetServer, Assets, Handle, LoadState},
-    image::ImageSampler,
+    asset::{AssetServer, Assets, Handle, LoadState, RenderAssetUsages},
     log::{debug, error, info, warn},
     math::{Quat, Vec2, Vec3, Vec4},
-    prelude::{Commands, Component, Entity, GlobalTransform, Image, Mesh3d, MeshMaterial3d, Query, Res, ResMut, Resource, Time, Transform},
+    prelude::{Commands, Component, Entity, GlobalTransform, Mesh3d, MeshMaterial3d, Query, Res, ResMut, Resource, Time, Transform},
     render::{
-        alpha::AlphaMode, mesh::{Indices, Mesh, PrimitiveTopology}, render_asset::RenderAssetUsages, render_resource::{Extent3d, TextureDimension, TextureFormat}, storage::ShaderStorageBuffer
+        alpha::AlphaMode, render_resource::{Extent3d, TextureDimension, TextureFormat}, storage::ShaderStorageBuffer
     },
 };
+use bevy_image::{Image, ImageSampler};
+use bevy_mesh::{Indices, Mesh, PrimitiveTopology};
 use rand::Rng;
 
 use rose_file_readers::{PtlKeyframeData, PtlUpdateCoords};
@@ -610,7 +611,7 @@ pub fn particle_storage_buffer_update_system(
                 PrimitiveTopology::TriangleList,
                 RenderAssetUsages::RENDER_WORLD,
             );
-            mesh.insert_indices(bevy::render::mesh::Indices::U32(
+            mesh.insert_indices(Indices::U32(
                 (0..vertex_count as u32).collect()
             ));
             

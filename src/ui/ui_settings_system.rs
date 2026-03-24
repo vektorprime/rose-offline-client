@@ -1,4 +1,4 @@
-use bevy::core_pipeline::dof::DepthOfFieldMode;
+use bevy_post_process::dof::DepthOfFieldMode;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::{Color, Local, Query, Res, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts};
@@ -217,7 +217,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
     egui::Window::new("Settings")
         .open(&mut ui_state_windows.settings_open)
         .resizable(false)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut ui_state_settings.page, SettingsPage::Sound, "Sound");
                 ui.selectable_value(

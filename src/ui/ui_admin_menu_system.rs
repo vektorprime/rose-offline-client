@@ -86,7 +86,7 @@ pub fn admin_menu_keyboard_system(
 pub fn ui_admin_menu_system(
     mut egui_context: EguiContexts,
     mut ui_state_admin_menu: ResMut<UiStateAdminMenu>,
-    mut chatbox_events: bevy::prelude::EventWriter<ChatboxEvent>,
+    mut chatbox_events: bevy::prelude::MessageWriter<ChatboxEvent>,
     game_connection: Option<Res<GameConnection>>,
     ping_state: Res<PingState>,
     game_data: Res<GameData>,
@@ -96,12 +96,12 @@ pub fn ui_admin_menu_system(
         return;
     }
 
-    let ctx = egui_context.ctx_mut();
+    let ctx = egui_context.ctx_mut().unwrap();
     
     egui::Window::new("Admin Menu (F10)")
         .default_width(350.0)
         .resizable(true)
-        .show(ctx, |ui| {
+        .show(&*ctx, |ui| {
             // Display current ping if available
             if let Some(ping_ms) = ping_state.last_ping_ms {
                 ui.horizontal(|ui| {

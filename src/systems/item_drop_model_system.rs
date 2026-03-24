@@ -8,9 +8,9 @@ use bevy::{
     },
     render::{
         alpha::AlphaMode,
-        primitives::Aabb,
     },
 };
+use bevy_camera::primitives::Aabb;
 use crate::render::object_material_extension::RoseObjectExtension;
 use bevy_rapier3d::prelude::{Collider, CollisionGroups};
 
@@ -82,7 +82,7 @@ pub fn item_drop_model_add_collider_system(
                     min = Some(min.map_or_else(|| aabb.min(), |min| min.min(aabb.min())));
                     max = Some(max.map_or_else(|| aabb.max(), |max| max.max(aabb.max())));
                 }
-                Ok(None) | Err(QueryEntityError::EntityDoesNotExist(_)) => {
+                Ok(None) | Err(QueryEntityError::NotSpawned(_)) => {
                     all_parts_loaded = false;
                     break;
                 }

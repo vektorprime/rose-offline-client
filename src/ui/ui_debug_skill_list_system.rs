@@ -65,13 +65,13 @@ pub fn ui_debug_skill_list_system(
     if !ui_state_debug_windows.debug_ui_open {
         return;
     }
-    let player_tooltip_data = query_player_tooltip.get_single().ok();
+    let player_tooltip_data = query_player_tooltip.single().ok();
 
     egui::Window::new("Skill List")
         .resizable(true)
         .default_height(300.0)
         .open(&mut ui_state_debug_windows.skill_list_open)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             let mut filter_changed = false;
 
             egui::Grid::new("skill_list_controls_grid")
@@ -216,7 +216,7 @@ pub fn ui_debug_skill_list_system(
                                     }
 
                                     if skill_data.casting_motion_id.is_some() {
-                                        let player = query_player_command.get_single_mut().ok();
+                                        let player = query_player_command.single_mut().ok();
 
                                         if matches!(app_state.get(), AppState::Game) {
                                             if let Some(mut player) = player {

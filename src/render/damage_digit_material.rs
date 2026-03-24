@@ -4,6 +4,7 @@ use bevy::{
     asset::{load_internal_asset, Handle, weak_handle},
     pbr::Material,
 };
+use bevy_shader::ShaderRef;
 
 pub const DAMAGE_DIGIT_MATERIAL_SHADER_HANDLE: Handle<Shader> =
     weak_handle!("6a4b5c6d-7e8f-9a0b-0000-000000000000");
@@ -47,6 +48,16 @@ impl Material for DamageDigitMaterial {
     fn alpha_mode(&self) -> AlphaMode {
         AlphaMode::Blend
     }
+
+    /// Disable prepass - storage buffers incompatible with prepass pipeline
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    /// Transparent materials don't cast shadows
+    fn enable_shadows() -> bool {
+        false
+    }
 }
 
 pub struct DamageDigitMaterialPlugin;
@@ -60,11 +71,8 @@ impl Plugin for DamageDigitMaterialPlugin {
             Shader::from_wgsl
         );
 
-        app.add_plugins(bevy::pbr::MaterialPlugin::<DamageDigitMaterial> {
-            prepass_enabled: false,  // Disable prepass - storage buffers incompatible with prepass pipeline
-            shadows_enabled: false,  // Transparent materials don't cast shadows
-            ..Default::default()
-        });
+        // Note: prepass and shadows are controlled via enable_prepass() and enable_shadows() methods on Material trait
+        app.add_plugins(bevy::pbr::MaterialPlugin::<DamageDigitMaterial>::default());
         bevy::log::info!("[MATERIAL PLUGIN] DamageDigitMaterial plugin built");
     }
 }

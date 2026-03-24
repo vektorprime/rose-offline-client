@@ -33,7 +33,7 @@ pub fn ui_debug_dialog_list_system(
         .resizable(true)
         .default_height(300.0)
         .open(&mut ui_state_debug_windows.dialog_list_open)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             let mut filter_changed = false;
 
             egui::Grid::new("dialog_list_controls_grid")
@@ -119,7 +119,7 @@ pub fn ui_debug_dialog_list_system(
             .resizable(false)
             .default_width(dialog.width)
             .default_height(dialog.height)
-            .show(egui_context.ctx_mut(), |ui| {
+            .show(egui_context.ctx_mut().unwrap(), |ui| {
                 dialog.draw(ui, DataBindings::default(), |_, _| {})
             });
     }

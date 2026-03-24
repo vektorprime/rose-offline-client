@@ -73,10 +73,10 @@ pub fn ui_debug_menu_system(
         return;
     }
 
-    let ctx = egui_context.ctx_mut();
+    let ctx = egui_context.ctx_mut().unwrap();
     egui::TopBottomPanel::top("ui_debug_menu").show(ctx, |ui| {
         egui::menu::bar(ui, |ui| {
-            let player_entity = query_player.get_single().ok();
+            let player_entity = query_player.single().ok();
 
             ui.menu_button("App", |ui| {
                 if ui.button("Model Viewer").clicked() {

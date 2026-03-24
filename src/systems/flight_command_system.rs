@@ -20,7 +20,7 @@ pub fn is_fly_command(message: &str) -> bool {
 /// This system provides a standalone way to process flight commands
 /// if needed for other input methods.
 pub fn flight_command_system(
-    mut flight_toggle_events: EventWriter<FlightToggleEvent>,
+    mut flight_toggle_events: MessageWriter<FlightToggleEvent>,
     player_query: Query<Entity, With<PlayerCharacter>>,
 ) {
     // This system can be used for alternative command input methods

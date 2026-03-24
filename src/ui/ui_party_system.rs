@@ -1,4 +1,4 @@
-use bevy::prelude::{Assets, Entity, EventReader, EventWriter, Local, Query, Res, ResMut, With};
+use bevy::prelude::{Assets, Entity, Local, MessageReader, MessageWriter, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::{
@@ -75,19 +75,19 @@ impl Default for UiStatePartySystem {
 pub fn ui_party_system(
     mut ui_state: Local<UiStatePartySystem>,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut egui_context: EguiContexts,
     mut query_player: Query<(Entity, &AbilityValues, &CharacterInfo, &HealthPoints, &Level, Option<&PartyInfo>), With<PlayerCharacter>>,
     query_party_member: Query<(&CharacterInfo, &AbilityValues, &HealthPoints, &Level)>,
     query_invite: Query<(&ClientEntity, &ClientEntityName)>,
-    mut party_events: EventReader<PartyEvent>,
+    mut party_events: MessageReader<PartyEvent>,
     game_connection: Option<Res<GameConnection>>,
     client_entity_list: Res<ClientEntityList>,
     ui_resources: Res<UiResources>,
     dialog_assets: Res<Assets<Dialog>>,
     mut selected_target: ResMut<SelectedTarget>,
 ) {
-    let player = if let Ok(player) = query_player.get_single() {
+    let player = if let Ok(player) = query_player.single() {
         player
     } else {
         return;
@@ -132,7 +132,7 @@ pub fn ui_party_system(
                 )))
                 .collapsible(false)
                 .open(&mut window_open)
-                .show(egui_context.ctx_mut(), |ui| {
+                .show(egui_context.ctx_mut().unwrap(), |ui| {
                     ui.label(format!(
                         "{} has invited you to {} a party",
                         &pending_invite.name,
@@ -235,7 +235,7 @@ pub fn ui_party_system(
             .resizable(false)
             .default_width(dialog.width)
             .default_height(dialog.height)
-            .show(egui_context.ctx_mut(), |ui| {
+            .show(egui_context.ctx_mut().unwrap(), |ui| {
                 dialog.draw(
                     ui,
                     DataBindings {

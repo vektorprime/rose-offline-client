@@ -1,8 +1,8 @@
 use bevy::{
     math::{Quat, Vec3},
-    prelude::{Commands, Entity, EventWriter, GlobalTransform, Query, Res, Time, Transform},
-    render::mesh::skinning::SkinnedMesh,
+    prelude::{Commands, Entity, GlobalTransform, MessageWriter, Query, Res, Time, Transform},
 };
+use bevy_mesh::skinning::SkinnedMesh;
 
 use rose_data::EffectBulletMoveType;
 
@@ -13,7 +13,7 @@ use crate::{
 
 pub fn projectile_system(
     mut commands: Commands,
-    mut hit_events: EventWriter<HitEvent>,
+    mut hit_events: MessageWriter<HitEvent>,
     mut query_bullets: Query<(Entity, &mut Projectile, &Transform)>,
     query_global_transform: Query<&GlobalTransform>,
     query_skeleton: Query<(&SkinnedMesh, &DummyBoneOffset)>,

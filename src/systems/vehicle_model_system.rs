@@ -7,9 +7,9 @@ use bevy::{
     },
     render::{
         alpha::AlphaMode,
-        mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
     },
 };
+use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 
 use rose_game_common::components::{Equipment, MoveMode};
 

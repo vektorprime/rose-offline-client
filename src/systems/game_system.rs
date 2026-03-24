@@ -1,6 +1,6 @@
 use bevy::{
     math::Vec3,
-    prelude::{Camera3d, Commands, Entity, EventReader, Query, Res, With},
+    prelude::{Camera3d, Commands, Entity, MessageReader, Query, Res, With},
 };
 use rose_game_common::messages::client::ClientMessage;
 
@@ -20,7 +20,7 @@ pub fn game_state_enter_system(
     //bevy::log::info!("[CAMERA] game_state_enter_system called");
     
     // Reset camera
-    let player_entity = match query_player.get_single() {
+    let player_entity = match query_player.single() {
         Ok(entity) => entity,
         Err(e) => {
             //bevy::log::error!("[CAMERA] Failed to get player entity: {:?}", e);
@@ -55,7 +55,7 @@ pub fn game_state_enter_system(
 
 #[allow(clippy::too_many_arguments)]
 pub fn game_zone_change_system(
-    mut zone_events: EventReader<ZoneEvent>,
+    mut zone_events: MessageReader<ZoneEvent>,
     game_connection: Option<Res<GameConnection>>,
 ) {
     for zone_event in zone_events.read() {

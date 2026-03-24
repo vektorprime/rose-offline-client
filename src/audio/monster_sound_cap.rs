@@ -50,7 +50,7 @@ pub fn process_monster_sound_queue_system(
 ) {
     // Get player position
     let player_position = query_player
-        .get_single()
+        .single()
         .map(|transform| transform.translation())
         .unwrap_or(Vec3::ZERO);
 

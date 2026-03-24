@@ -3,13 +3,13 @@ use std::f32::consts::FRAC_PI_2;
 use bevy::{
     asset::LoadState,
     prelude::{
-        AssetServer, Assets, Component, Deref, DerefMut, Entity, EventWriter, Handle, Query, Res,
+        AssetServer, Assets, Component, Deref, DerefMut, Entity, MessageWriter, Handle, Query, Res,
         Transform,
     },
     reflect::Reflect,
-    render::mesh::skinning::SkinnedMesh,
     time::Time,
 };
+use bevy_mesh::skinning::SkinnedMesh;
 
 use crate::{
     animation::{AnimationFrameEvent, AnimationState, ZmoAsset},
@@ -37,7 +37,7 @@ impl SkeletalAnimation {
 pub fn skeletal_animation_system(
     mut query_animations: Query<(Entity, &mut SkeletalAnimation, Option<&SkinnedMesh>)>,
     mut query_transform: Query<&mut Transform>,
-    mut animation_frame_events: EventWriter<AnimationFrameEvent>,
+    mut animation_frame_events: MessageWriter<AnimationFrameEvent>,
     motion_assets: Res<Assets<ZmoAsset>>,
     asset_server: Res<AssetServer>,
     game_data: Res<GameData>,

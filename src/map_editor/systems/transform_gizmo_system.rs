@@ -65,13 +65,13 @@ pub fn transform_gizmo_system(
     }
     
     // Check if egui wants the input
-    let ctx = egui_contexts.ctx_mut();
+    let ctx = egui_contexts.ctx_mut().unwrap();
     if ctx.wants_pointer_input() || ctx.wants_keyboard_input() {
         return;
     }
     
     // Get the primary window
-    let Ok(window) = windows.get_single() else {
+    let Ok(window) = windows.single() else {
         return;
     };
     
@@ -464,27 +464,27 @@ fn draw_scale_gizmo(gizmos: &mut Gizmos, position: Vec3, _rotation: Quat) {
     
     // X axis - Red
     let x_pos = position + Vec3::X * handle_offset;
-    gizmos.cuboid(
+    gizmos.cube(
         Transform::from_translation(x_pos).with_scale(Vec3::splat(handle_size)),
         Color::srgb(1.0, 0.0, 0.0),
     );
     
     // Y axis - Green
     let y_pos = position + Vec3::Y * handle_offset;
-    gizmos.cuboid(
+    gizmos.cube(
         Transform::from_translation(y_pos).with_scale(Vec3::splat(handle_size)),
         Color::srgb(0.0, 1.0, 0.0),
     );
     
     // Z axis - Blue
     let z_pos = position + Vec3::Z * handle_offset;
-    gizmos.cuboid(
+    gizmos.cube(
         Transform::from_translation(z_pos).with_scale(Vec3::splat(handle_size)),
         Color::srgb(0.0, 0.0, 1.0),
     );
     
     // Center box - White
-    gizmos.cuboid(
+    gizmos.cube(
         Transform::from_translation(position).with_scale(Vec3::splat(handle_size * 0.8)),
         Color::srgb(1.0, 1.0, 1.0),
     );

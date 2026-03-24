@@ -1,8 +1,8 @@
-use bevy::prelude::Event;
+use bevy::prelude::Message;
 
 use rose_game_common::{components::CharacterDeleteTime, messages::server::CreateCharacterError};
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum WorldConnectionEvent {
     CreateCharacterSuccess {
         character_slot: usize,

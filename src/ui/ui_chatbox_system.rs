@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use bevy::prelude::{Assets, Entity, EventReader, EventWriter, Local, Query, Res, ResMut, Resource, With};
+use bevy::prelude::{Assets, Entity, Local, MessageReader, MessageWriter, Query, Res, ResMut, Resource, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::messages::client::ClientMessage;
@@ -84,13 +84,13 @@ impl Default for UiStateChatbox {
 pub fn ui_chatbox_system(
     mut egui_context: EguiContexts,
     mut ui_state_chatbox: Local<UiStateChatbox>,
-    mut chatbox_events: EventReader<ChatboxEvent>,
+    mut chatbox_events: MessageReader<ChatboxEvent>,
     game_connection: Option<Res<GameConnection>>,
     ui_resources: Res<UiResources>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     dialog_assets: Res<Assets<Dialog>>,
-    mut flight_toggle_events: EventWriter<FlightToggleEvent>,
-    mut ping_request_events: EventWriter<PingRequestEvent>,
+    mut flight_toggle_events: MessageWriter<FlightToggleEvent>,
+    mut ping_request_events: MessageWriter<PingRequestEvent>,
     mut ping_state: ResMut<PingState>,
     player_query: Query<Entity, With<PlayerCharacter>>,
 ) {
@@ -238,7 +238,7 @@ pub fn ui_chatbox_system(
         }
     }
 
-    let mut chatbox_style = (*egui_context.ctx_mut().style()).clone();
+    let mut chatbox_style = (*egui_context.ctx_mut().unwrap().style()).clone();
     chatbox_style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgba_unmultiplied(
         chatbox_style.visuals.widgets.noninteractive.bg_fill.r(),
         chatbox_style.visuals.widgets.noninteractive.bg_fill.g(),
@@ -246,7 +246,7 @@ pub fn ui_chatbox_system(
         128,
     );
 
-    let style = egui_context.ctx_mut().style();
+    let style = egui_context.ctx_mut().unwrap().style();
     let frame_fill = style.visuals.window_fill();
     let frame_fill =
         egui::Color32::from_rgba_unmultiplied(frame_fill.r(), frame_fill.g(), frame_fill.b(), 128);
@@ -266,7 +266,7 @@ pub fn ui_chatbox_system(
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             ui.visuals_mut().override_text_color =
                 match ui_state_chatbox.textbox_text.chars().next() {
                     Some('!') => Some(CHAT_COLOR_SHOUT),
@@ -342,7 +342,7 @@ pub fn ui_chatbox_system(
         egui::Area::new(egui::Id::new("chat_command_help"))
             .anchor(egui::Align2::LEFT_BOTTOM, [5.0, -165.0])
             .order(egui::Order::Foreground)
-            .show(egui_context.ctx_mut(), |ui| {
+            .show(egui_context.ctx_mut().unwrap(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     egui::ScrollArea::vertical()
                         .max_height(400.0)
@@ -452,7 +452,7 @@ pub fn ui_chatbox_system(
     }
 
     // Hide command help when Escape is pressed
-    if egui_context.ctx_mut().input(|input| input.key_pressed(egui::Key::Escape)) {
+    if egui_context.ctx_mut().unwrap().input(|input| input.key_pressed(egui::Key::Escape)) {
         ui_state_chatbox.show_command_help = false;
     }
 
@@ -466,7 +466,7 @@ pub fn ui_chatbox_system(
                     // Check if this is a "/fly" command before sending to server
                     if is_fly_command(&ui_state_chatbox.textbox_text) {
                         // Get the player entity and send flight toggle event
-                        if let Ok(player_entity) = player_query.get_single() {
+                        if let Ok(player_entity) = player_query.single() {
                             flight_toggle_events.write(FlightToggleEvent {
                                 entity: player_entity,
                             });

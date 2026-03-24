@@ -1,4 +1,4 @@
-use bevy::prelude::{EventReader, EventWriter, Res};
+use bevy::prelude::{MessageReader, MessageWriter, Res};
 use rose_game_common::{components::ItemSlot, messages::client::ClientMessage};
 
 use crate::{
@@ -9,8 +9,8 @@ use crate::{
 /// System to handle QuestScrollEvent::Confirm
 /// This is triggered when the user confirms the quest scroll dialog
 pub fn quest_scroll_event_system(
-    mut quest_scroll_events: EventReader<QuestScrollEvent>,
-    mut quest_trigger_events: EventWriter<QuestTriggerEvent>,
+    mut quest_scroll_events: MessageReader<QuestScrollEvent>,
+    mut quest_trigger_events: MessageWriter<QuestTriggerEvent>,
     game_connection: Option<Res<GameConnection>>,
 ) {
     for event in quest_scroll_events.read() {

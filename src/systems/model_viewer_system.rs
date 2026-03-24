@@ -2,13 +2,12 @@ use std::cmp::Ordering;
 
 use bevy::{
     math::Vec3,
-    pbr::AmbientLight,
     prelude::{
-        Camera3d, Color, Commands, Entity, GlobalTransform, Query, Res, ResMut,
+        Camera3d, Color, Commands, Entity, GlobalAmbientLight, GlobalTransform, Query, Res, ResMut,
         Resource, Transform, Visibility, With,
     },
-    render::view::{ViewVisibility, InheritedVisibility},
 };
+use bevy_camera::visibility::{ViewVisibility, InheritedVisibility};
 use bevy_egui::{egui, EguiContexts};
 use enum_map::{enum_map, EnumMap};
 use rand::{prelude::SliceRandom, Rng};
@@ -93,7 +92,7 @@ pub fn model_viewer_enter_system(
     });
 
     // Reset ambient light
-    commands.insert_resource(AmbientLight {
+    commands.insert_resource(GlobalAmbientLight {
         color: Color::WHITE,
         brightness: 80.0,  // Bevy 0.13 requires much higher values (was ~1.0 in 0.12)
         affects_lightmapped_meshes: true,
@@ -139,7 +138,8 @@ pub fn model_viewer_system(
     query_damage_character_model: Query<(&GlobalTransform, &ModelHeight), With<CharacterModel>>,
     query_damage_npc_model: Query<(&GlobalTransform, &ModelHeight), With<NpcModel>>,
 ) {
-    egui::Window::new("Model Viewer").show(egui_context.ctx_mut(), |ui| {
+    let ctx = egui_context.ctx_mut().unwrap();
+    egui::Window::new("Model Viewer").show(&*ctx, |ui| {
         let max_num_npcs = ui_state.max_num_npcs;
         let max_num_characters = ui_state.max_num_characters;
         ui.add(egui::Slider::new(&mut ui_state.num_npcs, 0..=(max_num_npcs - 1)).suffix(" NPCs"));
@@ -314,7 +314,7 @@ pub fn model_viewer_system(
         }
     });
 
-    egui::Window::new("Animation").show(egui_context.ctx_mut(), |ui| {
+    egui::Window::new("Animation").show(&*egui_context.ctx_mut().unwrap(), |ui| {
         let mut animation_button =
             |name: &str, character_action: CharacterMotionAction, npc_action: NpcMotionAction| {
                 if ui.button(name).clicked() {

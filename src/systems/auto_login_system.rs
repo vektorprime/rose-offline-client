@@ -1,4 +1,4 @@
-use bevy::prelude::{EventWriter, Local, Res, State};
+use bevy::prelude::{MessageWriter, Local, Res, State};
 
 use crate::{
     events::{CharacterSelectEvent, LoginEvent},
@@ -21,8 +21,8 @@ pub fn auto_login_system(
     character_select_state: Option<Res<CharacterSelectState>>,
     server_list: Option<Res<ServerList>>,
     server_configuration: Res<ServerConfiguration>,
-    mut login_events: EventWriter<LoginEvent>,
-    mut character_select_events: EventWriter<CharacterSelectEvent>,
+    mut login_events: MessageWriter<LoginEvent>,
+    mut character_select_events: MessageWriter<CharacterSelectEvent>,
 ) {
     if !server_configuration.auto_login {
         return;

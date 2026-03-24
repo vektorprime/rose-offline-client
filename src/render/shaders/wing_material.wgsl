@@ -34,7 +34,7 @@ struct WingExtension {
     alpha: f32,
 }
 
-@group(2) @binding(100)
+@group(#{MATERIAL_BIND_GROUP}) @binding(100)
 var<uniform> wing_extension: WingExtension;
 
 /// Simple noise function for organic shimmer variation

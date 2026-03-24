@@ -1,5 +1,5 @@
 use bevy::{
-    prelude::{Component, Entity, Event, Handle},
+    prelude::{Component, Entity, Message, Handle},
     reflect::Reflect,
     time::Time,
 };
@@ -8,7 +8,7 @@ use rose_data::AnimationEventFlags;
 
 use crate::animation::ZmoAsset;
 
-#[derive(Event)]
+#[derive(Message)]
 pub struct AnimationFrameEvent {
     pub entity: Entity,
     pub flags: AnimationEventFlags,

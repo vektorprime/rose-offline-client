@@ -1,6 +1,6 @@
-use bevy::prelude::{Entity, Event};
+use bevy::prelude::{Entity, Message};
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum PartyEvent {
     InvitedCreate(Entity),
     InvitedJoin(Entity),

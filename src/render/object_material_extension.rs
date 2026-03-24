@@ -10,10 +10,12 @@
 
 use bevy::pbr::{MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, MeshPipelineKey, StandardMaterial};
 use bevy::prelude::*;
-use bevy::render::mesh::MeshVertexBufferLayoutRef;
+use bevy_mesh::MeshVertexBufferLayoutRef;
+use bevy_image::Image;
 use bevy::render::render_resource::{
-    AsBindGroup, RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError,
+    AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
 };
+use bevy_shader::ShaderRef;
 
 /// Material extension for ROSE object materials
 ///

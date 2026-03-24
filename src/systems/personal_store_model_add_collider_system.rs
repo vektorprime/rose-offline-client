@@ -5,8 +5,8 @@ use bevy::{
         Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Transform, With,
         Without,
     },
-    render::primitives::Aabb,
 };
+use bevy_camera::primitives::Aabb;
 use bevy_rapier3d::prelude::{Collider, CollisionGroups};
 
 use crate::components::{
@@ -34,7 +34,7 @@ pub fn personal_store_model_add_collider_system(
                     min = Some(min.map_or_else(|| aabb.min(), |min| min.min(aabb.min())));
                     max = Some(max.map_or_else(|| aabb.max(), |max| max.max(aabb.max())));
                 }
-                Ok(None) | Err(QueryEntityError::EntityDoesNotExist(_)) => {
+                Ok(None) | Err(QueryEntityError::NotSpawned(_)) => {
                     all_parts_loaded = false;
                     break;
                 }

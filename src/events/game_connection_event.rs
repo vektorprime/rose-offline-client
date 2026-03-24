@@ -1,8 +1,8 @@
-use bevy::prelude::Event;
+use bevy::prelude::Message;
 
 use rose_data::ZoneId;
 
-#[derive(Event)]
+#[derive(Message)]
 pub enum GameConnectionEvent {
     Connected(ZoneId),
 }

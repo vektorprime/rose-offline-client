@@ -87,8 +87,8 @@ pub struct FishWaterRef {
     pub water_entity: Entity,
 }
 
-/// Event sent when water is spawned, triggering fish spawning
-#[derive(Event, Debug, Clone)]
+/// Message sent when water is spawned, triggering fish spawning
+#[derive(Message, Debug, Clone)]
 pub struct WaterSpawnedEvent {
     pub water_entity: Entity,
     pub zone_entity: Entity,

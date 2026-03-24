@@ -1,4 +1,4 @@
-use bevy::prelude::{AssetServer, Commands, Event, EventReader, Res, ResMut};
+use bevy::prelude::{AssetServer, Commands, Message, MessageReader, Res, ResMut};
 
 use rose_data::SoundId;
 
@@ -8,7 +8,7 @@ use crate::{
     resources::{GameData, SoundCache, SoundSettings},
 };
 
-#[derive(Event)]
+#[derive(Message)]
 pub struct UiSoundEvent {
     sound_id: SoundId,
 }
@@ -22,7 +22,7 @@ impl UiSoundEvent {
 pub fn ui_sound_event_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut ui_sound_events: EventReader<UiSoundEvent>,
+    mut ui_sound_events: MessageReader<UiSoundEvent>,
     sound_settings: Res<SoundSettings>,
     game_data: Res<GameData>,
     sound_cache: ResMut<SoundCache>,

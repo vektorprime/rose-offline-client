@@ -1,4 +1,4 @@
-use bevy::prelude::{EventWriter, Local, Res, ResMut, State};
+use bevy::prelude::{Local, MessageWriter, Res, ResMut, State};
 use bevy_egui::{egui, EguiContexts};
 use regex::Regex;
 
@@ -32,7 +32,7 @@ pub fn ui_debug_zone_list_system(
     mut egui_context: EguiContexts,
     mut ui_state: Local<UiDebugZoneListState>,
     mut ui_state_debug_windows: ResMut<UiStateDebugWindows>,
-    mut load_zone_events: EventWriter<LoadZoneEvent>,
+    mut load_zone_events: MessageWriter<LoadZoneEvent>,
     app_state: Res<State<AppState>>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
@@ -46,7 +46,7 @@ pub fn ui_debug_zone_list_system(
         .resizable(true)
         .default_height(300.0)
         .open(&mut ui_state_debug_windows.zone_list_open)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             let mut filter_changed = false;
 
             egui::Grid::new("zone_list_controls_grid")

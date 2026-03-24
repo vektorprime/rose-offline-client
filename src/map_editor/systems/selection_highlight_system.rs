@@ -76,8 +76,8 @@ pub fn selection_highlight_system(
             half_size * 2.0 * scale.z,
         );
 
-        // Draw a wireframe cube around the selected entity using cuboid
-        gizmos.cuboid(cube_transform, selection_color);
+        // Draw a wireframe cube around the selected entity using cube
+        gizmos.cube(cube_transform, selection_color);
 
         // Draw entity index indicator
         let _ = entity; // Acknowledge entity variable

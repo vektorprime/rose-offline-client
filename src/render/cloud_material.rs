@@ -18,10 +18,12 @@ use bevy::{
     reflect::TypePath,
     render::{
         alpha::AlphaMode,
-        mesh::MeshVertexBufferLayoutRef,
         render_resource::*,
+        renderer::RenderDevice,
     },
 };
+use bevy_mesh::{Mesh, MeshVertexBufferLayoutRef};
+use bevy_shader::{Shader, ShaderRef};
 
 /// Shader handle for the cloud shader
 pub const CLOUD_SHADER_HANDLE: Handle<Shader> =
@@ -43,11 +45,8 @@ impl Plugin for CloudMaterialPlugin {
         log::info!("[CLOUD PLUGIN] Internal shader asset loaded: {:?}", CLOUD_SHADER_HANDLE);
 
         // Register the material plugin for rendering
-        app.add_plugins(MaterialPlugin::<CloudMaterial> {
-            prepass_enabled: false,
-            shadows_enabled: false,
-            ..Default::default()
-        });
+        // Note: prepass and shadows are controlled via enable_prepass() and enable_shadows() methods on Material trait
+        app.add_plugins(MaterialPlugin::<CloudMaterial>::default());
         log::info!("[CLOUD PLUGIN] MaterialPlugin<CloudMaterial> registered");
 
         // Insert default cloud settings resource
@@ -65,7 +64,7 @@ impl Plugin for CloudMaterialPlugin {
         // Add cloud layer follow camera system in PostUpdate (after transform propagation)
         app.add_systems(
             bevy::app::PostUpdate,
-            cloud_layer_follow_camera_system.after(bevy::transform::TransformSystem::TransformPropagate),
+            cloud_layer_follow_camera_system.after(bevy::transform::TransformSystems::Propagate),
         );
         //log::info!("[CLOUD PLUGIN] Cloud follow camera system added");
 
@@ -156,54 +155,142 @@ impl Default for CloudSettings {
 }
 
 /// Custom material for procedural cloud rendering
-/// Uses AsBindGroup derive for automatic bind group creation
-#[derive(Asset, TypePath, AsBindGroup, Clone, Debug)]
+/// Manual AsBindGroup implementation for Bevy 0.17 compatibility
+#[derive(Asset, TypePath, Clone, Debug)]
 pub struct CloudMaterial {
     // === Time and Animation ===
-    #[uniform(0)]
     pub time: f32,
-    
-    #[uniform(1)]
     pub speed: f32,
-    
-    #[uniform(2)]
     pub wind_direction: Vec3,
     
     // === Cloud Shape ===
-    #[uniform(3)]
     pub density: f32,
-    
-    #[uniform(4)]
     pub coverage: f32,
-    
-    #[uniform(5)]
     pub noise_scale: f32,
-    
-    #[uniform(6)]
     pub noise_octaves: f32,
     
     // === Appearance ===
-    #[uniform(7)]
     pub brightness: f32,
-    
-    #[uniform(8)]
     pub opacity: f32,
-    
-    #[uniform(9)]
     pub softness: f32,
     
     // === Lighting ===
-    #[uniform(10)]
     pub sun_direction: Vec3,
-    
-    #[uniform(11)]
     pub sun_color: Vec3,
-    
-    #[uniform(12)]
     pub ambient_color: Vec3,
-    
-    #[uniform(13)]
     pub tod_factor: f32,
+}
+
+/// Data type for CloudMaterial bind group
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct CloudMaterialKey;
+
+impl AsBindGroup for CloudMaterial {
+    type Data = CloudMaterialKey;
+    type Param = ();
+
+    fn label() -> &'static str {
+        "cloud_material"
+    }
+
+    fn bind_group_data(&self) -> Self::Data {
+        CloudMaterialKey
+    }
+
+    fn as_bind_group(
+        &self,
+        layout_descriptor: &BindGroupLayoutDescriptor,
+        render_device: &RenderDevice,
+        _pipeline_cache: &PipelineCache,
+        _param: &mut (),
+    ) -> Result<PreparedBindGroup, AsBindGroupError> {
+        // Create uniform buffer with all material data
+        // Layout matches shader expectations
+        let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("cloud_material_uniforms"),
+            contents: bytemuck::cast_slice(&[
+                // Time and animation (binding 0)
+                self.time,
+                self.speed,
+                self.wind_direction.x,
+                self.wind_direction.y,
+                self.wind_direction.z,
+                0.0, // padding
+                // Cloud shape
+                self.density,
+                self.coverage,
+                self.noise_scale,
+                self.noise_octaves,
+                0.0, // padding
+                0.0, // padding
+                // Appearance
+                self.brightness,
+                self.opacity,
+                self.softness,
+                0.0, // padding
+                // Lighting
+                self.sun_direction.x,
+                self.sun_direction.y,
+                self.sun_direction.z,
+                0.0, // padding
+                self.sun_color.x,
+                self.sun_color.y,
+                self.sun_color.z,
+                0.0, // padding
+                self.ambient_color.x,
+                self.ambient_color.y,
+                self.ambient_color.z,
+                self.tod_factor,
+            ]),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        });
+
+        let layout = _pipeline_cache.get_bind_group_layout(layout_descriptor);
+        
+        let entries = vec![
+            BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            },
+        ];
+
+        let bind_group = render_device.create_bind_group("cloud_material", &layout, &entries);
+
+        Ok(PreparedBindGroup {
+            bindings: BindingResources(vec![]),
+            bind_group,
+        })
+    }
+
+    fn unprepared_bind_group(
+        &self,
+        _layout: &BindGroupLayout,
+        _render_device: &RenderDevice,
+        _param: &mut (),
+        _bindless: bool,
+    ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
+        // We override as_bind_group, so this should never be called
+        Err(AsBindGroupError::CreateBindGroupDirectly)
+    }
+
+    fn bind_group_layout_entries(
+        _render_device: &RenderDevice,
+        _force_no_bindless: bool,
+    ) -> Vec<BindGroupLayoutEntry> {
+        vec![
+            // Uniform buffer for all cloud material data
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ]
+    }
 }
 
 impl Default for CloudMaterial {
@@ -248,8 +335,18 @@ impl Material for CloudMaterial {
         false
     }
 
+    /// Disable prepass for clouds
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    /// Clouds don't cast shadows
+    fn enable_shadows() -> bool {
+        false
+    }
+
     fn specialize(
-        _pipeline: &MaterialPipeline<Self>,
+        _pipeline: &MaterialPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
@@ -554,7 +651,7 @@ pub fn cloud_layer_follow_camera_system(
     mut cloud_query: Query<&mut Transform, With<CloudLayer>>,
 ) {
     // Get camera position
-    let Ok(camera_transform) = camera_query.get_single() else {
+    let Ok(camera_transform) = camera_query.single() else {
         return;
     };
     

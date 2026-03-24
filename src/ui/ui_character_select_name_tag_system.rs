@@ -21,18 +21,19 @@ pub fn ui_character_select_name_tag_system(
                     game_data.character_select_positions[index].translation
                         + Vec3::new(0.0, 4.0, 0.0),
                 ) {
-                    let ctx = egui_context.ctx_mut();
-                    let screen_size = ctx.input(|input| input.screen_rect().size());
+                    if let Ok(ctx) = egui_context.ctx_mut() {
+                        let screen_size = ctx.input(|input| input.screen_rect().size());
 
-                    egui::containers::popup::show_tooltip_at(
-                        ctx,
-                        egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("character_tooltip_layer")),
-                        egui::Id::new("selected_character_plate"),
-                        egui::Pos2::new(
-                            screen_pos.x - 30.0,
-                            screen_size.y - screen_pos.y,
-                        ),
-                        |ui: &mut egui::Ui| {
+                        egui::Tooltip::always_open(
+                            ctx.clone(),
+                            egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("character_tooltip_layer")),
+                            egui::Id::new("selected_character_plate"),
+                            egui::PopupAnchor::Position(egui::Pos2::new(
+                                screen_pos.x - 30.0,
+                                screen_size.y - screen_pos.y,
+                            )),
+                        )
+                        .show(|ui: &mut egui::Ui| {
                             ui.label(
                                 egui::RichText::new(&selected_character.info.name)
                                     .font(egui::FontId::proportional(20.0))
@@ -58,8 +59,8 @@ pub fn ui_character_select_name_tag_system(
                                 let minutes = (duration.as_secs() / 60) % 60;
                                 ui.label(format!("Deleted in {:02}m {:02}s", minutes, seconds));
                             }
-                        },
-                    );
+                        });
+                    }
                 }
             }
         }

@@ -47,6 +47,6 @@ impl Default for DebugRenderConfig {
 
 impl DebugRenderConfig {
     pub fn color_for_entity(&self, entity: Entity) -> Color {
-        DEBUG_RENDER_COLOR_LIST[entity.index() as usize % DEBUG_RENDER_COLOR_LIST.len()]
+        DEBUG_RENDER_COLOR_LIST[entity.index_u32() as usize % DEBUG_RENDER_COLOR_LIST.len()]
     }
 }

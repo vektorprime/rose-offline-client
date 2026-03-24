@@ -12,9 +12,11 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "json"]
 serde_json = "1.0"
 arrayvec = "0.7"
 async-trait = "0.1"
-bevy_egui = "0.34"
-bevy-inspector-egui = "0.33"
-bevy_rapier3d = "0.31"
+bevy_egui = "0.39"
+bevy-inspector-egui = "0.36"
+egui = "0.33"
+egui_extras = "0.33"
+bevy_rapier3d = "0.33"
 bitflags = "2.3"
 bytemuck = { version = "1.7.0", features = [ "derive" ] }
 chrono = "0.4"
@@ -25,8 +27,6 @@ dashmap = "5.5"
 directories = "5.0"
 encase = "0.8"
 dolly = "0.6.0"
-egui = "0.31"
-egui_extras = "0.31"
 enum-map = { version = "2.0", features = ["serde"] }
 glam = "0.29"
 hound = "3.4"
@@ -63,7 +63,7 @@ rose-network-irose = { path = "C:/Users/vicha/RustroverProjects/rose-offline/ros
 bevy_procedural_grass = { path = "../bevy_procedural_grass" }
 
 [dependencies.bevy]
-version = "0.16"
+version = "0.18"
 default-features = false
 features = [
     "std",
@@ -75,6 +75,13 @@ features = [
     "bevy_pbr",
     "bevy_render",
     "bevy_state",
+    "bevy_camera",         # Camera, visibility components
+    "bevy_light",          # Lights, shadows, volumetric fog
+    "bevy_mesh",           # Mesh types
+    "bevy_post_process",   # Bloom, DoF, motion blur
+    "bevy_anti_alias",     # SMAA, FXAA, TAA
+    "bevy_image",          # Image types
+    "bevy_shader",         # Shader types
     "multi_threaded",
     "tga",
     "x11",
@@ -85,6 +92,31 @@ features = [
     # "trace_tracy_memory", # Enable memory allocation tracking (high overhead)
     # "trace_chrome",       # Export to Chrome tracing format (alternative to Tracy)
 ]
+
+# Direct crate dependencies for types that moved out of bevy main crate
+[dependencies.bevy_mesh]
+version = "0.18"
+default-features = false
+
+[dependencies.bevy_camera]
+version = "0.18"
+default-features = false
+
+[dependencies.bevy_image]
+version = "0.18"
+default-features = false
+
+[dependencies.bevy_light]
+version = "0.18"
+default-features = false
+
+[dependencies.bevy_shader]
+version = "0.18"
+default-features = false
+
+[dependencies.bevy_post_process]
+version = "0.18"
+default-features = false
 
 # To use memory profiling with Tracy:
 # 1. Install Tracy profiler from: https://github.com/wolfpld/tracy/releases

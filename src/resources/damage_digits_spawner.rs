@@ -1,11 +1,11 @@
 use bevy::{
     pbr::MeshMaterial3d,
     prelude::{
-        AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, GlobalTransform, Handle,
+        AssetServer, Assets, Commands, GlobalTransform, Handle,
         Mesh3d, Resource, Transform, Vec3, Visibility, Mesh, Vec4, Vec2, Image, Component,
     },
-    render::{primitives::Aabb, view::NoFrustumCulling},
 };
+use bevy_camera::{primitives::Aabb, visibility::{ViewVisibility, InheritedVisibility, NoFrustumCulling}};
 
 use crate::{
     animation::{TransformAnimation, ZmoAsset},
@@ -41,11 +41,11 @@ impl DamageDigitsSpawner {
     /// Get the appropriate texture handle based on damage type
     pub fn get_texture(&self, damage: u32, is_damage_player: bool) -> Handle<Image> {
         if damage == 0 {
-            self.texture_miss.clone_weak()
+            self.texture_miss.clone()
         } else if is_damage_player {
-            self.texture_damage_player.clone_weak()
+            self.texture_damage_player.clone()
         } else {
-            self.texture_damage.clone_weak()
+            self.texture_damage.clone()
         }
     }
 
@@ -68,8 +68,8 @@ impl DamageDigitsSpawner {
             .insert(PendingDamageDigitMaterial {
                 texture: self.get_texture(damage, is_damage_player),
             })
-            .insert(Mesh3d(self.mesh.clone_weak()))
-            .insert(TransformAnimation::once(self.motion.clone_weak()))
+            .insert(Mesh3d(self.mesh.clone()))
+            .insert(TransformAnimation::once(self.motion.clone()))
             .insert(Transform::default())
             .insert(GlobalTransform::default())
             .insert(Visibility::default())

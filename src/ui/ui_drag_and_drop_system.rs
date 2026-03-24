@@ -1,4 +1,4 @@
-use bevy::prelude::{EventWriter, Local, ResMut, Resource};
+use bevy::prelude::{Local, MessageWriter, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::components::ItemSlot;
@@ -17,10 +17,10 @@ pub fn ui_drag_and_drop_system(
     mut egui_context: EguiContexts,
     mut ui_state_dnd: ResMut<UiStateDragAndDrop>,
     mut last_dropped_item: Local<Option<DragAndDropId>>,
-    mut player_command_events: EventWriter<PlayerCommandEvent>,
-    mut npc_store_events: EventWriter<NpcStoreEvent>,
+    mut player_command_events: MessageWriter<PlayerCommandEvent>,
+    mut npc_store_events: MessageWriter<NpcStoreEvent>,
 ) {
-    let ctx = egui_context.ctx_mut();
+    let ctx = egui_context.ctx_mut().unwrap();
 
     // Handle a drag and drop which was dropped on nothing
     if let Some(last_dropped_item) = last_dropped_item.take() {

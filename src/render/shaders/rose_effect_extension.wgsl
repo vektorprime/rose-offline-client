@@ -19,13 +19,14 @@ struct AnimationState {
 }
 
 // Animation texture and sampler for effect mesh morphing
-@group(0) @binding(100)
+// IMPORTANT: Use MATERIAL_BIND_GROUP so bindings match ExtendedMaterial pipeline layout
+@group(#{MATERIAL_BIND_GROUP}) @binding(100)
 var anim_texture: texture_2d<f32>;
-@group(0) @binding(101)
+@group(#{MATERIAL_BIND_GROUP}) @binding(101)
 var anim_sampler: sampler;
 
 // Animation uniform
-@group(0) @binding(102)
+@group(#{MATERIAL_BIND_GROUP}) @binding(102)
 var<uniform> animation_state: AnimationState;
 
 // Animation flag constants

@@ -18,13 +18,22 @@ You MUST run "Cargo build" inside of a subtask where it was requested. It should
 ## Reading files
 Prefer to read the whole file if you've never read the file before. You have read the file before, then read only the relevant lines.
 
-## Source Code For Bevy 0.16.1 We Use
+## Source Code For Bevy
 
 Before you begin troubleshooting, make note of the features that are involved in this interaction, then search the bevy source code located here for those features and read their .rs files to make sure we fully understand how they work.
-C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.16.1
 
-### Source Code For WGPU v24
-C:\Users\vicha\RustroverProjects\bevy-collection\wgpu-24.0.5
+Bevy 0.18
+C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1
+
+Bevy 0.17
+C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.17.3
+
+
+### Source Code For WGPU v27
+C:\Users\vicha\RustroverProjects\bevy-collection\wgpu-27
+
+### Source Code For Bevy_EGUI 0.39.1
+C:\Users\vicha\RustroverProjects\bevy-collection\bevy_egui-0.39.1
 
 ## What To Do When Stuck
 
@@ -60,4 +69,4 @@ When working on an issue, note what you attempted in a .md file dedicated to the
 Before ending a task, confirm that "cargo build" is successful.
 
 
-You MUST run "Cargo build" inside of a subtask where it was requested. It should not run in the same task it was requested on. Report back the errors or failures, not warnings. Instruct the sub task that they are the sub task so that we do not get stuck in an infinite loop of assigning sub tasks. Use this "You are the sub task, you must not delegate the cargo build to any other sub task, you must perform it and then report back with attempt_completion."
+You MUST run "Cargo build" inside of a subtask where it was requested. It should not run in the same task it was requested on. Report back the errors or failures, not warnings. Instruct the sub task that they are the sub task so that we do not get stuck in an infinite loop of assigning sub tasks. Assign them a sub task number. Everytime you assign a sub task, you must give them a subtask #. For example if a subtask is created tell them "You are subtask #1, the maximum subtask # is 2, if you create a subtask, assign it subtask #2 to prevent sub task loops."

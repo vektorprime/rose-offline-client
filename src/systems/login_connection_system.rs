@@ -1,4 +1,4 @@
-use bevy::prelude::{Commands, EventWriter, Res, ResMut};
+use bevy::prelude::{Commands, MessageWriter, Res, ResMut};
 
 use rose_game_common::{
     data::Password,
@@ -18,8 +18,8 @@ pub fn login_connection_system(
     account: Option<Res<Account>>,
     login_connection: Option<Res<LoginConnection>>,
     mut server_list: Option<ResMut<ServerList>>,
-    mut network_events: EventWriter<NetworkEvent>,
-    mut message_box_events: EventWriter<MessageBoxEvent>,
+    mut network_events: MessageWriter<NetworkEvent>,
+    mut message_box_events: MessageWriter<MessageBoxEvent>,
 ) {
     if login_connection.is_none() {
         return;

@@ -7,6 +7,7 @@
 use bevy::pbr::{MaterialExtension, StandardMaterial};
 use bevy::prelude::*;
 use bevy::render::render_resource::*;
+use bevy_shader::ShaderRef;
 
 /// Material extension for ROSE water materials
 ///

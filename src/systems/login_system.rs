@@ -1,8 +1,8 @@
 use bevy::{
     prelude::{
-        AssetServer, Camera3d, Commands, Entity, EventReader, EventWriter, Handle, Query, Res, ResMut, With,
+        AssetServer, Camera3d, Commands, Entity, Handle, MessageReader, MessageWriter, Query, Res, ResMut, With,
     },
-    window::{CursorGrabMode, PrimaryWindow, Window},
+    window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 use bevy_egui::{egui, EguiContexts};
 
@@ -18,8 +18,8 @@ use crate::{
 
 pub fn login_state_enter_system(
     mut commands: Commands,
-    mut loaded_zone: EventWriter<LoadZoneEvent>,
-    mut query_window: Query<&mut Window, With<PrimaryWindow>>,
+    mut loaded_zone: MessageWriter<LoadZoneEvent>,
+    mut query_cursor_options: Query<&mut CursorOptions, With<PrimaryWindow>>,
     query_cameras: Query<Entity, With<Camera3d>>,
     login_camera_animation: Option<Res<LoginCameraAnimation>>,
     asset_server: Res<AssetServer>,
@@ -27,9 +27,9 @@ pub fn login_state_enter_system(
     // log::info!("[LOGIN SYSTEM] login_state_enter_system running");
     
     // Ensure cursor is not locked
-    if let Ok(mut window) = query_window.get_single_mut() {
-        window.cursor_options.grab_mode = CursorGrabMode::None;
-        window.cursor_options.visible = true;
+    if let Ok(mut cursor_options) = query_cursor_options.single_mut() {
+        cursor_options.grab_mode = CursorGrabMode::None;
+        cursor_options.visible = true;
     }
 
     // Get the camera animation handle - either from the preloaded resource or load it directly
@@ -85,13 +85,14 @@ pub fn login_system(
         *login_state = LoginState::ServerSelect;
     }
 
+    let ctx = egui_context.ctx_mut().unwrap();
     match *login_state {
         LoginState::WaitServerList => {
             // log::info!("[LOGIN SYSTEM] Rendering WaitServerList UI");
             egui::Window::new("Connecting...")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .collapsible(false)
-                .show(egui_context.ctx_mut(), |ui| {
+                .show(&*ctx, |ui| {
                     ui.label("Logging in");
                 });
         }
@@ -100,7 +101,7 @@ pub fn login_system(
             egui::Window::new("Connecting...")
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                 .collapsible(false)
-                .show(egui_context.ctx_mut(), |ui| {
+                .show(&*ctx, |ui| {
                     ui.label("Connecting to channel");
                 });
         }
@@ -113,10 +114,10 @@ pub fn login_system(
 pub fn login_event_system(
     mut commands: Commands,
     mut login_state: ResMut<LoginState>,
-    mut login_events: EventReader<LoginEvent>,
+    mut login_events: MessageReader<LoginEvent>,
     login_connection: Option<Res<LoginConnection>>,
     server_configuration: Res<ServerConfiguration>,
-    mut network_events: EventWriter<NetworkEvent>,
+    mut network_events: MessageWriter<NetworkEvent>,
 ) {
     for event in login_events.read() {
         match event {

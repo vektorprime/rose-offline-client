@@ -1,11 +1,11 @@
 use bevy::{
-    ecs::event::EventWriter,
+    ecs::message::MessageWriter,
     prelude::{
         Commands, Entity, GlobalTransform, Local,
         Query, Res, ResMut, Transform, Visibility, With,
     },
-    render::view::{ViewVisibility, InheritedVisibility},
 };
+use bevy_camera::visibility::{ViewVisibility, InheritedVisibility};
 use bevy_egui::{egui, EguiContexts};
 use regex::Regex;
 
@@ -31,7 +31,7 @@ pub fn ui_debug_effect_list_system(
     mut ui_state: Local<UiStateDebugEffectList>,
     mut ui_state_debug_windows: ResMut<UiStateDebugWindows>,
     game_data: Res<GameData>,
-    mut spawn_effect_events: EventWriter<SpawnEffectEvent>,
+    mut spawn_effect_events: MessageWriter<SpawnEffectEvent>,
     query_effects: Query<Entity, With<Effect>>,
     query_global_transform: Query<&GlobalTransform>,
     query_player: Query<Entity, With<PlayerCharacter>>,
@@ -46,7 +46,7 @@ pub fn ui_debug_effect_list_system(
         .resizable(true)
         .default_height(300.0)
         .open(&mut ui_state_debug_windows.effect_list_open)
-        .show(egui_context.ctx_mut(), |ui| {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
             let mut filter_changed = false;
 
             egui::Grid::new("effect_list_controls_grid")
@@ -152,7 +152,7 @@ pub fn ui_debug_effect_list_system(
                                     let transform = Transform::from(
                                         selected_target
                                             .selected
-                                            .or_else(|| query_player.get_single().ok())
+                                            .or_else(|| query_player.single().ok())
                                             .and_then(|target_entity| {
                                                 query_global_transform.get(target_entity).ok()
                                             })

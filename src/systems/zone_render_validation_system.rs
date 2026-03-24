@@ -4,8 +4,9 @@
 //! for rendering and helps diagnose black screen issues.
 
 use bevy::prelude::*;
-use bevy::render::{mesh::Mesh, primitives::Aabb, view::Visibility};
-use bevy::render::mesh::Mesh3d;
+use bevy_mesh::{Mesh, Mesh3d};
+use bevy_camera::primitives::Aabb;
+use bevy_camera::visibility::Visibility;
 use bevy::pbr::MeshMaterial3d;
 
 use crate::components::{Zone, ZoneObject};
@@ -280,7 +281,7 @@ pub fn mesh_inspection_system(
     meshes: Res<Assets<Mesh>>,
     mesh_query: Query<(Entity, &Mesh3d), With<ZoneObject>>,
 ) {
-    use bevy::render::mesh::VertexAttributeValues;
+    use bevy::mesh::VertexAttributeValues;
     
     static mut FRAME_COUNTER: usize = 0;
     static mut INSPECT_INDEX: usize = 0;

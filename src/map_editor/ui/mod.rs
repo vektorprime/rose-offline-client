@@ -65,26 +65,28 @@ impl Plugin for EditorUiPlugin {
             .init_resource::<SelectedModel>()
             .init_resource::<ZoneListPanelState>()
             .init_resource::<HelpWindowState>()
-            .add_event::<PropertyChangeEvent>()
-            .add_event::<NewZoneEvent>()
+            .add_message::<PropertyChangeEvent>()
+            .add_message::<NewZoneEvent>()
+            // Map editor UI systems must run in EguiPrimaryContextPass for bevy_egui 0.39
             .add_systems(
-                Update,
+                bevy_egui::EguiPrimaryContextPass,
                 editor_ui_system.run_if(resource_exists::<MapEditorState>),
             )
             .add_systems(
-                Update,
+                bevy_egui::EguiPrimaryContextPass,
                 model_browser_panel_system.run_if(resource_exists::<AvailableModels>),
             )
+            // Keyboard shortcuts don't render UI, can stay in Update
             .add_systems(
                 Update,
                 model_browser_panel::model_browser_keyboard_shortcuts.run_if(resource_exists::<SelectedModel>),
             )
             .add_systems(
-                Update,
+                bevy_egui::EguiPrimaryContextPass,
                 zone_list_panel_system.run_if(resource_exists::<MapEditorState>),
             )
             .add_systems(
-                Update,
+                bevy_egui::EguiPrimaryContextPass,
                 new_zone_system.run_if(resource_exists::<MapEditorState>),
             );
         
@@ -92,8 +94,8 @@ impl Plugin for EditorUiPlugin {
     }
 }
 
-/// Event to request creating a new zone
-#[derive(Event)]
+/// Message to request creating a new zone
+#[derive(Message)]
 pub struct NewZoneEvent {
     /// Whether to prompt for unsaved changes
     pub prompt_if_modified: bool,
@@ -116,15 +118,15 @@ pub fn editor_ui_system(
     mut map_editor_state: ResMut<MapEditorState>,
     save_status: Res<SaveStatus>,
     current_zone: Option<Res<CurrentZone>>,
-    mut save_events: EventWriter<SaveZoneEvent>,
+    mut save_events: MessageWriter<SaveZoneEvent>,
     entity_data: EntityDataQuery,
     hierarchy_query: HierarchyQuery,
     mut pending_edits: ResMut<PendingPropertyEdits>,
     queries: PropertiesQueries,
-    mut property_change_event: EventWriter<PropertyChangeEvent>,
-    mut duplicate_event: EventWriter<DuplicateSelectedEvent>,
+    mut property_change_event: MessageWriter<PropertyChangeEvent>,
+    mut duplicate_event: MessageWriter<DuplicateSelectedEvent>,
     mut zone_list_state: ResMut<ZoneListPanelState>,
-    mut new_zone_events: EventWriter<NewZoneEvent>,
+    mut new_zone_events: MessageWriter<NewZoneEvent>,
     mut help_state: ResMut<HelpWindowState>,
     mut commands: Commands,
     mut selected_model: ResMut<SelectedModel>,
@@ -134,14 +136,14 @@ pub fn editor_ui_system(
         return;
     }
     
-    let ctx = contexts.ctx_mut();
+    let ctx = contexts.ctx_mut().unwrap();
     
     // Get current zone ID
     let current_zone_id = current_zone.map(|z| z.id.get());
     
     // Menu Bar (top)
     editor_menu_bar(
-        ctx,
+        &*ctx,
         &map_editor_state,
         &save_status,
         current_zone_id,
@@ -153,11 +155,11 @@ pub fn editor_ui_system(
     );
     
     // Hierarchy Panel (left side) - now with entity query access
-    editor_hierarchy_panel(ctx, &map_editor_state, &hierarchy_query, &mut commands);
+    editor_hierarchy_panel(&*ctx, &map_editor_state, &hierarchy_query, &mut commands);
     
     // Properties Panel (right side) - now with entity data access
     editor_properties_panel(
-        ctx,
+        &*ctx,
         &map_editor_state,
         &entity_data,
         &mut pending_edits,
@@ -168,7 +170,7 @@ pub fn editor_ui_system(
     );
     
     // Status Bar (bottom)
-    editor_status_bar(ctx, &mut map_editor_state, &save_status, current_zone_id);
+    editor_status_bar(&*ctx, &mut map_editor_state, &save_status, current_zone_id);
 }
 
 /// System to render the model browser panel
@@ -183,10 +185,10 @@ pub fn model_browser_panel_system(
         return;
     }
     
-    let ctx = contexts.ctx_mut();
+    let ctx = contexts.ctx_mut().unwrap();
     
     editor_model_browser_panel(
-        ctx,
+        &*ctx,
         &map_editor_state,
         &available_models,
         &mut selected_model,
@@ -195,7 +197,7 @@ pub fn model_browser_panel_system(
 
 /// System to handle NewZoneEvent - clears all zone objects and resets editor state
 pub fn new_zone_system(
-    mut events: EventReader<NewZoneEvent>,
+    mut events: MessageReader<NewZoneEvent>,
     mut commands: Commands,
     query: Query<Entity, With<ZoneObject>>,
     mut map_editor_state: ResMut<MapEditorState>,

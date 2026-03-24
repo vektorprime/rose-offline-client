@@ -1,5 +1,5 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, EventWriter, Local, Query, Res, ResMut, With};
+use bevy::prelude::{Assets, Local, MessageWriter, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 use rose_data::ClanMemberPosition;
 
@@ -63,7 +63,7 @@ pub fn ui_clan_system(
     query_clan: Query<(&Clan, &ClanMembership), With<PlayerCharacter>>,
     mut ui_state: Local<UiStateClan>,
     mut ui_state_windows: ResMut<UiStateWindows>,
-    mut ui_sound_events: EventWriter<UiSoundEvent>,
+    mut ui_sound_events: MessageWriter<UiSoundEvent>,
     ui_resources: Res<UiResources>,
     dialog_assets: Res<Assets<Dialog>>,
     game_data: Res<GameData>,
@@ -84,8 +84,8 @@ pub fn ui_clan_system(
         .resizable(false)
         .default_width(dialog.width)
         .default_height(dialog.height)
-        .show(egui_context.ctx_mut(), |ui| {
-            let Ok((clan, clan_membership)) = query_clan.get_single() else {
+        .show(egui_context.ctx_mut().unwrap(), |ui| {
+            let Ok((clan, clan_membership)) = query_clan.single() else {
                 return;
             };
 

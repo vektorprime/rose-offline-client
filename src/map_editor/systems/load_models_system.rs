@@ -290,7 +290,7 @@ fn create_model_name(mesh_path: &str, object_id: usize, category_name: &str) -> 
 /// This listens for ZoneEvent::Loaded events and updates the deco/cnst models
 /// from the newly loaded zone's ZSC files.
 pub fn update_models_on_zone_load_system(
-    mut events: EventReader<ZoneEvent>,
+    mut events: MessageReader<ZoneEvent>,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     mut available_models: Option<ResMut<AvailableModels>>,

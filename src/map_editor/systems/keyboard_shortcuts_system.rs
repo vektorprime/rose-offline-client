@@ -23,7 +23,7 @@ pub fn keyboard_shortcuts_system(
     mut commands: Commands,
     mut map_editor_state: ResMut<MapEditorState>,
     mut deleted_zone_objects: ResMut<DeletedZoneObjects>,
-    mut duplicate_events: EventWriter<DuplicateSelectedEvent>,
+    mut duplicate_events: MessageWriter<DuplicateSelectedEvent>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut egui_contexts: EguiContexts,
     selected_entities: Query<Entity, With<SelectedInEditor>>,
@@ -38,7 +38,7 @@ pub fn keyboard_shortcuts_system(
     }
     
     // Check if egui wants keyboard input
-    let ctx = egui_contexts.ctx_mut();
+    let ctx = egui_contexts.ctx_mut().unwrap();
     if ctx.wants_keyboard_input() {
         return;
     }
@@ -292,7 +292,7 @@ fn handle_delete_selected(
     
     // Despawn all selected entities
     for entity in &entities {
-        commands.entity(*entity).despawn_recursive();
+        commands.entity(*entity).despawn();
     }
     
     // Clear selection
@@ -337,7 +337,8 @@ pub fn keyboard_shortcuts_help_system(
         return;
     }
     
-    let ctx = egui_contexts.ctx_mut();
+    let binding = egui_contexts.ctx_mut();
+    let ctx = binding.as_ref().unwrap();
     
     // Show help when H is pressed (would need keyboard input)
     // For now, this is a placeholder for a help overlay

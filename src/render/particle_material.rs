@@ -4,48 +4,43 @@ use bevy::{
     prelude::*,
     render::{
         alpha::AlphaMode,
-        mesh::MeshVertexBufferLayoutRef,
         render_resource::*,
         storage::ShaderStorageBuffer,
     },
+    image::Image,
 };
+use bevy_mesh::{MeshVertexBufferLayoutRef, VertexBufferLayout};
+use bevy_shader::{Shader, ShaderRef};
 
-use log::{info, warn, error};
-
-use crate::effect_loader::{decode_blend_op, decode_blend_factor};
+use log::{debug, error, info, warn};
 
 pub const PARTICLE_SHADER_HANDLE: Handle<Shader> = weak_handle!("00010002-0000-0000-0000-000000000000");
 
+/// Custom particle material with storage buffers for particle data
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct ParticleMaterial {
     #[storage(0, read_only)]
     pub positions: Handle<ShaderStorageBuffer>,
-    
     #[storage(1, read_only)]
     pub sizes: Handle<ShaderStorageBuffer>,
-    
     #[storage(2, read_only)]
     pub colors: Handle<ShaderStorageBuffer>,
-    
     #[storage(3, read_only)]
     pub textures: Handle<ShaderStorageBuffer>,
-    
+
     #[texture(4)]
     #[sampler(5)]
     pub texture: Handle<Image>,
-    
+
     #[uniform(6)]
     pub blend_op: u32,
-    
     #[uniform(7)]
     pub src_blend_factor: u32,
-    
     #[uniform(8)]
     pub dst_blend_factor: u32,
-    
     #[uniform(9)]
     pub billboard_type: u32,
-    
+
     pub alpha_mode: AlphaMode,
 }
 
@@ -86,8 +81,18 @@ impl Material for ParticleMaterial {
         ShaderRef::Default
     }
 
+    /// Disable prepass - storage buffers incompatible with prepass pipeline
+    fn enable_prepass() -> bool {
+        false
+    }
+
+    /// Transparent particles don't cast shadows
+    fn enable_shadows() -> bool {
+        false
+    }
+
     fn specialize(
-        _pipeline: &MaterialPipeline<Self>,
+        _pipeline: &MaterialPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         _layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
@@ -148,11 +153,8 @@ impl Plugin for ParticleMaterialPlugin {
         // Prepass is disabled because storage buffers cause pipeline validation issues
         // (Shader global ResourceBinding mismatch), and AlphaMode::Blend materials
         // are skipped in prepass anyway
-        app.add_plugins(MaterialPlugin::<ParticleMaterial> {
-            prepass_enabled: false,  // Disable prepass - storage buffers incompatible with prepass pipeline
-            shadows_enabled: false,  // Transparent particles don't cast shadows
-            ..Default::default()
-        });
+        // Note: prepass and shadows are controlled via enable_prepass() and enable_shadows() methods on Material trait
+        app.add_plugins(MaterialPlugin::<ParticleMaterial>::default());
         
         // Add debug validation system (only in debug builds)
         #[cfg(debug_assertions)]

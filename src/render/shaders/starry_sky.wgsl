@@ -28,13 +28,23 @@
 // DEBUG 5 = Normal rendering with extra brightness
 const DEBUG_MODE: i32 = 0;
 
-// Uniforms for time and star settings - must match AsBindGroup bindings
-@group(2) @binding(0) var<uniform> time: f32;
-@group(2) @binding(1) var<uniform> star_density: f32;
-@group(2) @binding(2) var<uniform> star_brightness: f32;
-@group(2) @binding(3) var<uniform> night_factor: f32;  // 0.0 = day, 1.0 = night
-@group(2) @binding(4) var<uniform> moon_phase: f32;    // 0.0 to 1.0
-@group(2) @binding(5) var<uniform> moon_direction: vec3<f32>;  // Normalized moon direction
+// Uniforms for time and star settings
+// NOTE: StarrySkyMaterial uploads a single uniform buffer at binding(0)
+// packed as 8 f32 values in this order:
+// [time, star_density, star_brightness, night_factor, moon_phase, moon_dir.x, moon_dir.y, moon_dir.z]
+struct StarrySkyUniforms {
+    data0: vec4<f32>,
+    data1: vec4<f32>,
+}
+
+@group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> starry_uniforms: StarrySkyUniforms;
+
+fn sky_time() -> f32 { return starry_uniforms.data0.x; }
+fn sky_star_density() -> f32 { return starry_uniforms.data0.y; }
+fn sky_star_brightness() -> f32 { return starry_uniforms.data0.z; }
+fn sky_night_factor() -> f32 { return starry_uniforms.data0.w; }
+fn sky_moon_phase() -> f32 { return starry_uniforms.data1.x; }
+fn sky_moon_direction() -> vec3<f32> { return starry_uniforms.data1.yzw; }
 
 struct Vertex {
     @builtin(instance_index) instance_index: u32,
@@ -108,7 +118,7 @@ fn star_layer(dir: vec3<f32>, scale: f32, brightness_base: f32, twinkle_speed: f
                 let star_pos = rand_vals.xyz;
                 
                 // Star exists based on density threshold
-                let star_exists = step(rand_vals.x, star_density);
+                let star_exists = step(rand_vals.x, sky_star_density());
                 
                 // Distance from current pixel to star position
                 let diff = grid_fract - cell_offset - star_pos;
@@ -122,7 +132,7 @@ fn star_layer(dir: vec3<f32>, scale: f32, brightness_base: f32, twinkle_speed: f
                 
                 // Twinkling effect
                 let twinkle_phase = rand_vals.z * 6.28318;
-                let twinkle = 0.7 + 0.3 * sin(time * twinkle_speed + twinkle_phase);
+                let twinkle = 0.7 + 0.3 * sin(sky_time() * twinkle_speed + twinkle_phase);
                 
                 // Star color temperature variation (slight blue/white/yellow tint)
                 star_brightness += intensity * star_exists * brightness_base * twinkle;
@@ -158,7 +168,7 @@ fn render_moon(dir: vec3<f32>) -> vec3<f32> {
     let moon_angular_size = 0.05;
     
     // Distance from moon center
-    let moon_dist = length(dir - moon_direction);
+    let moon_dist = length(dir - sky_moon_direction());
     
     // Moon disc with soft edge
     let moon_disc = smoothstep(moon_angular_size, moon_angular_size * 0.8, moon_dist);
@@ -172,7 +182,7 @@ fn render_moon(dir: vec3<f32>) -> vec3<f32> {
     
     // Moon phase (simplified)
     // 0.0 = new moon, 0.5 = full moon, 1.0 = new moon
-    let phase_angle = moon_phase * 6.28318;
+    let phase_angle = sky_moon_phase() * 6.28318;
     let phase_factor = cos(phase_angle) * 0.5 + 0.5;
     
     // Moon color (slightly warm white)
@@ -192,6 +202,7 @@ fn get_night_visibility(dir: vec3<f32>) -> f32 {
     // We also fade stars near the horizon during day
     let horizon_factor = 1.0 - smoothstep(0.0, 0.2, abs(dir.y));
     
+    let night_factor = sky_night_factor();
     return night_factor * (1.0 - horizon_factor * (1.0 - night_factor));
 }
 
@@ -223,7 +234,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // If you see yellow at night, the shader pipeline works
     // ============================================================
     if (DEBUG_MODE == 1) {
-        if (night_factor > 0.01) {
+        if (sky_night_factor() > 0.01) {
             return vec4<f32>(1.0, 1.0, 0.0, 1.0);  // Bright yellow
         }
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);  // Transparent during day
@@ -234,7 +245,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Brighter red = higher night_factor (should be 1.0 at night)
     // ============================================================
     if (DEBUG_MODE == 2) {
-        return vec4<f32>(night_factor, 0.0, 0.0, night_factor);
+        return vec4<f32>(sky_night_factor(), 0.0, 0.0, sky_night_factor());
     }
     
     // ============================================================
@@ -242,13 +253,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Green intensity shows total star brightness
     // ============================================================
     if (DEBUG_MODE == 3) {
-        if (night_factor < 0.01) {
+        if (sky_night_factor() < 0.01) {
             return vec4<f32>(0.0, 0.0, 0.0, 0.0);
         }
-        let distant_stars = star_layer(dir, 80.0, 0.4 * star_brightness, 2.0);
-        let medium_stars = star_layer(dir, 40.0, 0.7 * star_brightness, 3.0);
-        let bright_stars = star_layer(dir, 20.0, 1.2 * star_brightness, 4.0);
-        let rare_stars = star_layer(dir, 10.0, 2.0 * star_brightness, 5.0);
+        let distant_stars = star_layer(dir, 80.0, 0.4 * sky_star_brightness(), 2.0);
+        let medium_stars = star_layer(dir, 40.0, 0.7 * sky_star_brightness(), 3.0);
+        let bright_stars = star_layer(dir, 20.0, 1.2 * sky_star_brightness(), 4.0);
+        let rare_stars = star_layer(dir, 10.0, 2.0 * sky_star_brightness(), 5.0);
         let total_stars = distant_stars + medium_stars + bright_stars + rare_stars;
         // Clamp to visible range and return as green
         let green_val = clamp(total_stars, 0.0, 1.0);
@@ -260,7 +271,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Shows if the horizon culling is working correctly
     // ============================================================
     if (DEBUG_MODE == 4) {
-        if (night_factor < 0.01) {
+        if (sky_night_factor() < 0.01) {
             return vec4<f32>(0.0, 0.0, 0.0, 0.0);
         }
         // Blue = above horizon, black = below horizon
@@ -277,7 +288,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // Use this to see if stars are too dim
     // ============================================================
     if (DEBUG_MODE == 5) {
-        if (night_factor < 0.01) {
+        if (sky_night_factor() < 0.01) {
             return vec4<f32>(0.0, 0.0, 0.0, 0.0);
         }
         if (dir.y < -0.05) {
@@ -285,10 +296,10 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         }
         
         // Generate stars with 5x brightness boost
-        let distant_stars = star_layer(dir, 80.0, 2.0 * star_brightness, 2.0);
-        let medium_stars = star_layer(dir, 40.0, 3.5 * star_brightness, 3.0);
-        let bright_stars = star_layer(dir, 20.0, 6.0 * star_brightness, 4.0);
-        let rare_stars = star_layer(dir, 10.0, 10.0 * star_brightness, 5.0);
+        let distant_stars = star_layer(dir, 80.0, 2.0 * sky_star_brightness(), 2.0);
+        let medium_stars = star_layer(dir, 40.0, 3.5 * sky_star_brightness(), 3.0);
+        let bright_stars = star_layer(dir, 20.0, 6.0 * sky_star_brightness(), 4.0);
+        let rare_stars = star_layer(dir, 10.0, 10.0 * sky_star_brightness(), 5.0);
         let total_stars = distant_stars + medium_stars + bright_stars + rare_stars;
         
         let star_color = vec3<f32>(0.9, 0.92, 1.0);
@@ -304,7 +315,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // CRITICAL: Only render stars at night!
     // night_factor is 0.0 during day, 1.0 at night
     // During day, return transparent so Bevy Atmosphere sky is visible
-    if (night_factor < 0.01) {
+    if (sky_night_factor() < 0.01) {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);  // Fully transparent
     }
     
@@ -323,16 +334,16 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     
     // Generate multiple star layers for depth and density
     // Layer 1: Distant, numerous small stars
-    let distant_stars = star_layer(dir, 80.0, 0.4 * star_brightness, 2.0);
+    let distant_stars = star_layer(dir, 80.0, 0.4 * sky_star_brightness(), 2.0);
     
     // Layer 2: Medium distance stars
-    let medium_stars = star_layer(dir, 40.0, 0.7 * star_brightness, 3.0);
+    let medium_stars = star_layer(dir, 40.0, 0.7 * sky_star_brightness(), 3.0);
     
     // Layer 3: Close, bright stars
-    let bright_stars = star_layer(dir, 20.0, 1.2 * star_brightness, 4.0);
+    let bright_stars = star_layer(dir, 20.0, 1.2 * sky_star_brightness(), 4.0);
     
     // Layer 4: Very bright, rare stars
-    let rare_stars = star_layer(dir, 10.0, 2.0 * star_brightness, 5.0);
+    let rare_stars = star_layer(dir, 10.0, 2.0 * sky_star_brightness(), 5.0);
     
     // Combine all star layers
     let total_stars = distant_stars + medium_stars + bright_stars + rare_stars;
@@ -362,5 +373,5 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     final_color *= brightness_multiplier;
     
     // Return with alpha based on night factor for smooth transitions
-    return vec4<f32>(final_color, night_factor);
+    return vec4<f32>(final_color, sky_night_factor());
 }

@@ -1,10 +1,10 @@
 use bevy::{
     prelude::{
-        Commands, EventReader, EventWriter, GlobalTransform, Query, Res,
-        Transform, Visibility,
+        Commands, GlobalTransform, MessageReader, MessageWriter, Query, Res,
+        Transform, Visibility, InheritedVisibility, ViewVisibility,
     },
-    render::{mesh::skinning::SkinnedMesh, view::InheritedVisibility, view::ViewVisibility},
 };
+use bevy_mesh::skinning::SkinnedMesh;
 
 use crate::{
     components::{CharacterModel, CharacterModelPart, DummyBoneOffset, Projectile},
@@ -14,11 +14,11 @@ use crate::{
 
 pub fn spawn_projectile_system(
     mut commands: Commands,
-    mut events: EventReader<SpawnProjectileEvent>,
+    mut events: MessageReader<SpawnProjectileEvent>,
     query_transform: Query<&GlobalTransform>,
     query_character: Query<&CharacterModel>,
     query_skeleton: Query<(&SkinnedMesh, &DummyBoneOffset)>,
-    mut spawn_effect_events: EventWriter<SpawnEffectEvent>,
+    mut spawn_effect_events: MessageWriter<SpawnEffectEvent>,
     game_data: Res<GameData>,
 ) {
     for event in events.read() {
