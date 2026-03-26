@@ -818,14 +818,14 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::Move(position, target_entity) => {
-                log::info!("[RESPAWN_MOVE_DIAG] PlayerCommandEvent::Move received: position=({}, {}, {})", position.x, position.y, position.z);
+                //log::info!("[RESPAWN_MOVE_DIAG] PlayerCommandEvent::Move received: position=({}, {}, {})", position.x, position.y, position.z);
                 
                 let target_entity_id = target_entity
                     .and_then(|target_entity| query_client_entity.get(target_entity).ok())
                     .map(|target_client_entity| target_client_entity.id);
 
                 if let Some(game_connection) = game_connection.as_ref() {
-                    log::info!("[RESPAWN_MOVE_DIAG] Sending ClientMessage::Move to server");
+                    //log::info!("[RESPAWN_MOVE_DIAG] Sending ClientMessage::Move to server");
                     game_connection
                         .client_message_tx
                         .send(ClientMessage::Move {

@@ -302,15 +302,9 @@ fn create_nametag_data(
 
                     for _ in uv_min[0]..uv_max[0] {
                         let pixel = (*src_row).to_array();
-                        // Keep RGB white so tint color is controlled only by vertex color,
-                        // avoiding mixed black/white glyph colors from atlas RGB.
-                        // Prefer atlas alpha when present for crisp edges;
-                        // otherwise fall back to average RGB coverage.
-                        let coverage = if pixel[3] > 0 {
-                            pixel[3]
-                        } else {
-                            ((pixel[0] as u16 + pixel[1] as u16 + pixel[2] as u16) / 3) as u8
-                        };
+                        // Use max channel as glyph coverage (matching chat_bubble behavior)
+                        // This is more robust across varying egui font atlas formats
+                        let coverage = pixel[0].max(pixel[1]).max(pixel[2]).max(pixel[3]);
 
                         *dst_row.add(0) = 255;
                         *dst_row.add(1) = 255;
@@ -329,46 +323,9 @@ fn create_nametag_data(
     
     // info!("[NAME_TAG_DEBUG] Copied {} glyphs to texture", total_glyphs_copied);
 
-    // Apply outline to text
-    let mut outlined_data = data.clone();
-    unsafe {
-        let src = data.as_ptr();
-        let dst = outlined_data.as_mut_ptr();
-        let stride = target_texture_width as usize;
-
-        for y in 2..max_bounds.y as usize - 2 {
-            for x in 2..max_bounds.x as usize - 2 {
-                let px_alpha = |x: usize, y: usize| {
-                    let pixel_offset = x * 4 + y * 4 * stride;
-                    *src.add(pixel_offset + 3) as u32
-                };
-
-                let mut alpha = 0u32;
-                alpha += px_alpha(x, y - 2) / 2;
-                alpha += px_alpha(x, y - 1);
-                alpha += px_alpha(x, y + 1);
-                alpha += px_alpha(x, y + 2) / 2;
-
-                alpha += px_alpha(x - 2, y) / 2;
-                alpha += px_alpha(x - 1, y);
-                alpha += px_alpha(x + 1, y);
-                alpha += px_alpha(x + 2, y) / 2;
-
-                alpha += px_alpha(x - 1, y - 1) / 2;
-                alpha += px_alpha(x - 1, y + 1) / 2;
-                alpha += px_alpha(x + 1, y - 1) / 2;
-                alpha += px_alpha(x + 1, y + 1) / 2;
-                alpha = alpha.min(255);
-
-                let pixel_offset = x * 4 + y * 4 * stride;
-                *dst.add(pixel_offset + 3) = alpha as u8;
-            }
-        }
-    }
-
     let mut total_nonzero_alpha = 0usize;
     let mut max_alpha = 0u8;
-    for alpha in outlined_data.iter().skip(3).step_by(4) {
+    for alpha in data.iter().skip(3).step_by(4) {
         if *alpha > 0 {
             total_nonzero_alpha += 1;
             if *alpha > max_alpha {
@@ -398,7 +355,7 @@ fn create_nametag_data(
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        outlined_data.clone(),
+        data.clone(),
         TextureFormat::Rgba8Unorm,
         RenderAssetUsages::default(),
     );
@@ -434,7 +391,7 @@ fn create_nametag_data(
             for y in y0..y1 {
                 for x in x0..x1 {
                     let idx = (y * target_texture_width as usize + x) * 4 + 3;
-                    if outlined_data[idx] > 0 {
+                    if data[idx] > 0 {
                         row_nonzero_alpha += 1;
                     }
                 }

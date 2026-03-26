@@ -1297,7 +1297,7 @@ pub fn zone_loader_system(
 ) {
     let _span = info_span!("zone_loader_system").entered();
     let use_new_terrain = spawn_zone_params.render_config.use_new_terrain;
-    log::info!("[ZONE LOADER SYSTEM] use_new_terrain = {}", use_new_terrain);
+    //log::info!("[ZONE LOADER SYSTEM] use_new_terrain = {}", use_new_terrain);
     let has_load_events = load_zone_events.len() > 0;
     let has_loading_zones = !loading_zones.is_empty();
 

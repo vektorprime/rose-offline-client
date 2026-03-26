@@ -708,6 +708,8 @@ pub fn game_connection_system(
                 }
             }
             Ok(ServerMessage::DamageEntity { attacker_entity_id, defender_entity_id, damage, is_killed, is_immediate, from_skill }) => {
+                log::info!("[GAME_CONNECTION] Received DamageEntity: attacker={:?}, defender={:?}, damage={}, is_killed={}, is_immediate={}", 
+                    attacker_entity_id, defender_entity_id, damage.amount, is_killed, is_immediate);
                 if let Some(defender_entity) = client_entity_list.get(defender_entity_id) {
                     let attacker_entity =  client_entity_list.get(attacker_entity_id);
                     let killed_by_player = is_killed
