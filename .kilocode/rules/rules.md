@@ -63,10 +63,7 @@ When you fix an issue AND the user confirms it's resolved, note the interaction 
 
 When working on an issue, note what you attempted in a .md file dedicated to the issue. This should be reviewed everytime context is compressed to prevent repeatedly trying the same thing. The file should be cleaned up when the issue is confirmed as fixed.
 
-
 ## Finishing
 
 Before ending a task, confirm that "cargo build" is successful.
-
-
-You MUST run "Cargo build" inside of a subtask where it was requested. It should not run in the same task it was requested on. Report back the errors or failures, not warnings. Instruct the sub task that they are the sub task so that we do not get stuck in an infinite loop of assigning sub tasks. Assign them a sub task number. Everytime you assign a sub task, you must give them a subtask #. For example if a subtask is created tell them "You are subtask #1, the maximum subtask # is 2, if you create a subtask, assign it subtask #2 to prevent sub task loops."
+Always run "cargo build" in a separate task and report the progress back in max of 1 sentence

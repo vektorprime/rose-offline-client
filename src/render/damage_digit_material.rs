@@ -2,8 +2,9 @@ use bevy::{
     prelude::*,
     render::{alpha::AlphaMode, render_resource::*, storage::ShaderStorageBuffer},
     asset::{load_internal_asset, Handle, weak_handle},
-    pbr::Material,
+    pbr::{Material, MaterialPipeline, MaterialPipelineKey},
 };
+use bevy_mesh::{MeshVertexBufferLayoutRef, VertexBufferLayout};
 use bevy_shader::ShaderRef;
 
 pub const DAMAGE_DIGIT_MATERIAL_SHADER_HANDLE: Handle<Shader> =
@@ -58,21 +59,41 @@ impl Material for DamageDigitMaterial {
     fn enable_shadows() -> bool {
         false
     }
+
+    fn specialize(
+        _pipeline: &MaterialPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialPipelineKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        // Keep one empty vertex buffer layout for procedural geometry
+        // The shader uses @builtin(vertex_index) to generate vertices procedurally
+        descriptor.vertex.buffers = vec![VertexBufferLayout {
+            array_stride: 0,
+            step_mode: bevy::render::render_resource::VertexStepMode::Vertex,
+            attributes: vec![],
+        }];
+        Ok(())
+    }
 }
 
 pub struct DamageDigitMaterialPlugin;
 
 impl Plugin for DamageDigitMaterialPlugin {
     fn build(&self, app: &mut App) {
+        log::info!("[DAMAGE_DIGIT_MATERIAL_PLUGIN] Starting to build plugin...");
+        
         load_internal_asset!(
             app,
             DAMAGE_DIGIT_MATERIAL_SHADER_HANDLE,
             "shaders/damage_digit.wgsl",
             Shader::from_wgsl
         );
+        log::info!("[DAMAGE_DIGIT_MATERIAL_PLUGIN] Loaded shader from 'shaders/damage_digit.wgsl'");
 
         // Note: prepass and shadows are controlled via enable_prepass() and enable_shadows() methods on Material trait
         app.add_plugins(bevy::pbr::MaterialPlugin::<DamageDigitMaterial>::default());
-        bevy::log::info!("[MATERIAL PLUGIN] DamageDigitMaterial plugin built");
+        log::info!("[DAMAGE_DIGIT_MATERIAL_PLUGIN] Added MaterialPlugin for DamageDigitMaterial");
+        log::info!("[DAMAGE_DIGIT_MATERIAL_PLUGIN] DamageDigitMaterial plugin built successfully");
     }
 }

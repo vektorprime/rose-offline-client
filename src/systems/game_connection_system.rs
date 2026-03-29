@@ -652,13 +652,13 @@ pub fn game_connection_system(
                 });
             }
             Ok(ServerMessage::MoveEntity { entity_id, target_entity_id, distance: _, x, y, z, move_mode }) => {
-                log::info!("[RESPAWN_MOVE_DIAG] Received MoveEntity from server: entity_id={:?}, pos=({},{},{})", entity_id, x, y, z);
+                //log::info!("[RESPAWN_MOVE_DIAG] Received MoveEntity from server: entity_id={:?}, pos=({},{},{})", entity_id, x, y, z);
                 
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     let target_entity = target_entity_id
                         .and_then(|id| client_entity_list.get(id));
 
-                    log::info!("[RESPAWN_MOVE_DIAG] Found entity {:?}, inserting NextCommand::with_move", entity);
+                   //log::info!("[RESPAWN_MOVE_DIAG] Found entity {:?}, inserting NextCommand::with_move", entity);
                     commands.entity(entity).insert(NextCommand::with_move(
                         Vec3::new(x, y, z as f32),
                         target_entity,
@@ -710,17 +710,25 @@ pub fn game_connection_system(
             Ok(ServerMessage::DamageEntity { attacker_entity_id, defender_entity_id, damage, is_killed, is_immediate, from_skill }) => {
                 log::info!("[GAME_CONNECTION] Received DamageEntity: attacker={:?}, defender={:?}, damage={}, is_killed={}, is_immediate={}", 
                     attacker_entity_id, defender_entity_id, damage.amount, is_killed, is_immediate);
+                
                 if let Some(defender_entity) = client_entity_list.get(defender_entity_id) {
+                    log::info!("[GAME_CONNECTION] Found defender entity {:?} for defender_entity_id {:?}", defender_entity, defender_entity_id);
+                    
                     let attacker_entity =  client_entity_list.get(attacker_entity_id);
+                    log::info!("[GAME_CONNECTION] Attacker entity lookup result: {:?}", attacker_entity);
+                    
                     let killed_by_player = is_killed
                         && client_entity_list.player_entity
                             == client_entity_list.get(attacker_entity_id);
 
                     commands.queue(move |world: &mut World| {
+                        log::info!("[GAME_CONNECTION] Queued command executing for defender entity {:?}", defender_entity);
                         let mut defender = world.entity_mut(defender_entity);
+                        
                         if let Some(mut pending_damage_list) =
                             defender.get_mut::<PendingDamageList>()
                         {
+                            log::info!("[GAME_CONNECTION] Found PendingDamageList, adding new pending damage entry");
                             pending_damage_list.push(PendingDamage::new(
                                 attacker_entity,
                                 damage,
@@ -728,6 +736,9 @@ pub fn game_connection_system(
                                 is_immediate,
                                 from_skill,
                             ));
+                            log::info!("[GAME_CONNECTION] Added pending damage to list, new length: {}", pending_damage_list.len());
+                        } else {
+                            log::error!("[GAME_CONNECTION] ERROR: Could NOT get PendingDamageList for entity {:?}!", defender_entity);
                         }
 
                         if killed_by_player {
@@ -740,6 +751,8 @@ pub fn game_connection_system(
                             }
                         }
                     });
+                } else {
+                    log::error!("[GAME_CONNECTION] ERROR: Could NOT find defender entity for entity_id {:?}", defender_entity_id);
                 }
             }
             Ok(ServerMessage::Teleport { entity_id: _, zone_id, x, y, run_mode: _, ride_mode: _ }) => {

@@ -6,18 +6,19 @@
 @group(0) @binding(0)
 var<uniform> view: View;
 
-struct PositionBuffer { data: array<vec4<f32>>, };
-struct SizeBuffer { data: array<vec2<f32>>, };
-struct UvBuffer { data: array<vec4<f32>>, };
-
+// Storage buffers as direct arrays (matching Bevy's AsBindGroup layout)
 @group(#{MATERIAL_BIND_GROUP}) @binding(0)
-var<storage, read> positions: PositionBuffer;
+var<storage, read> positions: array<vec4<f32>>;
+
 @group(#{MATERIAL_BIND_GROUP}) @binding(1)
-var<storage, read> sizes: SizeBuffer;
+var<storage, read> sizes: array<vec2<f32>>;
+
 @group(#{MATERIAL_BIND_GROUP}) @binding(2)
-var<storage, read> uvs: UvBuffer;
+var<storage, read> uvs: array<vec4<f32>>;
+
 @group(#{MATERIAL_BIND_GROUP}) @binding(3)
 var base_color_texture: texture_2d<f32>;
+
 @group(#{MATERIAL_BIND_GROUP}) @binding(4)
 var base_color_sampler: sampler;
 
@@ -44,12 +45,14 @@ fn vertex(model: VertexInput) -> VertexOutput {
   let vert_idx = model.vertex_idx % 6u;
   let digit_idx = model.vertex_idx / 6u;
 
-  let camera_right = view.view_from_world[0].xyz;
-  let camera_up = view.view_from_world[1].xyz;
+  // Use world_from_view for billboard (same as particle shader)
+  let camera_right = view.world_from_view[0].xyz;
+  let camera_up = view.world_from_view[1].xyz;
 
-  let particle_position = positions.data[digit_idx].xyz;
-  let x_offset = positions.data[digit_idx].w;
-  let size = sizes.data[digit_idx];
+  // Direct array access (no .data wrapper)
+  let particle_position = positions[digit_idx].xyz;
+  let x_offset = positions[digit_idx].w;
+  let size = sizes[digit_idx];
   var vertex_position: vec2<f32> = vertex_positions[vert_idx].xy;
   vertex_position.x = vertex_positions[vert_idx].x + x_offset;
 
@@ -59,9 +62,10 @@ fn vertex(model: VertexInput) -> VertexOutput {
     (camera_up * vertex_position.y * size.y);
 
   var out: VertexOutput;
-  out.position = view.clip_from_view * vec4<f32>(world_space, 1.0);
+  // CRITICAL FIX: Transform world -> clip correctly using clip_from_world
+  out.position = view.clip_from_world * vec4<f32>(world_space, 1.0);
 
-  let texture = uvs.data[digit_idx];
+  let texture = uvs[digit_idx];
   if (vertex_positions[vert_idx].x < 0.0) {
     out.uv.x = texture.x;
   } else {

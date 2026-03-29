@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use bevy::{
     asset::RenderAssetUsages,
+    image::ImageSampler,
     log::warn,
     prelude::{
         Assets, ChildOf, Color, Commands, Entity, GlobalTransform, Image, Local, MessageReader,
@@ -55,10 +56,9 @@ pub fn chat_bubble_spawn_system(
     query_camera: Query<Entity, (With<Camera>, With<PrimaryEguiContext>)>,
     mut egui_context: EguiContexts,
     mut images: ResMut<Assets<Image>>,
-    egui_managed_textures: Res<bevy_egui::EguiManagedTextures>,
     mut pending_cache: Local<ChatBubblePendingCache>,
 ) {
-    let Ok(camera_entity) = query_camera.single() else {
+    let Ok(_camera_entity) = query_camera.single() else {
         return;
     };
 
@@ -149,35 +149,16 @@ pub fn chat_bubble_spawn_system(
         let min_pos = Vec2::new(galley_rect.min.x, galley_rect.min.y) * pixels_per_point;
         let max_pos = Vec2::new(galley_rect.max.x, galley_rect.max.y) * pixels_per_point;
 
-        let mut used_texture_ids = std::collections::HashSet::new();
-        for row in galley.rows.iter() {
-            if let egui::TextureId::Managed(id) = row.visuals.mesh.texture_id {
-                used_texture_ids.insert(id);
-            }
-        }
-
-        let mut all_textures_ready = true;
-        let mut font_textures = std::collections::HashMap::new();
-        for &id in used_texture_ids.iter() {
-            // bevy_egui 0.39 keys managed textures by (camera_entity, texture_id)
-            if let Some(managed_texture) = egui_managed_textures.0.get(&(camera_entity, id)) {
-                font_textures.insert(id, &managed_texture.color_image);
-            } else {
-                all_textures_ready = false;
-                break;
-            }
-        }
-
-        if !all_textures_ready {
-            pending_cache.pending.push(PendingChatBubble {
-                target_entity,
-                text,
-                duration,
-                color,
-                galley,
+        // Read the CPU-side egui font atlas directly.
+        // This is immediately available after layout and does not depend on render-pass texture uploads.
+        let font_source_texture = egui_context
+            .ctx_mut()
+            .ok()
+            .and_then(|ctx| ctx.fonts_mut(|fonts| Some(fonts.image())))
+            .unwrap_or_else(|| {
+                // Fallback: create a 1x1 transparent image if fonts are not available
+                egui::epaint::ColorImage::filled([1, 1], egui::Color32::TRANSPARENT)
             });
-            continue;
-        }
 
         let text_size = Vec2::new(
             (max_pos.x - min_pos.x) + CHAT_BUBBLE_PADDING * 2.0,
@@ -189,21 +170,13 @@ pub fn chat_bubble_spawn_system(
         let data_len = (target_texture_width * target_texture_height * 4) as usize;
         let mut text_data = vec![0u8; data_len];
 
-        for row in galley.rows.iter() {
-            let font_texture_id = match row.visuals.mesh.texture_id {
-                egui::TextureId::Managed(id) => id,
-                _ => continue,
-            };
-            let Some(font_texture) = font_textures.get(&font_texture_id) else {
-                continue;
-            };
+        unsafe {
+            let src = font_source_texture.pixels.as_ptr();
+            let src_stride = font_source_texture.width();
+            let dst = text_data.as_mut_ptr();
+            let dst_stride = target_texture_width as usize;
 
-            unsafe {
-                let src = font_texture.pixels.as_ptr();
-                let src_stride = font_texture.width();
-                let dst = text_data.as_mut_ptr();
-                let dst_stride = target_texture_width as usize;
-
+            for row in galley.rows.iter() {
                 for glyph in row.glyphs.iter() {
                     let uv_min = glyph.uv_rect.min;
                     let uv_max = glyph.uv_rect.max;
@@ -231,7 +204,6 @@ pub fn chat_bubble_spawn_system(
 
                         for _ in uv_min[0]..uv_max[0] {
                             let pixel = (*src_row).to_array();
-                            // bevy_egui font atlas channel packing may vary across versions.
                             // Use max channel as glyph coverage and store text as white+alpha,
                             // then tint in the world UI shader via vertex color.
                             let coverage = pixel[0].max(pixel[1]).max(pixel[2]).max(pixel[3]);
@@ -297,6 +269,9 @@ pub fn chat_bubble_spawn_system(
             TextureFormat::Rgba8Unorm,
             RenderAssetUsages::default(),
         );
+        // Use nearest sampling so world-space text remains crisp instead of blurry.
+        let mut text_image = text_image;
+        text_image.sampler = ImageSampler::nearest();
         let text_image_handle = images.add(text_image);
 
         let bg_width = (text_size.x as u32).next_power_of_two();
@@ -355,6 +330,9 @@ pub fn chat_bubble_spawn_system(
             TextureFormat::Rgba8Unorm,
             RenderAssetUsages::default(),
         );
+        // Use nearest sampling so world-space text remains crisp instead of blurry.
+        let mut bg_image = bg_image;
+        bg_image.sampler = ImageSampler::nearest();
         let bg_image_handle = images.add(bg_image);
 
         let bubble_height = model_height_value + CHAT_BUBBLE_VERTICAL_OFFSET;
@@ -415,9 +393,5 @@ pub fn chat_bubble_spawn_system(
         ));
 
         commands.entity(target_entity).add_child(bubble_entity);
-    }
-
-    if !pending_cache.pending.is_empty() && egui_managed_textures.0.is_empty() {
-        warn!("[CHAT_BUBBLE_DEBUG] Font textures not ready yet; pending chat bubbles will retry next frame");
     }
 }
