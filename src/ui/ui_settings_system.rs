@@ -785,10 +785,84 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                                     .show_value(true),
                             );
                             ui.end_row();
+
+                            // === NEW DEPTH SETTINGS ===
+                            ui.label("Min Depth:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.min_depth, 0.1..=5.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Depth:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.max_depth, 1.0..=20.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Shallow Threshold:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.shallow_threshold, 0.5..=10.0)
+                                    .text("m")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Bottom Visibility:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.bottom_visibility, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Wave Amplitude:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.wave_amplitude, 0.1..=2.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Wave Frequency:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.wave_frequency, 0.5..=5.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Wave Layers:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.wave_layers, 1..=4)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Caustics Intensity:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.caustics_intensity, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Caustics Scale:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.caustics_scale, 0.01..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Caustics Speed:");
+                            ui.add(
+                                egui::Slider::new(&mut water_settings.caustics_speed, 0.1..=2.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
                         });
 
                     ui.separator();
-                    ui.label("Tip: Adjust foam for wave crests, SSS for light scattering, fresnel for angle reflectivity.");
+                    ui.label("Tip: Depth settings control shallow-to-deep water color transition. Wave settings control surface detail.");
                 }
                 SettingsPage::Fish => {
                     egui::Grid::new("fish_settings")

@@ -37,6 +37,7 @@ mod free_camera_system;
 // Wing spawn system for angelic wings
 mod wing_spawn_system;
 mod game_connection_system;
+mod game_keyboard_input_system;
 mod game_mouse_input_system;
 mod game_system;
 mod hit_event_system;
@@ -150,6 +151,7 @@ pub use flight_toggle_system::{flight_toggle_system, ensure_flight_state_system}
 pub use wing_spawn_system::{WingSpawnPlugin, wing_spawn_system, wing_animation_system};
 pub use free_camera_system::{free_camera_system, FreeCamera};
 pub use game_connection_system::game_connection_system;
+pub use game_keyboard_input_system::game_keyboard_input_system;
 pub use game_mouse_input_system::game_mouse_input_system;
 pub use game_system::{game_state_enter_system, game_zone_change_system};
 pub use hit_event_system::hit_event_system;

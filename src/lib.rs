@@ -154,7 +154,7 @@ use systems::{
     create_damage_digit_material_system,
     directional_light_system, effect_system, facing_direction_system,
     flight_movement_system, flight_pose_system, flight_pose_blend_update_system, flight_toggle_system, ensure_flight_state_system,
-    free_camera_system, game_connection_system, game_mouse_input_system, game_state_enter_system,
+    free_camera_system, game_connection_system, game_keyboard_input_system, game_mouse_input_system, game_state_enter_system,
     game_zone_change_system, hit_event_system, item_drop_model_add_collider_system,
     item_drop_model_system, login_connection_system, login_event_system, login_state_enter_system,
     login_state_exit_system, login_system, model_viewer_enter_system, model_viewer_exit_system,
@@ -1540,6 +1540,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // game_mouse_input_system uses EguiContexts to check if egui wants pointer input
     // This can stay in Update since it only queries egui state, doesn't render
     app.add_systems(Update, game_mouse_input_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    // game_keyboard_input_system uses EguiContexts to skip input while typing in UI.
+    app.add_systems(Update, game_keyboard_input_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
     
     // UI systems - part 1 (must run in EguiPrimaryContextPass for bevy_egui 0.39)
     app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_admin_menu_system.run_if(in_state(AppState::Game)));

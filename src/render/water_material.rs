@@ -262,9 +262,14 @@ impl AsBindGroup for WaterMaterial {
         // [1] ambient_color (vec4)
         // [2] diffuse_color (vec4)
         // [3] settings_1: foam_intensity, foam_threshold, sss_intensity, refraction_strength
-        // [4] settings_2: wave_speed, fresnel_strength, specular_intensity, padding
+        // [4] settings_2: wave_speed, fresnel_strength, specular_intensity, wave_amplitude
         // [5] fog_color (vec4)
-        // [6] fog_params: density, min_density, max_density, padding
+        // [6] fog_params: density, min_density, max_density, wave_frequency
+        // [7] depth_1: min_depth, max_depth, shallow_threshold, bottom_visibility
+        // [8] deep_color (vec4)
+        // [9] shallow_color (vec4)
+        // [10] depth_scale: x, y, wave_layers (as float), caustics_intensity
+        // [11] caustics: scale, speed, water_surface_y, padding
         let water_material_data = [
             Vec4::new(
                 self.light_direction.x,
@@ -284,13 +289,33 @@ impl AsBindGroup for WaterMaterial {
                 self.settings.wave_speed,
                 self.settings.fresnel_strength,
                 self.settings.specular_intensity,
-                0.0,
+                self.settings.wave_amplitude,
             ),
             self.fog_color,
             Vec4::new(
                 self.fog_density,
                 self.fog_min_density,
                 self.fog_max_density,
+                self.settings.wave_frequency,
+            ),
+            Vec4::new(
+                self.settings.min_depth,
+                self.settings.max_depth,
+                self.settings.shallow_threshold,
+                self.settings.bottom_visibility,
+            ),
+            self.settings.deep_color,
+            self.settings.shallow_color,
+            Vec4::new(
+                self.settings.depth_gradient_scale[0],
+                self.settings.depth_gradient_scale[1],
+                self.settings.wave_layers as f32,
+                self.settings.caustics_intensity,
+            ),
+            Vec4::new(
+                self.settings.caustics_scale,
+                self.settings.caustics_speed,
+                self.settings.water_surface_y,
                 0.0,
             ),
         ];
@@ -364,10 +389,15 @@ impl AsBindGroup for WaterMaterial {
             // [0] light_direction
             // [1] ambient_color
             // [2] diffuse_color
-            // [3] water_settings_1
-            // [4] water_settings_2
+            // [3] water_settings_1: foam_intensity, foam_threshold, sss_intensity, refraction_strength
+            // [4] water_settings_2: wave_speed, fresnel_strength, specular_intensity, wave_amplitude
             // [5] fog_color
-            // [6] fog_params
+            // [6] fog_params: density, min_density, max_density, wave_frequency
+            // [7] depth_1: min_depth, max_depth, shallow_threshold, bottom_visibility
+            // [8] deep_color
+            // [9] shallow_color
+            // [10] depth_scale: x, y, wave_layers, caustics_intensity
+            // [11] caustics: scale, speed, water_surface_y, padding
             BindGroupLayoutEntry {
                 binding: 2,
                 visibility: ShaderStages::FRAGMENT,

@@ -7,9 +7,12 @@
 //! - Fresnel effect for angle-dependent reflectivity
 //! - Specular sun highlights
 //! - Procedural wave normals for dynamic surface detail
-//! - Foam effects on wave crests (Phase 3)
-//! - Subsurface scattering approximation (Phase 3)
-//! - Pseudo-refraction via UV distortion (Phase 3)
+//! - Foam effects on wave crests
+//! - Subsurface scattering approximation
+//! - Pseudo-refraction via UV distortion
+//! - Depth-based color gradient (shallow to deep water)
+//! - Bottom visibility in shallow water
+//! - Caustics effects
 //!
 //! Note: This shader uses its own lighting uniforms instead of zone_lighting
 //! because custom materials only have access to bind groups 0-2.
@@ -27,7 +30,7 @@ struct Vertex {
 
 // Vertex output structure
 struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
+    @builtin(position) @invariant clip_position: vec4<f32>,
     @location(0) world_position: vec4<f32>,
     @location(1) world_normal: vec3<f32>,
     @location(2) uv0: vec2<f32>,
@@ -46,11 +49,16 @@ var water_array_sampler: sampler;
 // [1] ambient_color (vec4)
 // [2] diffuse_color (vec4)
 // [3] settings_1: foam_intensity, foam_threshold, sss_intensity, refraction_strength
-// [4] settings_2: wave_speed, fresnel_strength, specular_intensity, padding
+// [4] settings_2: wave_speed, fresnel_strength, specular_intensity, wave_amplitude
 // [5] fog_color (vec4)
-// [6] fog_params: density, min_density, max_density, padding
+// [6] fog_params: density, min_density, max_density, wave_frequency
+// [7] depth_1: min_depth, max_depth, shallow_threshold, bottom_visibility
+// [8] deep_color (vec4)
+// [9] shallow_color (vec4)
+// [10] depth_scale: x, y, wave_layers (as float), caustics_intensity
+// [11] caustics: scale, speed, water_surface_y, padding
 @group(#{MATERIAL_BIND_GROUP}) @binding(2)
-var<storage, read> water_material_data: array<vec4<f32>, 7>;
+var<storage, read> water_material_data: array<vec4<f32>, 12>;
 
 fn light_direction_value() -> vec3<f32> {
     return water_material_data[0].xyz;
@@ -92,6 +100,10 @@ fn specular_intensity_value() -> f32 {
     return water_material_data[4].z;
 }
 
+fn wave_amplitude_value() -> f32 {
+    return water_material_data[4].w;
+}
+
 fn fog_color_value() -> vec3<f32> {
     return water_material_data[5].rgb;
 }
@@ -106,6 +118,64 @@ fn fog_min_density_value() -> f32 {
 
 fn fog_max_density_value() -> f32 {
     return water_material_data[6].z;
+}
+
+fn wave_frequency_value() -> f32 {
+    return water_material_data[6].w;
+}
+
+// === NEW DEPTH-RELATED ACCESSORS ===
+
+fn min_depth_value() -> f32 {
+    return water_material_data[7].x;
+}
+
+fn max_depth_value() -> f32 {
+    return water_material_data[7].y;
+}
+
+fn shallow_threshold_value() -> f32 {
+    return water_material_data[7].z;
+}
+
+fn bottom_visibility_value() -> f32 {
+    return water_material_data[7].w;
+}
+
+fn deep_color_value() -> vec4<f32> {
+    return water_material_data[8];
+}
+
+fn shallow_color_value() -> vec4<f32> {
+    return water_material_data[9];
+}
+
+fn depth_scale_x_value() -> f32 {
+    return water_material_data[10].x;
+}
+
+fn depth_scale_y_value() -> f32 {
+    return water_material_data[10].y;
+}
+
+fn wave_layers_value() -> f32 {
+    return water_material_data[10].z;
+}
+
+fn caustics_intensity_value() -> f32 {
+    return water_material_data[10].w;
+}
+
+fn caustics_scale_value() -> f32 {
+    return water_material_data[11].x;
+}
+
+fn caustics_speed_value() -> f32 {
+    return water_material_data[11].y;
+}
+
+fn water_surface_y_value() -> f32 {
+    return water_material_data[11].z;
 }
 
 // Fresnel-Schlick approximation for angle-dependent reflectivity
@@ -158,6 +228,94 @@ fn blend_normals(base_normal: vec3<f32>, wave_normal: vec3<f32>, wave_strength: 
     // We keep the base normal's general direction but add wave detail
     let blended = mix(base_normal, wave_normal, wave_strength);
     return normalize(blended);
+}
+
+// === DEPTH-BASED WATER COLOR FUNCTIONS ===
+// These functions generate procedural water color based on depth
+// allowing for realistic shallow-to-deep water transitions
+
+// Calculate procedural depth at a given world position
+// Uses noise-based variation to create natural depth patterns
+fn calculate_procedural_depth(world_pos_xz: vec2<f32>, time: f32) -> f32 {
+    // Get depth scale from settings
+    let depth_scale = vec2<f32>(depth_scale_x_value(), depth_scale_y_value());
+    
+    // Base depth variation using layered sine waves
+    var depth_variation = 0.0;
+    var amplitude = 0.5;
+    var frequency = 1.0;
+    
+    // Number of layers from settings
+    let layers = wave_layers_value();
+    
+    for (var i = 0; i < 4; i++) {
+        if (f32(i) >= layers) {
+            break;
+        }
+        
+        // Each layer adds detail at different scales
+        // Use dot() to combine vec2 sine result into a scalar
+        let wave_vec = sin(world_pos_xz * frequency + time * 0.2 + f32(i) * 1.57);
+        let wave = dot(wave_vec, vec2<f32>(1.0, 1.0)) * 0.5;
+        depth_variation = depth_variation + wave * amplitude;
+        
+        frequency = frequency * 2.0;
+        amplitude = amplitude * 0.5;
+    }
+    
+    // Normalize variation to 0-1 range and map to depth range
+    let normalized_variation = (depth_variation + 1.0) * 0.5;
+    let min_depth = min_depth_value();
+    let max_depth = max_depth_value();
+    
+    return min_depth + normalized_variation * (max_depth - min_depth);
+}
+
+// Generate procedural water color based on depth
+// Blends between shallow and deep colors with procedural variation
+fn generate_procedural_water_color(depth: f32, world_pos_xz: vec2<f32>, time: f32) -> vec4<f32> {
+    // Get shallow and deep colors from settings
+    let shallow_color = shallow_color_value();
+    let deep_color = deep_color_value();
+    
+    // Calculate depth factor (0.0 = shallow, 1.0 = deep)
+    let min_depth = min_depth_value();
+    let max_depth = max_depth_value();
+    let depth_factor = saturate((depth - min_depth) / (max_depth - min_depth + 0.001));
+    
+    // Base color interpolation between shallow and deep
+    var base_color = mix(shallow_color, deep_color, depth_factor);
+    
+    // Add procedural variation based on position and time
+    // This creates natural color variation across the water surface
+    let variation_scale = 0.5;
+    let noise1 = sin(world_pos_xz.x * variation_scale + time * 0.1);
+    let noise2 = sin(world_pos_xz.y * variation_scale + time * 0.12);
+    let noise3 = sin((world_pos_xz.x + world_pos_xz.y) * variation_scale * 0.5 + time * 0.08);
+    
+    // Combine noise for subtle color variation
+    let color_variation = (noise1 + noise2 + noise3) * 0.33;
+    
+    // Apply variation primarily to RGB, keep alpha based on depth
+    base_color = vec4<f32>(base_color.rgb + color_variation * 0.1, base_color.a);
+    
+    // Adjust alpha based on depth (shallower = more transparent)
+    let alpha_factor = mix(0.3, 0.95, depth_factor);
+    base_color.a = shallow_color.a * alpha_factor;
+    
+    return base_color;
+}
+
+// Calculate bottom visibility based on depth
+// Returns 1.0 for fully visible bottom (shallow), 0.0 for no visibility (deep)
+fn calculate_bottom_visibility(depth: f32) -> f32 {
+    let shallow_threshold = shallow_threshold_value();
+    let visibility = bottom_visibility_value();
+    
+    // Bottom is only visible in shallow water
+    let visibility_factor = saturate(1.0 - (depth / shallow_threshold));
+    
+    return visibility_factor * visibility;
 }
 
 // === PHASE 3: WATER QUALITY IMPROVEMENTS ===
@@ -456,6 +614,42 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     // Apply UV distortion based on wave normal for a refraction-like effect
     let refracted_uv = apply_refraction(in.uv0, wave_normal, wave_time, refraction_strength_value());
     
+    // === DEPTH-BASED PROCEDURAL WATER COLOR ===
+    // Calculate procedural depth at this position
+    let depth = calculate_procedural_depth(in.world_position.xz, wave_time);
+    
+    // Generate procedural water color based on depth
+    let procedural_water_color = generate_procedural_water_color(depth, in.world_position.xz, wave_time);
+    
+    // Calculate bottom visibility for shallow water
+    let bottom_vis = calculate_bottom_visibility(depth);
+    
+    // === PROCEDURAL WAVE TEXTURE GENERATION ===
+    // Generate procedural wave pattern using layered sine functions
+    // This creates dynamic surface detail without relying on textures
+    var procedural_wave = vec3<f32>(0.5); // Base gray
+    
+    // Layer 1: Large slow waves
+    let wave1 = sin(in.world_position.xz * 0.5 + wave_time * 0.5);
+    procedural_wave = procedural_wave + vec3<f32>(wave1, 0.0) * 0.3;
+    
+    // Layer 2: Medium cross-waves
+    let wave2 = sin(in.world_position.xz * vec2<f32>(1.0, 0.7) + wave_time * 0.7);
+    procedural_wave = procedural_wave + vec3<f32>(wave2, 0.0) * 0.2;
+    
+    // Layer 3: Diagonal ripples
+    let wave3 = sin((in.world_position.x + in.world_position.z) * 0.6 + wave_time * 0.4);
+    procedural_wave = procedural_wave + vec3<f32>(wave3) * 0.15;
+    
+    // Layer 4: Fine detail waves
+    let wave4 = sin(in.world_position.xz * 3.0 + wave_time * 1.5);
+    procedural_wave = procedural_wave + vec3<f32>(wave4, 0.0) * 0.1;
+    
+    // Apply depth-based color tint to procedural wave
+    // Deep water is darker blue, shallow water is lighter turquoise
+    let depth_tint = mix(shallow_color_value().rgb, deep_color_value().rgb, saturate((depth - min_depth_value()) / (max_depth_value() - min_depth_value() + 0.001)));
+    procedural_wave = procedural_wave * depth_tint * 1.5;
+    
     // Animate water at 10 FPS (same as original)
     // globals.time is in seconds, wrap it to avoid precision issues
     let anim_time = globals.time * 10.0;
@@ -469,7 +663,11 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     let color2 = textureSample(water_array_texture[next_index], water_array_sampler, refracted_uv);
     
     // Blend between frames
-    let water_color = mix(color1, color2, blend);
+    let texture_water_color = mix(color1, color2, blend);
+    
+    // Combine procedural wave with texture
+    // Use procedural wave as primary for dynamic appearance, texture for additional detail
+    let water_color = vec4<f32>(mix(procedural_wave, texture_water_color.rgb, 0.3), procedural_water_color.a);
     
     // === LIGHTING (using material storage buffer instead of zone_lighting) ===
     let light_dir = normalize(light_direction_value());
@@ -561,11 +759,14 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     // Apply fog from zone lighting to integrate water with the scene
     final_color = apply_zone_fog(final_color, in.world_position);
     
-    // Base alpha from water texture
-    let base_alpha = water_color.a;
+    // === DEPTH-BASED ALPHA ===
+    // Use procedural water color's alpha which varies with depth
+    // Shallower water is more transparent, deeper water is more opaque
+    let base_alpha = procedural_water_color.a;
     
-    // Ensure minimum opacity of 0.7 to make water less see-through
-    let min_alpha = 0.7;
+    // Ensure minimum opacity based on depth (deeper = more opaque)
+    let depth_factor = saturate((depth - min_depth_value()) / (max_depth_value() - min_depth_value() + 0.001));
+    let min_alpha = mix(0.3, 0.85, depth_factor); // Shallow: 0.3, Deep: 0.85
     let clamped_base_alpha = max(base_alpha, min_alpha);
     
     // Increase alpha at grazing angles (Fresnel makes water more opaque at low angles)
