@@ -1007,7 +1007,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             map_editor::MapEditorPlugin,
 
             // Procedural cloud material
-            // CloudMaterialPlugin,
+            CloudMaterialPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -1473,8 +1473,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
 
-    // Spawn starry sky and moon light entities on startup
-    app.add_systems(PostStartup, (spawn_starry_sky_and_moon, /*spawn_cloud_layer*/));
+    // Spawn sky systems on startup
+    app.add_systems(PostStartup, (spawn_starry_sky_and_moon, spawn_cloud_layer));
 
     // System to apply depth of field settings from the resource to the camera
     app.add_systems(Update, apply_depth_of_field_settings);

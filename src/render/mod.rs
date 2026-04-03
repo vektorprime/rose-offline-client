@@ -13,7 +13,7 @@ pub use terrain_material::{
 // Custom water material with animated texture array support
 pub mod water_material;
 pub use water_material::{
-    WaterMaterial, WaterMaterialPlugin, WaterAnimationTime, WATER_MATERIAL_NUM_TEXTURES,
+    WaterMaterial, WaterMaterialPlugin,
 };
 
 /// Custom vertex attribute for terrain tile info

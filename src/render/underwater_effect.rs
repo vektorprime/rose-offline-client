@@ -41,7 +41,10 @@ use bevy::{
 use bevy_camera::Camera;
 use bevy_shader::Shader;
 
-use crate::resources::WaterSettings;
+use crate::{
+    components::WaterSpawnedEvent,
+    resources::WaterSettings,
+};
 
 /// Shader handle for the underwater effect shader
 pub const UNDERWATER_EFFECT_SHADER_HANDLE: Handle<Shader> =
@@ -110,6 +113,21 @@ pub struct CameraUnderwaterState {
     pub depth_below_surface: f32,
 }
 
+/// Runtime-tracked water volume derived from spawned water planes.
+#[derive(Debug, Clone)]
+pub struct WaterVolume {
+    pub water_entity: Entity,
+    pub center: Vec3,
+    pub half_extents: Vec2,
+    pub surface_y: f32,
+}
+
+/// Collection of all currently known water volumes in world space.
+#[derive(Resource, Default, Debug, Clone)]
+pub struct UnderwaterVolumes {
+    pub volumes: Vec<WaterVolume>,
+}
+
 // =============================================================================
 // Render World Resources and Pipeline
 // =============================================================================
@@ -143,6 +161,8 @@ pub struct UnderwaterEffectUniform {
     is_underwater: f32,
     /// Water surface Y coordinate
     water_surface_y: f32,
+    /// Camera depth below the selected water surface
+    depth_below_surface: f32,
     /// Fog density
     fog_density: f32,
     /// Maximum visibility distance
@@ -168,6 +188,7 @@ impl Default for UnderwaterEffectUniform {
         Self {
             is_underwater: 0.0,
             water_surface_y: 0.0,
+            depth_below_surface: 0.0,
             fog_density: 0.015,
             max_visibility: 100.0,
             fog_color: Vec4::new(0.05, 0.15, 0.25, 1.0),
@@ -289,13 +310,14 @@ impl Plugin for UnderwaterEffectPlugin {
         app.register_type::<UnderwaterSettings>()
             .register_type::<CameraUnderwaterState>()
             .init_resource::<UnderwaterSettings>()
+            .init_resource::<UnderwaterVolumes>()
             .add_plugins((
                 ExtractResourcePlugin::<UnderwaterSettings>::default(),
                 ExtractComponentPlugin::<CameraUnderwaterState>::default(),
             ));
 
-        // Add the underwater detection system
-        app.add_systems(Update, detect_underwater_camera);
+        // Track water volumes and detect underwater camera state.
+        app.add_systems(Update, (track_underwater_volumes, detect_underwater_camera).chain());
 
         // Setup render app
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
@@ -399,6 +421,7 @@ impl SpecializedRenderPipeline for UnderwaterEffectPipeline {
 pub fn detect_underwater_camera(
     mut camera_query: Query<(&GlobalTransform, &mut CameraUnderwaterState), With<Camera>>,
     water_settings: Res<WaterSettings>,
+    underwater_volumes: Res<UnderwaterVolumes>,
     underwater_settings: Res<UnderwaterSettings>,
 ) {
     // Skip if underwater effects are disabled
@@ -406,21 +429,99 @@ pub fn detect_underwater_camera(
         return;
     }
 
-    // Get water surface Y from water settings
-    // The water surface is typically at a fixed height in the zone
-    let water_surface_y = water_settings.water_surface_y;
-
     for (transform, mut underwater_state) in camera_query.iter_mut() {
-        let camera_y = transform.translation().y;
-        let is_underwater = camera_y < water_surface_y;
-        
-        underwater_state.is_underwater = is_underwater;
-        underwater_state.water_surface_y = water_surface_y;
-        underwater_state.depth_below_surface = if is_underwater {
-            (water_surface_y - camera_y).max(0.0)
+        let camera_position = transform.translation();
+
+        // Determine if camera is inside any spawned water volume.
+        let mut selected_surface_y = water_settings.water_surface_y;
+        let mut selected_depth = f32::MAX;
+        let mut found_volume = false;
+
+        // Use configurable max depth as the effective underwater volume depth.
+        let volume_depth_limit = water_settings.max_depth.max(0.1);
+
+        for volume in underwater_volumes.volumes.iter() {
+            let dx = (camera_position.x - volume.center.x).abs();
+            let dz = (camera_position.z - volume.center.z).abs();
+            let inside_bounds = dx <= volume.half_extents.x && dz <= volume.half_extents.y;
+            if !inside_bounds {
+                continue;
+            }
+
+            let depth_below_surface = volume.surface_y - camera_position.y;
+            if depth_below_surface < 0.0 || depth_below_surface > volume_depth_limit {
+                continue;
+            }
+
+            // Prefer the closest valid surface when overlapping volumes exist.
+            if depth_below_surface < selected_depth {
+                selected_depth = depth_below_surface;
+                selected_surface_y = volume.surface_y;
+                found_volume = true;
+            }
+        }
+
+        // Fallback for maps where no water spawn events were observed.
+        if !found_volume {
+            let fallback_depth = water_settings.water_surface_y - camera_position.y;
+            if fallback_depth >= 0.0 && fallback_depth <= volume_depth_limit {
+                selected_depth = fallback_depth;
+                selected_surface_y = water_settings.water_surface_y;
+                found_volume = true;
+            }
+        }
+
+        underwater_state.is_underwater = found_volume;
+        underwater_state.water_surface_y = selected_surface_y;
+        underwater_state.depth_below_surface = if found_volume {
+            selected_depth.max(0.0)
         } else {
             0.0
         };
+    }
+}
+
+/// Tracks water planes from spawn events and stores world-space water volumes.
+pub fn track_underwater_volumes(
+    mut water_spawned_events: MessageReader<WaterSpawnedEvent>,
+    zone_transforms: Query<&GlobalTransform>,
+    mut underwater_volumes: ResMut<UnderwaterVolumes>,
+    mut water_settings: ResMut<WaterSettings>,
+) {
+    let mut got_event = false;
+
+    for event in water_spawned_events.read() {
+        got_event = true;
+
+        let zone_translation = zone_transforms
+            .get(event.zone_entity)
+            .map(|t| t.translation())
+            .unwrap_or(Vec3::ZERO);
+
+        let world_center = event.water_center + zone_translation;
+        let volume = WaterVolume {
+            water_entity: event.water_entity,
+            center: world_center,
+            half_extents: event.water_half_extents,
+            surface_y: world_center.y,
+        };
+
+        if let Some(existing) = underwater_volumes
+            .volumes
+            .iter_mut()
+            .find(|v| v.water_entity == event.water_entity)
+        {
+            *existing = volume;
+        } else {
+            underwater_volumes.volumes.push(volume);
+        }
+    }
+
+    if got_event {
+        if let Some(first_volume) = underwater_volumes.volumes.first() {
+            // Keep legacy/global water surface in sync for systems that still read this value.
+            water_settings.water_surface_y = first_volume.surface_y;
+        }
     }
 }
 
@@ -469,6 +570,7 @@ pub fn prepare_underwater_effect_uniforms(
         let uniform = UnderwaterEffectUniform {
             is_underwater: if underwater_state.is_underwater { 1.0 } else { 0.0 },
             water_surface_y: underwater_state.water_surface_y,
+            depth_below_surface: underwater_state.depth_below_surface,
             fog_density: underwater_settings.fog_density,
             max_visibility: underwater_settings.max_visibility,
             fog_color: underwater_settings.fog_color,

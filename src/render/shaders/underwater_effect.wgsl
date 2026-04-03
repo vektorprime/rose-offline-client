@@ -29,6 +29,8 @@ struct UnderwaterSettings {
     is_underwater: f32,
     /// Water surface Y coordinate
     water_surface_y: f32,
+    /// Camera depth below water surface
+    depth_below_surface: f32,
     /// Fog density
     fog_density: f32,
     /// Maximum visibility distance
@@ -198,10 +200,8 @@ fn fragment_main(
     // Sample the source texture
     let source_color = textureSample(source_texture, source_sampler, in.uv);
     
-    // Calculate depth effect (simulated since we don't have depth buffer access)
-    // In a full implementation, we would use the depth prepass texture
-    // For now, we use a uniform depth based on camera depth below surface
-    let depth = underwater.water_surface_y * 0.1; // Simplified depth estimate
+    // Use true camera depth below the selected water surface from CPU-side detection.
+    let depth = clamp(underwater.depth_below_surface, 0.0, underwater.max_visibility);
     
     // Apply light absorption first (affects the scene color)
     var color = apply_light_absorption(
@@ -218,7 +218,8 @@ fn fragment_main(
     );
     
     // Blend fog with the absorbed color
-    color = mix(color, fog_color, saturate(underwater.fog_density * depth));
+    let fog_mix = saturate(1.0 - exp(-underwater.fog_density * depth));
+    color = mix(color, fog_color, fog_mix);
     
     // Calculate caustics overlay
     // Use screen-space UV for caustics (would be better with world position)

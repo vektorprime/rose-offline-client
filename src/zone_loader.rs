@@ -2061,22 +2061,9 @@ pub fn spawn_zone(
     log::info!("[MEMORY] Tile texture handles created: {}", tile_textures.len());
 
     let water_material = {
-        let mut water_material_textures = Vec::with_capacity(25);
-        for i in 1..=25 {
-            let path = format!("3DDATA/JUNON/WATER/OCEAN01_{:02}.DDS", i);
-            let handle = asset_server.load(&path);
-            memory_tracking.log_texture_handle_created(&path);
-            water_material_textures.push(handle);
-        }
-
-        let texture_count = water_material_textures.len();
-        // Use custom WaterMaterial with animated texture array support
-        // Note: Uses default lighting values since we can't access zone_lighting (bind group 3)
-        let material = water_materials.add(WaterMaterial {
-            textures: water_material_textures,
-            ..Default::default()
-        });
-        log::info!("[SPAWN ZONE] Water material created with {} textures (animated)", texture_count);
+        // Use custom WaterMaterial with fully procedural shading (no game texture dependencies)
+        let material = water_materials.add(WaterMaterial::default());
+        log::info!("[SPAWN ZONE] Procedural water material created (texture-free)");
         log::info!("[MEMORY] Water material handle created");
         material
     };

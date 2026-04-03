@@ -107,7 +107,7 @@ pub struct CloudSettings {
     pub softness: f32,
     
     // === Geometry ===
-    /// Cloud layer altitude (world units from ground)
+    /// Cloud layer height offset above the active camera
     pub altitude: f32,
     
     // === Quality ===
@@ -129,24 +129,24 @@ impl Default for CloudSettings {
             enabled: true,
             
             // Coverage - moderate clouds by default
-            density: 0.5,
-            coverage: 0.6,
+            density: 0.85,
+            coverage: 0.8,
             
             // Animation - gentle wind
             speed: 5.0,
             wind_direction: 0.0,  // +X direction
             
             // Appearance - natural look
-            brightness: 1.0,
-            opacity: 0.8,
-            softness: 0.3,
+            brightness: 1.15,
+            opacity: 0.9,
+            softness: 0.2,
             
-            // Geometry - high cloud layer
-            altitude: 400.0,
+            // Geometry - offset above camera so clouds stay visible with limited far planes
+            altitude: 180.0,
             
             // Quality - balanced
             noise_octaves: 4,
-            noise_scale: 1.0,
+            noise_scale: 1.8,
             
             // Time-of-day
             tod_response: 1.0,
@@ -378,6 +378,10 @@ impl Material for CloudMaterial {
             }
             log::info!("[CLOUD SPECIALIZE] Blend state configured for standard alpha rendering");
         }
+
+        // Clouds must be visible from below (camera looking up) and above.
+        // Disable backface culling so the cloud plane renders from both sides.
+        descriptor.primitive.cull_mode = None;
 
         // Depth settings - render clouds where no opaque objects block
         // Use GreaterEqual for reversed-Z (Bevy 0.14+) so clouds render in front of distant objects (sky)
@@ -623,8 +627,21 @@ pub fn spawn_cloud_layer(
         return;
     }
     
-    // Create cloud material
-    let cloud_material = CloudMaterial::default();
+    // Create cloud material seeded from current settings so clouds are visible immediately
+    let wind_rad = cloud_settings.wind_direction;
+    let cloud_material = CloudMaterial {
+        time: 0.0,
+        speed: cloud_settings.speed,
+        wind_direction: Vec3::new(wind_rad.cos(), 0.0, wind_rad.sin()).normalize(),
+        density: cloud_settings.density,
+        coverage: cloud_settings.coverage,
+        noise_scale: cloud_settings.noise_scale,
+        noise_octaves: cloud_settings.noise_octaves as f32,
+        brightness: cloud_settings.brightness,
+        opacity: cloud_settings.opacity,
+        softness: cloud_settings.softness,
+        ..Default::default()
+    };
     let material_handle = materials.add(cloud_material);
     
     // Create cloud plane mesh
@@ -638,13 +655,14 @@ pub fn spawn_cloud_layer(
         CloudLayer,
         Name::new("CloudLayer"),
         Visibility::Visible,
+        bevy::camera::visibility::NoFrustumCulling,
     ));
     
     log::info!("[CLOUD] Spawned cloud layer at altitude {}", cloud_settings.altitude);
 }
 
-/// System to make cloud layer follow camera horizontally
-/// This ensures clouds are always visible regardless of camera position
+/// System to make cloud layer follow camera.
+/// X/Z follow camera position and Y stays a fixed offset above camera.
 pub fn cloud_layer_follow_camera_system(
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
     cloud_settings: Res<CloudSettings>,
@@ -657,16 +675,14 @@ pub fn cloud_layer_follow_camera_system(
     
     let camera_pos = camera_transform.translation();
     
-    // Frame counter for throttling logs
-    static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let should_log = frame % 60 == 0; // Log every 60 frames
+    // Logging disabled to reduce console noise
+    let should_log = false;
     
     // Update cloud layer position to follow camera horizontally
     for mut transform in cloud_query.iter_mut() {
         transform.translation.x = camera_pos.x;
         transform.translation.z = camera_pos.z;
-        transform.translation.y = cloud_settings.altitude;
+        transform.translation.y = camera_pos.y + cloud_settings.altitude;
         
         if should_log {
             log::info!("[CLOUD FOLLOW] Camera pos: {:?}, Cloud pos: {:?}, Altitude: {}",

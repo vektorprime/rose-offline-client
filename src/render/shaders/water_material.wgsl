@@ -1,8 +1,7 @@
 //! Water material shader for ROSE Online
 //!
 //! Supports animated water with:
-//! - 25 water animation frames in a binding_array
-//! - Time-based frame blending for smooth animation
+//! - Fully procedural wave/color generation (no texture dependencies)
 //! - Additive blending for water transparency effect
 //! - Fresnel effect for angle-dependent reflectivity
 //! - Specular sun highlights
@@ -37,14 +36,7 @@ struct VertexOutput {
 }
 
 // Water material bind group (group 2 - material bindings)
-// Texture array with 25 water animation frames
-@group(#{MATERIAL_BIND_GROUP}) @binding(0)
-var water_array_texture: binding_array<texture_2d<f32>, 25>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(1)
-var water_array_sampler: sampler;
-
-// wgpu 27 forbids combining binding arrays with uniform buffers in the same bind group.
-// Pack all per-material values into a read-only storage buffer:
+// All per-material values are packed into a read-only storage buffer:
 // [0] light_direction (vec4)
 // [1] ambient_color (vec4)
 // [2] diffuse_color (vec4)
@@ -57,7 +49,7 @@ var water_array_sampler: sampler;
 // [9] shallow_color (vec4)
 // [10] depth_scale: x, y, wave_layers (as float), caustics_intensity
 // [11] caustics: scale, speed, water_surface_y, padding
-@group(#{MATERIAL_BIND_GROUP}) @binding(2)
+@group(#{MATERIAL_BIND_GROUP}) @binding(0)
 var<storage, read> water_material_data: array<vec4<f32>, 12>;
 
 fn light_direction_value() -> vec3<f32> {
@@ -650,24 +642,18 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     let depth_tint = mix(shallow_color_value().rgb, deep_color_value().rgb, saturate((depth - min_depth_value()) / (max_depth_value() - min_depth_value() + 0.001)));
     procedural_wave = procedural_wave * depth_tint * 1.5;
     
-    // Animate water at 10 FPS (same as original)
-    // globals.time is in seconds, wrap it to avoid precision issues
-    let anim_time = globals.time * 10.0;
-    let frame_time = fract(anim_time / 25.0) * 25.0;
-    let current_index = i32(floor(frame_time)) % 25;
-    let next_index = (current_index + 1) % 25;
-    let blend = fract(frame_time);
-    
-    // Sample current and next frame using refracted UVs for distorted appearance
-    let color1 = textureSample(water_array_texture[current_index], water_array_sampler, refracted_uv);
-    let color2 = textureSample(water_array_texture[next_index], water_array_sampler, refracted_uv);
-    
-    // Blend between frames
-    let texture_water_color = mix(color1, color2, blend);
-    
-    // Combine procedural wave with texture
-    // Use procedural wave as primary for dynamic appearance, texture for additional detail
-    let water_color = vec4<f32>(mix(procedural_wave, texture_water_color.rgb, 0.3), procedural_water_color.a);
+    // Additional small-scale ripple detail from refracted UVs.
+    // This keeps the shader fully procedural while preserving rich surface motion.
+    let micro_ripple = sin(refracted_uv * 25.0 + vec2<f32>(wave_time * 0.9, -wave_time * 0.7));
+    procedural_wave = procedural_wave + vec3<f32>(micro_ripple, 0.0) * 0.08;
+
+    // Simulated bottom tint contribution for shallow water.
+    let bottom_tint = vec3<f32>(0.18, 0.20, 0.12);
+    let shallow_scatter = mix(procedural_water_color.rgb, bottom_tint, bottom_vis * 0.35);
+
+    // Fully procedural base color: depth-gradient water mixed with dynamic wave detail.
+    let water_base = mix(shallow_scatter, procedural_wave, 0.45);
+    let water_color = vec4<f32>(water_base, procedural_water_color.a);
     
     // === LIGHTING (using material storage buffer instead of zone_lighting) ===
     let light_dir = normalize(light_direction_value());
