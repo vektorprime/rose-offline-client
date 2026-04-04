@@ -1,6 +1,8 @@
 use bevy::{
     ecs::query::QueryData,
-    prelude::{Commands, Entity, MessageReader, MessageWriter, GlobalTransform, Query, Res, ResMut},
+    prelude::{
+        Commands, Entity, GlobalTransform, MessageReader, MessageWriter, Query, Res, ResMut,
+    },
 };
 
 use rose_game_common::{
@@ -48,12 +50,6 @@ fn apply_damage(
     damage_digits_spawner: &DamageDigitsSpawner,
     client_entity_list: &mut ClientEntityList,
 ) {
-    if defender.health_points.hp < damage.amount as i32 {
-        defender.health_points.hp = 0;
-    } else {
-        defender.health_points.hp -= damage.amount as i32;
-    }
-
     damage_digits_spawner.spawn(
         commands,
         defender.global_transform,

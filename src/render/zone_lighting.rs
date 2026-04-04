@@ -1,17 +1,22 @@
+use crate::graphics::{GraphicsSettings, ShadowQuality};
+use crate::render::starry_sky_material::MoonLight;
+use crate::resources::{ZoneTime, ZoneTimeState};
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::Exposure;
 use bevy::{
-    asset::{load_internal_asset, Handle, weak_handle},
+    asset::{load_internal_asset, weak_handle, Handle},
     ecs::{
         component::Component,
         query::ROQueryItem,
         system::{lifetimeless::SRes, SystemParamItem},
     },
-    math::{Vec3, Vec4},
     light::{CascadeShadowConfig, FogVolume, VolumetricLight},
+    math::{Vec3, Vec4},
     prelude::{
-        AmbientLight, App, Color, Commands, DetectChanges, DirectionalLight, EulerRot,
-        FromWorld, GlobalAmbientLight, IntoScheduleConfigs, Local, Plugin, Query, Quat, ReflectResource, Res, ResMut,
-        Resource, Shader, Startup, Transform, Update, World, With, Without, LinearRgba,
-        GlobalTransform, ColorToComponents, Dir3,
+        AmbientLight, App, Color, ColorToComponents, Commands, DetectChanges, Dir3,
+        DirectionalLight, EulerRot, FromWorld, GlobalAmbientLight, GlobalTransform,
+        IntoScheduleConfigs, LinearRgba, Local, Plugin, Quat, Query, ReflectResource, Res, ResMut,
+        Resource, Shader, Startup, Transform, Update, With, Without, World,
     },
     reflect::{Reflect, TypePath},
     render::{
@@ -26,11 +31,6 @@ use bevy::{
         Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
     },
 };
-use bevy::camera::{Exposure};
-use bevy::camera::visibility::RenderLayers;
-use crate::graphics::{GraphicsSettings, ShadowQuality};
-use crate::resources::{ZoneTime, ZoneTimeState};
-use crate::render::starry_sky_material::MoonLight;
 
 /// Marker component for the volumetric fog volume entity.
 /// Used to query the fog volume for modifications or removal.
@@ -94,7 +94,7 @@ pub struct ZoneLightingPlugin;
 impl Plugin for ZoneLightingPlugin {
     fn build(&self, app: &mut App) {
         // bevy::log::info!("[ZONE LIGHTING] Building ZoneLightingPlugin");
-        
+
         load_internal_asset!(
             app,
             ZONE_LIGHTING_SHADER_HANDLE_TYPED,
@@ -112,13 +112,17 @@ impl Plugin for ZoneLightingPlugin {
             // bevy::log::info!("[ZONE LIGHTING] Initializing render app systems");
             render_app
                 .add_systems(ExtractSchedule, extract_uniform_data)
-                .add_systems(Render, (prepare_uniform_data,).in_set(RenderSystems::Prepare));
+                .add_systems(
+                    Render,
+                    (prepare_uniform_data,).in_set(RenderSystems::Prepare),
+                );
         } else {
             bevy::log::error!("[ZONE LIGHTING] FAILED to get render app - lighting will not work!");
         }
 
-        app.add_systems(Startup, spawn_lights)
-            .add_systems(Update, (
+        app.add_systems(Startup, spawn_lights).add_systems(
+            Update,
+            (
                 update_volumetric_fog_system,
                 update_sun_position_system,
                 apply_sky_settings_to_zone_time,
@@ -126,7 +130,8 @@ impl Plugin for ZoneLightingPlugin {
                 update_shadows_for_time_of_day_system
                     .after(crate::systems::zone_time_system)
                     .after(crate::graphics::apply_shadow_quality_system),
-            ));
+            ),
+        );
         // bevy::log::info!("[ZONE LIGHTING] ZoneLightingPlugin build complete");
     }
 
@@ -143,28 +148,30 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
 
     // Bevy 0.14: Use individual components instead of DirectionalLightBundle
     // IMPORTANT: shadows_enabled MUST be true for VolumetricLight to work
-    let light_entity = commands.spawn((
-        DirectionalLight {
-            illuminance: 15000.0,  // Reduced for balanced PBR lighting (was 50000.0 too bright)
-            shadows_enabled: true,  // REQUIRED for volumetric lighting
-            ..Default::default()
-        },
-        default_light_transform(),
-        CascadeShadowConfig {
-            bounds: vec![20.0, 80.0, 300.0, 1000.0],  // Tighter bounds for better shadow quality at game scale
-            overlap_proportion: 0.3,  // More overlap for smoother cascade transitions
-            minimum_distance: 0.1,
-        },
-        RenderLayers::default(),
-        VolumetricLight,  // Enable volumetric light shafts for this directional light
-    )).id();
+    let light_entity = commands
+        .spawn((
+            DirectionalLight {
+                illuminance: 15000.0, // Reduced for balanced PBR lighting (was 50000.0 too bright)
+                shadows_enabled: true, // REQUIRED for volumetric lighting
+                ..Default::default()
+            },
+            default_light_transform(),
+            CascadeShadowConfig {
+                bounds: vec![20.0, 80.0, 300.0, 1000.0], // Tighter bounds for better shadow quality at game scale
+                overlap_proportion: 0.3, // More overlap for smoother cascade transitions
+                minimum_distance: 0.1,
+            },
+            RenderLayers::default(),
+            VolumetricLight, // Enable volumetric light shafts for this directional light
+        ))
+        .id();
 
     // bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=15000.0, shadows_enabled=true, VolumetricLight component added", light_entity);
 
     // Bevy 0.18: AmbientLight is now a component. GlobalAmbientLight is the resource form.
     // Using Bevy default values: Color::WHITE, brightness: 80.0
     commands.insert_resource(GlobalAmbientLight::default());
-    
+
     //bevy::log::info!("[ZONE LIGHTING] Ambient light inserted: brightness=1.0");
 
     // Spawn the volumetric fog volume that covers the entire world
@@ -175,21 +182,21 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
     } else {
         0.0
     };
-    
+
     // Use volumetric_fog_color from ZoneLighting for time-of-day integration
     let fog_color = Color::srgb(
         zone_lighting.volumetric_fog_color.x,
         zone_lighting.volumetric_fog_color.y,
         zone_lighting.volumetric_fog_color.z,
     );
-    
+
     // CRITICAL FIX: Position the fog volume at the center of the game world (5120, 0, -5120)
     // The game world is centered around these coordinates, NOT at origin (0,0,0).
     // If the fog volume is at origin, the camera is ~7200 units away and sees a black box.
     // Scale of 2000.0 means the volume spans from (4120, -1000, -6120) to (6120, 1000, -4120)
     let fog_volume_center = Vec3::new(5120.0, 0.0, -5120.0);
     let fog_volume_scale = 2000.0;
-    
+
     commands.spawn((
         FogVolume {
             fog_color,
@@ -200,9 +207,9 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
             ..Default::default()
         },
         Transform::from_translation(fog_volume_center).with_scale(Vec3::splat(fog_volume_scale)),
-        VolumetricFogVolume,  // Marker component for querying
+        VolumetricFogVolume, // Marker component for querying
     ));
-    
+
     // bevy::log::info!(
     //     "[ZONE LIGHTING] Volumetric fog volume spawned at center=({}), scale={}, density_factor={}",
     //     fog_volume_center, fog_volume_scale, density_factor
@@ -225,7 +232,7 @@ fn update_volumetric_fog_system(
     if !zone_lighting.is_changed() {
         return;
     }
-    
+
     // bevy::log::debug!(
     //     "[ZONE LIGHTING] ZoneLighting changed - updating fog volumes (enabled={}, density={}, absorption={}, scattering={})",
     //     zone_lighting.volumetric_fog_enabled,
@@ -233,7 +240,7 @@ fn update_volumetric_fog_system(
     //     zone_lighting.volumetric_absorption,
     //     zone_lighting.volumetric_scattering
     // );
-    
+
     // Update all fog volumes marked with VolumetricFogVolume
     for mut fog_volume in fog_volume_query.iter_mut() {
         if zone_lighting.volumetric_fog_enabled {
@@ -246,7 +253,7 @@ fn update_volumetric_fog_system(
             fog_volume.absorption = zone_lighting.volumetric_absorption;
             fog_volume.scattering = zone_lighting.volumetric_scattering;
             fog_volume.scattering_asymmetry = zone_lighting.volumetric_scattering_asymmetry;
-            
+
             // bevy::log::debug!(
             //     "[ZONE LIGHTING] FogVolume updated: density_factor={}, absorption={}, scattering={}",
             //     fog_volume.density_factor, fog_volume.absorption, fog_volume.scattering
@@ -274,33 +281,49 @@ fn sync_zone_lighting_to_bevy_lights_system(
     // 1. Start with zone lighting's map_ambient_color as the base
     // 2. If GraphicsSettings exists, multiply by the user's ambient color and brightness
     let map_ambient = zone_lighting.map_ambient_color;
-    
+
     let (final_color, final_brightness) = if let Some(settings) = graphics_settings {
         // Get the user's ambient color preference as linear RGB
         let user_color = settings.ambient_light_color.to_linear();
-        
+
         // Blend zone ambient color with user's ambient color
         let blended_r = map_ambient.x * user_color.red;
         let blended_g = map_ambient.y * user_color.green;
         let blended_b = map_ambient.z * user_color.blue;
-        
+
         // Apply user's brightness multiplier (base 80.0 is Bevy's default)
         let brightness = 80.0 * settings.ambient_light_brightness;
-        
-        (Color::from(LinearRgba::new(blended_r, blended_g, blended_b, 1.0)), brightness)
+
+        (
+            Color::from(LinearRgba::new(blended_r, blended_g, blended_b, 1.0)),
+            brightness,
+        )
     } else {
         // No graphics settings, use zone lighting defaults with Bevy's default brightness
-        (Color::from(LinearRgba::new(map_ambient.x, map_ambient.y, map_ambient.z, 1.0)), 80.0)
+        (
+            Color::from(LinearRgba::new(
+                map_ambient.x,
+                map_ambient.y,
+                map_ambient.z,
+                1.0,
+            )),
+            80.0,
+        )
     };
-    
+
     ambient_light.color = final_color;
     ambient_light.brightness = final_brightness;
 
     if let Ok((mut light, transform)) = query_directional_light.single_mut() {
         // Sync directional light color from zone_lighting.character_diffuse_color
         let char_diffuse = zone_lighting.character_diffuse_color;
-        light.color = Color::from(LinearRgba::new(char_diffuse.x, char_diffuse.y, char_diffuse.z, 1.0));
-        
+        light.color = Color::from(LinearRgba::new(
+            char_diffuse.x,
+            char_diffuse.y,
+            char_diffuse.z,
+            1.0,
+        ));
+
         // Update zone_lighting.light_direction from the actual light transform
         // This ensures custom shaders (like terrain) stay in sync with the sun position
         let current_dir: Dir3 = transform.forward();
@@ -334,11 +357,11 @@ fn update_sun_position_system(
         SkyMode::Automatic => zone_time.is_changed() || sky_settings.is_changed(),
         SkyMode::Manual => sky_settings.is_changed(),
     };
-    
+
     if !should_update {
         return;
     }
-    
+
     // Get the time value in HOURS (0-24) based on mode
     let time_hours = match sky_settings.mode {
         SkyMode::Automatic => {
@@ -349,14 +372,18 @@ fn update_sun_position_system(
                 if let Some(zone_data) = game_data.zone_list.get_zone(current_zone.id) {
                     // SAFETY: Ensure day_cycle is never zero to prevent division by zero
                     let cycle = zone_data.day_cycle as f32;
-                    if cycle > 0.0 { cycle } else { DEFAULT_DAY_CYCLE }
+                    if cycle > 0.0 {
+                        cycle
+                    } else {
+                        DEFAULT_DAY_CYCLE
+                    }
                 } else {
                     DEFAULT_DAY_CYCLE
                 }
             } else {
                 DEFAULT_DAY_CYCLE
             };
-            
+
             // Convert ticks to hours: (ticks / day_cycle) * 24
             (zone_time.time as f32 / day_cycle) * 24.0
         }
@@ -365,11 +392,11 @@ fn update_sun_position_system(
             sky_settings.manual_time
         }
     };
-    
+
     for mut transform in query.iter_mut() {
         // Normalize time to 0-24 hours range
         let normalized_time = time_hours % 24.0;
-        
+
         // Shift time to achieve desired sun cycle:
         // - 6:00: sunrise (sun at horizon, rising)
         // - 12:00-17:00: sun high in the sky
@@ -384,14 +411,14 @@ fn update_sun_position_system(
         //
         // This extends daylight by ~6 hours: sun visible from 6:00 through 17:00+
         let shifted_time = (normalized_time + 19.0) % 24.0;
-        
+
         // Convert time to a fraction of the day (0.0 to 1.0)
         let day_fract = (shifted_time / 24.0).clamp(0.0, 1.0);
-        
+
         // Earth's axial tilt - this creates the arc path of the sun
         // Higher values make the sun rise higher at noon
         let earth_tilt_rad = std::f32::consts::PI / 3.0; // 60 degrees
-        
+
         // Create rotation that moves the sun in an arc from east to west
         // Using ZYX euler angles:
         // - Z (earth_tilt_rad): Tilts the rotation axis to create the arc path
@@ -492,36 +519,25 @@ pub fn update_shadows_for_time_of_day_system(
     let shadows_enabled_by_settings = graphics_settings
         .map(|g| g.shadow_quality != ShadowQuality::Off)
         .unwrap_or(true);
-    
+
     if !shadows_enabled_by_settings {
         return; // Shadows disabled in settings, nothing to do
     }
-    
-    // Calculate shadow visibility based on time state
-    let (sun_shadows, moon_shadows) = match zone_time.state {
-        ZoneTimeState::Morning => {
-            // Morning: sun shadows enabled
-            (true, false)
-        }
-        ZoneTimeState::Day => {
-            // Full daylight: sun shadows enabled
-            (true, false)
-        }
-        ZoneTimeState::Evening => {
-            // Evening transition: disable sun shadows
-            (false, false)
-        }
-        ZoneTimeState::Night => {
-            // Night: no sun shadows, no moon shadows (ambient starry sky)
-            (false, false)
-        }
+
+    // Calculate light and shadow settings based on time state
+    let (sun_shadows, sun_illuminance, moon_shadows) = match zone_time.state {
+        ZoneTimeState::Morning => (true, 15000.0, false),
+        ZoneTimeState::Day => (true, 15000.0, false),
+        ZoneTimeState::Evening => (false, 0.0, false),
+        ZoneTimeState::Night => (false, 0.0, false),
     };
-    
+
     // Apply to sun light
     for mut light in sun_query.iter_mut() {
         light.shadows_enabled = sun_shadows;
+        light.illuminance = sun_illuminance;
     }
-    
+
     // Apply to moon light
     for mut light in moon_query.iter_mut() {
         light.shadows_enabled = moon_shadows;
@@ -582,16 +598,16 @@ impl Default for ZoneLighting {
             fog_max_height: 50.0,
             fog_height_density: 0.5,
             // Time of day parameters
-            time_of_day: 0.5, // 0.0 = night, 1.0 = day
-            day_color: Vec3::new(0.7, 0.8, 1.0), // Day fog color (blueish)
+            time_of_day: 0.5,                      // 0.0 = night, 1.0 = day
+            day_color: Vec3::new(0.7, 0.8, 1.0),   // Day fog color (blueish)
             night_color: Vec3::new(0.1, 0.1, 0.3), // Night fog color (dark blue)
             // Volumetric fog settings - tuned for atmospheric depth and light shafts
-            volumetric_fog_enabled: false,  // Disabled by default - can be enabled in settings
+            volumetric_fog_enabled: false, // Disabled by default - can be enabled in settings
             volumetric_fog_color: Vec3::new(0.85, 0.9, 1.0), // Soft blue-white for atmospheric haze
-            volumetric_density_factor: 0.05,  // Balanced density for visible light shafts without obscuring gameplay
-            volumetric_absorption: 0.1,  // Moderate absorption for depth perception
-            volumetric_scattering: 0.11,  // Scattering coefficient for balanced light shafts (was 0.5 too high)
-            volumetric_scattering_asymmetry: 0.7,  // Higher asymmetry for forward-scattering (Mie scattering)
+            volumetric_density_factor: 0.05, // Balanced density for visible light shafts without obscuring gameplay
+            volumetric_absorption: 0.1,      // Moderate absorption for depth perception
+            volumetric_scattering: 0.11, // Scattering coefficient for balanced light shafts (was 0.5 too high)
+            volumetric_scattering_asymmetry: 0.7, // Higher asymmetry for forward-scattering (Mie scattering)
         }
     }
 }
@@ -610,7 +626,7 @@ pub struct ZoneLightingUniformData {
     pub night_color: Vec4,
     // Pack 4 f32 values into vec4 for alignment: fog_density, fog_min_density, fog_max_density, fog_height_density
     pub fog_params: Vec4,
-    
+
     // Group 2: 48 bytes (3 vec4)
     // Pack 4 f32 values into vec4 for alignment: fog_min_height, fog_max_height, time_of_day, unused
     pub fog_height_params: Vec4,
@@ -630,7 +646,7 @@ pub struct ZoneLightingUniformMeta {
 impl FromWorld for ZoneLightingUniformMeta {
     fn from_world(world: &mut World) -> Self {
         //bevy::log::info!("[ZONE LIGHTING] Creating ZoneLightingUniformMeta render resources");
-        
+
         let render_device = world.resource::<RenderDevice>();
 
         let buffer = render_device.create_buffer(&BufferDescriptor {
@@ -640,7 +656,7 @@ impl FromWorld for ZoneLightingUniformMeta {
             label: Some("zone_lighting_uniform_buffer"),
         });
         //bevy::log::info!("[ZONE LIGHTING] Uniform buffer created: size={} bytes",
-            //ZoneLightingUniformData::min_size().get());
+        //ZoneLightingUniformData::min_size().get());
 
         let bind_group_layout_descriptor = BindGroupLayoutDescriptor::new(
             "zone_lighting_uniform_layout",
@@ -656,20 +672,19 @@ impl FromWorld for ZoneLightingUniformMeta {
             }],
         );
 
-        let bind_group_layout =
-            render_device.create_bind_group_layout(
-                Some("zone_lighting_uniform_layout"),
-                &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::VERTEX_FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: Some(ZoneLightingUniformData::min_size()),
-                    },
-                    count: None,
-                }],
-            );
+        let bind_group_layout = render_device.create_bind_group_layout(
+            Some("zone_lighting_uniform_layout"),
+            &[BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX_FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: Some(ZoneLightingUniformData::min_size()),
+                },
+                count: None,
+            }],
+        );
         //bevy::log::info!("[ZONE LIGHTING] Bind group layout created");
 
         let bind_group = render_device.create_bind_group(
@@ -700,7 +715,7 @@ fn extract_uniform_data(
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // // Log every 60 frames to avoid spam
     // if *frame_count % 60 == 1 {
     //     bevy::log::info!("[ZONE LIGHTING] Extracting uniform data (frame {})", *frame_count);
@@ -709,7 +724,7 @@ fn extract_uniform_data(
     //     bevy::log::info!("[ZONE LIGHTING]   Fog enabled: {}, density: {}",
     //         zone_lighting.color_fog_enabled, zone_lighting.fog_density);
     // }
-    
+
     commands.insert_resource(ZoneLightingUniformData {
         map_ambient_color: zone_lighting.map_ambient_color.extend(1.0),
         character_ambient_color: zone_lighting.character_ambient_color.extend(1.0),
@@ -720,9 +735,21 @@ fn extract_uniform_data(
         night_color: zone_lighting.night_color.extend(1.0),
         // Pack fog params: fog_density, fog_min_density, fog_max_density, fog_height_density
         fog_params: Vec4::new(
-            if zone_lighting.color_fog_enabled { zone_lighting.fog_density } else { 0.0 },
-            if zone_lighting.color_fog_enabled { zone_lighting.fog_min_density } else { 0.0 },
-            if zone_lighting.color_fog_enabled { zone_lighting.fog_max_density } else { 0.0 },
+            if zone_lighting.color_fog_enabled {
+                zone_lighting.fog_density
+            } else {
+                0.0
+            },
+            if zone_lighting.color_fog_enabled {
+                zone_lighting.fog_min_density
+            } else {
+                0.0
+            },
+            if zone_lighting.color_fog_enabled {
+                zone_lighting.fog_max_density
+            } else {
+                0.0
+            },
             zone_lighting.fog_height_density,
         ),
         // Pack fog height params: fog_min_height, fog_max_height, time_of_day, unused
@@ -734,8 +761,16 @@ fn extract_uniform_data(
         ),
         // Pack fog alpha params: fog_alpha_range_start, fog_alpha_range_end, unused, unused
         fog_alpha_params: Vec4::new(
-            if zone_lighting.alpha_fog_enabled { zone_lighting.fog_alpha_weight_start } else { 99999999999.0 },
-            if zone_lighting.alpha_fog_enabled { zone_lighting.fog_alpha_weight_end } else { 999999999.0 },
+            if zone_lighting.alpha_fog_enabled {
+                zone_lighting.fog_alpha_weight_start
+            } else {
+                99999999999.0
+            },
+            if zone_lighting.alpha_fog_enabled {
+                zone_lighting.fog_alpha_weight_end
+            } else {
+                999999999.0
+            },
             0.0, // unused
             0.0, // unused
         ),
@@ -768,7 +803,10 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetZoneLightingBindGroup
         meta: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        log::debug!("[SetZoneLightingBindGroup] Setting bind group {} for render pass", I);
+        log::debug!(
+            "[SetZoneLightingBindGroup] Setting bind group {} for render pass",
+            I
+        );
         pass.set_bind_group(I, &meta.into_inner().bind_group, &[]);
 
         RenderCommandResult::Success

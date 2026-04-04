@@ -1,16 +1,16 @@
+use crate::zone_loader::ZoneLoaderAsset;
 use arrayvec::ArrayVec;
+use bevy::camera::visibility::InheritedVisibility;
 use bevy::{
     asset::Assets,
+    camera::visibility::ViewVisibility,
     ecs::message::Messages,
     math::{Quat, Vec3},
     prelude::{
-        Commands, Entity, MessageWriter, GlobalTransform,
-        Mut, NextState, Res, ResMut, State, Transform, Visibility, World,
+        Commands, Entity, GlobalTransform, MessageWriter, Mut, NextState, Res, ResMut, State,
+        Transform, Visibility, World,
     },
-    camera::visibility::ViewVisibility,
 };
-use bevy::camera::visibility::InheritedVisibility;
-use crate::zone_loader::ZoneLoaderAsset;
 
 use rose_data::{
     AbilityType, EquipmentItem, Item, ItemReference, ItemSlotBehaviour, ItemType, SkillCooldown,
@@ -19,9 +19,9 @@ use rose_data::{
 use rose_game_common::{
     components::{
         AbilityValues, BasicStatType, BasicStats, CharacterInfo, ClanPoints, DroppedItem,
-        Equipment, ExperiencePoints, GuildMembership, HealthPoints, Hotbar, Inventory, ItemDrop, ItemSlot, Level,
-        ManaPoints, Money, MoveMode, MoveSpeed, Npc, QuestState, SkillList, Stamina, StatPoints,
-        StatusEffects, StatusEffectsRegen,
+        Equipment, ExperiencePoints, GuildMembership, HealthPoints, Hotbar, Inventory, ItemDrop,
+        ItemSlot, Level, ManaPoints, Money, MoveMode, MoveSpeed, Npc, QuestState, SkillList,
+        Stamina, StatPoints, StatusEffects, StatusEffectsRegen,
     },
     messages::{
         server::{
@@ -39,15 +39,19 @@ use crate::{
     components::{
         Bank, Clan, ClanMember, ClanMembership, ClientEntity, ClientEntityName, ClientEntityType,
         CollisionHeightOnly, CollisionPlayer, Command, CommandCastSkillTarget, Cooldowns, Dead,
-        DirtDashEffect, FacingDirection, ItemDropOwner, ItemDropRemainingTime, MonsterSeparation, NextCommand, PartyInfo, PartyOwner, PassiveRecoveryTime, PendingDamage,
-        PendingDamageList, PendingSkillEffect, PendingSkillEffectList, PendingSkillTarget,
-        PendingSkillTargetList, PersonalStore, PlayerCharacter, Position, VisibleStatusEffects,
+        DirtDashEffect, FacingDirection, ItemDropOwner, ItemDropRemainingTime, MonsterSeparation,
+        NextCommand, PartyInfo, PartyOwner, PassiveRecoveryTime, PendingDamage, PendingDamageList,
+        PendingSkillEffect, PendingSkillEffectList, PendingSkillTarget, PendingSkillTargetList,
+        PersonalStore, PlayerCharacter, Position, VisibleStatusEffects,
     },
     events::{
-        BankEvent, ChatBubbleEvent, ChatBubbleType, ChatboxEvent, ClientEntityEvent, GameConnectionEvent, LoadZoneEvent,
-        MessageBoxEvent, PartyEvent, PersonalStoreEvent, QuestTriggerEvent, UseItemEvent,
+        BankEvent, ChatBubbleEvent, ChatBubbleType, ChatboxEvent, ClientEntityEvent,
+        GameConnectionEvent, LoadZoneEvent, MessageBoxEvent, PartyEvent, PersonalStoreEvent,
+        QuestTriggerEvent, UseItemEvent,
     },
-    resources::{AppState, ClientEntityList, CurrentZone, GameConnection, GameData, WorldRates, WorldTime},
+    resources::{
+        AppState, ClientEntityList, CurrentZone, GameConnection, GameData, WorldRates, WorldTime,
+    },
 };
 
 fn to_next_command(
@@ -125,14 +129,9 @@ fn update_inventory_and_money(
     }
 }
 
-
 /// Helper function to get terrain height at a position from the zone heightmap
 /// Returns the terrain height in meters, or a fallback value if zone data is unavailable
-fn get_spawn_height_from_world(
-    world: &World,
-    position_x: f32,
-    position_y: f32,
-) -> f32 {
+fn get_spawn_height_from_world(world: &World, position_x: f32, position_y: f32) -> f32 {
     // Try to get CurrentZone resource
     if let Some(current_zone) = world.get_resource::<CurrentZone>() {
         // Try to get zone loader assets
@@ -168,20 +167,22 @@ pub fn game_connection_system(
     mut message_box_events: MessageWriter<MessageBoxEvent>,
 ) {
     // DIAGNOSTIC: Log whether CurrentZone resource exists at system entry
-   // log::info!("[DIAG_RUN_CONDITION] game_connection_system entry - CurrentZone resource exists: {}", current_zone.is_some());
+    // log::info!("[DIAG_RUN_CONDITION] game_connection_system entry - CurrentZone resource exists: {}", current_zone.is_some());
     let Some(game_connection) = game_connection else {
         return;
     };
 
     let result: Result<(), anyhow::Error> = loop {
         match game_connection.server_message_rx.try_recv() {
-            Ok(ServerMessage::ConnectionRequestSuccess { .. }) =>{
-            client_entity_list.clear();
+            Ok(ServerMessage::ConnectionRequestSuccess { .. }) => {
+                client_entity_list.clear();
             }
-            Ok(ServerMessage::ConnectionRequestError { .. }) =>{
+            Ok(ServerMessage::ConnectionRequestError { .. }) => {
                 break Err(ConnectionError::ConnectionLost.into());
-            },
-            Ok(ServerMessage::CharacterData { data: character_data }) => {
+            }
+            Ok(ServerMessage::CharacterData {
+                data: character_data,
+            }) => {
                 let status_effects = StatusEffects::default();
                 let ability_values = game_data.ability_value_calculator.calculate(
                     &character_data.character_info,
@@ -196,7 +197,7 @@ pub fn game_connection_system(
 
                 // Store position for deferred spawning
                 let position = character_data.position;
-                
+
                 // Spawn character - split into multiple spawns to avoid Bundle limit
                 let player_entity = commands
                     .spawn((
@@ -218,7 +219,9 @@ pub fn game_connection_system(
                     ))
                     .id();
                 // Add UnionMembership separately to stay within Bevy's 16-component tuple limit
-                commands.entity(player_entity).insert(character_data.union_membership);
+                commands
+                    .entity(player_entity)
+                    .insert(character_data.union_membership);
 
                 // Add command and movement components
                 commands.entity(player_entity).insert((
@@ -273,7 +276,8 @@ pub fn game_connection_system(
 
                 // Emit connected event, character select system will be responsible for
                 // starting the load of the next zone once its animations have completed
-                let _ = game_connection_events.write(GameConnectionEvent::Connected(character_data.zone_id));
+                let _ = game_connection_events
+                    .write(GameConnectionEvent::Connected(character_data.zone_id));
                 client_entity_list.zone_id = Some(character_data.zone_id);
             }
             Ok(ServerMessage::CharacterDataItems { data }) => {
@@ -288,11 +292,25 @@ pub fn game_connection_system(
                     commands.entity(player_entity).insert(*quest_state);
                 }
             }
-            Ok(ServerMessage::JoinZone { entity_id, experience_points, team, health_points, mana_points, world_ticks, craft_rate, world_price_rate, item_price_rate, town_price_rate }) => {
+            Ok(ServerMessage::JoinZone {
+                entity_id,
+                experience_points,
+                team,
+                health_points,
+                mana_points,
+                world_ticks,
+                craft_rate,
+                world_price_rate,
+                item_price_rate,
+                town_price_rate,
+            }) => {
                 // DIAGNOSTIC: Log when JoinZone message is received
                 log::info!("[DIAG_JOIN_ZONE] JoinZone message received");
                 log::info!("[DIAG_JOIN_ZONE]   entity_id: {:?}", entity_id);
-                log::info!("[DIAG_JOIN_ZONE]   player_entity: {:?}", client_entity_list.player_entity);
+                log::info!(
+                    "[DIAG_JOIN_ZONE]   player_entity: {:?}",
+                    client_entity_list.player_entity
+                );
 
                 if let Some(player_entity) = client_entity_list.player_entity {
                     let mut entity_commands = commands.entity(player_entity);
@@ -309,7 +327,10 @@ pub fn game_connection_system(
                     ));
 
                     // DIAGNOSTIC: Log when CollisionPlayer component is being added
-                    log::info!("[DIAG_JOIN_ZONE] CollisionPlayer component added to player_entity: {:?}", player_entity);
+                    log::info!(
+                        "[DIAG_JOIN_ZONE] CollisionPlayer component added to player_entity: {:?}",
+                        player_entity
+                    );
 
                     if health_points.hp > 0 {
                         entity_commands.remove::<Dead>();
@@ -337,12 +358,13 @@ pub fn game_connection_system(
                     }
                 }
             }
-            Ok(ServerMessage::SpawnEntityCharacter { data: message  }) => {
+            Ok(ServerMessage::SpawnEntityCharacter { data: message }) => {
                 let status_effects = StatusEffects {
                     active: message.status_effects,
                     ..Default::default()
                 };
-                let next_command = to_next_command(&message.spawn_command_state, &client_entity_list);
+                let next_command =
+                    to_next_command(&message.spawn_command_state, &client_entity_list);
                 let mut ability_values = game_data.ability_value_calculator.calculate(
                     &message.character_info,
                     &message.level,
@@ -367,28 +389,30 @@ pub fn game_connection_system(
                 let move_speed = message.move_speed;
                 let personal_store_info = message.personal_store_info.clone();
                 let clan_membership = message.clan_membership.clone();
-                
+
                 commands.queue(move |world: &mut World| {
                     // Get terrain height at spawn position
                     let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
-                    
+
                     // Spawn with core components first
-                    let entity = world.spawn((
-                        ClientEntityName::new(character_info.name.clone()),
-                        Command::with_stop(),
-                        next_command,
-                        character_info,
-                        team,
-                        health,
-                        move_mode,
-                        Position::new(position),
-                        equipment,
-                        level,
-                        move_speed,
-                        ability_values,
-                        status_effects,
-                        StatusEffectsRegen::new(),
-                    )).id();
+                    let entity = world
+                        .spawn((
+                            ClientEntityName::new(character_info.name.clone()),
+                            Command::with_stop(),
+                            next_command,
+                            character_info,
+                            team,
+                            health,
+                            move_mode,
+                            Position::new(position),
+                            equipment,
+                            level,
+                            move_speed,
+                            ability_values,
+                            status_effects,
+                            StatusEffectsRegen::new(),
+                        ))
+                        .id();
 
                     // Add remaining components in a second insert to avoid tuple size limit
                     world.entity_mut(entity).insert((
@@ -398,11 +422,7 @@ pub fn game_connection_system(
                         PendingDamageList::default(),
                         PendingSkillEffectList::default(),
                         PendingSkillTargetList::default(),
-                        Transform::from_xyz(
-                            position.x / 100.0,
-                            spawn_y,
-                            -position.y / 100.0,
-                        ),
+                        Transform::from_xyz(position.x / 100.0, spawn_y, -position.y / 100.0),
                         GlobalTransform::default(),
                         Visibility::default(),
                         InheritedVisibility::default(),
@@ -412,7 +432,9 @@ pub fn game_connection_system(
                     ));
 
                     if let Some((skin, title)) = personal_store_info {
-                        world.entity_mut(entity).insert(PersonalStore::new(title, skin as usize));
+                        world
+                            .entity_mut(entity)
+                            .insert(PersonalStore::new(title, skin as usize));
                     }
 
                     if let Some(clan_membership) = clan_membership {
@@ -426,7 +448,9 @@ pub fn game_connection_system(
                         });
                     }
 
-                    world.resource_mut::<ClientEntityList>().add(entity_id, entity);
+                    world
+                        .resource_mut::<ClientEntityList>()
+                        .add(entity_id, entity);
                 });
             }
             Ok(ServerMessage::SpawnEntityNpc {
@@ -444,7 +468,12 @@ pub fn game_connection_system(
                 log::info!("[DIAG_NPC_SPAWN] Spawning NPC:");
                 log::info!("[DIAG_NPC_SPAWN]   entity_id: {:?}", entity_id);
                 log::info!("[DIAG_NPC_SPAWN]   npc_id: {:?}", npc.id);
-                log::info!("[DIAG_NPC_SPAWN]   initial position (server): x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
+                log::info!(
+                    "[DIAG_NPC_SPAWN]   initial position (server): x={:.2}, y={:.2}, z={:.2}",
+                    position.x,
+                    position.y,
+                    position.z
+                );
 
                 let status_effects = StatusEffects {
                     active: status_effects,
@@ -460,27 +489,33 @@ pub fn game_connection_system(
 
                 // Store data needed for deferred spawning
                 let npc_clone = npc;
-                
+
                 commands.queue(move |world: &mut World| {
                     // Get terrain height at spawn position
                     let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
-                    log::info!("[DIAG_NPC_SPAWN] Spawning at terrain height: {:.2}m (server z was: {:.2})", spawn_y, position.z / 100.0);
+                    log::info!(
+                        "[DIAG_NPC_SPAWN] Spawning at terrain height: {:.2}m (server z was: {:.2})",
+                        spawn_y,
+                        position.z / 100.0
+                    );
 
                     // Spawn with core components first
-                    let entity = world.spawn((
-                        Command::with_stop(),
-                        next_command,
-                        npc_clone,
-                        team,
-                        health,
-                        move_mode,
-                        Position::new(position),
-                        ability_values,
-                        level,
-                        move_speed,
-                        status_effects,
-                        StatusEffectsRegen::new(),
-                    )).id();
+                    let entity = world
+                        .spawn((
+                            Command::with_stop(),
+                            next_command,
+                            npc_clone,
+                            team,
+                            health,
+                            move_mode,
+                            Position::new(position),
+                            ability_values,
+                            level,
+                            move_speed,
+                            status_effects,
+                            StatusEffectsRegen::new(),
+                        ))
+                        .id();
 
                     // Add remaining components in a second insert to avoid tuple size limit
                     world.entity_mut(entity).insert((
@@ -491,25 +526,29 @@ pub fn game_connection_system(
                         PendingSkillEffectList::default(),
                         PendingSkillTargetList::default(),
                         VisibleStatusEffects::default(),
-                        Transform::from_xyz(
-                            position.x / 100.0,
-                            spawn_y,
-                            -position.y / 100.0,
-                        )
-                        .with_rotation(Quat::from_axis_angle(
-                            Vec3::Y,
-                            direction.to_radians(),
-                        )),
+                        Transform::from_xyz(position.x / 100.0, spawn_y, -position.y / 100.0)
+                            .with_rotation(Quat::from_axis_angle(Vec3::Y, direction.to_radians())),
                         GlobalTransform::default(),
                         Visibility::default(),
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
                     ));
 
-                    world.resource_mut::<ClientEntityList>().add(entity_id, entity);
+                    world
+                        .resource_mut::<ClientEntityList>()
+                        .add(entity_id, entity);
                 });
             }
-            Ok(ServerMessage::SpawnEntityMonster { entity_id, npc, position, team, health, spawn_command_state, move_mode, status_effects }) => {
+            Ok(ServerMessage::SpawnEntityMonster {
+                entity_id,
+                npc,
+                position,
+                team,
+                health,
+                spawn_command_state,
+                move_mode,
+                status_effects,
+            }) => {
                 // DIAGNOSTIC: Log monster spawning information
                 //log::info!("[DIAG_MONSTER_SPAWN] Spawning monster:");
                 //log::info!("[DIAG_MONSTER_SPAWN]   entity_id: {:?}", entity_id);
@@ -563,28 +602,30 @@ pub fn game_connection_system(
 
                 // Store data needed for deferred spawning
                 let npc_clone = npc;
-                
+
                 commands.queue(move |world: &mut World| {
                     // Get terrain height at spawn position
                     let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
                     //log::info!("[DIAG_MONSTER_SPAWN] Spawning at terrain height: {:.2}m (server z was: {:.2})", spawn_y, position.z / 100.0);
 
                     // Spawn with core components first
-                    let entity = world.spawn((
-                        Command::with_stop(),
-                        next_command,
-                        npc_clone,
-                        team,
-                        health,
-                        move_mode,
-                        Position::new(position),
-                        ability_values,
-                        equipment,
-                        level,
-                        move_speed,
-                        status_effects,
-                        StatusEffectsRegen::new(),
-                    )).id();
+                    let entity = world
+                        .spawn((
+                            Command::with_stop(),
+                            next_command,
+                            npc_clone,
+                            team,
+                            health,
+                            move_mode,
+                            Position::new(position),
+                            ability_values,
+                            equipment,
+                            level,
+                            move_speed,
+                            status_effects,
+                            StatusEffectsRegen::new(),
+                        ))
+                        .id();
 
                     // Add remaining components in a second insert to avoid tuple size limit
                     world.entity_mut(entity).insert((
@@ -596,21 +637,25 @@ pub fn game_connection_system(
                         PendingSkillEffectList::default(),
                         PendingSkillTargetList::default(),
                         VisibleStatusEffects::default(),
-                        Transform::from_xyz(
-                            position.x / 100.0,
-                            spawn_y,
-                            -position.y / 100.0,
-                        ),
+                        Transform::from_xyz(position.x / 100.0, spawn_y, -position.y / 100.0),
                         GlobalTransform::default(),
                         Visibility::default(),
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
                     ));
 
-                    world.resource_mut::<ClientEntityList>().add(entity_id, entity);
+                    world
+                        .resource_mut::<ClientEntityList>()
+                        .add(entity_id, entity);
                 });
             }
-            Ok(ServerMessage::SpawnEntityItemDrop { entity_id, dropped_item, position, remaining_time, owner_entity_id }) => {
+            Ok(ServerMessage::SpawnEntityItemDrop {
+                entity_id,
+                dropped_item,
+                position,
+                remaining_time,
+                owner_entity_id,
+            }) => {
                 let name = match &dropped_item {
                     DroppedItem::Item(item) => game_data
                         .items
@@ -630,35 +675,41 @@ pub fn game_connection_system(
 
                     let entity = world
                         .spawn((
-                        ClientEntityName::new(name),
-                        ItemDrop::with_dropped_item(dropped_item),
-                        ItemDropRemainingTime::new(remaining_time),
-                        ItemDropOwner::new(owner_entity_id),
-                        Position::new(position),
-                        ClientEntity::new(entity_id, ClientEntityType::ItemDrop),
-                        CollisionHeightOnly,
-                        Transform::from_xyz(
-                            position.x / 100.0,
-                            spawn_y,
-                            -position.y / 100.0,
-                        ),
-                        GlobalTransform::default(),
-                        Visibility::default(),
-                        InheritedVisibility::default(),
-                        ViewVisibility::default(),
-                    )).id();
+                            ClientEntityName::new(name),
+                            ItemDrop::with_dropped_item(dropped_item),
+                            ItemDropRemainingTime::new(remaining_time),
+                            ItemDropOwner::new(owner_entity_id),
+                            Position::new(position),
+                            ClientEntity::new(entity_id, ClientEntityType::ItemDrop),
+                            CollisionHeightOnly,
+                            Transform::from_xyz(position.x / 100.0, spawn_y, -position.y / 100.0),
+                            GlobalTransform::default(),
+                            Visibility::default(),
+                            InheritedVisibility::default(),
+                            ViewVisibility::default(),
+                        ))
+                        .id();
 
-                    world.resource_mut::<ClientEntityList>().add(entity_id, entity);
+                    world
+                        .resource_mut::<ClientEntityList>()
+                        .add(entity_id, entity);
                 });
             }
-            Ok(ServerMessage::MoveEntity { entity_id, target_entity_id, distance: _, x, y, z, move_mode }) => {
+            Ok(ServerMessage::MoveEntity {
+                entity_id,
+                target_entity_id,
+                distance: _,
+                x,
+                y,
+                z,
+                move_mode,
+            }) => {
                 //log::info!("[RESPAWN_MOVE_DIAG] Received MoveEntity from server: entity_id={:?}, pos=({},{},{})", entity_id, x, y, z);
-                
-                if let Some(entity) = client_entity_list.get(entity_id) {
-                    let target_entity = target_entity_id
-                        .and_then(|id| client_entity_list.get(id));
 
-                   //log::info!("[RESPAWN_MOVE_DIAG] Found entity {:?}, inserting NextCommand::with_move", entity);
+                if let Some(entity) = client_entity_list.get(entity_id) {
+                    let target_entity = target_entity_id.and_then(|id| client_entity_list.get(id));
+
+                    //log::info!("[RESPAWN_MOVE_DIAG] Found entity {:?}, inserting NextCommand::with_move", entity);
                     commands.entity(entity).insert(NextCommand::with_move(
                         Vec3::new(x, y, z as f32),
                         target_entity,
@@ -666,18 +717,29 @@ pub fn game_connection_system(
                     ));
                 } else {
                     log::warn!("[RESPAWN_MOVE_DIAG] Entity not found in client_entity_list! entity_id={:?}", entity_id);
-                    log::warn!("[RESPAWN_MOVE_DIAG] Player entity_id={:?}, player_entity={:?}",
-                        client_entity_list.player_entity_id, client_entity_list.player_entity);
+                    log::warn!(
+                        "[RESPAWN_MOVE_DIAG] Player entity_id={:?}, player_entity={:?}",
+                        client_entity_list.player_entity_id,
+                        client_entity_list.player_entity
+                    );
                 }
             }
-            Ok(ServerMessage::AdjustPosition { entity_id, position }) => {
+            Ok(ServerMessage::AdjustPosition {
+                entity_id,
+                position,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands
                         .entity(entity)
                         .insert(NextCommand::with_move(position, None, None));
                 }
             }
-            Ok(ServerMessage::StopMoveEntity { entity_id, x: _, y: _, z: _ }) => {
+            Ok(ServerMessage::StopMoveEntity {
+                entity_id,
+                x: _,
+                y: _,
+                z: _,
+            }) => {
                 // TODO: Lerp to XYZ ?
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.entity(entity).insert(NextCommand::with_stop());
@@ -707,16 +769,30 @@ pub fn game_connection_system(
                     }
                 }
             }
-            Ok(ServerMessage::DamageEntity { attacker_entity_id, defender_entity_id, damage, is_killed, is_immediate, from_skill }) => {
+            Ok(ServerMessage::DamageEntity {
+                attacker_entity_id,
+                defender_entity_id,
+                damage,
+                is_killed,
+                is_immediate,
+                from_skill,
+            }) => {
                 log::info!("[GAME_CONNECTION] Received DamageEntity: attacker={:?}, defender={:?}, damage={}, is_killed={}, is_immediate={}", 
                     attacker_entity_id, defender_entity_id, damage.amount, is_killed, is_immediate);
-                
+
                 if let Some(defender_entity) = client_entity_list.get(defender_entity_id) {
-                    log::info!("[GAME_CONNECTION] Found defender entity {:?} for defender_entity_id {:?}", defender_entity, defender_entity_id);
-                    
-                    let attacker_entity =  client_entity_list.get(attacker_entity_id);
-                    log::info!("[GAME_CONNECTION] Attacker entity lookup result: {:?}", attacker_entity);
-                    
+                    log::info!(
+                        "[GAME_CONNECTION] Found defender entity {:?} for defender_entity_id {:?}",
+                        defender_entity,
+                        defender_entity_id
+                    );
+
+                    let attacker_entity = client_entity_list.get(attacker_entity_id);
+                    log::info!(
+                        "[GAME_CONNECTION] Attacker entity lookup result: {:?}",
+                        attacker_entity
+                    );
+
                     let killed_by_player = is_killed
                         && client_entity_list.player_entity
                             == client_entity_list.get(attacker_entity_id);
@@ -741,6 +817,11 @@ pub fn game_connection_system(
                             log::error!("[GAME_CONNECTION] ERROR: Could NOT get PendingDamageList for entity {:?}!", defender_entity);
                         }
 
+                        if let Some(mut health_points) = defender.get_mut::<HealthPoints>() {
+                            health_points.hp = i32::max(health_points.hp - damage.amount as i32, 0);
+                            log::info!("[GAME_CONNECTION] Updated defender HP locally for visual sync: {}", health_points.hp);
+                        }
+
                         if killed_by_player {
                             if let Some(name) = defender.get::<ClientEntityName>() {
                                 let chat_message =
@@ -755,49 +836,65 @@ pub fn game_connection_system(
                     log::error!("[GAME_CONNECTION] ERROR: Could NOT find defender entity for entity_id {:?}", defender_entity_id);
                 }
             }
-            Ok(ServerMessage::Teleport { entity_id: _, zone_id, x, y, run_mode: _, ride_mode: _ }) => {
+            Ok(ServerMessage::Teleport {
+                entity_id: _,
+                zone_id,
+                x,
+                y,
+                run_mode: _,
+                ride_mode: _,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     // Update player position - defer to get terrain height
                     let player_entity_for_closure = player_entity;
                     commands.queue(move |world: &mut World| {
                         let spawn_y = get_spawn_height_from_world(world, x, y);
                         let final_spawn_y = spawn_y + 1.5; // Add 1.5m offset for subtle fall effect
-                        
-                        log::info!("[TELEPORT] Spawning at terrain height: {:.2}m + 1.5m offset = {:.2}m",
-                            spawn_y, final_spawn_y);
-                        
+
+                        log::info!(
+                            "[TELEPORT] Spawning at terrain height: {:.2}m + 1.5m offset = {:.2}m",
+                            spawn_y,
+                            final_spawn_y
+                        );
+
                         if let Ok(mut player) = world.get_entity_mut(player_entity_for_closure) {
                             // Check if player is dead before teleport (respawn scenario)
                             let is_dead = player.get::<Dead>().is_some();
-                            
+
                             // Remove Dead component and revive player if they were dead
                             if is_dead {
                                 log::info!("[TELEPORT] Reviving dead player on teleport/respawn");
-                                
+
                                 // Get max HP to restore player health on respawn
-                                let max_hp = player.get::<AbilityValues>()
+                                let max_hp = player
+                                    .get::<AbilityValues>()
                                     .map(|av| av.get_max_health())
                                     .unwrap_or(100);
-                                
+
                                 // Restore HP to 30% of max on respawn
                                 let respawn_hp = (max_hp as f32 * 0.3) as i32;
-                                
+
                                 if let Some(mut health_points) = player.get_mut::<HealthPoints>() {
                                     health_points.hp = respawn_hp;
-                                    log::info!("[TELEPORT] Restored HP to {} (30% of max {})", respawn_hp, max_hp);
+                                    log::info!(
+                                        "[TELEPORT] Restored HP to {} (30% of max {})",
+                                        respawn_hp,
+                                        max_hp
+                                    );
                                 }
-                                
+
                                 // Remove Dead component and reset commands
-                                player.remove::<Dead>()
+                                player
+                                    .remove::<Dead>()
                                     .insert(Command::with_stop())
                                     .insert(NextCommand::with_stop());
-                                    
+
                                 // log::info!("[RESPAWN_DIAG] Removed Dead component, set commands to Stop");
                             }
-                            
+
                             // DIAGNOSTIC: Disabled - Track CollisionPlayer state
                             // log::info!("[RESPAWN_DIAG] Setting position to ({}, {}, 0) and transform y={}", x, y, final_spawn_y);
-                            
+
                             // Note: We explicitly do NOT remove CollisionPlayer here.
                             // The collision system needs to continue processing the player for:
                             // 1. Ground snapping (to fix the elevated position)
@@ -808,7 +905,7 @@ pub fn game_connection_system(
                                 Position::new(Vec3::new(x, y, 0.0)),
                                 Transform::from_xyz(x / 100.0, final_spawn_y, -y / 100.0),
                             ));
-                            
+
                             // log::info!("[RESPAWN_DIAG] Position and transform updated, CollisionPlayer preserved");
                         }
                     });
@@ -816,7 +913,7 @@ pub fn game_connection_system(
                     // Despawn all non-player entities
                     let player_entity_id = client_entity_list.player_entity_id;
                     let player_entity = client_entity_list.player_entity;
-                    
+
                     for (client_entity_id, client_entity) in
                         client_entity_list.client_entities.iter().enumerate()
                     {
@@ -830,7 +927,7 @@ pub fn game_connection_system(
                         }
                     }
                     client_entity_list.clear();
-                    
+
                     // Re-add player to the entity list if they exist
                     // This is needed because JoinZone might not be sent when respawning in the same zone
                     if let (Some(entity_id), Some(entity)) = (player_entity_id, player_entity) {
@@ -845,10 +942,7 @@ pub fn game_connection_system(
                     client_entity_list.zone_id = Some(zone_id);
                 }
             }
-            Ok(ServerMessage::LocalChat {
-                entity_id,
-                text,
-            }) => {
+            Ok(ServerMessage::LocalChat { entity_id, text }) => {
                 if let Some(chat_entity) = client_entity_list.get(entity_id) {
                     commands.queue(move |world: &mut World| {
                         if let Some(name) = world.entity(chat_entity).get::<ClientEntityName>() {
@@ -857,14 +951,14 @@ pub fn game_connection_system(
                             let _ = world
                                 .resource_mut::<Messages<ChatboxEvent>>()
                                 .write(ChatboxEvent::Say(name.clone(), text));
-                            
+
                             // Also send chat bubble event
-                            let _ = world
-                                .resource_mut::<Messages<ChatBubbleEvent>>()
-                                .write(ChatBubbleEvent::new(name, text_for_bubble)
+                            let _ = world.resource_mut::<Messages<ChatBubbleEvent>>().write(
+                                ChatBubbleEvent::new(name, text_for_bubble)
                                     .with_entity(chat_entity)
                                     .with_duration(8.0)
-                                    .with_bubble_type(ChatBubbleType::Normal));
+                                    .with_bubble_type(ChatBubbleType::Normal),
+                            );
                         }
                     });
                 }
@@ -872,10 +966,12 @@ pub fn game_connection_system(
             Ok(ServerMessage::ShoutChat { name, text }) => {
                 let _ = chatbox_events.write(ChatboxEvent::Shout(name.clone(), text.clone()));
                 // Also send chat bubble event for shout
-                let _ = chat_bubble_events.write(ChatBubbleEvent::new(name, text)
-                    .with_duration(10.0)
-                    .with_color(bevy::prelude::Color::srgb(1.0, 0.8, 0.4))
-                    .with_bubble_type(ChatBubbleType::Shout));
+                let _ = chat_bubble_events.write(
+                    ChatBubbleEvent::new(name, text)
+                        .with_duration(10.0)
+                        .with_color(bevy::prelude::Color::srgb(1.0, 0.8, 0.4))
+                        .with_bubble_type(ChatBubbleType::Shout),
+                );
             }
             Ok(ServerMessage::Whisper { from, text }) => {
                 let _ = chatbox_events.write(ChatboxEvent::Whisper(from, text));
@@ -883,30 +979,28 @@ pub fn game_connection_system(
             Ok(ServerMessage::AnnounceChat { name, text }) => {
                 let _ = chatbox_events.write(ChatboxEvent::Announce(name, text));
             }
-            Ok(ServerMessage::UpdateAbilityValueAdd { ability_type, value }) => {
+            Ok(ServerMessage::UpdateAbilityValueAdd {
+                ability_type,
+                value,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     let _ = chatbox_events.write(ChatboxEvent::System(format!(
                         "Ability {:?} has {} by {}.",
                         ability_type,
-                        if value < 0 {
-                            "decreased"
-                        } else {
-                            "increased"
-                        },
+                        if value < 0 { "decreased" } else { "increased" },
                         value.abs(),
                     )));
 
                     commands.queue(move |world: &mut World| {
                         let mut player = world.entity_mut(player_entity);
-                        ability_values_add_value_exclusive(
-                            ability_type,
-                            value,
-                            &mut player,
-                        );
+                        ability_values_add_value_exclusive(ability_type, value, &mut player);
                     });
                 }
             }
-            Ok(ServerMessage::UpdateAbilityValueSet { ability_type, value }) => {
+            Ok(ServerMessage::UpdateAbilityValueSet {
+                ability_type,
+                value,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     let _ = chatbox_events.write(ChatboxEvent::System(format!(
                         "Ability {:?} has been changed to {}.",
@@ -915,15 +1009,15 @@ pub fn game_connection_system(
 
                     commands.queue(move |world: &mut World| {
                         let mut player = world.entity_mut(player_entity);
-                        ability_values_set_value_exclusive(
-                            ability_type,
-                            value,
-                            &mut player,
-                        );
+                        ability_values_set_value_exclusive(ability_type, value, &mut player);
                     });
                 }
             }
-            Ok(ServerMessage::UpdateAmmo { entity_id, ammo_index, item }) => {
+            Ok(ServerMessage::UpdateAmmo {
+                entity_id,
+                ammo_index,
+                item,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.queue(move |world: &mut World| {
                         if let Some(mut equipment) = world.entity_mut(entity).get_mut::<Equipment>()
@@ -941,7 +1035,11 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::UpdateEquipment { entity_id, equipment_index, item  }) => {
+            Ok(ServerMessage::UpdateEquipment {
+                entity_id,
+                equipment_index,
+                item,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.queue(move |world: &mut World| {
                         if let Some(mut equipment) = world.entity_mut(entity).get_mut::<Equipment>()
@@ -965,7 +1063,11 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::UpdateVehiclePart { entity_id, vehicle_part_index, item }) => {
+            Ok(ServerMessage::UpdateVehiclePart {
+                entity_id,
+                vehicle_part_index,
+                item,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.queue(move |world: &mut World| {
                         if let Some(mut equipment) = world.entity_mut(entity).get_mut::<Equipment>()
@@ -991,46 +1093,53 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::UpdateItemLife { item_slot, life }) => {
                 if let Some(entity) = client_entity_list.player_entity {
-                    commands.queue(move |world: &mut World| {
-                        match item_slot {
-                            ItemSlot::Equipment(index) => {
-                                if let Some(mut equipment) = world.entity_mut(entity).get_mut::<Equipment>() {
-                                    if let Some(equipment_item) = equipment.get_equipment_item_mut(index) {
-                                        equipment_item.life = life;
-                                    }
+                    commands.queue(move |world: &mut World| match item_slot {
+                        ItemSlot::Equipment(index) => {
+                            if let Some(mut equipment) =
+                                world.entity_mut(entity).get_mut::<Equipment>()
+                            {
+                                if let Some(equipment_item) =
+                                    equipment.get_equipment_item_mut(index)
+                                {
+                                    equipment_item.life = life;
                                 }
-                            },
-                            ItemSlot::Vehicle(index) => {
-                                if let Some(mut equipment) = world.entity_mut(entity).get_mut::<Equipment>() {
-                                    if let Some(equipment_item) = equipment.get_vehicle_item_mut(index) {
-                                        equipment_item.life = life;
-                                    }
-                                }
-                            },
-                            ItemSlot::Inventory(inventory_page, inventory_slot) => {
-                                if let Some(mut inventory) =  world.entity_mut(entity).get_mut::<Inventory>() {
-                                    if let Some(item) = inventory.get_item_mut(ItemSlot::Inventory(inventory_page, inventory_slot)) {
-                                        match item {
-                                            Item::Equipment(equipment_item) => equipment_item.life = life,
-                                            Item::Stackable(_) => {},
-                                        }
-                                    }
-                                }
-                            },
-                            ItemSlot::Ammo(_) => {},
+                            }
                         }
+                        ItemSlot::Vehicle(index) => {
+                            if let Some(mut equipment) =
+                                world.entity_mut(entity).get_mut::<Equipment>()
+                            {
+                                if let Some(equipment_item) = equipment.get_vehicle_item_mut(index)
+                                {
+                                    equipment_item.life = life;
+                                }
+                            }
+                        }
+                        ItemSlot::Inventory(inventory_page, inventory_slot) => {
+                            if let Some(mut inventory) =
+                                world.entity_mut(entity).get_mut::<Inventory>()
+                            {
+                                if let Some(item) = inventory.get_item_mut(ItemSlot::Inventory(
+                                    inventory_page,
+                                    inventory_slot,
+                                )) {
+                                    match item {
+                                        Item::Equipment(equipment_item) => {
+                                            equipment_item.life = life
+                                        }
+                                        Item::Stackable(_) => {}
+                                    }
+                                }
+                            }
+                        }
+                        ItemSlot::Ammo(_) => {}
                     });
                 }
             }
             Ok(ServerMessage::UpdateInventory { items, money }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
-                        update_inventory_and_money(
-                            world,
-                            player_entity,
-                            items,
-                            money,
-                        );
+                        update_inventory_and_money(world, player_entity, items, money);
                     });
                 }
             }
@@ -1040,9 +1149,7 @@ pub fn game_connection_system(
                         if let Some(mut inventory) =
                             world.entity_mut(player_entity).get_mut::<Inventory>()
                         {
-                            if let Some(item_slot) =
-                                inventory.get_item_slot_mut(inventory_slot)
-                            {
+                            if let Some(item_slot) = inventory.get_item_slot_mut(inventory_slot) {
                                 item_slot.try_take_quantity(1);
                             }
                         }
@@ -1060,7 +1167,10 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::UpdateBasicStat { basic_stat_type, value }) => {
+            Ok(ServerMessage::UpdateBasicStat {
+                basic_stat_type,
+                value,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
                         world.resource_scope(|world, game_data: Mut<GameData>| {
@@ -1086,12 +1196,8 @@ pub fn game_connection_system(
                                 // Update stats
                                 match basic_stat_type {
                                     BasicStatType::Strength => basic_stats.strength = value,
-                                    BasicStatType::Dexterity => {
-                                        basic_stats.dexterity = value
-                                    }
-                                    BasicStatType::Intelligence => {
-                                        basic_stats.intelligence = value
-                                    }
+                                    BasicStatType::Dexterity => basic_stats.dexterity = value,
+                                    BasicStatType::Intelligence => basic_stats.intelligence = value,
                                     BasicStatType::Concentration => {
                                         basic_stats.concentration = value
                                     }
@@ -1111,12 +1217,16 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::UpdateLevel { entity_id, level, experience_points, stat_points, skill_points }) => {
+            Ok(ServerMessage::UpdateLevel {
+                entity_id,
+                level,
+                experience_points,
+                stat_points,
+                skill_points,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
-                    let _ = client_entity_events.write(ClientEntityEvent::LevelUp(
-                        entity,
-                        Some(level.level),
-                    ));
+                    let _ = client_entity_events
+                        .write(ClientEntityEvent::LevelUp(entity, Some(level.level)));
 
                     commands.entity(entity).insert((
                         level,
@@ -1218,23 +1328,32 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::UpdateSpeed { entity_id, run_speed, passive_attack_speed }) => {
+            Ok(ServerMessage::UpdateSpeed {
+                entity_id,
+                run_speed,
+                passive_attack_speed,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands
                         .entity(entity)
                         .insert(MoveSpeed::new(run_speed as f32));
-                    
+
                     // Update passive_attack_speed in AbilityValues
                     commands.queue(move |world: &mut World| {
                         if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
-                            if let Some(mut ability_values) = entity_mut.get_mut::<AbilityValues>() {
+                            if let Some(mut ability_values) = entity_mut.get_mut::<AbilityValues>()
+                            {
                                 ability_values.passive_attack_speed = passive_attack_speed;
                             }
                         }
                     });
                 }
             }
-            Ok(ServerMessage::UpdateStatusEffects { entity_id, status_effects: update_status_effects, updated_values }) => {
+            Ok(ServerMessage::UpdateStatusEffects {
+                entity_id,
+                status_effects: update_status_effects,
+                updated_values,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.queue(move |world: &mut World| {
                         let mut entity_mut = world.entity_mut(entity);
@@ -1252,10 +1371,10 @@ pub fn game_connection_system(
                                     match status_effect_type {
                                         StatusEffectType::IncreaseHp => {
                                             updated_hp = updated_values.first().cloned();
-                                        },
+                                        }
                                         StatusEffectType::IncreaseMp => {
                                             updated_mp = updated_values.last().cloned();
-                                        },
+                                        }
                                         _ => {}
                                     }
                                     status_effects.active[status_effect_type] = None;
@@ -1265,7 +1384,9 @@ pub fn game_connection_system(
                         }
 
                         // Clear StatusEffectsRegen for status effects which do not exist in the packet
-                        if let Some(mut status_effects_regen) = entity_mut.get_mut::<StatusEffectsRegen>() {
+                        if let Some(mut status_effects_regen) =
+                            entity_mut.get_mut::<StatusEffectsRegen>()
+                        {
                             for (status_effect_type, active) in update_status_effects {
                                 if active.is_some() {
                                     continue;
@@ -1291,7 +1412,11 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::UpdateXpStamina { xp, stamina, source_entity_id: _ }) => {
+            Ok(ServerMessage::UpdateXpStamina {
+                xp,
+                stamina,
+                source_entity_id: _,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
                         let mut player = world.entity_mut(player_entity);
@@ -1316,7 +1441,11 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::PickupDropItem { drop_entity_id: _, item_slot, item }) => {
+            Ok(ServerMessage::PickupDropItem {
+                drop_entity_id: _,
+                item_slot,
+                item,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     if let Some(item_data) =
                         game_data.items.get_base_item(item.get_item_reference())
@@ -1330,15 +1459,17 @@ pub fn game_connection_system(
                     commands.queue(move |world: &mut World| {
                         let mut player = world.entity_mut(player_entity);
                         if let Some(mut inventory) = player.get_mut::<Inventory>() {
-                            if let Some(inventory_slot) = inventory.get_item_slot_mut(item_slot)
-                            {
+                            if let Some(inventory_slot) = inventory.get_item_slot_mut(item_slot) {
                                 *inventory_slot = Some(item);
                             }
                         }
                     });
                 }
             }
-            Ok(ServerMessage::PickupDropMoney { drop_entity_id: _, money }) => {
+            Ok(ServerMessage::PickupDropMoney {
+                drop_entity_id: _,
+                money,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     let _ = chatbox_events.write(ChatboxEvent::System(format!(
                         "You have earned {} Zuly.",
@@ -1353,7 +1484,10 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::PickupDropError { drop_entity_id: _, error }) => match error{
+            Ok(ServerMessage::PickupDropError {
+                drop_entity_id: _,
+                error,
+            }) => match error {
                 PickupItemDropError::InventoryFull => {
                     let _ = chatbox_events.write(ChatboxEvent::System(
                         "Cannot pickup item, inventory full.".to_string(),
@@ -1433,7 +1567,8 @@ pub fn game_connection_system(
                 trigger_hash,
             }) => {
                 if success {
-                    let _ = quest_trigger_events.write(QuestTriggerEvent::ApplyRewards(trigger_hash));
+                    let _ =
+                        quest_trigger_events.write(QuestTriggerEvent::ApplyRewards(trigger_hash));
                 }
             }
             Ok(ServerMessage::RunNpcDeathTrigger { npc_id }) => {
@@ -1453,22 +1588,22 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::LearnSkillSuccess { skill_slot, skill_id, updated_skill_points }) => {
+            Ok(ServerMessage::LearnSkillSuccess {
+                skill_slot,
+                skill_id,
+                updated_skill_points,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
                         let mut player = world.entity_mut(player_entity);
                         if let Some(mut skill_list) = player.get_mut::<SkillList>() {
-                            if let Some(skill_slot) =
-                                skill_list.get_slot_mut(skill_slot)
-                            {
+                            if let Some(skill_slot) = skill_list.get_slot_mut(skill_slot) {
                                 *skill_slot = skill_id;
                             }
                         }
                     });
 
-                    commands
-                        .entity(player_entity)
-                        .insert(updated_skill_points);
+                    commands.entity(player_entity).insert(updated_skill_points);
                 }
             }
             Ok(ServerMessage::LearnSkillError { error }) => match error {
@@ -1479,7 +1614,8 @@ pub fn game_connection_system(
                 }
                 LearnSkillError::JobRequirement => {
                     let _ = chatbox_events.write(ChatboxEvent::System(
-                        "Failed to learn skill, you do not satisfy the job requirement.".to_string(),
+                        "Failed to learn skill, you do not satisfy the job requirement."
+                            .to_string(),
                     ));
                 }
                 LearnSkillError::SkillRequirement => {
@@ -1510,7 +1646,11 @@ pub fn game_connection_system(
                     ));
                 }
             },
-            Ok(ServerMessage::LevelUpSkillSuccess { skill_slot, skill_id, skill_points }) => {
+            Ok(ServerMessage::LevelUpSkillSuccess {
+                skill_slot,
+                skill_id,
+                skill_points,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
                         let mut player = world.entity_mut(player_entity);
@@ -1524,7 +1664,10 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::LevelUpSkillError { error, skill_points }) => {
+            Ok(ServerMessage::LevelUpSkillError {
+                error,
+                skill_points,
+            }) => {
                 match error {
                     LevelUpSkillError::Failed => {
                         let _ = chatbox_events.write(ChatboxEvent::System(
@@ -1562,12 +1705,14 @@ pub fn game_connection_system(
                 }
 
                 if let Some(player_entity) = client_entity_list.player_entity {
-                    commands
-                        .entity(player_entity)
-                        .insert(skill_points);
+                    commands.entity(player_entity).insert(skill_points);
                 }
             }
-            Ok(ServerMessage::UseEmote { entity_id, motion_id, is_stop }) => {
+            Ok(ServerMessage::UseEmote {
+                entity_id,
+                motion_id,
+                is_stop,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     let new_command = NextCommand::with_emote(motion_id, is_stop);
                     commands.entity(entity).insert(new_command);
@@ -1600,7 +1745,11 @@ pub fn game_connection_system(
                     let _ = use_item_events.write(UseItemEvent { entity, item });
                 }
             }
-            Ok(ServerMessage::CastSkillSelf { entity_id, skill_id, cast_motion_id }) => {
+            Ok(ServerMessage::CastSkillSelf {
+                entity_id,
+                skill_id,
+                cast_motion_id,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.entity(entity).insert(NextCommand::with_cast_skill(
                         skill_id,
@@ -1617,26 +1766,38 @@ pub fn game_connection_system(
                                     commands.queue(move |world: &mut World| {
                                         let mut character = world.entity_mut(entity);
 
-                                        if let Some(mut cooldowns) = character.get_mut::<Cooldowns>() {
+                                        if let Some(mut cooldowns) =
+                                            character.get_mut::<Cooldowns>()
+                                        {
                                             cooldowns.set_skill_cooldown(skill_id, duration);
                                         }
                                     });
-                                },
+                                }
                                 SkillCooldown::Group { group, duration } => {
                                     commands.queue(move |world: &mut World| {
                                         let mut character = world.entity_mut(entity);
 
-                                        if let Some(mut cooldowns) = character.get_mut::<Cooldowns>() {
-                                            cooldowns.set_skill_group_cooldown(group.get(), duration);
+                                        if let Some(mut cooldowns) =
+                                            character.get_mut::<Cooldowns>()
+                                        {
+                                            cooldowns
+                                                .set_skill_group_cooldown(group.get(), duration);
                                         }
                                     });
-                                },
+                                }
                             }
                         }
                     }
                 }
             }
-            Ok(ServerMessage::CastSkillTargetEntity { entity_id, skill_id, target_entity_id, target_distance: _, target_position: _, cast_motion_id }) => {
+            Ok(ServerMessage::CastSkillTargetEntity {
+                entity_id,
+                skill_id,
+                target_entity_id,
+                target_distance: _,
+                target_position: _,
+                cast_motion_id,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     if let Some(target_entity) = client_entity_list.get(target_entity_id) {
                         commands.entity(entity).insert(NextCommand::with_cast_skill(
@@ -1655,26 +1816,36 @@ pub fn game_connection_system(
                                     commands.queue(move |world: &mut World| {
                                         let mut character = world.entity_mut(entity);
 
-                                        if let Some(mut cooldowns) = character.get_mut::<Cooldowns>() {
+                                        if let Some(mut cooldowns) =
+                                            character.get_mut::<Cooldowns>()
+                                        {
                                             cooldowns.set_skill_cooldown(skill_id, duration);
                                         }
                                     });
-                                },
+                                }
                                 SkillCooldown::Group { group, duration } => {
                                     commands.queue(move |world: &mut World| {
                                         let mut character = world.entity_mut(entity);
 
-                                        if let Some(mut cooldowns) = character.get_mut::<Cooldowns>() {
-                                            cooldowns.set_skill_group_cooldown(group.get(), duration);
+                                        if let Some(mut cooldowns) =
+                                            character.get_mut::<Cooldowns>()
+                                        {
+                                            cooldowns
+                                                .set_skill_group_cooldown(group.get(), duration);
                                         }
                                     });
-                                },
+                                }
                             }
                         }
                     }
                 }
             }
-            Ok(ServerMessage::CastSkillTargetPosition { entity_id, skill_id, target_position, cast_motion_id }) => {
+            Ok(ServerMessage::CastSkillTargetPosition {
+                entity_id,
+                skill_id,
+                target_position,
+                cast_motion_id,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.entity(entity).insert(NextCommand::with_cast_skill(
                         skill_id,
@@ -1691,26 +1862,34 @@ pub fn game_connection_system(
                                     commands.queue(move |world: &mut World| {
                                         let mut character = world.entity_mut(entity);
 
-                                        if let Some(mut cooldowns) = character.get_mut::<Cooldowns>() {
+                                        if let Some(mut cooldowns) =
+                                            character.get_mut::<Cooldowns>()
+                                        {
                                             cooldowns.set_skill_cooldown(skill_id, duration);
                                         }
                                     });
-                                },
+                                }
                                 SkillCooldown::Group { group, duration } => {
                                     commands.queue(move |world: &mut World| {
                                         let mut character = world.entity_mut(entity);
 
-                                        if let Some(mut cooldowns) = character.get_mut::<Cooldowns>() {
-                                            cooldowns.set_skill_group_cooldown(group.get(), duration);
+                                        if let Some(mut cooldowns) =
+                                            character.get_mut::<Cooldowns>()
+                                        {
+                                            cooldowns
+                                                .set_skill_group_cooldown(group.get(), duration);
                                         }
                                     });
-                                },
+                                }
                             }
                         }
                     }
                 }
             }
-            Ok(ServerMessage::CancelCastingSkill { entity_id, reason: _ }) => {
+            Ok(ServerMessage::CancelCastingSkill {
+                entity_id,
+                reason: _,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.queue(move |world: &mut World| {
                         let mut character = world.entity_mut(entity);
@@ -1726,7 +1905,10 @@ pub fn game_connection_system(
             Ok(ServerMessage::StartCastingSkill { entity_id: _ }) => {
                 // Nah bruv
             }
-            Ok(ServerMessage::FinishCastingSkill { entity_id, skill_id }) => {
+            Ok(ServerMessage::FinishCastingSkill {
+                entity_id,
+                skill_id,
+            }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.queue(move |world: &mut World| {
                         let mut character = world.entity_mut(entity);
@@ -1791,7 +1973,13 @@ pub fn game_connection_system(
                     }
                 }
             }
-            Ok(ServerMessage::ApplySkillEffect { entity_id, caster_entity_id, caster_intelligence, skill_id, effect_success }) => {
+            Ok(ServerMessage::ApplySkillEffect {
+                entity_id,
+                caster_entity_id,
+                caster_intelligence,
+                skill_id,
+                effect_success,
+            }) => {
                 if let Some(defender_entity) = client_entity_list.get(entity_id) {
                     let caster_entity = client_entity_list.get(caster_entity_id);
 
@@ -1814,10 +2002,8 @@ pub fn game_connection_system(
                                 .entity_mut(caster_entity)
                                 .get_mut::<PendingSkillTargetList>()
                             {
-                                pending_skill_target_list.push(PendingSkillTarget::new(
-                                    skill_id,
-                                    defender_entity,
-                                ));
+                                pending_skill_target_list
+                                    .push(PendingSkillTarget::new(skill_id, defender_entity));
                             }
                         }
                     });
@@ -1883,7 +2069,10 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::PartyRejectInvite { reason: _, entity_id }) => {
+            Ok(ServerMessage::PartyRejectInvite {
+                reason: _,
+                entity_id,
+            }) => {
                 if let Some(invited_entity) = client_entity_list.get(entity_id) {
                     commands.queue(move |world: &mut World| {
                         if let Some(invited_entity_name) =
@@ -1902,8 +2091,7 @@ pub fn game_connection_system(
             }
             Ok(ServerMessage::PartyChangeOwner { entity_id }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
-                    let is_player_owner =
-                        Some(entity_id) == client_entity_list.player_entity_id;
+                    let is_player_owner = Some(entity_id) == client_entity_list.player_entity_id;
 
                     commands.queue(move |world: &mut World| {
                         if let Some(mut party_info) =
@@ -1953,7 +2141,8 @@ pub fn game_connection_system(
             Ok(ServerMessage::PartyDelete) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.entity(player_entity).remove::<PartyInfo>();
-                    let _ = chatbox_events.write(ChatboxEvent::System("You have left the party.".into()));
+                    let _ = chatbox_events
+                        .write(ChatboxEvent::System("You have left the party.".into()));
                 }
             }
             Ok(ServerMessage::PartyMemberList {
@@ -2106,10 +2295,10 @@ pub fn game_connection_system(
                         if let Some(player_entity) = player_entity {
                             if let Ok(mut player) = world.get_entity_mut(player_entity) {
                                 if let Some(mut party_info) = player.get_mut::<PartyInfo>() {
-                                    if let Some(party_member) =
-                                        party_info.members.iter_mut().find(|x| {
-                                            x.get_character_id() == member_info.character_id
-                                        })
+                                    if let Some(party_member) = party_info
+                                        .members
+                                        .iter_mut()
+                                        .find(|x| x.get_character_id() == member_info.character_id)
                                     {
                                         *party_member = PartyMemberInfo::Online(member_info);
                                     }
@@ -2146,7 +2335,10 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::PartyUpdateRules { item_sharing, xp_sharing }) => {
+            Ok(ServerMessage::PartyUpdateRules {
+                item_sharing,
+                xp_sharing,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
                         if let Some(mut party_info) =
@@ -2177,7 +2369,9 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::UpdateSkillList { skill_list: update_skills }) => {
+            Ok(ServerMessage::UpdateSkillList {
+                skill_list: update_skills,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
                         let mut player = world.entity_mut(player_entity);
@@ -2210,7 +2404,10 @@ pub fn game_connection_system(
                     commands.entity(entity).remove::<PersonalStore>();
                 }
             }
-            Ok(ServerMessage::PersonalStoreItemList { sell_items, buy_items  }) => {
+            Ok(ServerMessage::PersonalStoreItemList {
+                sell_items,
+                buy_items,
+            }) => {
                 let _ = personal_store_events.write(PersonalStoreEvent::SetItemList {
                     sell_items,
                     buy_items,
@@ -2227,17 +2424,21 @@ pub fn game_connection_system(
                             PersonalStoreTransactionStatus::Cancelled => {}
                             PersonalStoreTransactionStatus::SoldOut
                             | PersonalStoreTransactionStatus::BoughtFromStore => {
-                                let _ = personal_store_events.write(PersonalStoreEvent::UpdateSellList {
-                                    entity,
-                                    item_list: update_store,
-                                });
+                                let _ = personal_store_events.write(
+                                    PersonalStoreEvent::UpdateSellList {
+                                        entity,
+                                        item_list: update_store,
+                                    },
+                                );
                             }
                             PersonalStoreTransactionStatus::NoMoreNeed
                             | PersonalStoreTransactionStatus::SoldToStore => {
-                                let _ = personal_store_events.write(PersonalStoreEvent::UpdateBuyList {
-                                    entity,
-                                    item_list: update_store,
-                                });
+                                let _ = personal_store_events.write(
+                                    PersonalStoreEvent::UpdateBuyList {
+                                        entity,
+                                        item_list: update_store,
+                                    },
+                                );
                             }
                         }
                     }
@@ -2410,7 +2611,7 @@ pub fn game_connection_system(
             }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.entity(entity).insert(move_mode);
-                    
+
                     // Apply run_speed if provided
                     if let Some(speed) = run_speed {
                         commands.entity(entity).insert(MoveSpeed::new(speed as f32));
@@ -2427,7 +2628,18 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::ClanInfo { id, mark, level, points, money, name, description, position, contribution, skills }) => {
+            Ok(ServerMessage::ClanInfo {
+                id,
+                mark,
+                level,
+                points,
+                money,
+                name,
+                description,
+                position,
+                contribution,
+                skills,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.entity(player_entity).insert((
                         Clan {
@@ -2448,10 +2660,18 @@ pub fn game_connection_system(
                             name,
                             position,
                             contribution,
-                        }));
+                        },
+                    ));
                 }
             }
-            Ok(ServerMessage::ClanUpdateInfo { id, mark, level, points, money, skills }) => {
+            Ok(ServerMessage::ClanUpdateInfo {
+                id,
+                mark,
+                level,
+                points,
+                money,
+                skills,
+            }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
                         let mut entity_mut = world.entity_mut(player_entity);
@@ -2466,20 +2686,26 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::CharacterUpdateClan { client_entity_id, id, name, mark, level, position  }) => {
+            Ok(ServerMessage::CharacterUpdateClan {
+                client_entity_id,
+                id,
+                name,
+                mark,
+                level,
+                position,
+            }) => {
                 if let Some(entity) = client_entity_list.get(client_entity_id) {
-                    commands.entity(entity).insert(
-                        ClanMembership {
-                            clan_unique_id: id,
-                            mark,
-                            level,
-                            name,
-                            position,
-                            contribution: ClanPoints(0),
-                        });
+                    commands.entity(entity).insert(ClanMembership {
+                        clan_unique_id: id,
+                        mark,
+                        level,
+                        name,
+                        position,
+                        contribution: ClanPoints(0),
+                    });
                 }
             }
-            Ok(ServerMessage::ClanMemberConnected { name, channel_id  }) =>  {
+            Ok(ServerMessage::ClanMemberConnected { name, channel_id }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
                         let mut entity_mut = world.entity_mut(player_entity);
@@ -2491,7 +2717,7 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::ClanMemberDisconnected { name  }) =>  {
+            Ok(ServerMessage::ClanMemberDisconnected { name }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
                         let mut entity_mut = world.entity_mut(player_entity);
@@ -2503,23 +2729,53 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::ClanCreateError { error }) =>  {
-                match error {
-                    ClanCreateError::Failed => {
-                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error.as_str().into(), modal: false, ok: None, cancel: None });
-                    },
-                    ClanCreateError::NameExists => {
-                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_name.as_str().into(), modal: false, ok: None, cancel: None });
-                    },
-                    ClanCreateError::NoPermission => {
-                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_permission.as_str().into(), modal: false, ok: None, cancel: None });
-                    },
-                    ClanCreateError::UnmetCondition => {
-                        let _ = message_box_events.write(MessageBoxEvent::Show { message: game_data.client_strings.clan_create_error_condition.as_str().into(), modal: false, ok: None, cancel: None });
-                    },
+            Ok(ServerMessage::ClanCreateError { error }) => match error {
+                ClanCreateError::Failed => {
+                    let _ = message_box_events.write(MessageBoxEvent::Show {
+                        message: game_data.client_strings.clan_create_error.as_str().into(),
+                        modal: false,
+                        ok: None,
+                        cancel: None,
+                    });
                 }
-            }
-            Ok(ServerMessage::ClanMemberList { members }) =>  {
+                ClanCreateError::NameExists => {
+                    let _ = message_box_events.write(MessageBoxEvent::Show {
+                        message: game_data
+                            .client_strings
+                            .clan_create_error_name
+                            .as_str()
+                            .into(),
+                        modal: false,
+                        ok: None,
+                        cancel: None,
+                    });
+                }
+                ClanCreateError::NoPermission => {
+                    let _ = message_box_events.write(MessageBoxEvent::Show {
+                        message: game_data
+                            .client_strings
+                            .clan_create_error_permission
+                            .as_str()
+                            .into(),
+                        modal: false,
+                        ok: None,
+                        cancel: None,
+                    });
+                }
+                ClanCreateError::UnmetCondition => {
+                    let _ = message_box_events.write(MessageBoxEvent::Show {
+                        message: game_data
+                            .client_strings
+                            .clan_create_error_condition
+                            .as_str()
+                            .into(),
+                        modal: false,
+                        ok: None,
+                        cancel: None,
+                    });
+                }
+            },
+            Ok(ServerMessage::ClanMemberList { members }) => {
                 if let Some(player_entity) = client_entity_list.player_entity {
                     commands.queue(move |world: &mut World| {
                         let mut entity_mut = world.entity_mut(player_entity);
@@ -2558,21 +2814,21 @@ pub fn game_connection_system(
             Ok(ServerMessage::ReturnToCharacterSelect) => {
                 log::warn!("Received unimplemented ServerMessage::ReturnToCharacterSelect");
             }
-            Ok(ServerMessage::LoginError { .. }) |
-            Ok(ServerMessage::LoginSuccess { .. }) |
-            Ok(ServerMessage::ChannelList { .. }) |
-            Ok(ServerMessage::ChannelListError { .. }) |
-            Ok(ServerMessage::JoinServerError {.. }) |
-            Ok(ServerMessage::JoinServerSuccess { ..}) |
-            Ok(ServerMessage::CharacterList { .. }) |
-            Ok(ServerMessage::CharacterListAppend { .. }) |
-            Ok(ServerMessage::CreateCharacterSuccess { .. }) |
-            Ok(ServerMessage::CreateCharacterError { .. }) |
-            Ok(ServerMessage::SelectCharacterSuccess { .. }) |
-            Ok(ServerMessage::SelectCharacterError { .. }) |
-            Ok(ServerMessage::DeleteCharacterStart { .. }) |
-            Ok(ServerMessage::DeleteCharacterCancel { .. }) |
-            Ok(ServerMessage::DeleteCharacterError { .. }) => {
+            Ok(ServerMessage::LoginError { .. })
+            | Ok(ServerMessage::LoginSuccess { .. })
+            | Ok(ServerMessage::ChannelList { .. })
+            | Ok(ServerMessage::ChannelListError { .. })
+            | Ok(ServerMessage::JoinServerError { .. })
+            | Ok(ServerMessage::JoinServerSuccess { .. })
+            | Ok(ServerMessage::CharacterList { .. })
+            | Ok(ServerMessage::CharacterListAppend { .. })
+            | Ok(ServerMessage::CreateCharacterSuccess { .. })
+            | Ok(ServerMessage::CreateCharacterError { .. })
+            | Ok(ServerMessage::SelectCharacterSuccess { .. })
+            | Ok(ServerMessage::SelectCharacterError { .. })
+            | Ok(ServerMessage::DeleteCharacterStart { .. })
+            | Ok(ServerMessage::DeleteCharacterCancel { .. })
+            | Ok(ServerMessage::DeleteCharacterError { .. }) => {
                 // These should only be login / world server packets, not game server
                 log::warn!("Received unexpected game server message");
             }

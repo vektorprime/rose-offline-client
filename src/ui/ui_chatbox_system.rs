@@ -1,15 +1,17 @@
 use std::time::Instant;
 
-use bevy::prelude::{Assets, Entity, Local, MessageReader, MessageWriter, Query, Res, ResMut, Resource, With};
+use bevy::prelude::{
+    Assets, Entity, Local, MessageReader, MessageWriter, Query, Res, ResMut, Resource, With,
+};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
     components::PlayerCharacter,
-    events::{ChatboxEvent, FlightToggleEvent, PingRequestEvent, PingState},
+    events::{ChatboxEvent, FlightToggleEvent, MoveSpeedSetEvent, PingRequestEvent, PingState},
     resources::{GameConnection, UiResources},
-    systems::{parse_chat_input, is_fly_command, is_ping_command},
+    systems::{is_fly_command, is_ping_command, parse_chat_input},
     ui::{
         widgets::{DataBindings, Dialog},
         UiSoundEvent,
@@ -90,6 +92,7 @@ pub fn ui_chatbox_system(
     mut ui_sound_events: MessageWriter<UiSoundEvent>,
     dialog_assets: Res<Assets<Dialog>>,
     mut flight_toggle_events: MessageWriter<FlightToggleEvent>,
+    mut move_speed_events: MessageWriter<MoveSpeedSetEvent>,
     mut ping_request_events: MessageWriter<PingRequestEvent>,
     mut ping_state: ResMut<PingState>,
     player_query: Query<Entity, With<PlayerCharacter>>,
@@ -327,14 +330,14 @@ pub fn ui_chatbox_system(
                 },
             );
 
-        // Show command help tooltip when typing "/"
-        let is_typing_command = ui_state_chatbox.textbox_text.starts_with('/');
-        if is_typing_command {
-            // Update state to show help
-            ui_state_chatbox.show_command_help = true;
-        } else {
-            ui_state_chatbox.show_command_help = false;
-        }
+            // Show command help tooltip when typing "/"
+            let is_typing_command = ui_state_chatbox.textbox_text.starts_with('/');
+            if is_typing_command {
+                // Update state to show help
+                ui_state_chatbox.show_command_help = true;
+            } else {
+                ui_state_chatbox.show_command_help = false;
+            }
         });
 
     // Show command help popup above the chatbox
@@ -452,7 +455,11 @@ pub fn ui_chatbox_system(
     }
 
     // Hide command help when Escape is pressed
-    if egui_context.ctx_mut().unwrap().input(|input| input.key_pressed(egui::Key::Escape)) {
+    if egui_context
+        .ctx_mut()
+        .unwrap()
+        .input(|input| input.key_pressed(egui::Key::Escape))
+    {
         ui_state_chatbox.show_command_help = false;
     }
 
@@ -477,7 +484,22 @@ pub fn ui_chatbox_system(
                         // Handle /ping command client-side
                         // Record the timestamp and send a ping request
                         ping_state.pending_ping_timestamp = Some(Instant::now());
-                        
+
+                        // Send a chat message to server to measure RTT
+                        if let Some(game_connection) = game_connection.as_ref() {
+                            game_connection
+                                .client_message_tx
+                                .send(ClientMessage::Chat {
+                                    text: "/ping".to_string(),
+                                })
+                                .ok();
+                        }
+                        ui_state_chatbox.textbox_text.clear();
+                    } else if is_ping_command(&ui_state_chatbox.textbox_text) {
+                        // Handle /ping command client-side
+                        // Record the timestamp and send a ping request
+                        ping_state.pending_ping_timestamp = Some(Instant::now());
+
                         // Send a chat message to server to measure RTT
                         if let Some(game_connection) = game_connection.as_ref() {
                             game_connection
@@ -489,27 +511,40 @@ pub fn ui_chatbox_system(
                         }
                         ui_state_chatbox.textbox_text.clear();
                     } else {
-                        // Parse the chat input to detect chat type for logging
-                        let parsed = parse_chat_input(&ui_state_chatbox.textbox_text);
-                        
-                        // Log the parsed result for debugging
-                        tracing::debug!(
-                            "Chat sent - Type: {:?}, Target: {:?}, Message: '{}'",
-                            parsed.chat_type,
-                            parsed.target,
-                            parsed.message
-                        );
-                        
-                        // Send the full text to the server (including prefix)
-                        // The server handles prefix routing to appropriate chat channels
-                        if let Some(game_connection) = game_connection.as_ref() {
-                            game_connection
-                                .client_message_tx
-                                .send(ClientMessage::Chat {
-                                    text: ui_state_chatbox.textbox_text.clone(),
-                                })
-                                .ok();
+                        // Check if this is a move speed command
+                        if let Some(speed) =
+                            crate::systems::parse_move_speed_command(&ui_state_chatbox.textbox_text)
+                        {
+                            if let Ok(player_entity) = player_query.single() {
+                                move_speed_events.write(MoveSpeedSetEvent {
+                                    entity: player_entity,
+                                    speed,
+                                });
+                            }
                             ui_state_chatbox.textbox_text.clear();
+                        } else {
+                            // Parse the chat input to detect chat type for logging
+                            let parsed = parse_chat_input(&ui_state_chatbox.textbox_text);
+
+                            // Log the parsed result for debugging
+                            tracing::debug!(
+                                "Chat sent - Type: {:?}, Target: {:?}, Message: '{}'",
+                                parsed.chat_type,
+                                parsed.target,
+                                parsed.message
+                            );
+
+                            // Send the full text to the server (including prefix)
+                            // The server handles prefix routing to appropriate chat channels
+                            if let Some(game_connection) = game_connection.as_ref() {
+                                game_connection
+                                    .client_message_tx
+                                    .send(ClientMessage::Chat {
+                                        text: ui_state_chatbox.textbox_text.clone(),
+                                    })
+                                    .ok();
+                                ui_state_chatbox.textbox_text.clear();
+                            }
                         }
                     }
                 }

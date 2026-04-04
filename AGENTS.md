@@ -13,7 +13,7 @@ Do NOT run "cargo run" ask the user for output of the compiled software
 
 Do NOT run "cargo clean" without asking the user for permission.
 
-You MUST run "Cargo build" inside of a subtask where it was requested. It should not run in the same task it was requested on. Report back the errors or failures, not warnings.
+You MUST run "Cargo build" inside of a subtask with the instructions "You must run cargo build and report back the errors or failures, not warnings."
 
 ## Reading files
 Prefer to read the whole file if you've never read the file before. You have read the file before, then read only the relevant lines.

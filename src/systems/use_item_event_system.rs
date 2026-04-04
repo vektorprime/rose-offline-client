@@ -32,12 +32,17 @@ pub fn use_item_event_system(
     sound_cache: Res<SoundCache>,
 ) {
     for UseItemEvent { entity, item } in events.read() {
-        let (user_entity, user_global_transform, mut user_status_effects, mut user_status_effects_regen, user_is_player) =
-            if let Ok(user) = query.get_mut(*entity) {
-                user
-            } else {
-                continue;
-            };
+        let (
+            user_entity,
+            user_global_transform,
+            mut user_status_effects,
+            mut user_status_effects_regen,
+            user_is_player,
+        ) = if let Ok(user) = query.get_mut(*entity) {
+            user
+        } else {
+            continue;
+        };
 
         if item.item_type != ItemType::Consumable {
             continue;
@@ -78,38 +83,8 @@ pub fn use_item_event_system(
         }
 
         if let Some((base_status_effect_id, total_potion_value)) = item_data.apply_status_effect {
-            if let Some(base_status_effect) = game_data
-                .status_effects
-                .get_status_effect(base_status_effect_id)
-            {
-                for (status_effect_data, &potion_value_per_second) in base_status_effect
-                    .apply_status_effects
-                    .iter()
-                    .filter_map(|(id, value)| {
-                        game_data
-                            .status_effects
-                            .get_status_effect(*id)
-                            .map(|data| (data, value))
-                    })
-                {
-                    if user_status_effects.can_apply(
-                        status_effect_data,
-                        status_effect_data.id.get() as i32,
-                    ) {
-                        user_status_effects.apply_potion(
-                            &mut user_status_effects_regen,
-                            status_effect_data,
-                            Instant::now()
-                                + Duration::from_micros(
-                                    total_potion_value as u64 * 1000000
-                                        / potion_value_per_second as u64,
-                                ),
-                            total_potion_value,
-                            potion_value_per_second,
-                        );
-                    }
-                }
-            }
+            // Authority migrated to server. Client now only handles visual/audio effects.
+            // Status effects are applied via server messages.
         } else if let Some((_add_ability_type, _add_ability_value)) = item_data.add_ability {
             /*
             TODO:
