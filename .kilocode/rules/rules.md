@@ -15,6 +15,7 @@ Do NOT run "cargo clean" without asking the user for permission.
 
 You MUST run "Cargo build" inside of a subtask where it was requested. It should not run in the same task it was requested on. Report back the errors or failures, not warnings.
 
+
 ## Reading files
 Prefer to read the whole file if you've never read the file before. You have read the file before, then read only the relevant lines.
 
@@ -25,8 +26,7 @@ Before you begin troubleshooting, make note of the features that are involved in
 Bevy 0.18
 C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1
 
-Bevy 0.17
-C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.17.3
+
 
 
 ### Source Code For WGPU v27
@@ -46,9 +46,6 @@ C:\Users\vicha\RustroverProjects\exjam-rose-offline-client\rose-offline-client
 
 
 
-### Web Search
-Use your web search tools if you're stuck and the source code review is not helping
-
 
 ## Task Difficulty
 
@@ -67,3 +64,9 @@ When working on an issue, note what you attempted in a .md file dedicated to the
 
 Before ending a task, confirm that "cargo build" is successful.
 Always run "cargo build" in a separate task and report the progress back in max of 1 sentence
+
+
+## Before you start work
+Before working on an issue you must consult the two below folders:
+1. "pitfalls" folder -  before working on an issue to identify previous issues and resolutions.
+2. "system-architecture" folder before working on an issue to understand the architecture

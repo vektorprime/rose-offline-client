@@ -1167,6 +1167,28 @@ pub fn game_connection_system(
                     });
                 }
             }
+            Ok(ServerMessage::UpdateHealthPoints { entity_id, hp }) => {
+                if let Some(entity) = client_entity_list.get(entity_id) {
+                    commands.queue(move |world: &mut World| {
+                        if let Some(mut health_points) =
+                            world.entity_mut(entity).get_mut::<HealthPoints>()
+                        {
+                            health_points.hp = hp;
+                        }
+                    });
+                }
+            }
+            Ok(ServerMessage::UpdateManaPoints { entity_id, mp }) => {
+                if let Some(entity) = client_entity_list.get(entity_id) {
+                    commands.queue(move |world: &mut World| {
+                        if let Some(mut mana_points) =
+                            world.entity_mut(entity).get_mut::<ManaPoints>()
+                        {
+                            mana_points.mp = mp;
+                        }
+                    });
+                }
+            }
             Ok(ServerMessage::UpdateBasicStat {
                 basic_stat_type,
                 value,

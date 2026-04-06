@@ -1177,7 +1177,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             pending_damage_system,
             pending_skill_effect_system,
             hit_event_system,
-            spawn_effect_system,
+            spawn_effect_system.after(visible_status_effects_system).after(ui_debug_effect_list_system),
             visible_status_effects_system,
             move_destination_effect_system,
             create_damage_digit_material_system.before(damage_digit_render_system),

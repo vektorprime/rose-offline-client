@@ -14,7 +14,7 @@
 // packed as 7 vec4 values (28 floats, 112 bytes). Keep this mapping in sync
 // with src/render/cloud_material.rs::as_bind_group().
 struct CloudUniforms {
-    data: array<vec4<f32>, 7>;
+    data: array<vec4<f32>, 7>,
 }
 
 @group(#{MATERIAL_BIND_GROUP}) @binding(0) var<uniform> cloud_uniforms: CloudUniforms;
