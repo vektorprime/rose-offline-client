@@ -342,6 +342,8 @@ pub fn particle_sequence_system(
             }
 
             particle_sequence.start_delay = 0.0;
+            log::info!("[PARTICLE SEQUENCE] Starting particle sequence: {} particles, emit_rate={:?}", 
+                particle_sequence.particles.len(), particle_sequence.emit_rate);
         }
 
         // Apply particle keyframes
@@ -386,6 +388,10 @@ pub fn particle_sequence_system(
             while particle_sequence.emit_counter > 1.0
                 && particle_sequence.particles.len() < particle_sequence.num_particles as usize
             {
+                log::info!("[PARTICLE SEQUENCE] Spawning particle: {} -> {} particles, emit_rate={:?}", 
+                    particle_sequence.particles.len(), particle_sequence.particles.len() + 1,
+                    particle_sequence.emit_rate);
+                
                 let mut position = Vec3::new(
                     rng_gen_range(&mut rng, &particle_sequence.emit_radius_x),
                     rng_gen_range(&mut rng, &particle_sequence.emit_radius_y),

@@ -3,11 +3,13 @@ use bevy::prelude::{Entity, Message, Transform};
 use rose_data::EffectFileId;
 use rose_file_readers::VfsPathBuf;
 
+#[derive(Debug)]
 pub enum SpawnEffect {
     FileId(EffectFileId),
     Path(VfsPathBuf),
 }
 
+#[derive(Debug)]
 pub struct SpawnEffectData {
     pub effect: SpawnEffect,
     pub manual_despawn: bool,
@@ -34,7 +36,7 @@ impl SpawnEffectData {
     }
 }
 
-#[derive(Message)]
+#[derive(Message, Debug)]
 pub enum SpawnEffectEvent {
     // Spawns an effect at the same location than Entity, but does not attach to entity
     AtEntity(Entity, SpawnEffectData),

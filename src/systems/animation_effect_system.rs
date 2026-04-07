@@ -217,15 +217,26 @@ pub fn animation_effect_system(
             .flags
             .contains(AnimationEventFlags::EFFECT_SKILL_ACTION)
         {
+            log::info!("[ANIMATION EFFECT] EFFECT_SKILL_ACTION triggered for entity {:?}", event.entity);
+            
             if let Some(skill_data) = event_entity
                 .command
                 .get_skill_id()
                 .and_then(|skill_id| game_data.skills.get_skill(skill_id))
             {
+                log::info!("[ANIMATION EFFECT] Skill data found: id={:?}, skill_type={:?}, bullet_effect_id={:?}, hit_effect_file_id={:?}", 
+                    skill_data.id, skill_data.skill_type, skill_data.bullet_effect_id, skill_data.hit_effect_file_id);
+                
                 match skill_data.skill_type {
-                    SkillType::BasicAction => {}
-                    SkillType::CreateWindow => {}
-                    SkillType::Immediate => {}
+                    SkillType::BasicAction => {
+                        log::info!("[ANIMATION EFFECT] SkillType::BasicAction - no effect spawned");
+                    }
+                    SkillType::CreateWindow => {
+                        log::info!("[ANIMATION EFFECT] SkillType::CreateWindow - no effect spawned");
+                    }
+                    SkillType::Immediate => {
+                        log::info!("[ANIMATION EFFECT] SkillType::Immediate - no effect spawned");
+                    }
                     SkillType::SelfBound
                     | SkillType::SelfBoundDuration
                     | SkillType::SelfStateDuration
@@ -234,21 +245,28 @@ pub fn animation_effect_system(
                             .bullet_effect_id
                             .and_then(|id| game_data.effect_database.get_effect(id))
                         {
+                            log::info!("[ANIMATION EFFECT] bullet_effect_id resolved to effect_data with bullet_effect={:?}", effect_data.bullet_effect);
                             if let Some(effect_file_id) = effect_data.bullet_effect {
+                                log::info!("[ANIMATION EFFECT] Spawning bullet effect file_id={}", effect_file_id.get());
                                 spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                                     event.entity,
                                     Some(skill_data.bullet_link_dummy_bone_id as usize),
                                     SpawnEffectData::with_file_id(effect_file_id),
                                 ));
                             }
+                        } else {
+                            log::warn!("[ANIMATION EFFECT] bullet_effect_id={:?} did not resolve to effect_data", skill_data.bullet_effect_id);
                         }
 
                         if let Some(hit_effect_file_id) = skill_data.hit_effect_file_id {
+                            log::info!("[ANIMATION EFFECT] Spawning hit effect file_id={}", hit_effect_file_id.get());
                             spawn_effect_events.write(SpawnEffectEvent::OnEntity(
                                 event.entity,
                                 skill_data.hit_link_dummy_bone_id,
                                 SpawnEffectData::with_file_id(hit_effect_file_id),
                             ));
+                        } else {
+                            log::info!("[ANIMATION EFFECT] No hit_effect_file_id set");
                         }
                     }
                     SkillType::FireBullet => {

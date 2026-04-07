@@ -45,10 +45,12 @@ pub fn spawn_effect_system(
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     for event in events.read() {
+        log::info!("[SPAWN EFFECT SYSTEM] Processing event: {:?}", event);
+        
         match event {
             SpawnEffectEvent::InEntity(effect_entity, spawn_effect_data) => {
-                if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data)
-                {
+                if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data) {
+                    log::info!("[SPAWN EFFECT SYSTEM] Spawning effect InEntity: {}", effect_file_path.path().to_string_lossy());
                     spawn_effect(
                         &vfs_resource.vfs,
                         &mut commands,
@@ -63,11 +65,13 @@ pub fn spawn_effect_system(
                         Some(&effect_cache),
                         None, // No position for InEntity effects
                     );
+                } else {
+                    log::warn!("[SPAWN EFFECT SYSTEM] No effect file path found for InEntity event");
                 }
             }
             SpawnEffectEvent::AtEntity(at_entity, spawn_effect_data) => {
-                if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data)
-                {
+                if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data) {
+                    log::info!("[SPAWN EFFECT SYSTEM] Spawning effect AtEntity: {}", effect_file_path.path().to_string_lossy());
                     if let Ok(at_global_transform) = query_transform.get(*at_entity) {
                         if let Some(effect_entity) = spawn_effect(
                             &vfs_resource.vfs,

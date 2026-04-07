@@ -110,18 +110,27 @@ pub fn spawn_effect(
 ) -> Option<Entity> {
     // Use cache to avoid loading from file every time
     let path_str = effect_path.path().to_string_lossy().into_owned();
+    log::info!("[EFFECT LOADER] Loading effect: {}", path_str);
+    
     let eft_file = if let Some(cache) = effect_cache {
         if let Some(cached) = cache.get(&path_str) {
+            log::info!("[EFFECT LOADER] Effect loaded from cache: {} particles, {} meshes", 
+                cached.particles.len(), cached.meshes.len());
             cached
         } else {
             // Load from disk and cache
             let loaded = Arc::new(vfs.read_file::<EftFile, _>(&effect_path).ok()?);
+            log::info!("[EFFECT LOADER] Effect loaded from disk: {} particles, {} meshes", 
+                loaded.particles.len(), loaded.meshes.len());
             cache.insert_arc(path_str, Arc::clone(&loaded));
             loaded
         }
     } else {
         // No cache available, load directly
-        Arc::new(vfs.read_file::<EftFile, _>(&effect_path).ok()?)
+        let loaded = Arc::new(vfs.read_file::<EftFile, _>(&effect_path).ok()?);
+        log::info!("[EFFECT LOADER] Effect loaded (no cache): {} particles, {} meshes", 
+            loaded.particles.len(), loaded.meshes.len());
+        loaded
     };
 
     let mut child_entities = Vec::with_capacity(eft_file.particles.len());
