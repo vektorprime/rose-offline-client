@@ -91,13 +91,13 @@ pub mod blood_effect_plugin;
 
 use audio::OddioPlugin;
 use diagnostics::RenderDiagnosticsPlugin;
-  use events::{
-     BankEvent, CharacterSelectEvent, ChatBubbleEvent, ChatboxEvent, ClanDialogEvent, ClientEntityEvent,
+use events::{
+     BankEvent, BoardBoatEvent, CharacterSelectEvent, ChatBubbleEvent, ChatboxEvent, ClanDialogEvent, ClientEntityEvent,
      ConversationDialogEvent, FlightToggleEvent, GameConnectionEvent, HitEvent, LoadZoneEvent, LoginEvent,
      MessageBoxEvent, MoveDestinationEffectEvent, MoveSpeedSetEvent, NetworkEvent, NpcStoreEvent,
      NumberInputDialogEvent, PartyEvent, PingRequestEvent, PingResponseEvent, PingState, PersonalStoreEvent,
      PlayerCommandEvent, QuestScrollEvent, QuestTriggerEvent, SpawnEffectEvent, SpawnProjectileEvent, SystemFuncEvent,
-     UseItemEvent, WorldConnectionEvent, ZoneEvent, ZoneLoadedFromVfsEvent,
+     DisembarkBoatEvent, UseItemEvent, WorldConnectionEvent, ZoneEvent, ZoneLoadedFromVfsEvent,
      };
 use model_loader::ModelLoader;
 use render::{
@@ -130,14 +130,18 @@ use render::{
     toggle_atmosphere_based_on_time,
     sky_sphere_follow_camera_system,
     AtmosphereState,
-    CloudMaterialPlugin,
-    spawn_cloud_layer,
+    // Old 2D cloud system (DISABLED):
+    // CloudMaterialPlugin,
+    // spawn_cloud_layer,
+    // New 3D volumetric cloud system:
+    VolumetricCloudPlugin,
+    spawn_volumetric_clouds,
 };
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
     AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, FlightSettings, GameData, LoginCameraAnimation, MonsterChatterPhrases, NameTagSettings,
     NetworkThread, NetworkThreadMessage, RenderConfiguration, RenderExtractionDiagnostics, SelectedTarget, ServerConfiguration,
-    SoundCache, SoundSettings, SpecularTexture, VfsResource, WaterSettings, WorldTime, ZoneTime,
+    SoundCache, SoundSettings, SpecularTexture, VfsResource, WaterSettings, WindSettings, WindState, WorldTime, ZoneTime,
 };
 use scripting::RoseScriptingPlugin;
 use systems::{
@@ -166,9 +170,12 @@ use systems::{
     passive_recovery_system, pending_damage_system, pending_skill_effect_system,
     personal_store_model_add_collider_system, personal_store_model_system, player_command_system,
     projectile_system, quest_trigger_system, spawn_effect_system, spawn_projectile_system,
-    status_effect_system, system_func_event_system, monster_separation_system, update_position_system, use_item_event_system,
+    sail_camera_system, sailing_movement_system, status_effect_system, system_func_event_system,
+    monster_separation_system, update_position_system, use_item_event_system,
     vehicle_model_system, vehicle_sound_system, visible_status_effects_system,
     world_connection_system, world_time_system, zone_time_system, zone_viewer_enter_system,
+    wind_update_system, sync_vegetation_wind_system, ensure_boat_state_system, boat_toggle_system,
+    boat_buoyancy_system,
     // DISABLED: color_grading_time_of_day_system conflicts with Bevy 0.16 Atmosphere
     // color_grading_time_of_day_system,
     DebugInspectorPlugin, FishPlugin, BirdPlugin, DirtDashPlugin, WingSpawnPlugin, WindEffectPlugin,
@@ -186,7 +193,7 @@ use ui::{
     ui_inventory_system, ui_item_drop_name_system, ui_login_system, ui_message_box_system,
     ui_minimap_system, ui_npc_store_system, ui_number_input_dialog_system, ui_party_option_system,
     ui_party_system, ui_personal_store_system, ui_player_info_system, ui_quest_list_system,
-    ui_respawn_system, ui_selected_target_system, ui_server_select_system, ui_settings_system,
+    ui_respawn_system, ui_sailing_hud_system, ui_selected_target_system, ui_server_select_system, ui_settings_system,
     ui_skill_list_system, ui_skill_tree_system, ui_sound_event_system, ui_status_effects_system,
     ui_window_sound_system, widgets::Dialog, DepthOfFieldSettings, DialogLoader, UiSoundEvent,
     UiStateAdminMenu, UiStateDebugWindows, UiStateDragAndDrop, UiStateWindows,
@@ -1006,8 +1013,10 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             // Map editor system
             map_editor::MapEditorPlugin,
 
-            // Procedural cloud material
-            CloudMaterialPlugin,
+            // Old 2D procedural cloud material (DISABLED):
+            // CloudMaterialPlugin,
+            // New 3D volumetric cloud system:
+            VolumetricCloudPlugin,
         ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
@@ -1023,6 +1032,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.insert_state(app_state);
 
     app.add_message::<BankEvent>()
+        .add_message::<BoardBoatEvent>()
         .add_message::<ChatBubbleEvent>()
         .add_message::<ChatboxEvent>()
         .add_message::<CharacterSelectEvent>()
@@ -1048,6 +1058,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_message::<QuestScrollEvent>()
         .add_message::<QuestTriggerEvent>()
         .add_message::<SystemFuncEvent>()
+        .add_message::<DisembarkBoatEvent>()
         .add_message::<SpawnEffectEvent>()
         .add_message::<SpawnProjectileEvent>()
         .add_message::<UseItemEvent>()
@@ -1467,6 +1478,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<ui::StarrySkyRenderSettings>()
         .init_resource::<WaterSettings>()
         .init_resource::<FlightSettings>()
+        .init_resource::<WindSettings>()
+        .init_resource::<WindState>()
         .init_resource::<MonsterChatterPhrases>()
         .init_resource::<AtmosphereState>()
         .init_resource::<graphics::GraphicsSettings>();
@@ -1474,7 +1487,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
 
     // Spawn sky systems on startup
-    app.add_systems(PostStartup, (spawn_starry_sky_and_moon, spawn_cloud_layer));
+    // app.add_systems(PostStartup, (spawn_starry_sky_and_moon, spawn_cloud_layer));
+    app.add_systems(PostStartup, (spawn_starry_sky_and_moon, spawn_volumetric_clouds));
 
     // System to apply depth of field settings from the resource to the camera
     app.add_systems(Update, apply_depth_of_field_settings);
@@ -1518,6 +1532,10 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(Update, collision_player_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, cooldown_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, client_entity_event_system.run_if(in_state(AppState::Game)));
+
+    // Global wind simulation and vegetation synchronization
+    app.add_systems(Update, wind_update_system.run_if(in_state(AppState::Game)));
+    app.add_systems(Update, sync_vegetation_wind_system.run_if(in_state(AppState::Game)).after(wind_update_system));
     
     // Flight systems - ensure_flight_state_system runs before flight_toggle_system
     app.add_systems(Update, ensure_flight_state_system.run_if(in_state(AppState::Game)));
@@ -1531,6 +1549,19 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     
     // Move speed command system
     app.add_systems(Update, move_speed_set_system.run_if(in_state(AppState::Game)));
+
+    // Sailing systems
+    app.add_systems(Update, ensure_boat_state_system.run_if(in_state(AppState::Game)));
+    app.add_systems(Update, boat_toggle_system.run_if(in_state(AppState::Game)).after(ensure_boat_state_system));
+    app.add_systems(Update, sailing_movement_system.run_if(in_state(AppState::Game)).after(boat_toggle_system).after(wind_update_system));
+    app.add_systems(
+        Update,
+        boat_buoyancy_system
+            .run_if(in_state(AppState::Game))
+            .after(sailing_movement_system)
+            .after(facing_direction_system),
+    );
+    app.add_systems(Update, sail_camera_system.run_if(in_state(AppState::Game)).after(boat_toggle_system));
 
     // Game systems - part 2
     app.add_systems(Update, (use_item_event_system.run_if(in_state(AppState::Game)),));
@@ -1564,6 +1595,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // UI systems - part 2 (must run in EguiPrimaryContextPass for bevy_egui 0.39)
     app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_respawn_system.run_if(in_state(AppState::Game)));
+    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_sailing_hud_system.run_if(in_state(AppState::Game)));
     app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_selected_target_system.run_if(in_state(AppState::Game)));
     app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_skill_list_system.run_if(in_state(AppState::Game)));
     app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_skill_tree_system.run_if(in_state(AppState::Game)));
@@ -1777,13 +1809,29 @@ fn load_game_data_irose(
             skills.clone(),
             npcs.clone(),
         ),
-        animation_event_flags: rose_data_irose::get_animation_event_flags(),
+        animation_event_flags: {
+            let flags = rose_data_irose::get_animation_event_flags();
+            if flags.is_empty() {
+                log::warn!("Animation event flags are empty! Gameplay effects may not trigger.");
+            } else {
+                log::info!("Loaded {} animation event flags", flags.len());
+            }
+            flags
+        },
         character_motion_database,
         client_strings: rose_data_irose::get_client_strings(string_database.clone())
             .expect("Failed to load client strings"),
         data_decoder: rose_data_irose::get_data_decoder(),
-        effect_database: rose_data_irose::get_effect_database(&vfs_resource.vfs)
-            .expect("Failed to load effect database"),
+        effect_database: {
+            let db = rose_data_irose::get_effect_database(&vfs_resource.vfs)
+                .expect("Failed to load effect database");
+            if db.is_empty() {
+                log::warn!("Effect database is empty! Visual effects will not appear.");
+            } else {
+                log::info!("Loaded {} effects from effect database", db.len());
+            }
+            db
+        },
         items,
         job_class: Arc::new(
             rose_data_irose::get_job_class_database(&vfs_resource.vfs, string_database.clone())

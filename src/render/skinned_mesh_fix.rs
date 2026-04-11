@@ -1,7 +1,7 @@
 use bevy::{
-    prelude::*,
-    mesh::{Mesh3d, skinning::SkinnedMesh},
     asset::LoadState,
+    mesh::{skinning::SkinnedMesh, Mesh3d},
+    prelude::*,
 };
 
 use crate::components::SkinningTarget;

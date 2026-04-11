@@ -1,63 +1,197 @@
-# Rules
+# Rules (LLM Execution Contract)
 
-## Commands
-Use only Windows commands, not linux commands
+## 1. HARD CONSTRAINTS (NEVER VIOLATE)
 
-Do NOT try to parse output with "head" like this "cargo build 2>&1 | head -100"
+- Use **Windows commands only**. Never use Linux/Unix commands.
+- Do NOT run:
+  - `cargo run`
+  - `cargo build --release`
+  - `cargo clean` unless the user explicitly approves it.
+- Do NOT truncate output using:
+  - `head`
+  - `Select-Object`
+- When filtering output, use:
+  - `findstr` only
 
-Do NOT try to parse output with select-string like this "cargo build 2>&1 | Select-Object -First 100" instead prefer findstr.
+If any instruction conflicts with these rules, **these rules take priority**.
 
-Do NOT run "cargo build --release" only run "cargo build"
+---
 
-Do NOT run "cargo run" ask the user for output of the compiled software
+## 2. BUILD EXECUTION RULES
 
-Do NOT run "cargo clean" without asking the user for permission.
+### When to run `cargo build`
 
-You MUST run "Cargo build" inside of a subtask with the instructions "You must run cargo build and report back the errors or failures, not warnings."
+You MUST run `cargo build`:
 
-## Reading files
-Prefer to read the whole file if you've never read the file before. You have read the file before, then read only the relevant lines.
+- After making code changes
+- Before declaring a task complete
 
-## Source Code For Bevy
+### How to run `cargo build`
 
-Before you begin troubleshooting, make note of the features that are involved in this interaction, then search the bevy source code located here for those features and read their .rs files to make sure we fully understand how they work.
+- `cargo build` MUST be executed in a **separate subtask**
+- `cargo build` MUST NOT run in the same task where it is requested
 
-Bevy 0.18.1 source
-C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1
+### Required subtask prompt
+
+Use **exactly** this text when creating the subtask:
+
+> You are a subtask. Your only purpose is to run `cargo build`, capture all output, report ONLY errors and ignore warnings, include file paths and line numbers when available, then delete the output file and return using the attempt_completion tool.
+
+### Command to use
+
+```bat
+cargo build > build_output.txt 2>&1
+findstr /C:"error" build_output.txt
+del build_output.txt
+```
+
+### What the subtask must report
+
+Report only:
+
+- Error message
+- File path
+- Line number, if available
+
+Do NOT report:
+
+- Warnings
+- General build progress
+- Non-error logs unless needed to explain the failure
+
+---
+
+## 3. REQUIRED PRE-WORK ANALYSIS
+
+Before starting any task, you MUST complete all of the following:
+
+### Step 1 - Review prior knowledge
+
+Check these folders first:
+
+1. `pitfalls` folder — identify known issues and previous fixes
+2. `system-architecture` folder — understand the relevant architecture
+
+### Step 2 - Identify affected features
+
+- Explicitly identify which systems, features, or subsystems are involved in the current task
+
+### Step 3 - Validate behavior from source
+
+For each relevant feature:
+
+- Search the Bevy 0.18.1 source code for the related implementation
+- Read the relevant `.rs` files
+- Confirm actual behavior from source code
+- Do NOT assume behavior without checking source
+
+---
+
+## 4. SOURCE CODE LOCATIONS
 
 
+### Source Code for Bevy 0.18.1
 
-### Source Code For WGPU v27
-C:\Users\vicha\RustroverProjects\bevy-collection\wgpu-27
+`C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1`
 
-### Source Code For Bevy_EGUI 0.39.1
-C:\Users\vicha\RustroverProjects\bevy-collection\bevy_egui-0.39.1
+### Source Code for WGPU v27
 
-## What To Do When Stuck
+`C:\Users\vicha\RustroverProjects\bevy-collection\wgpu-27`
 
-### Old Working Version Of The Game
-An older, working verison of the game developed in C++ is here for reference
-E:\cpp\client\src
+### Source Code for Bevy_EGUI 0.39.1
 
-An older, working version of the game that uses Bevy 0.11 is here for reference
-C:\Users\vicha\RustroverProjects\exjam-rose-offline-client\rose-offline-client
+`C:\Users\vicha\RustroverProjects\bevy-collection\bevy_egui-0.39.1`
 
+### Game Server Source Code
 
+`C:\Users\vicha\RustroverProjects\rose-offline`
 
-## Task Difficulty
+### Game Client Source Code
 
-If something is too difficult, break it down into as many steps as needed steps. NEVER give up on a task due to difficulty.
-
-## Lessons Learned in pitfalls folder
-
-When you fix an issue AND the user confirms it's resolved, note the interaction and details in the pitfalls folder in a .md file so that future work can benefit from the lessons learned. Do not edit create or modify pitfall .md documents until the user confirms the issue is fixed. Your notes should be short and concise.
+`C:\Users\vicha\RustroverProjects\rose-offline-client`
 
 
-## Issue Tracking
+---
 
-When working on an issue, note what you attempted in a .md file dedicated to the issue. This should be reviewed everytime context is compressed to prevent repeatedly trying the same thing. The file should be cleaned up when the issue is confirmed as fixed.
+## 5. WHEN STUCK (MANDATORY ACTIONS)
 
-## Finishing
+If progress stalls, uncertainty remains, or the issue is not understood well enough to proceed confidently, you MUST do all of the following:
 
-Before ending a task, confirm that "cargo build" is successful.
-Always run "cargo build" in a separate task and report the progress back in max of 1 sentence
+1. Research the issue using your search and fetch content tools
+2. Compare against older working references
+3. Check Rust compiler error documentation when dealing with compilation failures
+
+### Older working references
+
+**Older C++ version of the game**
+
+`E:\cpp\client\src`
+
+**Older working version using Bevy 0.11**
+
+`C:\Users\vicha\RustroverProjects\exjam-rose-offline-client\rose-offline-client`
+
+### Rust error code reference
+
+`C:\Users\vicha\RustroverProjects\rust-errors\all-rust-errors.md`
+
+---
+
+## 6. PLACEHOLDERS AND STUB FUNCTIONS
+
+- Never leave placeholders when the user expects complete code
+- Never leave stub functions when the user expects complete code
+- All delivered code must be complete and functional
+
+---
+
+## 7. TASK DIFFICULTY
+
+- If a task is difficult, break it into as many smaller steps as needed
+- Never give up on a task because it is difficult
+- Continue working until you reach a complete and correct solution or a clearly explained blocker
+
+---
+
+## 8. LESSONS LEARNED IN `pitfalls` FOLDER
+
+When you fix an issue **and the user confirms it is resolved**:
+
+- Add a short `.md` note to the `pitfalls` folder
+- Keep the note concise
+- Include:
+  - the issue
+  - the root cause
+  - the fix
+
+Do NOT create, edit, or modify `pitfalls` notes before the user confirms the issue is fixed.
+
+---
+
+## 9. ISSUE TRACKING
+
+When working on an issue:
+
+- Maintain a dedicated `.md` file for that issue
+- Record what was attempted
+- Record the results of each attempt
+- Review this file whenever context is compressed
+- Use it to avoid repeating failed approaches
+
+After the issue is confirmed fixed, clean up the issue-tracking file if appropriate.
+
+---
+
+## 10. TASK COMPLETION REQUIREMENT
+
+Before considering a task resolved:
+
+- Confirm that `cargo build` succeeds
+- This confirmation MUST come from the required separate subtask
+- Do NOT declare the task complete until that build succeeds
+
+### Final required subtask prompt
+
+Use **exactly** this text for the final build-check subtask:
+
+> You are a subtask. Your only purpose is to run `cargo build`, capture all output, report ONLY errors and ignore warnings, include file paths and line numbers when available, then delete the output file and return using the attempt_completion tool.

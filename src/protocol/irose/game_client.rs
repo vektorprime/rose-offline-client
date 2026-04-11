@@ -56,7 +56,9 @@ use rose_network_irose::{
         PacketServerSpawnEntityItemDrop, PacketServerSpawnEntityMonster,
         PacketServerSpawnEntityNpc, PacketServerStartCastingSkill, PacketServerStopMoveEntity,
         PacketServerTeleport, PacketServerUpdateAbilityValue, PacketServerUpdateAmmo,
+        PacketServerUpdateConsumableCooldown, PacketServerUpdateAbilityValues,
         PacketServerUpdateBasicStat, PacketServerUpdateEquipment, PacketServerUpdateInventory,
+        PacketServerUpdateCooldown,
         PacketServerUpdateItemLife, PacketServerUpdateLevel, PacketServerUpdateMoney,
         PacketServerUpdateSpeed, PacketServerUpdateStatusEffects, PacketServerUpdateVehiclePart,
         PacketServerUpdateXpStamina, PacketServerUseEmote, PacketServerUseItem,
@@ -505,6 +507,7 @@ impl GameClient {
                         entity_id: message.entity_id,
                         status_effects: message.status_effects,
                         updated_values: message.updated_values,
+                        regen_effects: message.regen_effects.regens,
                     })
                     .ok();
             }
@@ -729,6 +732,24 @@ impl GameClient {
                     .send(ServerMessage::FinishCastingSkill {
                         entity_id: message.entity_id,
                         skill_id: message.skill_id,
+                    })
+                    .ok();
+            }
+            Some(ServerPackets::UpdateCooldown) => {
+                let message = PacketServerUpdateCooldown::try_from(packet)?;
+                self.server_message_tx
+                    .send(ServerMessage::UpdateCooldown {
+                        skill_id: message.skill_id,
+                        duration: message.duration,
+                    })
+                    .ok();
+            }
+            Some(ServerPackets::UpdateConsumableCooldown) => {
+                let message = PacketServerUpdateConsumableCooldown::try_from(packet)?;
+                self.server_message_tx
+                    .send(ServerMessage::UpdateConsumableCooldown {
+                        cooldown_group: message.cooldown_group,
+                        duration: message.duration,
                     })
                     .ok();
             }
@@ -1102,6 +1123,24 @@ impl GameClient {
                             .ok();
                     }
                 }
+            }
+            Some(ServerPackets::UpdateAbilityValues) => {
+                let packet = PacketServerUpdateAbilityValues::try_from(packet)?;
+                self.server_message_tx
+                    .send(ServerMessage::UpdateAbilityValues {
+                        entity_id: packet.entity_id,
+                        attack_power: packet.attack_power,
+                        defence: packet.defence,
+                        hit: packet.hit,
+                        resistance: packet.resistance,
+                        avoid: packet.avoid,
+                        attack_speed: packet.attack_speed,
+                        critical: packet.critical,
+                        max_health: packet.max_health,
+                        max_mana: packet.max_mana,
+                        move_speed: packet.move_speed,
+                    })
+                    .ok();
             }
             Some(ServerPackets::RepairedItemUsingItem) => {
                 log::info!(

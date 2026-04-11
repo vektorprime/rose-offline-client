@@ -286,6 +286,41 @@ pub enum SmaaQuality {
     Ultra,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]
+#[reflect(Debug, Clone, PartialEq)]
+pub enum SailQuality {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]
+#[reflect(Debug, Clone, PartialEq)]
+pub enum WaveQuality {
+    Low,
+    High,
+}
+
+#[derive(Debug, Clone, Reflect)]
+#[reflect(Debug, Clone)]
+pub struct SailingGraphicsSettings {
+    pub wake_particles_enabled: bool,
+    pub sail_deformation_quality: SailQuality,
+    pub ocean_wave_quality: WaveQuality,
+    pub bow_spray_enabled: bool,
+}
+
+impl Default for SailingGraphicsSettings {
+    fn default() -> Self {
+        Self {
+            wake_particles_enabled: true,
+            sail_deformation_quality: SailQuality::Medium,
+            ocean_wave_quality: WaveQuality::High,
+            bow_spray_enabled: true,
+        }
+    }
+}
+
 impl SmaaQuality {
     /// Returns a display-friendly name for the UI
     pub fn display_name(&self) -> &'static str {
@@ -388,6 +423,9 @@ pub struct GraphicsSettings {
     /// Terrain light intensity scale (matches terrain lighting to model lighting)
     /// Higher values make the terrain brighter. Default is 5.0.
     pub terrain_light_intensity: f32,
+
+    /// Sailing-specific graphics quality toggles.
+    pub sailing: SailingGraphicsSettings,
 }
 
 impl Default for GraphicsSettings {
@@ -430,6 +468,9 @@ impl Default for GraphicsSettings {
 
             // Terrain Lighting
             terrain_light_intensity: 5.0,
+
+            // Sailing
+            sailing: SailingGraphicsSettings::default(),
         }
     }
 }
@@ -462,6 +503,7 @@ impl GraphicsSettings {
             ambient_light_brightness: 1.0,
             ambient_light_color: Color::WHITE,
             terrain_light_intensity: 5.0,
+            sailing: SailingGraphicsSettings::default(),
         }
     }
 
@@ -493,6 +535,7 @@ impl GraphicsSettings {
             ambient_light_brightness: 1.0,
             ambient_light_color: Color::WHITE,
             terrain_light_intensity: 5.0,
+            sailing: SailingGraphicsSettings::default(),
         }
     }
 
@@ -524,6 +567,7 @@ impl GraphicsSettings {
             ambient_light_brightness: 1.0,
             ambient_light_color: Color::WHITE,
             terrain_light_intensity: 5.0,
+            sailing: SailingGraphicsSettings::default(),
         }
     }
 
@@ -555,6 +599,7 @@ impl GraphicsSettings {
             ambient_light_brightness: 1.0,
             ambient_light_color: Color::WHITE,
             terrain_light_intensity: 5.0,
+            sailing: SailingGraphicsSettings::default(),
         }
     }
 }

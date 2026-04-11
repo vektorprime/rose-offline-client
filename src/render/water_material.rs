@@ -8,18 +8,12 @@
 //! - Configurable water settings via WaterSettings resource
 
 use bevy::{
-    asset::{load_internal_asset, Asset, AssetApp, Handle, weak_handle},
+    asset::{load_internal_asset, weak_handle, Asset, AssetApp, Handle},
     math::{Vec3, Vec4},
-    pbr::{
-        Material, MaterialPipeline, MaterialPipelineKey,
-    },
+    pbr::{Material, MaterialPipeline, MaterialPipelineKey},
     prelude::{App, Plugin},
     reflect::TypePath,
-    render::{
-        alpha::AlphaMode,
-        render_resource::*,
-        renderer::RenderDevice,
-    },
+    render::{alpha::AlphaMode, render_resource::*, renderer::RenderDevice},
 };
 use bevy_mesh::{Mesh, MeshVertexBufferLayoutRef};
 use bevy_shader::{Shader, ShaderRef};
@@ -41,14 +35,14 @@ impl Plugin for WaterMaterialPlugin {
             "shaders/water_material.wgsl",
             Shader::from_wgsl
         );
-        
+
         // Register the material asset
         app.init_asset::<WaterMaterial>();
-        
+
         // Add the material plugin for rendering
         // Note: prepass and shadows are controlled via enable_prepass() and enable_shadows() methods on Material trait
         app.add_plugins(bevy::pbr::MaterialPlugin::<WaterMaterial>::default());
-        
+
         log::info!("[WATER MATERIAL] WaterMaterialPlugin loaded");
     }
 }
@@ -251,19 +245,18 @@ impl AsBindGroup for WaterMaterial {
                 0.0,
             ),
         ];
-        let water_material_data_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("water_material_data_buffer"),
-            contents: bytemuck::cast_slice(&water_material_data),
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
-        });
+        let water_material_data_buffer =
+            render_device.create_buffer_with_data(&BufferInitDescriptor {
+                label: Some("water_material_data_buffer"),
+                contents: bytemuck::cast_slice(&water_material_data),
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            });
 
         // Create bind group entries
-        let entries = vec![
-            BindGroupEntry {
-                binding: 0,
-                resource: water_material_data_buffer.as_entire_binding(),
-            },
-        ];
+        let entries = vec![BindGroupEntry {
+            binding: 0,
+            resource: water_material_data_buffer.as_entire_binding(),
+        }];
 
         // Create bind group
         let bind_group = render_device.create_bind_group(Self::label(), &layout, &entries);

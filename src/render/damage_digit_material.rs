@@ -1,8 +1,8 @@
 use bevy::{
+    asset::{load_internal_asset, weak_handle, Handle},
+    pbr::{Material, MaterialPipeline, MaterialPipelineKey},
     prelude::*,
     render::{alpha::AlphaMode, render_resource::*, storage::ShaderStorageBuffer},
-    asset::{load_internal_asset, Handle, weak_handle},
-    pbr::{Material, MaterialPipeline, MaterialPipelineKey},
 };
 use bevy_mesh::{MeshVertexBufferLayoutRef, VertexBufferLayout};
 use bevy_shader::ShaderRef;
@@ -14,13 +14,13 @@ pub const DAMAGE_DIGIT_MATERIAL_SHADER_HANDLE: Handle<Shader> =
 pub struct DamageDigitMaterial {
     #[storage(0, read_only)]
     pub positions: Handle<ShaderStorageBuffer>,
-    
+
     #[storage(1, read_only)]
     pub sizes: Handle<ShaderStorageBuffer>,
-    
+
     #[storage(2, read_only)]
     pub uvs: Handle<ShaderStorageBuffer>,
-    
+
     #[texture(3)]
     #[sampler(4)]
     pub texture: Handle<Image>,
@@ -82,7 +82,7 @@ pub struct DamageDigitMaterialPlugin;
 impl Plugin for DamageDigitMaterialPlugin {
     fn build(&self, app: &mut App) {
         log::info!("[DAMAGE_DIGIT_MATERIAL_PLUGIN] Starting to build plugin...");
-        
+
         load_internal_asset!(
             app,
             DAMAGE_DIGIT_MATERIAL_SHADER_HANDLE,

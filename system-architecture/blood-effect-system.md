@@ -605,7 +605,7 @@ src/
 pub struct BloodEffectConfig {
     /// Enable/disable blood effects entirely
     pub enabled: bool,
-    /// Blood intensity multiplier (0.0 - 1.0)
+    /// Blood intensity multiplier (recommended range 0.0 - 2.0)
     pub intensity: f32,
     /// Maximum blood spatters in scene
     pub max_spatters: usize,
@@ -621,7 +621,7 @@ impl Default for BloodEffectConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            intensity: 0.7,
+            intensity: 1.5,
             max_spatters: 100,
             show_wounds: true,
             blood_color: Color::srgb(0.6, 0.0, 0.0),

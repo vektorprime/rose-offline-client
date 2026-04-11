@@ -13,8 +13,8 @@ use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
     components::{
-        ColliderParent, CollisionHeightOnly, CollisionPlayer, EventObject, FlightState, NextCommand, Position,
-        WarpObject, COLLISION_FILTER_COLLIDABLE, COLLISION_FILTER_MOVEABLE,
+        BoatState, ColliderParent, CollisionHeightOnly, CollisionPlayer, EventObject, FlightState,
+        NextCommand, Position, WarpObject, COLLISION_FILTER_COLLIDABLE, COLLISION_FILTER_MOVEABLE,
         COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_ZONE_EVENT_OBJECT,
         COLLISION_GROUP_ZONE_TERRAIN, COLLISION_GROUP_ZONE_WARP_OBJECT,
     },
@@ -138,7 +138,7 @@ pub fn collision_player_system_join_zone(
 pub fn collision_player_system(
     mut commands: Commands,
     mut query_collision_entity: Query<
-        (Entity, &mut Position, &mut Transform, Option<&FlightState>),
+        (Entity, &mut Position, &mut Transform, Option<&FlightState>, Option<&BoatState>),
         With<CollisionPlayer>,
     >,
     mut query_event_object: Query<&mut EventObject>,
@@ -169,10 +169,11 @@ pub fn collision_player_system(
         };
 
     let mut entity_count = 0;
-    for (entity, mut position, mut transform, flight_state) in query_collision_entity.iter_mut() {
+    for (entity, mut position, mut transform, flight_state, boat_state) in query_collision_entity.iter_mut() {
         entity_count += 1;
         // Check if player is flying - if so, skip ground collision and use position directly
         let is_flying = flight_state.map_or(false, |fs| fs.is_flying);
+        let is_sailing = boat_state.map_or(false, |bs| bs.active);
         
         // DIAGNOSTIC: Disabled - Log first iteration to verify CollisionPlayer is present
         // if entity_count == 1 {
@@ -188,6 +189,82 @@ pub fn collision_player_system(
             transform.translation.y = position.z / 100.0;  // Use position.z for height
             transform.translation.z = -position.y / 100.0;
             continue; // Skip ground collision when flying
+        }
+
+        if is_sailing {
+            // Sailing still needs wall/object collision, but should remain on water surface
+            // (no gravity/terrain-following Y adjustment).
+            let new_translation = Vec3::new(
+                position.x / 100.0,
+                position.z / 100.0,
+                -position.y / 100.0,
+            );
+            let collider_radius = 0.4;
+            let translation_delta = new_translation - transform.translation;
+
+            if translation_delta.length() > 0.00001 {
+                let cast_origin = transform.translation + Vec3::new(0.0, 1.2, 0.0);
+                let cast_direction = translation_delta.normalize();
+                let ball_collider = Collider::ball(collider_radius);
+
+                if let Some((_, distance)) = rapier_context.cast_shape(
+                    cast_origin + cast_direction * collider_radius,
+                    Quat::default(),
+                    cast_direction,
+                    <&dyn Shape>::from(&ball_collider),
+                    ShapeCastOptions {
+                        max_time_of_impact: translation_delta.length(),
+                        target_distance: 0.0,
+                        compute_impact_geometry_on_penetration: false,
+                        stop_at_penetration: false,
+                    },
+                    QueryFilter::new().groups(CollisionGroups::new(
+                        COLLISION_FILTER_COLLIDABLE,
+                        !COLLISION_GROUP_ZONE_TERRAIN & !COLLISION_GROUP_PHYSICS_TOY,
+                    )),
+                ) {
+                    let collision_translation =
+                        cast_origin + translation_delta * (distance.time_of_impact - 0.1).max(0.0);
+                    position.x = collision_translation.x * 100.0;
+                    position.y = -(collision_translation.z * 100.0);
+
+                    commands.entity(entity).insert(NextCommand::with_stop());
+
+                    if let Some(game_connection) = game_connection.as_ref() {
+                        game_connection
+                            .client_message_tx
+                            .send(ClientMessage::MoveCollision {
+                                position: position.position,
+                            })
+                            .ok();
+                    }
+                }
+            }
+
+            // Prevent sailing onto land by blocking horizontal movement if terrain rises above
+            // the current water surface (with a small tolerance).
+            let terrain_height = current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
+            let water_height = position.z / 100.0;
+            if terrain_height > water_height - 0.05 {
+                position.x = transform.translation.x * 100.0;
+                position.y = -(transform.translation.z * 100.0);
+
+                commands.entity(entity).insert(NextCommand::with_stop());
+
+                if let Some(game_connection) = game_connection.as_ref() {
+                    game_connection
+                        .client_message_tx
+                        .send(ClientMessage::MoveCollision {
+                            position: position.position,
+                        })
+                        .ok();
+                }
+            }
+
+            transform.translation.x = position.x / 100.0;
+            transform.translation.y = position.z / 100.0;
+            transform.translation.z = -position.y / 100.0;
+            continue;
         }
         
         // Cast ray forward to collide with walls

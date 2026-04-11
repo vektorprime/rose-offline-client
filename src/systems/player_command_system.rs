@@ -19,7 +19,7 @@ use crate::{
         Bank, Clan, ClientEntity, ClientEntityType, Command, ConsumableCooldownGroup, Cooldowns,
         PartyInfo, PlayerCharacter, Position,
     },
-    events::{ChatboxEvent, PlayerCommandEvent, QuestScrollEvent, QuestTriggerEvent},
+    events::{ChatboxEvent, PlayerCommandEvent, QuestScrollEvent},
     resources::{GameConnection, GameData, SelectedTarget},
     ui::UiStateInventory,
 };
@@ -30,7 +30,7 @@ pub fn player_command_system(
     mut query_player: Query<(
         Entity,
         Option<&Bank>,
-        &mut Cooldowns,
+        &Cooldowns,
         &mut Hotbar,
         &Inventory,
         &Position,
@@ -51,7 +51,6 @@ pub fn player_command_system(
     )>,
     mut chatbox_events: MessageWriter<ChatboxEvent>,
     mut quest_scroll_events: MessageWriter<QuestScrollEvent>,
-    mut quest_trigger_events: MessageWriter<QuestTriggerEvent>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
     selected_target: Res<SelectedTarget>,
@@ -61,7 +60,7 @@ pub fn player_command_system(
     if query_player_result.is_err() {
         return;
     }
-    let (player_entity, player_bank, mut player_cooldowns, mut player_hotbar, player_inventory, player_position, player_skill_list, player_team, player_clan, player_party_info) = query_player_result.unwrap();
+    let (player_entity, player_bank, player_cooldowns, mut player_hotbar, player_inventory, player_position, player_skill_list, player_team, player_clan, player_party_info) = query_player_result.unwrap();
 
     for event in player_command_events.read() {
         let mut event = event.clone();
@@ -106,9 +105,6 @@ pub fn player_command_system(
                         chatbox_events.write(ChatboxEvent::System("Waiting...".to_string()));
                         continue;
                     }
-
-                    player_cooldowns
-                        .set_global_cooldown(Duration::from_millis(250));
 
                     match skill_data.skill_type {
                         SkillType::BasicAction => match &skill_data.basic_command {
@@ -605,13 +601,6 @@ pub fn player_command_system(
                                         }
                                     }
                                 }
-                            }
-
-                            if let (Some(cooldown_group), Some(cooldown_duration)) =
-                                (cooldown_group, cooldown_duration)
-                            {
-                                player_cooldowns
-                                    .set_consumable_cooldown(cooldown_group, cooldown_duration);
                             }
 
                             if let Some(game_connection) = game_connection.as_ref() {

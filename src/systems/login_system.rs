@@ -66,12 +66,33 @@ pub fn login_state_exit_system(mut commands: Commands) {
 }
 
 pub fn login_system(
+    mut commands: Commands,
     mut egui_context: EguiContexts,
+    query_cameras: Query<(Entity, Option<&CameraAnimation>), With<Camera3d>>,
+    login_camera_animation: Option<Res<LoginCameraAnimation>>,
+    asset_server: Res<AssetServer>,
     login_connection: Option<Res<LoginConnection>>,
     mut login_state: ResMut<LoginState>,
     server_list: Option<Res<ServerList>>,
 ) {
     // log::info!("[LOGIN SYSTEM] login_system running, state: {:?}, login_connection: {}", *login_state, login_connection.is_some());
+
+    // Ensure login intro camera animation is present while in GameLogin.
+    // This mirrors the old client behavior and also recovers cases where the
+    // camera entity is spawned after OnEnter(GameLogin) has already fired.
+    if let Ok((camera_entity, camera_animation)) = query_cameras.single() {
+        if camera_animation.is_none() {
+            let camera_animation_handle = login_camera_animation
+                .map(|res| res.handle.clone())
+                .unwrap_or_else(|| asset_server.load("3DDATA/TITLE/CAMERA01_INTRO01.ZMO"));
+
+            commands
+                .entity(camera_entity)
+                .remove::<FreeCamera>()
+                .remove::<OrbitCamera>()
+                .insert(CameraAnimation::repeat(camera_animation_handle, None));
+        }
+    }
 
     if !matches!(*login_state, LoginState::Input) && login_connection.is_none() {
         // When we lose login server connection, return to login

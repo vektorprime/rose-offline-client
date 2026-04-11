@@ -39,3 +39,32 @@ app.add_systems(
 
 ### Lesson Learned
 When multiple systems share mutable resource state (`UiStateDragAndDrop`), ensure proper system ordering so that "consumer" systems (drop targets) run before "cleanup" systems. The cleanup system should always run last to avoid race conditions.
+
+---
+
+## Skill List Window Drag/Misalignment Regression (Fixed 2026-04-09)
+
+### Problem
+The skill list dialog (`DLGSKILL`) had multiple regressions:
+- skill icons/text detached from the dialog when moving the window,
+- icons overflowing beyond the bottom of the window,
+- the skill window could not be dragged downward.
+
+### Root Cause
+Two issues combined:
+1. A global change to [`add_at`](src/ui/widgets/draw.rs:20) altered positioning semantics for all windows, causing unrelated UI drift.
+2. In [`ui_skill_list_system`](src/ui/ui_skill_list_system.rs:146), the rendered row count used `SKILL_PAGE_SIZE` instead of the actual dialog listbox height, so content exceeded dialog bounds and influenced drag interaction.
+
+### Solution
+- Reverted global [`add_at`](src/ui/widgets/draw.rs:20) behavior to the stable baseline (relative-to-`min_rect` semantics).
+- Scoped the fix to [`ui_skill_list_system`](src/ui/ui_skill_list_system.rs:146):
+  - compute visible rows from `ZLISTBOX.height / 44.0`,
+  - anchor skill content using a stable `window_min`,
+  - enforce dialog size with [`fixed_size`](src/ui/ui_skill_list_system.rs:162).
+
+### Files Modified
+- `src/ui/widgets/draw.rs`
+- `src/ui/ui_skill_list_system.rs`
+
+### Lesson Learned
+For ROSE XML dialogs, avoid global coordinate helper changes when only one dialog is broken. Derive visible row count from widget geometry (height/row height), not database/page constants, to keep drag/input bounds aligned with actual window size.

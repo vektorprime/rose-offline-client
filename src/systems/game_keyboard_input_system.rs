@@ -10,7 +10,7 @@ use bevy_egui::EguiContexts;
 use rose_game_common::components::MoveSpeed;
 
 use crate::{
-    components::{FlightState, PlayerCharacter, Position},
+    components::{BoatState, FlightState, PlayerCharacter, Position},
     events::PlayerCommandEvent,
     resources::AppState,
 };
@@ -27,7 +27,7 @@ pub fn game_keyboard_input_system(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     query_window: Query<&CursorOptions, With<PrimaryWindow>>,
     query_camera: Query<&Transform, With<Camera3d>>,
-    query_player: Query<(&Position, &MoveSpeed, Option<&FlightState>), With<PlayerCharacter>>,
+    query_player: Query<(&Position, &MoveSpeed, Option<&FlightState>, Option<&BoatState>), With<PlayerCharacter>>,
     mut egui_ctx: EguiContexts,
     time: Res<Time>,
     mut move_command_cooldown: Local<f32>,
@@ -55,12 +55,14 @@ pub fn game_keyboard_input_system(
         return;
     };
 
-    let Ok((player_position, move_speed, player_flight_state)) = query_player.single() else {
+    let Ok((player_position, move_speed, player_flight_state, player_boat_state)) = query_player.single() else {
         return;
     };
 
     // Disable WASD ground movement while flying; flight_movement_system handles flight controls.
-    if player_flight_state.map_or(false, |flight_state| flight_state.is_flying) {
+    if player_flight_state.map_or(false, |flight_state| flight_state.is_flying)
+        || player_boat_state.map_or(false, |boat_state| boat_state.active)
+    {
         return;
     }
 

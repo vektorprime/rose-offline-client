@@ -4,6 +4,17 @@
 
 use bevy::{prelude::*, reflect::Reflect};
 
+/// Blood impact profile used to tune layered blood behavior.
+#[derive(Reflect, Clone, Copy, Debug, Default)]
+pub enum BloodImpactProfile {
+    #[default]
+    Slash,
+    Pierce,
+    Blunt,
+    SkillMagic,
+    Projectile,
+}
+
 /// Message triggered when blood effects should be spawned or updated.
 ///
 /// This message enum covers all blood-related actions:
@@ -21,10 +32,14 @@ pub enum BloodEffectEvent {
         position: Vec3,
         /// Surface normal for the spatter orientation (usually Vec3::Y for terrain).
         normal: Vec3,
+        /// Direction the blood is projected toward from the impact.
+        impact_direction: Vec3,
         /// Amount of damage that caused this spatter (affects size/intensity).
         damage_amount: u32,
         /// Whether this is a killing blow (triggers more spatters).
         is_kill: bool,
+        /// Impact profile used for blood style tuning.
+        profile: BloodImpactProfile,
     },
 
     /// Show a gash wound on an entity.
@@ -60,22 +75,70 @@ pub enum BloodEffectEvent {
 
 impl BloodEffectEvent {
     /// Creates a new SpawnSpatter event for a killing blow.
-    pub fn kill_spatter(position: Vec3, normal: Vec3, damage_amount: u32) -> Self {
-        Self::SpawnSpatter {
+    pub fn kill_spatter(
+        position: Vec3,
+        normal: Vec3,
+        damage_amount: u32,
+        impact_direction: Vec3,
+    ) -> Self {
+        Self::kill_spatter_with_profile(
             position,
             normal,
             damage_amount,
+            impact_direction,
+            BloodImpactProfile::Slash,
+        )
+    }
+
+    /// Creates a new SpawnSpatter event for a killing blow with a profile.
+    pub fn kill_spatter_with_profile(
+        position: Vec3,
+        normal: Vec3,
+        damage_amount: u32,
+        impact_direction: Vec3,
+        profile: BloodImpactProfile,
+    ) -> Self {
+        Self::SpawnSpatter {
+            position,
+            normal,
+            impact_direction,
+            damage_amount,
             is_kill: true,
+            profile,
         }
     }
 
     /// Creates a new SpawnSpatter event for a non-lethal hit.
-    pub fn hit_spatter(position: Vec3, normal: Vec3, damage_amount: u32) -> Self {
-        Self::SpawnSpatter {
+    pub fn hit_spatter(
+        position: Vec3,
+        normal: Vec3,
+        damage_amount: u32,
+        impact_direction: Vec3,
+    ) -> Self {
+        Self::hit_spatter_with_profile(
             position,
             normal,
             damage_amount,
+            impact_direction,
+            BloodImpactProfile::Slash,
+        )
+    }
+
+    /// Creates a new SpawnSpatter event for a non-lethal hit with a profile.
+    pub fn hit_spatter_with_profile(
+        position: Vec3,
+        normal: Vec3,
+        damage_amount: u32,
+        impact_direction: Vec3,
+        profile: BloodImpactProfile,
+    ) -> Self {
+        Self::SpawnSpatter {
+            position,
+            normal,
+            impact_direction,
+            damage_amount,
             is_kill: false,
+            profile,
         }
     }
 

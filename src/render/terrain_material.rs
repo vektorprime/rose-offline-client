@@ -9,10 +9,13 @@
 use std::num::NonZeroU32;
 
 use bevy::{
-    asset::{load_internal_asset, Asset, Assets, AssetApp, Handle, weak_handle},
+    asset::{load_internal_asset, weak_handle, Asset, AssetApp, Assets, Handle},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     pbr::{Material, MaterialPipeline, MaterialPipelineKey, MeshPipelineKey},
-    prelude::{App, Color, GlobalTransform, Mesh, Plugin, Query, Res, ResMut, Resource, World, Vec3, Vec4, ColorToComponents, DetectChanges, LinearRgba, Component, With},
+    prelude::{
+        App, Color, ColorToComponents, Component, DetectChanges, GlobalTransform, LinearRgba, Mesh,
+        Plugin, Query, Res, ResMut, Resource, Vec3, Vec4, With, World,
+    },
     reflect::TypePath,
     render::{
         alpha::AlphaMode,
@@ -27,7 +30,7 @@ use bevy::{
 use bevy_mesh::MeshVertexBufferLayoutRef;
 
 use crate::graphics::GraphicsSettings;
-use crate::render::{MESH_ATTRIBUTE_UV_1, TERRAIN_MESH_ATTRIBUTE_TILE_INFO, ZoneLighting};
+use crate::render::{ZoneLighting, MESH_ATTRIBUTE_UV_1, TERRAIN_MESH_ATTRIBUTE_TILE_INFO};
 
 /// Shader handle for the terrain material shader
 pub const TERRAIN_MATERIAL_SHADER_HANDLE: Handle<Shader> =
@@ -68,14 +71,14 @@ impl Plugin for TerrainMaterialPlugin {
             "shaders/terrain_material.wgsl",
             Shader::from_wgsl
         );
-        
+
         // Register the material asset
         app.init_asset::<TerrainMaterial>();
-        
+
         // Add the material plugin for rendering
         // Note: prepass and shadows are controlled via enable_prepass() and enable_shadows() methods on Material trait
         app.add_plugins(bevy::pbr::MaterialPlugin::<TerrainMaterial>::default());
-        
+
         log::info!("[TERRAIN MATERIAL] TerrainMaterialPlugin loaded");
     }
 }
@@ -106,10 +109,10 @@ pub fn update_terrain_lighting_system(
     // Apply time-of-day multiplier to terrain lighting intensity
     // This creates more realistic lighting transitions throughout the day
     let time_multiplier = match zone_time.state {
-        crate::resources::ZoneTimeState::Morning => 2.0,   // 6:00-12:00: Moderate morning light
-        crate::resources::ZoneTimeState::Day => 2.5,       // 12:00-17:00: Bright daylight
-        crate::resources::ZoneTimeState::Evening => 2.0,   // 17:00-19:00: Dimming evening light
-        crate::resources::ZoneTimeState::Night => 1.0,     // 19:00-6:00: Dim night light
+        crate::resources::ZoneTimeState::Morning => 2.0, // 6:00-12:00: Moderate morning light
+        crate::resources::ZoneTimeState::Day => 2.5,     // 12:00-17:00: Bright daylight
+        crate::resources::ZoneTimeState::Evening => 2.0, // 17:00-19:00: Dimming evening light
+        crate::resources::ZoneTimeState::Night => 1.0,   // 19:00-6:00: Dim night light
     };
 
     // Combine base intensity with time multiplier
@@ -127,7 +130,12 @@ pub fn update_terrain_lighting_system(
             1.0,
         ));
         let map_ambient = zone_lighting.map_ambient_color;
-        material.ambient_color = Color::from(LinearRgba::new(map_ambient.x, map_ambient.y, map_ambient.z, 1.0));
+        material.ambient_color = Color::from(LinearRgba::new(
+            map_ambient.x,
+            map_ambient.y,
+            map_ambient.z,
+            1.0,
+        ));
     }
 }
 
@@ -136,7 +144,10 @@ pub fn sync_terrain_lighting_component_system(
     zone_lighting: Res<ZoneLighting>,
     graphics_settings: Res<GraphicsSettings>,
     zone_time: Res<crate::resources::ZoneTime>,
-    mut terrain_entities: Query<&mut TerrainLighting, With<bevy::pbr::MeshMaterial3d<TerrainMaterial>>>,
+    mut terrain_entities: Query<
+        &mut TerrainLighting,
+        With<bevy::pbr::MeshMaterial3d<TerrainMaterial>>,
+    >,
 ) {
     if !zone_lighting.is_changed() && !graphics_settings.is_changed() && !zone_time.is_changed() {
         return;
@@ -233,9 +244,9 @@ impl Material for TerrainMaterial {
         let vertex_layout = layout.0.get_layout(&[
             Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
             Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
-            Mesh::ATTRIBUTE_UV_0.at_shader_location(2),      // Lightmap UVs
-            MESH_ATTRIBUTE_UV_1.at_shader_location(3),       // Tile texture UVs
-            TERRAIN_MESH_ATTRIBUTE_TILE_INFO.at_shader_location(4),  // Tile info
+            Mesh::ATTRIBUTE_UV_0.at_shader_location(2), // Lightmap UVs
+            MESH_ATTRIBUTE_UV_1.at_shader_location(3),  // Tile texture UVs
+            TERRAIN_MESH_ATTRIBUTE_TILE_INFO.at_shader_location(4), // Tile info
         ])?;
         descriptor.vertex.buffers = vec![vertex_layout];
 
@@ -285,10 +296,10 @@ impl AsBindGroup for TerrainMaterial {
         (image_assets, fallback_image): &mut SystemParamItem<'_, '_, Self::Param>,
     ) -> Result<PreparedBindGroup, AsBindGroupError> {
         use std::ops::Deref;
-        
+
         // Get the actual bind group layout from the pipeline cache
         let layout = pipeline_cache.get_bind_group_layout(layout_descriptor);
-        
+
         // Collect loaded textures
         let mut images = vec![];
         for handle in self.textures.iter().take(TERRAIN_MATERIAL_MAX_TEXTURES) {
@@ -328,7 +339,12 @@ impl AsBindGroup for TerrainMaterial {
                 self.light_direction.z,
                 0.0,
             ),
-            Vec4::new(light_color[0], light_color[1], light_color[2], light_color[3]),
+            Vec4::new(
+                light_color[0],
+                light_color[1],
+                light_color[2],
+                light_color[3],
+            ),
             Vec4::new(
                 ambient_color[0],
                 ambient_color[1],

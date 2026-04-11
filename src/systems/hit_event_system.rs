@@ -2,6 +2,7 @@ use bevy::{
     ecs::query::QueryData,
     prelude::{
         Commands, Entity, GlobalTransform, MessageReader, MessageWriter, Query, Res, ResMut,
+        Vec3,
     },
 };
 
@@ -12,12 +13,32 @@ use rose_game_common::{
 
 use crate::{
     components::{
-        ClientEntity, ClientEntityType, Dead, ModelHeight, NextCommand, PendingDamageList,
+        ClientEntity, ClientEntityType, Dead, DeathBloodHandled, ModelHeight, NextCommand,
+        PendingDamageList,
         PendingSkillEffectList, PendingSkillTargetList,
     },
-    events::{HitEvent, SpawnEffectData, SpawnEffectEvent},
-    resources::{ClientEntityList, DamageDigitsSpawner, GameData},
+    events::{BloodEffectEvent, HitEvent, SpawnEffectData, SpawnEffectEvent},
+    resources::{BloodEffectConfig, ClientEntityList, DamageDigitsSpawner, GameData},
 };
+
+fn normalize_or(value: Vec3, fallback: Vec3) -> Vec3 {
+    let len_sq = value.length_squared();
+    if len_sq > 1e-6 {
+        value / len_sq.sqrt()
+    } else {
+        fallback
+    }
+}
+
+fn random_local_wound_pose(_model_height: f32) -> (Vec3, Vec3) {
+    let y = -0.04 + rand::random::<f32>() * 0.18;
+    let angle = rand::random::<f32>() * std::f32::consts::TAU;
+    let radial = 0.05 + rand::random::<f32>() * 0.16;
+    let x = radial * angle.cos();
+    let z = radial * angle.sin();
+    let normal = normalize_or(Vec3::new(x, 0.05, z), Vec3::Z);
+    (Vec3::new(x, y, z), normal)
+}
 
 #[derive(QueryData)]
 #[query_data(mutable)]
@@ -66,6 +87,7 @@ fn apply_damage(
         commands
             .entity(defender.entity)
             .insert(Dead)
+            .insert(DeathBloodHandled)
             .insert(NextCommand::with_die());
 
         if defender.client_entity.entity_type != ClientEntityType::Character {
@@ -78,11 +100,14 @@ fn apply_damage(
 pub fn hit_event_system(
     mut commands: Commands,
     mut query_defender: Query<HitDefenderQuery>,
+    query_transform: Query<&GlobalTransform>,
     mut hit_events: MessageReader<HitEvent>,
     mut spawn_effect_events: MessageWriter<SpawnEffectEvent>,
+    mut blood_effect_events: MessageWriter<BloodEffectEvent>,
     mut client_entity_list: ResMut<ClientEntityList>,
     damage_digits_spawner: Res<DamageDigitsSpawner>,
     game_data: Res<GameData>,
+    blood_config: Res<BloodEffectConfig>,
 ) {
     for event in hit_events.read() {
         let defender = query_defender.get_mut(event.defender).ok();
@@ -97,11 +122,11 @@ pub fn hit_event_system(
             is_critical: false,
             apply_hit_stun: false,
         };
+        let mut is_killed = false;
+        let mut has_damage = false;
 
         if event.apply_damage {
             let mut i = 0;
-            let mut is_killed = false;
-            let mut has_damage = false;
             while i < defender.pending_damage_list.len() {
                 if defender.pending_damage_list[i].attacker == Some(event.attacker)
                     && event.skill_id
@@ -129,6 +154,47 @@ pub fn hit_event_system(
                     &damage_digits_spawner,
                     &mut client_entity_list,
                 );
+            }
+
+            if has_damage && damage.amount > 0 {
+                let defender_pos = defender.global_transform.translation();
+                let impact_direction = query_transform
+                    .get(event.attacker)
+                    .map(|transform| {
+                        normalize_or(defender_pos - transform.translation(), Vec3::Y)
+                    })
+                    .unwrap_or(Vec3::Y);
+
+                if is_killed {
+                    blood_effect_events.write(BloodEffectEvent::kill_spatter_with_profile(
+                        defender_pos,
+                        Vec3::Y,
+                        damage.amount,
+                        impact_direction,
+                        event.blood_profile,
+                    ));
+                } else {
+                    blood_effect_events.write(BloodEffectEvent::hit_spatter_with_profile(
+                        defender_pos,
+                        Vec3::Y,
+                        damage.amount,
+                        impact_direction,
+                        event.blood_profile,
+                    ));
+                }
+
+                if blood_config.enable_blood && blood_config.show_wounds {
+                    let model_h = defender.model_height.map_or(1.8, |h| h.height);
+                    let wound_events = if is_killed { 3 } else { 2 };
+                    for _ in 0..wound_events {
+                        let (wound_position, wound_normal) = random_local_wound_pose(model_h);
+                        blood_effect_events.write(BloodEffectEvent::show_wound(
+                            defender.entity,
+                            wound_position,
+                            wound_normal,
+                        ));
+                    }
+                }
             }
         }
 

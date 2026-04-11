@@ -1,5 +1,6 @@
 mod bank_event;
 mod blood_effect_event;
+mod boat_event;
 mod character_select_event;
 mod chat_bubble_event;
 mod chatbox_event;
@@ -30,7 +31,8 @@ mod world_connection_event;
 mod zone_event;
 
 pub use bank_event::BankEvent;
-pub use blood_effect_event::BloodEffectEvent;
+pub use blood_effect_event::{BloodEffectEvent, BloodImpactProfile};
+pub use boat_event::{BoardBoatEvent, DisembarkBoatEvent};
 pub use character_select_event::CharacterSelectEvent;
 pub use chat_bubble_event::{ChatBubbleEvent, ChatBubbleType};
 pub use chatbox_event::ChatboxEvent;

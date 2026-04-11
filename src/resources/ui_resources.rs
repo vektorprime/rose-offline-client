@@ -61,6 +61,7 @@ pub struct UiTexture {
     pub handle: Handle<Image>,
     pub texture_id: egui::TextureId,
     pub size: Option<Vec2>,
+    pub premultiplied_alpha: bool,
 }
 
 pub struct UiSpriteSheet {
@@ -331,6 +332,7 @@ fn load_ui_spritesheet(
             handle,
             texture_id,
             size: None,
+            premultiplied_alpha: false,
         });
     }
 
@@ -341,9 +343,26 @@ fn load_ui_spritesheet(
     })
 }
 
+fn premultiply_image_alpha(image: &mut Image) {
+    let width = image.width();
+    let height = image.height();
+
+    for x in 0..width {
+        for y in 0..height {
+            if let Ok(mut color) = image.get_color_at(x, y).map(|c| c.to_linear()) {
+                color.red *= color.alpha;
+                color.green *= color.alpha;
+                color.blue *= color.alpha;
+
+                let _ = image.set_color_at(x, y, bevy::prelude::Color::LinearRgba(color));
+            }
+        }
+    }
+}
+
 pub fn update_ui_resources(
     mut ui_resources: ResMut<UiResources>,
-    images: Res<Assets<Image>>,
+    mut images: ResMut<Assets<Image>>,
     cursors: Res<Assets<ExeResourceCursor>>,
     asset_server: Res<AssetServer>,
     mut dialog_assets: ResMut<Assets<Dialog>>,
@@ -362,16 +381,20 @@ pub fn update_ui_resources(
         .filter_map(|(_, spritesheet)| spritesheet.as_mut())
     {
         for (texture_index, texture) in spritesheet.loaded_textures.iter_mut().enumerate() {
-            if let Some(size) = texture.size {
-                if size.x > 0.0 && size.y > 0.0 {
-                    continue;
-                }
+            let has_valid_size = texture.size.map_or(false, |size| size.x > 0.0 && size.y > 0.0);
+            let needs_premultiply = !texture.premultiplied_alpha;
+            if has_valid_size && !needs_premultiply {
+                continue;
             }
 
-            if let Some(image) = images.get(&texture.handle) {
+            if let Some(image) = images.get_mut(&texture.handle) {
                 let size = image.size().as_vec2();
                 if size.x > 0.0 && size.y > 0.0 {
                     texture.size = Some(size);
+                    if needs_premultiply {
+                        premultiply_image_alpha(image);
+                        texture.premultiplied_alpha = true;
+                    }
                 } else {
                     log::warn!("[UI RESOURCES] Texture has zero size: texture_index={}, size={:?}", texture_index, size);
                     loaded_all = false;
@@ -417,8 +440,12 @@ pub fn update_ui_resources(
                 if let Widget::Skill(skill_widget) = widget {
                     if let Some(texture) = skill_widget.ui_texture.as_mut() {
                         let texture_load_state = asset_server.get_load_state(&texture.handle);
-                        if let Some(image) = images.get(&texture.handle) {
+                        if let Some(image) = images.get_mut(&texture.handle) {
                             texture.size = Some(image.size().as_vec2());
+                            if !texture.premultiplied_alpha {
+                                premultiply_image_alpha(image);
+                                texture.premultiplied_alpha = true;
+                            }
                         } else if matches!(texture_load_state, Some(LoadState::Failed(_))) {
                             texture.size = Some(Vec2::ZERO);
                             log::warn!("[UI RESOURCES] Skill tree texture failed to load: {:?}", texture.handle);
@@ -436,6 +463,7 @@ pub fn update_ui_resources(
                             handle: handle.clone(),
                             texture_id,
                             size: None,
+                            premultiplied_alpha: false,
                         });
                         loaded_all = false;
                     }
@@ -520,7 +548,7 @@ pub fn load_ui_resources(
                         TsiSprite { texture_id: 0, left: 0, top: 0, right: 0, bottom: 0, name: String::default() },
                     ],
                     loaded_textures: vec![
-                        UiTexture { handle, texture_id, size: None },
+                        UiTexture { handle, texture_id, size: None, premultiplied_alpha: false },
                     ],
                     sprites_by_name: None,
                 })
@@ -533,7 +561,7 @@ pub fn load_ui_resources(
                         TsiSprite { texture_id: 0, left: 0, top: 0, right: 0, bottom: 0, name: String::default() },
                     ],
                     loaded_textures: vec![
-                        UiTexture { handle, texture_id, size: None },
+                        UiTexture { handle, texture_id, size: None, premultiplied_alpha: false },
                     ],
                     sprites_by_name: None,
                 })

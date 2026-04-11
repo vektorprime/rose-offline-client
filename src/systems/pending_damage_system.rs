@@ -1,11 +1,33 @@
-use bevy::prelude::{Commands, Entity, Query, Res, ResMut, Time, With};
+use bevy::prelude::{
+    Commands, Entity, GlobalTransform, MessageWriter, Query, Res, ResMut, Time, Vec3, With,
+};
 
 use rose_game_common::{components::HealthPoints, data::Damage};
 
 use crate::{
-    components::{ClientEntity, Dead, NextCommand, PendingDamageList},
-    resources::{ClientEntityList, DamageDigitsSpawner},
+    components::{ClientEntity, Dead, DeathBloodHandled, NextCommand, PendingDamageList},
+    events::{BloodEffectEvent, BloodImpactProfile},
+    resources::{BloodEffectConfig, ClientEntityList, DamageDigitsSpawner},
 };
+
+fn normalize_or(value: Vec3, fallback: Vec3) -> Vec3 {
+    let len_sq = value.length_squared();
+    if len_sq > 1e-6 {
+        value / len_sq.sqrt()
+    } else {
+        fallback
+    }
+}
+
+fn random_local_wound_pose(_model_height: f32) -> (Vec3, Vec3) {
+    let y = -0.04 + rand::random::<f32>() * 0.18;
+    let angle = rand::random::<f32>() * std::f32::consts::TAU;
+    let radial = 0.05 + rand::random::<f32>() * 0.16;
+    let x = radial * angle.cos();
+    let z = radial * angle.sin();
+    let normal = normalize_or(Vec3::new(x, 0.05, z), Vec3::Z);
+    (Vec3::new(x, y, z), normal)
+}
 
 // After 5 seconds, expire pending damage and apply immediately
 const MAX_DAMAGE_AGE: f32 = 5.0;
@@ -22,6 +44,8 @@ fn apply_damage(
     global_transform: &bevy::prelude::GlobalTransform,
     model_height: Option<&crate::components::ModelHeight>,
 ) {
+    let _ = pending_damage_list;
+
     // Spawn damage digits
     let height = model_height.map_or(1.8, |h| h.height);
 
@@ -39,6 +63,7 @@ fn apply_damage(
         commands
             .entity(entity)
             .insert(Dead)
+            .insert(DeathBloodHandled)
             .insert(NextCommand::with_die())
             .remove::<ClientEntity>();
         client_entity_list.remove(client_entity.id);
@@ -56,10 +81,15 @@ pub fn pending_damage_system(
         Option<&crate::components::ModelHeight>,
     )>,
     dead_entities: Query<(), With<Dead>>,
+    query_transform: Query<&GlobalTransform>,
     time: Res<Time>,
+    mut blood_effect_events: MessageWriter<BloodEffectEvent>,
     mut client_entity_list: ResMut<ClientEntityList>,
     damage_digits_spawner: Res<DamageDigitsSpawner>,
+    blood_config: Res<BloodEffectConfig>,
 ) {
+    let _ = &query_transform;
+
     // log::info!("[PENDING_DAMAGE_SYSTEM] System running, processing entities...");
     let delta_time = time.delta_secs();
 
@@ -116,6 +146,46 @@ pub fn pending_damage_system(
                     global_transform,
                     model_height,
                 );
+
+                if pending_damage.damage.amount > 0 {
+                    let defender_pos = global_transform.translation();
+                    let impact_direction = pending_damage
+                        .attacker
+                        .and_then(|attacker| query_transform.get(attacker).ok())
+                        .map(|transform| normalize_or(defender_pos - transform.translation(), Vec3::Y))
+                        .unwrap_or(Vec3::Y);
+
+                    if pending_damage.is_kill {
+                        blood_effect_events.write(BloodEffectEvent::kill_spatter_with_profile(
+                            defender_pos,
+                            Vec3::Y,
+                            pending_damage.damage.amount,
+                            impact_direction,
+                            BloodImpactProfile::Slash,
+                        ));
+                    } else {
+                        blood_effect_events.write(BloodEffectEvent::hit_spatter_with_profile(
+                            defender_pos,
+                            Vec3::Y,
+                            pending_damage.damage.amount,
+                            impact_direction,
+                            BloodImpactProfile::Slash,
+                        ));
+                    }
+
+                    if blood_config.enable_blood && blood_config.show_wounds {
+                        let model_h = model_height.map_or(1.8, |h| h.height);
+                        let wound_events = if pending_damage.is_kill { 3 } else { 2 };
+                        for _ in 0..wound_events {
+                            let (wound_position, wound_normal) = random_local_wound_pose(model_h);
+                            blood_effect_events.write(BloodEffectEvent::show_wound(
+                                entity,
+                                wound_position,
+                                wound_normal,
+                            ));
+                        }
+                    }
+                }
             } else {
                 i += 1;
             }

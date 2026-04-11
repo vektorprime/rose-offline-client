@@ -1,12 +1,9 @@
 //! Angelic Wing Material
-//! 
+//!
 //! Simplified version using StandardMaterial directly to avoid shader compilation issues.
 //! The wings will be rendered with a semi-transparent white material.
 
-use bevy::{
-    pbr::StandardMaterial,
-    prelude::*,
-};
+use bevy::{pbr::StandardMaterial, prelude::*};
 
 /// Plugin for the wing material
 #[derive(Default)]
@@ -16,7 +13,7 @@ impl Plugin for WingMaterialPlugin {
     fn build(&self, _app: &mut App) {
         // StandardMaterial is already registered by Bevy's DefaultPlugins
         // No need to add MaterialPlugin<StandardMaterial> again
-        
+
         bevy::log::info!("[WingMaterial] Plugin initialized (using StandardMaterial)");
     }
 }

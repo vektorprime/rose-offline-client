@@ -74,6 +74,16 @@ impl DrawWidget for Editbox {
 
         let response = ui
             .allocate_ui_at_rect(rect, |ui| {
+                // Keep legacy ROSE edit boxes visually transparent so only the dialog art is visible.
+                // Without this, egui can render a default background fill behind text input fields.
+                let style = ui.style_mut();
+                style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+                style.visuals.widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
+                style.visuals.widgets.active.bg_fill = egui::Color32::TRANSPARENT;
+                style.visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
+                style.visuals.widgets.hovered.bg_stroke = egui::Stroke::NONE;
+                style.visuals.widgets.active.bg_stroke = egui::Stroke::NONE;
+
                 ui.with_layout(
                     egui::Layout::centered_and_justified(egui::Direction::TopDown),
                     |ui| ui.add_enabled(enabled, text_edit),

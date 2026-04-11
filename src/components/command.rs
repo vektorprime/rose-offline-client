@@ -183,7 +183,7 @@ impl Command {
     }
 
     pub fn is_sit(&self) -> bool {
-        matches!(self, Command::Sit(CommandSit::Sit))
+        matches!(self, Command::Sit(CommandSit::Sit) | Command::Sit(CommandSit::Sitting))
     }
 
     pub fn is_manual_complete(&self) -> bool {

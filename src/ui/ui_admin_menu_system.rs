@@ -4,7 +4,7 @@ use bevy::{
 };
 use bevy_egui::{egui, EguiContexts};
 use regex::Regex;
-use rose_data::{ItemReference, ItemType};
+use rose_data::{ItemReference, ItemType, SkillId};
 use rose_data_irose::encode_item_type;
 use rose_game_common::messages::client::ClientMessage;
 
@@ -42,6 +42,11 @@ pub struct UiStateAdminMenu {
     pub selected_item_type: ItemType,
     pub item_search_filter: String,
     filtered_items: Vec<u16>,
+    
+    // Skill popup state
+    pub show_skill_popup: bool,
+    pub skill_search_filter: String,
+    filtered_skills: Vec<SkillId>,
 }
 
 impl Default for UiStateAdminMenu {
@@ -66,6 +71,9 @@ impl Default for UiStateAdminMenu {
             selected_item_type: ItemType::Face,
             item_search_filter: String::new(),
             filtered_items: Vec::new(),
+            show_skill_popup: false,
+            skill_search_filter: String::new(),
+            filtered_skills: Vec::new(),
         }
     }
 }
@@ -257,6 +265,11 @@ pub fn ui_admin_menu_system(
                     ui_state_admin_menu.show_item_popup = true;
                 }
                 
+                // Skill learn popup button
+                if ui.button("📜 Learn Skill (Popup)").clicked() {
+                    ui_state_admin_menu.show_skill_popup = true;
+                }
+                
                 ui.separator();
                 
                 // Spawn monsters
@@ -318,6 +331,17 @@ pub fn ui_admin_menu_system(
     // Render item spawner popup
     if ui_state_admin_menu.show_item_popup {
         render_item_spawner_popup(
+            ctx,
+            &mut ui_state_admin_menu,
+            &game_data,
+            &ui_resources,
+            &game_connection,
+        );
+    }
+    
+    // Render skill learn popup
+    if ui_state_admin_menu.show_skill_popup {
+        render_skill_learn_popup(
             ctx,
             &mut ui_state_admin_menu,
             &game_data,
@@ -505,7 +529,7 @@ fn update_filtered_items(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameDa
         .collect();
 }
 
-/// Helper function to send a command to the server
+  /// Helper function to send a command to the server
 fn send_command(game_connection: &Option<Res<GameConnection>>, command: &str) {
     if let Some(game_connection) = game_connection.as_ref() {
         game_connection
@@ -515,4 +539,131 @@ fn send_command(game_connection: &Option<Res<GameConnection>>, command: &str) {
             })
             .ok();
     }
+}
+
+/// Renders the skill learn popup window
+fn render_skill_learn_popup(
+    ctx: &egui::Context,
+    ui_state: &mut UiStateAdminMenu,
+    game_data: &Res<GameData>,
+    ui_resources: &Res<UiResources>,
+    game_connection: &Option<Res<GameConnection>>,
+) {
+    let mut show_popup = true;
+    
+    egui::Window::new("Skill Learn")
+        .default_width(500.0)
+        .default_height(400.0)
+        .resizable(true)
+        .open(&mut show_popup)
+        .show(ctx, |ui| {
+            ui.separator();
+            
+            // Search filter
+            ui.horizontal(|ui| {
+                ui.label("Search:");
+                let response = ui.text_edit_singleline(&mut ui_state.skill_search_filter);
+                if response.changed() {
+                    ui_state.filtered_skills.clear();
+                }
+                if ui.button("Clear").clicked() {
+                    ui_state.skill_search_filter.clear();
+                    ui_state.filtered_skills.clear();
+                }
+            });
+            
+            ui.separator();
+            
+            // Update filtered skills if needed
+            if ui_state.filtered_skills.is_empty() {
+                update_filtered_skills(ui_state, game_data);
+            }
+            
+            // Scrollable skill list
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::Grid::new("skill_learn_grid")
+                    .num_columns(4)
+                    .spacing([10.0, 5.0])
+                    .show(ui, |ui| {
+                        // Header
+                        ui.label(egui::RichText::new("Icon").strong());
+                        ui.label(egui::RichText::new("ID").strong());
+                        ui.label(egui::RichText::new("Name").strong());
+                        ui.label(egui::RichText::new("Action").strong());
+                        ui.end_row();
+                        
+                        // Skills
+                        for &skill_id in &ui_state.filtered_skills {
+                            if let Some(skill_data) = game_data.skills.get_skill(skill_id) {
+                                // Icon
+                                if let Some(sprite) = ui_resources.get_sprite_by_index(
+                                    UiSpriteSheetType::Skill,
+                                    skill_data.icon_number as usize,
+                                ) {
+                                    ui.add(
+                                        egui::Image::new((sprite.texture_id, egui::Vec2::new(32.0, 32.0)))
+                                            .uv(sprite.uv)
+                                    );
+                                } else {
+                                    ui.allocate_space(egui::Vec2::new(32.0, 32.0));
+                                }
+                                
+                                // ID
+                                ui.label(format!("{}", skill_id.get()));
+                                
+                                // Name
+                                ui.label(&skill_data.name);
+                                
+                                // Learn/Remove button
+                                if ui.button("Learn").clicked() {
+                                    if let Some(game_connection) = game_connection.as_ref() {
+                                        let command = format!("/skill add {}", skill_id.get());
+                                        game_connection
+                                            .client_message_tx
+                                            .send(ClientMessage::Chat {
+                                                text: command,
+                                            })
+                                            .ok();
+                                    }
+                                }
+                                
+                                ui.end_row();
+                            }
+                        }
+                    });
+            });
+        });
+    
+    ui_state.show_skill_popup = show_popup;
+}
+
+/// Updates the filtered skills list based on current filter settings
+fn update_filtered_skills(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameData>) {
+    let filter_name_re = if !ui_state.skill_search_filter.is_empty() {
+        Some(
+            Regex::new(&format!(
+                "(?i){}",
+                regex::escape(&ui_state.skill_search_filter)
+            ))
+            .unwrap(),
+        )
+    } else {
+        None
+    };
+    
+    ui_state.filtered_skills = game_data
+        .skills
+        .iter()
+        .filter(|skill_data| {
+            // Filter out skills with empty names or names that don't match filter
+            if skill_data.name.is_empty()
+                || !filter_name_re.as_ref().map_or(true, |re| re.is_match(&skill_data.name))
+            {
+                false
+            } else {
+                true
+            }
+        })
+        .map(|skill_data| skill_data.id)
+        .collect();
 }

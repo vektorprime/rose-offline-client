@@ -1,36 +1,50 @@
-use std::{cmp::Ordering, ops::Range};
-use std::ops::Deref;
 use std::collections::HashMap;
+use std::ops::Deref;
+use std::{cmp::Ordering, ops::Range};
 
 use bevy::{
-    asset::{AssetId, Handle, load_internal_asset, weak_handle},
-    math::Mat4,
+    asset::{load_internal_asset, weak_handle, AssetId, Handle},
+    color::ColorToComponents,
     core_pipeline::core_3d::Transparent3d,
     ecs::{
         query::ROQueryItem,
         system::{
-            SystemParamItem, lifetimeless::{Read, SRes}
+            lifetimeless::{Read, SRes},
+            SystemParamItem,
         },
     },
+    math::Mat4,
     pbr::MeshPipelineKey,
     prelude::{
-        App, Assets, Color, Commands, Component, Entity, FromWorld, GlobalTransform, InheritedVisibility, IntoScheduleConfigs, Msaa, Plugin, Query, Res, ResMut, Resource, Vec2, Vec3, ViewVisibility, World, Image, Shader
+        App, Assets, Color, Commands, Component, Entity, FromWorld, GlobalTransform, Image,
+        InheritedVisibility, IntoScheduleConfigs, Msaa, Plugin, Query, Res, ResMut, Resource,
+        Shader, Vec2, Vec3, ViewVisibility, World,
     },
     render::{
-        Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
         render_asset::RenderAssets,
-        texture::GpuImage,
         render_phase::{
-            AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand, RenderCommandResult,
-            SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
+            AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand,
+            RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
         },
         render_resource::{
-            BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor, BlendOperation, BlendState, BufferBindingType, BufferUsages, RawBufferVec, ColorTargetState, ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FragmentState, FrontFace, MultisampleState, PipelineCache, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipelineDescriptor, SamplerBindingType, ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines, StencilFaceState, StencilState, TextureFormat, TextureSampleType, TextureViewDimension, VertexAttribute, VertexFormat, VertexState, VertexStepMode
+            BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+            BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor,
+            BlendOperation, BlendState, BufferBindingType, BufferUsages, ColorTargetState,
+            ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FragmentState,
+            FrontFace, MultisampleState, PipelineCache, PolygonMode, PrimitiveState,
+            PrimitiveTopology, RawBufferVec, RenderPipelineDescriptor, SamplerBindingType,
+            ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines,
+            StencilFaceState, StencilState, TextureFormat, TextureSampleType, TextureViewDimension,
+            VertexAttribute, VertexFormat, VertexState, VertexStepMode,
         },
         renderer::{RenderDevice, RenderQueue},
-        view::{prepare_view_uniforms, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms}
+        texture::GpuImage,
+        view::{
+            prepare_view_uniforms, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
+            ViewUniforms,
+        },
+        Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
     },
-    color::ColorToComponents,
 };
 use bevy_camera::visibility::VisibilityClass;
 use bevy_mesh::VertexBufferLayout;
@@ -68,7 +82,12 @@ impl Plugin for WorldUiRenderPlugin {
                 .add_systems(ExtractSchedule, extract_world_ui_rects)
                 // NOTE: This system must run in PrepareBindGroups (not Queue) because it depends on
                 // prepare_view_uniforms which runs in PrepareResources. Queue runs BEFORE PrepareResources.
-                .add_systems(Render, (queue_world_ui_meshes).in_set(RenderSystems::PrepareBindGroups).after(prepare_view_uniforms));
+                .add_systems(
+                    Render,
+                    (queue_world_ui_meshes)
+                        .in_set(RenderSystems::PrepareBindGroups)
+                        .after(prepare_view_uniforms),
+                );
         }
     }
 
@@ -76,7 +95,7 @@ impl Plugin for WorldUiRenderPlugin {
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             return;
         };
- 
+
         render_app.init_resource::<WorldUiPipeline>();
     }
 }
@@ -127,7 +146,7 @@ fn extract_world_ui_rects(
     let mut hidden_count = 0;
     let mut missing_image_count = 0;
     let total_count = query.iter().len();
-    
+
     for (view_visibility, global_transform, rect) in query.iter() {
         if !view_visibility.get() {
             hidden_count += 1;
@@ -151,7 +170,7 @@ fn extract_world_ui_rects(
             order: rect.order,
         });
     }
-    
+
     // Always log for debugging
     //log::info!("[WORLD_UI_EXTRACT] total={}, visible={}, hidden={}, missing_image={}",
     //    total_count, visible_count, hidden_count, missing_image_count);
@@ -253,10 +272,7 @@ impl SpecializedRenderPipeline for WorldUiPipeline {
                     write_mask: ColorWrites::ALL,
                 })],
             }),
-            layout: vec![
-                self.view_layout.clone(),
-                self.material_layout.clone(),
-            ],
+            layout: vec![self.view_layout.clone(), self.material_layout.clone()],
             primitive: PrimitiveState {
                 front_face: FrontFace::Ccw,
                 cull_mode: None,
@@ -379,10 +395,17 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWorldUiMaterialBindGr
         match image_bind_groups.values.get(&sprite_batch.image_handle_id) {
             Some(bind_group) => {
                 pass.set_bind_group(I, bind_group, &[]);
-                log::debug!("[SetWorldUiMaterialBindGroup] Set bind group {} for image {:?}", I, sprite_batch.image_handle_id);
+                log::debug!(
+                    "[SetWorldUiMaterialBindGroup] Set bind group {} for image {:?}",
+                    I,
+                    sprite_batch.image_handle_id
+                );
             }
             None => {
-                log::error!("[SetWorldUiMaterialBindGroup] No bind group found for image {:?}", sprite_batch.image_handle_id);
+                log::error!(
+                    "[SetWorldUiMaterialBindGroup] No bind group found for image {:?}",
+                    sprite_batch.image_handle_id
+                );
             }
         }
         RenderCommandResult::Success
@@ -422,7 +445,10 @@ impl<P: PhaseItem> RenderCommand<P> for DrawWorldUiBatch {
         match buffer {
             Some(buf) => {
                 pass.set_vertex_buffer(0, buf.slice(..));
-                log::debug!("[DrawWorldUiBatch] Drawing vertices {:?} (6 vertices for quad)", batch.vertex_range);
+                log::debug!(
+                    "[DrawWorldUiBatch] Drawing vertices {:?} (6 vertices for quad)",
+                    batch.vertex_range
+                );
                 pass.draw(batch.vertex_range.clone(), 0..1);
             }
             None => {
@@ -450,7 +476,11 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetWorldUiViewBindGroup<
         match world_ui_meta.view_bind_group.as_ref() {
             Some(bind_group) => {
                 pass.set_bind_group(I, bind_group, &[view_uniform.offset]);
-                log::debug!("[SetWorldUiViewBindGroup] Set bind group {} with offset {}", I, view_uniform.offset);
+                log::debug!(
+                    "[SetWorldUiViewBindGroup] Set bind group {} with offset {}",
+                    I,
+                    view_uniform.offset
+                );
             }
             None => {
                 log::error!("[SetWorldUiViewBindGroup] View bind group is None!");
@@ -522,16 +552,17 @@ pub fn queue_world_ui_meshes(
     }
 
     for (view_entity, view, msaa) in views.iter() {
-    //// log::info!("[WORLD_UI_QUEUE] Processing view entity={:?}, retained_view_entity={:?}", view_entity, view.retained_view_entity);
-    let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity) else {
-        //log::warn!("[WORLD_UI_QUEUE] No transparent phase found for view {:?}", view.retained_view_entity);
-        continue;
-    };
+        //// log::info!("[WORLD_UI_QUEUE] Processing view entity={:?}, retained_view_entity={:?}", view_entity, view.retained_view_entity);
+        let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity)
+        else {
+            //log::warn!("[WORLD_UI_QUEUE] No transparent phase found for view {:?}", view.retained_view_entity);
+            continue;
+        };
 
         let msaa_samples = msaa.map(|m| m.samples()).unwrap_or(1);
-        let view_key = MeshPipelineKey::from_msaa_samples(msaa_samples)
-            | MeshPipelineKey::from_hdr(view.hdr);
-        
+        let view_key =
+            MeshPipelineKey::from_msaa_samples(msaa_samples) | MeshPipelineKey::from_hdr(view.hdr);
+
         // DIAGNOSTIC: Log pipeline cache access before specialization
         // log_pipeline_cache_access(
         //     &mut diagnostics_state,
@@ -539,14 +570,16 @@ pub fn queue_world_ui_meshes(
         //     PipelineType::Render,
         //     0, // Cache size not directly accessible
         // );
-        
+
         let pipeline = pipelines.specialize(&pipeline_cache, &world_ui_pipeline, view_key);
         let pipeline = pipelines.specialize(&pipeline_cache, &world_ui_pipeline, view_key);
         //// log::info!("[WORLD_UI_QUEUE] Pipeline specialized: {:?}", pipeline);
         let view_matrix = view.world_from_view.to_matrix();
         let inverse_view_transform = view_matrix.inverse();
         let inverse_view_row_2 = inverse_view_transform.row(2);
-        let view_proj = view.clip_from_world.unwrap_or_else(|| view.clip_from_view * inverse_view_transform);
+        let view_proj = view
+            .clip_from_world
+            .unwrap_or_else(|| view.clip_from_view * inverse_view_transform);
         let view_width = view.viewport.z as f32;
         let view_height = view.viewport.w as f32;
 
@@ -571,16 +604,15 @@ pub fn queue_world_ui_meshes(
         let mut screen_culled_count = 0;
         let mut queued_count = 0;
         let extracted_count = extracted_world_ui.rects.len();
-        
+
         for (rect_idx, rect) in extracted_world_ui.rects.iter().enumerate() {
-            let gpu_image =
-                if let Some(gpu_image) = render_images.get(rect.image_handle_id) {
-                    gpu_image
-                } else {
-                    // Image not ready yet, ignore
-                    gpu_image_missing_count += 1;
-                    continue;
-                };
+            let gpu_image = if let Some(gpu_image) = render_images.get(rect.image_handle_id) {
+                gpu_image
+            } else {
+                // Image not ready yet, ignore
+                gpu_image_missing_count += 1;
+                continue;
+            };
 
             let clip_pos = view_proj.project_point3(rect.world_position);
             // log::info!("[WORLD_UI_QUEUE] Rect {}: world_pos={:?}, clip_pos={:?}, order={}, screen_size={:?}, screen_offset={:?}",
@@ -670,7 +702,8 @@ pub fn queue_world_ui_meshes(
                 .values
                 .entry(rect.image_handle_id)
                 .or_insert_with(|| {
-                    let material_layout = pipeline_cache.get_bind_group_layout(&world_ui_pipeline.material_layout);
+                    let material_layout =
+                        pipeline_cache.get_bind_group_layout(&world_ui_pipeline.material_layout);
                     render_device.create_bind_group(
                         "world_ui_bind_group",
                         &material_layout,
@@ -705,17 +738,19 @@ pub fn queue_world_ui_meshes(
                 indexed: false,
             });
         }
-        
+
         // Write vertex buffer to GPU
-        world_ui_meta.vertices.write_buffer(&render_device, &render_queue);
-        
+        world_ui_meta
+            .vertices
+            .write_buffer(&render_device, &render_queue);
+
         // Log vertex buffer status
         //// log::info!("[WORLD_UI_QUEUE] Vertex buffer len={}, buffer exists={}",
         //    world_ui_meta.vertices.len(), world_ui_meta.vertices.buffer().is_some());
-        
+
         // Log phase items count
         // log::info!("[WORLD_UI_QUEUE] Transparent phase items count: {}", transparent_phase.items.len());
-        
+
         // Always log for debugging
         // log::info!("[WORLD_UI_QUEUE] extracted={}, gpu_missing={}, frustum_culled={}, screen_culled={}, queued={}",
         //    extracted_count, gpu_image_missing_count, frustum_culled_count, screen_culled_count, queued_count);

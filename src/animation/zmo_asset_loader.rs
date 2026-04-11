@@ -271,14 +271,14 @@ impl AssetLoader for ZmoTextureAssetLoader {
     ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
             let asset_path = load_context.path().path().to_string_lossy();
-        log::error!("[ZMO_TEXTURE_LOADER] ========== LOAD CALLED ==========");
-        log::error!("[ZMO_TEXTURE_LOADER] Loading ZMO texture asset: {}", asset_path);
+        log::info!("[ZMO_TEXTURE_LOADER] ========== LOAD CALLED ==========");
+        log::info!("[ZMO_TEXTURE_LOADER] Loading ZMO texture asset: {}", asset_path);
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
-        log::error!("[ZMO_TEXTURE_LOADER] ZMO texture asset size: {} bytes", bytes.len());
+        log::info!("[ZMO_TEXTURE_LOADER] ZMO texture asset size: {} bytes", bytes.len());
         match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
             Ok(zmo) => {
-                log::error!("[ZMO_TEXTURE_LOADER] ZMO loaded: num_frames={}, fps={}, channels={}",
+                log::info!("[ZMO_TEXTURE_LOADER] ZMO loaded: num_frames={}, fps={}, channels={}",
                     zmo.num_frames, zmo.fps, zmo.channels.len());
                 
                 let mut num_vertices = 0;
@@ -298,7 +298,7 @@ impl AssetLoader for ZmoTextureAssetLoader {
                     }
                 }
                 
-                log::error!("[ZMO_TEXTURE_LOADER] has_position={}, has_normal={}, has_alpha={}, has_uv1={}",
+                log::info!("[ZMO_TEXTURE_LOADER] has_position={}, has_normal={}, has_alpha={}, has_uv1={}",
                     has_position_channel, has_normal_channel, has_alpha_channel, has_uv1_channel);
 
                 // RGBA 32F where x = frame number, y = vertex id, pixel = (pos.x, pos.y, pos.z, 0.0)

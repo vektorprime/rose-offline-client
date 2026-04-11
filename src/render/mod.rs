@@ -1,20 +1,16 @@
 use bevy::{
+    mesh::MeshVertexAttribute,
     prelude::{App, Plugin},
     render::render_resource::VertexFormat,
-    mesh::MeshVertexAttribute,
 };
 
 // Custom terrain material with texture array support
 pub mod terrain_material;
-pub use terrain_material::{
-    TerrainMaterial, TerrainMaterialPlugin, TERRAIN_MATERIAL_MAX_TEXTURES,
-};
+pub use terrain_material::{TerrainMaterial, TerrainMaterialPlugin, TERRAIN_MATERIAL_MAX_TEXTURES};
 
 // Custom water material with animated texture array support
 pub mod water_material;
-pub use water_material::{
-    WaterMaterial, WaterMaterialPlugin,
-};
+pub use water_material::{WaterMaterial, WaterMaterialPlugin};
 
 /// Custom vertex attribute for terrain tile info
 /// Encoded as u32: layer1_id (bits 0-7) | layer2_id (bits 8-15) | rotation (bits 16-23)
@@ -34,15 +30,15 @@ pub mod particle_debug;
 pub use particle_debug::{debug_particle_rendering, particle_performance_monitor};
 
 pub mod zone_lighting;
+pub use zone_lighting::SkyMode;
+pub use zone_lighting::SkySettings;
+pub use zone_lighting::VolumetricFogVolume;
 pub use zone_lighting::ZoneLighting;
 pub use zone_lighting::ZoneLightingPlugin;
-pub use zone_lighting::VolumetricFogVolume;
-pub use zone_lighting::SkySettings;
-pub use zone_lighting::SkyMode;
 
 pub mod trail_effect;
-pub use trail_effect::*;
 pub use trail_effect::TrailEffectRenderPlugin;
+pub use trail_effect::*;
 
 pub mod damage_digit_material;
 pub use damage_digit_material::*;
@@ -76,27 +72,30 @@ pub use skinned_mesh_fix::SkinnedMeshFixPlugin;
 
 // Underwater rendering effect
 pub mod underwater_effect;
-pub use underwater_effect::{
-    UnderwaterEffectPlugin, UnderwaterSettings, CameraUnderwaterState,
-};
+pub use underwater_effect::{CameraUnderwaterState, UnderwaterEffectPlugin, UnderwaterSettings};
 
 // Procedural starry sky material
 pub mod starry_sky_material;
 pub use starry_sky_material::{
-    StarrySkyMaterial, StarrySkyMaterialPlugin,
-    StarrySkySettings, StarrySky, MoonLight,
-    create_starry_sky_mesh, update_starry_sky_system,
-    sky_sphere_follow_camera_system, moon_light_follow_camera_system,
-    update_starry_sky_night_factor, toggle_atmosphere_based_on_time,
-    AtmosphereState,
+    create_starry_sky_mesh, moon_light_follow_camera_system, sky_sphere_follow_camera_system,
+    toggle_atmosphere_based_on_time, update_starry_sky_night_factor, update_starry_sky_system,
+    AtmosphereState, MoonLight, StarrySky, StarrySkyMaterial, StarrySkyMaterialPlugin,
+    StarrySkySettings,
 };
 
-// Procedural cloud material
+// Procedural cloud material (2D plane-based)
 pub mod cloud_material;
 pub use cloud_material::{
-    CloudMaterial, CloudMaterialPlugin, CloudSettings, CloudLayer,
-    spawn_cloud_layer, update_cloud_material_system,
-    update_cloud_lighting_system, cloud_layer_follow_camera_system,
+    cloud_layer_follow_camera_system, spawn_cloud_layer, update_cloud_lighting_system,
+    update_cloud_material_system, CloudLayer, CloudMaterial, CloudMaterialPlugin, CloudSettings,
+};
+
+// 3D volumetric cloud material (fluffy cumulus style)
+pub mod volumetric_cloud;
+pub use volumetric_cloud::{
+    despawn_volumetric_clouds, spawn_volumetric_clouds, update_volumetric_cloud_lighting_system,
+    update_volumetric_cloud_material_system, VolumetricCloud, VolumetricCloudMaterial,
+    VolumetricCloudPlugin, VolumetricCloudSettings,
 };
 
 pub const MESH_ATTRIBUTE_UV_1: MeshVertexAttribute =
@@ -114,13 +113,15 @@ pub struct RoseRenderPlugin;
 impl Plugin for RoseRenderPlugin {
     fn build(&self, app: &mut App) {
         bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Registering material plugins");
-        
+
         // Register the terrain material plugin
         app.add_plugins(TerrainMaterialPlugin);
-        
+
         // Register the water material plugin for animated water rendering
         app.add_plugins(WaterMaterialPlugin);
-        
-        bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Materials registered via their own plugins");
+
+        bevy::log::info!(
+            "[RENDER PLUGIN] RoseRenderPlugin - Materials registered via their own plugins"
+        );
     }
 }

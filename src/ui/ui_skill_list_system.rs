@@ -143,12 +143,12 @@ pub fn ui_skill_list_system(
 
     let (_, character_info, skill_list, skill_points, cooldowns) = player;
 
-    let listbox_extent =
-        if let Some(Widget::ZListbox(listbox)) = dialog.get_widget(IID_ZLISTBOX_BASIC) {
-            listbox.extent
-        } else {
-            1
-        };
+    let listbox_extent = if let Some(Widget::ZListbox(listbox)) = dialog.get_widget(IID_ZLISTBOX_BASIC)
+    {
+        ((listbox.height / 44.0).floor() as i32).max(1)
+    } else {
+        1
+    };
     let scrollbar_range = 0..SKILL_PAGE_SIZE as i32;
 
     let mut response_close_button = None;
@@ -159,8 +159,7 @@ pub fn ui_skill_list_system(
         .open(&mut ui_state_windows.skill_list_open)
         .title_bar(false)
         .resizable(false)
-        .default_width(dialog.width)
-        .default_height(dialog.height)
+        .fixed_size([dialog.width, dialog.height])
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
@@ -220,6 +219,7 @@ pub fn ui_skill_list_system(
                         _ => (IroseSkillPageType::Basic, 0),
                     };
 
+                    let window_min = ui.min_rect().min;
                     let listbox_pos = egui::vec2(0.0, 65.0);
                     for i in 0..listbox_extent {
                         let skill_slot = SkillSlot(page as usize, (index + i) as usize);
@@ -239,7 +239,7 @@ pub fn ui_skill_list_system(
                                 );
 
                                 // Skill level up button
-                                let button_pos = egui::pos2(start_x + 200.0, start_y + 5.0);
+                                let button_pos = window_min + egui::vec2(start_x + 200.0, start_y + 5.0);
                                 let button_rect = egui::Rect::from_min_size(
                                     button_pos,
                                     egui::vec2(20.0, 20.0),
@@ -266,14 +266,13 @@ pub fn ui_skill_list_system(
                                 );
                             }
 
-                            // Skill use ability values
-                           if !skill_data.use_ability.is_empty() {
-                                ui.allocate_ui_at_rect(
-                                    egui::Rect::from_min_size(
-                                        ui.min_rect().min
-                                            + egui::vec2(start_x + 46.0, start_y + 25.0),
-                                        egui::vec2(100.0, 18.0),
-                                    ),
+                           // Skill use ability values
+                            if !skill_data.use_ability.is_empty() {
+                                  ui.allocate_ui_at_rect(
+                                      egui::Rect::from_min_size(
+                                          window_min + egui::vec2(start_x + 46.0, start_y + 25.0),
+                                          egui::vec2(100.0, 18.0),
+                                      ),
                                     |ui| {
                                         ui.horizontal(|ui| {
                                             for &(ability_type, mut value) in
@@ -341,7 +340,7 @@ pub fn ui_skill_list_system(
 
                         ui_add_skill_list_slot(
                             ui,
-                            ui.min_rect().min + egui::vec2(start_x, start_y + 3.0),
+                            window_min + egui::vec2(start_x, start_y + 3.0),
                             skill_slot,
                             &(character_info, skill_list, skill_points, cooldowns),
                             player_tooltip_data_ref.as_ref(),

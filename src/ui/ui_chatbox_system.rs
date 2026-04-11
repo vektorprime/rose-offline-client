@@ -9,9 +9,12 @@ use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
     components::PlayerCharacter,
-    events::{ChatboxEvent, FlightToggleEvent, MoveSpeedSetEvent, PingRequestEvent, PingState},
+    events::{
+        BoardBoatEvent, ChatboxEvent, DisembarkBoatEvent, FlightToggleEvent, MoveSpeedSetEvent,
+        PingRequestEvent, PingState,
+    },
     resources::{GameConnection, UiResources},
-    systems::{is_fly_command, is_ping_command, parse_chat_input},
+    systems::{is_boat_command, is_fly_command, is_ping_command, parse_chat_input},
     ui::{
         widgets::{DataBindings, Dialog},
         UiSoundEvent,
@@ -92,6 +95,8 @@ pub fn ui_chatbox_system(
     mut ui_sound_events: MessageWriter<UiSoundEvent>,
     dialog_assets: Res<Assets<Dialog>>,
     mut flight_toggle_events: MessageWriter<FlightToggleEvent>,
+    mut board_boat_events: MessageWriter<BoardBoatEvent>,
+    mut disembark_boat_events: MessageWriter<DisembarkBoatEvent>,
     mut move_speed_events: MessageWriter<MoveSpeedSetEvent>,
     mut ping_request_events: MessageWriter<PingRequestEvent>,
     mut ping_state: ResMut<PingState>,
@@ -366,6 +371,8 @@ pub fn ui_chatbox_system(
                                     ui.end_row();
                                     ui.label("  /ping - Show latency to server");
                                     ui.end_row();
+                                    ui.label("  /boat - Toggle sailing mode");
+                                    ui.end_row();
                                     
                                     // Server-side commands - Character
                                     ui.label(egui::RichText::new("Server-side - Character:").strong().color(egui::Color32::from_rgb(150, 255, 150)));
@@ -479,6 +486,13 @@ pub fn ui_chatbox_system(
                             });
                         }
                         // Clear the textbox without sending to server
+                        ui_state_chatbox.textbox_text.clear();
+                    } else if is_boat_command(&ui_state_chatbox.textbox_text) {
+                        if let Ok(player_entity) = player_query.single() {
+                            // Send both and let boat_toggle_system consume the relevant one based on state.
+                            board_boat_events.write(BoardBoatEvent { entity: player_entity });
+                            disembark_boat_events.write(DisembarkBoatEvent { entity: player_entity });
+                        }
                         ui_state_chatbox.textbox_text.clear();
                     } else if is_ping_command(&ui_state_chatbox.textbox_text) {
                         // Handle /ping command client-side

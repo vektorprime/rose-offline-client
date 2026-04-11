@@ -305,6 +305,7 @@ impl ModelLoader {
                 dummy_bone_offset,
                 false,
                 &self.specular_image,
+                None,
             );
             model_parts.append(&mut parts);
         }
@@ -351,6 +352,7 @@ impl ModelLoader {
                     dummy_bone_offset,
                     false,
                     &self.specular_image,
+                    None,
                 );
                 model_parts.append(&mut parts);
             }
@@ -369,6 +371,7 @@ impl ModelLoader {
                     dummy_bone_offset,
                     false,
                     &self.specular_image,
+                    None,
                 );
                 model_parts.append(&mut parts);
             }
@@ -429,6 +432,7 @@ impl ModelLoader {
             0,
             false,
             &self.specular_image,
+            None,
         );
 
         PersonalStoreModel {
@@ -485,6 +489,7 @@ impl ModelLoader {
                     0,
                     false,
                     &self.specular_image,
+                    None,
                 ),
             },
             asset_server.load(&self.field_item_motion_path),
@@ -830,6 +835,7 @@ impl ModelLoader {
             dummy_bone_offset,
             matches!(model_part, CharacterModelPart::CharacterFace),
             &self.specular_image,
+            None,
         );
 
         if matches!(model_part, CharacterModelPart::Weapon) {
@@ -997,6 +1003,7 @@ impl ModelLoader {
         meshes: &mut Assets<Mesh>,
         storage_buffers: &mut Assets<ShaderStorageBuffer>,
         vehicle_model_entity: Entity,
+        skinned_mesh_parent_entity: Entity,
         driver_model_entity: Entity,
         equipment: &Equipment,
     ) -> (VehicleModel, SkinnedMesh, DummyBoneOffset) {
@@ -1046,6 +1053,7 @@ impl ModelLoader {
                         dummy_bone_offset,
                         false,
                         &self.specular_image,
+                        Some(skinned_mesh_parent_entity),
                     ),
                 );
 
@@ -1332,6 +1340,7 @@ fn spawn_skeleton(
         dummy_bone_offset: usize,
         load_clip_faces: bool,
         specular_image: &Handle<Image>,
+        skinned_mesh_parent: Option<Entity>,
     ) -> Vec<Entity> {
     let mut parts = Vec::new();
     let object = if let Some(object) = model_list.objects.get(model_id) {
@@ -1436,8 +1445,10 @@ fn spawn_skeleton(
             if let Some(skinned_mesh) = skinned_mesh {
                 // Get the model_entity (parent with SkinnedMesh) from the bone hierarchy
                 // The skinned_mesh.joints[0] is the root bone, its parent is the model_entity
+                // Use skinned_mesh_parent if provided, otherwise use model_entity
+                let parent = skinned_mesh_parent.unwrap_or(model_entity);
                 entity_commands.insert(crate::components::SkinningTarget {
-                    skinned_mesh_parent: model_entity,
+                    skinned_mesh_parent: parent,
                 });
             }
         }

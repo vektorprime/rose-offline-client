@@ -1,14 +1,19 @@
-use bevy_post_process::dof::DepthOfFieldMode;
 use bevy::ecs::system::SystemParam;
 use bevy::prelude::{Color, Local, Query, Res, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts};
+use bevy_post_process::dof::DepthOfFieldMode;
 
 use crate::{
     audio::SoundGain,
-    components::{BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory, WindSwaySettings},
+    components::{
+        BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory, WindSwaySettings,
+    },
     graphics::GraphicsSettings,
-    render::{SkyMode, SkySettings, StarrySkySettings, ZoneLighting},
-    resources::{SeasonSettings, SoundSettings, SummerSettings, WaterSettings, ZoneTime, ZoneTimeState},
+    render::{SkyMode, SkySettings, StarrySkySettings, VolumetricCloudSettings, ZoneLighting},
+    resources::{
+        BloodEffectConfig, SeasonSettings, SoundSettings, SummerSettings, WaterSettings, ZoneTime,
+        ZoneTimeState,
+    },
     terrain::TerrainEnhancementSettings,
     ui::UiStateWindows,
 };
@@ -102,8 +107,10 @@ impl Default for PostProcessingSettings {
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum SettingsPage {
     Sound,
+    Blood,
     Sky,
     Stars,
+    Clouds,
     StarrySkyRender,
     DepthOfField,
     VolumetricFog,
@@ -170,9 +177,11 @@ pub struct SettingsSystemParams<'w, 's> {
     pub ui_state_windows: ResMut<'w, UiStateWindows>,
     pub ui_state_settings: Local<'s, UiStateSettings>,
     pub sound_settings: ResMut<'w, SoundSettings>,
+    pub blood_effect_config: ResMut<'w, BloodEffectConfig>,
     pub query_sounds: Query<'w, 's, (&'static SoundCategory, &'static mut SoundGain)>,
     pub sky_settings: ResMut<'w, SkySettings>,
     pub starry_sky_settings: ResMut<'w, StarrySkySettings>,
+    pub volumetric_cloud_settings: ResMut<'w, VolumetricCloudSettings>,
     pub starry_sky_render_settings: ResMut<'w, StarrySkyRenderSettings>,
     pub dof_settings: ResMut<'w, DepthOfFieldSettings>,
     pub zone_lighting: ResMut<'w, ZoneLighting>,
@@ -195,9 +204,11 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
         mut ui_state_windows,
         mut ui_state_settings,
         mut sound_settings,
+        mut blood_effect_config,
         mut query_sounds,
         mut sky_settings,
         mut starry_sky_settings,
+        mut volumetric_cloud_settings,
         mut starry_sky_render_settings,
         mut dof_settings,
         mut zone_lighting,
@@ -220,6 +231,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut ui_state_settings.page, SettingsPage::Sound, "Sound");
+                ui.selectable_value(&mut ui_state_settings.page, SettingsPage::Blood, "Blood");
                 ui.selectable_value(
                     &mut ui_state_settings.page,
                     SettingsPage::Sky,
@@ -229,6 +241,11 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                     &mut ui_state_settings.page,
                     SettingsPage::Stars,
                     "Stars",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::Clouds,
+                    "Clouds",
                 );
                 ui.selectable_value(
                     &mut ui_state_settings.page,
@@ -347,6 +364,189 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                                 }
                             }
                         });
+                }
+                SettingsPage::Blood => {
+                    egui::Grid::new("blood_effect_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Enable Blood:");
+                            ui.checkbox(&mut blood_effect_config.enable_blood, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Show Wounds:");
+                            ui.checkbox(&mut blood_effect_config.show_wounds, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Intensity:");
+                            ui.add(
+                                egui::Slider::new(&mut blood_effect_config.intensity, 0.0..=1.5)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Quality Scale:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.quality_scale,
+                                    0.1..=1.0,
+                                )
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Spatters:");
+                            ui.add(
+                                egui::Slider::new(&mut blood_effect_config.max_spatters, 10..=600)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Spawn Budget / Frame:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.max_spatters_per_frame,
+                                    1..=128,
+                                )
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Spatter Lifetime:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.spatter_lifetime,
+                                    1.0..=120.0,
+                                )
+                                .text("s")
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Fade Start:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.fade_start_fraction,
+                                    0.05..=0.95,
+                                )
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Spatter Radius:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.spatter_radius,
+                                    0.2..=8.0,
+                                )
+                                .text("m")
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Kill Spatters:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.spatter_count_on_kill,
+                                    1..=20,
+                                )
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Hit Spatters:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.spatter_count_on_hit,
+                                    0..=8,
+                                )
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Min Spatter Size:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.min_spatter_size,
+                                    0.05..=2.0,
+                                )
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Spatter Size:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.max_spatter_size,
+                                    0.1..=4.0,
+                                )
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Wound Threshold:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.wound_visibility_threshold,
+                                    0.0..=1.0,
+                                )
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Max Wounds/Entity:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.max_wounds_per_entity,
+                                    0..=12,
+                                )
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("LOD Near Distance:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.lod_near_distance,
+                                    5.0..=200.0,
+                                )
+                                .text("m")
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("LOD Far Distance:");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut blood_effect_config.lod_far_distance,
+                                    10.0..=600.0,
+                                )
+                                .text("m")
+                                .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Layered Effects:");
+                            ui.checkbox(&mut blood_effect_config.enable_layered_effects, "Enabled");
+                            ui.end_row();
+
+                            ui.label("Diagnostics Logging:");
+                            ui.checkbox(&mut blood_effect_config.enable_diagnostics, "Enabled");
+                            ui.end_row();
+                        });
+
+                    // Clamp dependent ranges
+                    blood_effect_config.max_spatter_size = blood_effect_config
+                        .max_spatter_size
+                        .max(blood_effect_config.min_spatter_size);
+                    blood_effect_config.wound_max_size =
+                        blood_effect_config.wound_max_size.max(blood_effect_config.wound_min_size);
+                    blood_effect_config.lod_far_distance = blood_effect_config
+                        .lod_far_distance
+                        .max(blood_effect_config.lod_near_distance + 1.0);
+
+                    ui.separator();
+                    ui.label("Tip: Lower quality scale and spawn budget for large battles.");
+                    ui.label("LOD distances reduce blood complexity for distant combat.");
                 }
                 SettingsPage::Sky => {
                     egui::Grid::new("sky_settings")
@@ -482,6 +682,160 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                     ui.separator();
                     ui.label("Tip: Star density 0.15 = sparse (~1,000 stars), 0.60 = dense (~6,000 stars). Changes apply instantly.");
                     ui.label("Note: Night factor is controlled by game time. Set to Manual mode in Sky tab and set time to midnight to see stars.");
+                }
+                SettingsPage::Clouds => {
+                    egui::Grid::new("volumetric_cloud_settings")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            ui.label("Enabled:");
+                            ui.checkbox(&mut volumetric_cloud_settings.enabled, "");
+                            ui.end_row();
+
+                            ui.label("Cloud Count:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.cloud_count, 10..=200)
+                                    .text("clouds")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Cluster Size Min:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.cluster_size_min, 2..=5)
+                                    .text("blobs")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Cluster Size Max:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.cluster_size_max, 2..=5)
+                                    .text("blobs")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Radius Min:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.cloud_radius_min, 10.0..=200.0)
+                                    .text("units")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Radius Max:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.cloud_radius_max, 20.0..=300.0)
+                                    .text("units")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Height Min:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.cloud_height_min, 100.0..=1000.0)
+                                    .text("units")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Height Max:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.cloud_height_max, 200.0..=1500.0)
+                                    .text("units")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Spawn Radius:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.cloud_spawn_radius, 500.0..=10000.0)
+                                    .text("units")
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.separator();
+                            ui.end_row();
+
+                            ui.label("Density:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.density, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Opacity:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.opacity, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Brightness:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.brightness, 0.5..=3.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Noise Scale:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.noise_scale, 0.005..=0.05)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Noise Octaves:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.noise_octaves, 1..=6)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("TOD Response:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.tod_response, 0.0..=1.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.separator();
+                            ui.end_row();
+
+                            ui.label("Drift Speed X:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.drift_speed.x, -50.0..=50.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Drift Speed Y:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.drift_speed.y, -50.0..=50.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            ui.label("Drift Speed Z:");
+                            ui.add(
+                                egui::Slider::new(&mut volumetric_cloud_settings.drift_speed.z, -50.0..=50.0)
+                                    .show_value(true),
+                            );
+                            ui.end_row();
+
+                            // Ensure a valid min/max range for cluster size.
+                            if volumetric_cloud_settings.cluster_size_max
+                                < volumetric_cloud_settings.cluster_size_min
+                            {
+                                volumetric_cloud_settings.cluster_size_max =
+                                    volumetric_cloud_settings.cluster_size_min;
+                            }
+                        });
+
+                    ui.separator();
+                    ui.label("Tip: Increase cloud count and spawn radius for more coverage. Adjust density and opacity for whiter clouds.");
+                    ui.label("Note: Cloud settings apply instantly. Structural changes (count/size/height/spawn radius/enabled) respawn clouds immediately.");
                 }
                 SettingsPage::StarrySkyRender => {
                     egui::Grid::new("starry_sky_render_settings")
@@ -1765,7 +2119,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
 fn format_time_of_day(hours: f32) -> String {
     let hour = hours.floor() as i32 % 24;
     let minutes = ((hours % 1.0) * 60.0).round() as i32;
-    
+
     let period = if hour < 6 {
         "Night"
     } else if hour < 8 {
@@ -1781,6 +2135,6 @@ fn format_time_of_day(hours: f32) -> String {
     } else {
         "Night"
     };
-    
+
     format!("{:02}:{:02} ({})", hour, minutes, period)
 }

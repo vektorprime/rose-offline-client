@@ -2,6 +2,7 @@ mod angelic_wings;
 mod bank;
 mod bird;
 mod blink_clip;
+mod boat;
 mod blood_effect;
 mod character_model;
 mod character_model_blink_timer;
@@ -54,6 +55,7 @@ mod skinned_mesh_target_bone;
 pub use bank::Bank;
 pub use bird::{Bird, BirdMesh, BirdSettings, BirdWingLeft, BirdWingRight};
 pub use blink_clip::{sync_blink_clip_to_state, update_blink_clip_state, BlinkClip, BlinkClipPlugin, BlinkClipState, BlinkUniform};
+pub use boat::{BoatModel, BoatState, SailMesh, SailSide};
 pub use character_model::{CharacterModel, CharacterModelPart, CharacterModelPartIndex};
 pub use character_model_blink_timer::CharacterBlinkTimer;
 pub use chat_bubble::{ChatBubble, ChatBubbleBackground, ChatBubbleEntity, ChatBubbleText, MonsterChatter};
@@ -74,7 +76,7 @@ pub use command::{
     CommandEmote, CommandMove, CommandSit, NextCommand,
 };
 pub use cooldowns::{ConsumableCooldownGroup, Cooldowns};
-pub use blood_effect::{BloodSpatter, BloodSpatterConfig, GashWounds, WoundVisual};
+pub use blood_effect::{BloodSpatter, BloodSpatterConfig, DeathBloodHandled, GashWounds, WoundVisual};
 pub use damage_digits::DamageDigits;
 pub use dead::Dead;
 pub use dirt_dash_effect::{DirtDashEffect, DirtDashParticle, DirtDashSettings};

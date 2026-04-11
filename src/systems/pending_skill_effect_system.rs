@@ -14,8 +14,8 @@ use crate::{
     resources::GameData,
 };
 
-// After 10 seconds, apply skill effects regardless
-const MAX_SKILL_EFFECT_AGE: f32 = 10.0;
+// After 2 seconds, apply skill effects regardless (reduced from 10s to minimize delay)
+const MAX_SKILL_EFFECT_AGE: f32 = 2.0;
 
 fn apply_skill_effect(
     skill_data: &SkillData,

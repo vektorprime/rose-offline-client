@@ -11,13 +11,11 @@
 use bevy::{
     asset::{load_internal_asset, weak_handle},
     pbr::{
-        MaterialExtension, MaterialPlugin, StandardMaterial,
-        ExtendedMaterial, MaterialPipeline, MaterialPipelineKey,
+        ExtendedMaterial, MaterialExtension, MaterialPipeline, MaterialPipelineKey, MaterialPlugin,
+        StandardMaterial,
     },
     prelude::*,
-    render::{
-        render_resource::{RenderPipelineDescriptor, SpecializedMeshPipelineError},
-    },
+    render::render_resource::{RenderPipelineDescriptor, SpecializedMeshPipelineError},
 };
 use bevy_mesh::MeshVertexBufferLayoutRef;
 use bevy_shader::ShaderRef;
@@ -42,7 +40,7 @@ pub type RoseObjectMaterial = ExtendedMaterial<StandardMaterial, RoseObjectExten
 
 /// Custom MaterialPlugin for RoseObjectMaterial
 /// Uses standard Bevy rendering without custom zone lighting
-/// Note: In Bevy 0.18, prepass and shadows are controlled via enable_prepass() 
+/// Note: In Bevy 0.18, prepass and shadows are controlled via enable_prepass()
 /// and enable_shadows() methods on the Material trait
 pub struct RoseObjectMaterialPlugin;
 
@@ -106,6 +104,8 @@ impl Plugin for ExtensionMaterialPlugin {
             Shader::from_wgsl
         );
 
-        bevy::log::info!("[EXTENSION MATERIAL PLUGIN] All material extension shaders registered successfully");
+        bevy::log::info!(
+            "[EXTENSION MATERIAL PLUGIN] All material extension shaders registered successfully"
+        );
     }
 }

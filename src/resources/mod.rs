@@ -1,6 +1,8 @@
 mod account;
 mod app_state;
+mod blood_decal_atlas;
 mod blood_effect_config;
+mod blood_effect_runtime;
 mod character_list;
 mod character_select_state;
 mod client_entity_list;
@@ -30,6 +32,7 @@ mod specular_texture;
 mod ui_resources;
 mod virtual_filesystem;
 mod water_settings;
+mod wind_state;
 mod world_connection;
 mod world_rates;
 mod world_time;
@@ -40,7 +43,9 @@ pub mod zone_debug_diagnostics;
 
 pub use account::Account;
 pub use app_state::AppState;
+pub use blood_decal_atlas::BloodDecalAtlas;
 pub use blood_effect_config::BloodEffectConfig;
+pub use blood_effect_runtime::{BloodEffectDiagnostics, BloodEffectRuntime};
 pub use character_list::CharacterList;
 pub use character_select_state::CharacterSelectState;
 pub use client_entity_list::ClientEntityList;
@@ -72,6 +77,7 @@ pub use ui_resources::{
 };
 pub use virtual_filesystem::VfsResource;
 pub use water_settings::WaterSettings;
+pub use wind_state::{WindSettings, WindState};
 pub use world_connection::WorldConnection;
 pub use world_rates::WorldRates;
 pub use world_time::WorldTime;

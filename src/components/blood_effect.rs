@@ -15,18 +15,39 @@ use bevy::{prelude::*, reflect::Reflect};
 pub struct BloodSpatter {
     /// Time remaining before this spatter fades out completely (in seconds).
     pub lifetime: f32,
+    /// Total lifetime assigned when spawned (in seconds).
+    pub total_lifetime: f32,
     /// Current alpha transparency value (0.0 = invisible, 1.0 = fully opaque).
     pub alpha: f32,
+    /// Initial alpha value used as the fade baseline.
+    pub base_alpha: f32,
     /// Size of the decal in world units.
     pub size: f32,
+    /// Color while blood is fresh.
+    pub wet_color: Color,
+    /// Color after drying.
+    pub dry_color: Color,
+    /// Whether this pooled spatter is currently active/visible.
+    pub active: bool,
 }
+
+/// Marker set when a kill-triggered blood spatter was already emitted from
+/// combat resolution. Used to avoid duplicate death-triggered spatters.
+#[derive(Component, Reflect, Clone, Debug, Default)]
+#[reflect(Component)]
+pub struct DeathBloodHandled;
 
 impl Default for BloodSpatter {
     fn default() -> Self {
         Self {
             lifetime: 30.0,
+            total_lifetime: 30.0,
             alpha: 0.8,
+            base_alpha: 0.8,
             size: 1.0,
+            wet_color: Color::srgb(0.6, 0.0, 0.0),
+            dry_color: Color::srgb(0.28, 0.06, 0.04),
+            active: true,
         }
     }
 }
@@ -66,12 +87,20 @@ impl GashWounds {
 pub struct WoundVisual {
     /// The parent entity this wound visual is attached to.
     pub parent_entity: Entity,
+    /// Wound visual size scalar.
+    pub size: f32,
+    /// Whether this wound visual is currently active.
+    pub active: bool,
 }
 
 impl WoundVisual {
     /// Creates a new WoundVisual marker for the given parent.
-    pub fn new(parent_entity: Entity) -> Self {
-        Self { parent_entity }
+    pub fn new(parent_entity: Entity, size: f32) -> Self {
+        Self {
+            parent_entity,
+            size,
+            active: true,
+        }
     }
 }
 

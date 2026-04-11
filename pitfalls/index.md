@@ -16,6 +16,7 @@ This folder contains documentation of issues encountered during development and 
 | [zone-loading.md](zone-loading.md) | Asset tracking, state initialization, skybox loading |
 | [model-viewer.md](model-viewer.md) | Bundle duplicates, runtime panics |
 | [performance-memory.md](performance-memory.md) | GPU memory leaks, buffer management |
+| [blood-effects.md](blood-effects.md) | Terrain blood decal visibility, orientation, and wound overlay tuning |
 
 ## Quick Navigation by Bevy Version
 

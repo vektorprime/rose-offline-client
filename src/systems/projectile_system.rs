@@ -8,7 +8,7 @@ use rose_data::EffectBulletMoveType;
 
 use crate::{
     components::{DummyBoneOffset, Projectile, ProjectileParabola, ProjectileTarget},
-    events::HitEvent,
+    events::{BloodImpactProfile, HitEvent},
 };
 
 pub fn projectile_system(
@@ -100,6 +100,7 @@ pub fn projectile_system(
                 if let Some(skill_id) = projectile.skill_id {
                     hit_events.write(
                         HitEvent::with_skill_damage(projectile.source, target_entity, skill_id)
+                            .with_blood_profile(BloodImpactProfile::Projectile)
                             .apply_damage(projectile.apply_damage),
                     );
                 } else {
@@ -109,6 +110,7 @@ pub fn projectile_system(
                             target_entity,
                             projectile.effect_id,
                         )
+                        .with_blood_profile(BloodImpactProfile::Projectile)
                         .apply_damage(projectile.apply_damage),
                     );
                 }

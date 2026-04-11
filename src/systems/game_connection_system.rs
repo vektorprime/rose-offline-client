@@ -12,9 +12,15 @@ use bevy::{
     },
 };
 
+/// Helper enum to track cooldown type for server-authoritative cooldown updates
+#[derive(Clone, Copy)]
+enum CooldownType {
+    Skill(rose_data::SkillId),
+    Group(usize),
+}
+
 use rose_data::{
-    AbilityType, EquipmentItem, Item, ItemReference, ItemSlotBehaviour, ItemType, SkillCooldown,
-    StatusEffectType,
+    AbilityType, EquipmentItem, Item, ItemReference, ItemSlotBehaviour, ItemType, StatusEffectType,
 };
 use rose_game_common::{
     components::{
@@ -1375,6 +1381,7 @@ pub fn game_connection_system(
                 entity_id,
                 status_effects: update_status_effects,
                 updated_values,
+                regen_effects,
             }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     commands.queue(move |world: &mut World| {
@@ -1382,42 +1389,47 @@ pub fn game_connection_system(
                         let mut updated_hp = None;
                         let mut updated_mp = None;
 
-                        // Clear StatusEffects for status effects which do not exist in the packet
+                        // Update StatusEffects - handle both adding and removing
                         if let Some(mut status_effects) = entity_mut.get_mut::<StatusEffects>() {
                             for (status_effect_type, active) in update_status_effects.iter() {
-                                if active.is_some() {
-                                    continue;
-                                }
-
-                                if status_effects.active[status_effect_type].is_some() {
-                                    match status_effect_type {
-                                        StatusEffectType::IncreaseHp => {
-                                            updated_hp = updated_values.first().cloned();
+                                match active {
+                                    Some(active_effect) => {
+                                        // Add or update status effect
+                                        if status_effects.active[status_effect_type].is_none() {
+                                            // New effect - set expire time
+                                            status_effects.expire_times[status_effect_type] = Some(
+                                                std::time::Instant::now()
+                                                    + std::time::Duration::from_secs(300),
+                                            );
                                         }
-                                        StatusEffectType::IncreaseMp => {
-                                            updated_mp = updated_values.last().cloned();
-                                        }
-                                        _ => {}
+                                        status_effects.active[status_effect_type] =
+                                            Some(active_effect.clone());
                                     }
-                                    status_effects.active[status_effect_type] = None;
-                                    status_effects.expire_times[status_effect_type] = None;
+                                    None => {
+                                        // Remove status effect
+                                        if status_effects.active[status_effect_type].is_some() {
+                                            match status_effect_type {
+                                                StatusEffectType::IncreaseHp => {
+                                                    updated_hp = updated_values.first().cloned();
+                                                }
+                                                StatusEffectType::IncreaseMp => {
+                                                    updated_mp = updated_values.last().cloned();
+                                                }
+                                                _ => {}
+                                            }
+                                            status_effects.active[status_effect_type] = None;
+                                            status_effects.expire_times[status_effect_type] = None;
+                                        }
+                                    }
                                 }
                             }
                         }
 
-                        // Clear StatusEffectsRegen for status effects which do not exist in the packet
+                        // Update StatusEffectsRegen from the packet
                         if let Some(mut status_effects_regen) =
                             entity_mut.get_mut::<StatusEffectsRegen>()
                         {
-                            for (status_effect_type, active) in update_status_effects {
-                                if active.is_some() {
-                                    continue;
-                                }
-
-                                if status_effects_regen.regens[status_effect_type].is_some() {
-                                    status_effects_regen.regens[status_effect_type] = None;
-                                }
-                            }
+                            status_effects_regen.regens = regen_effects;
                         }
 
                         if let Some(updated_hp) = updated_hp {
@@ -1619,9 +1631,8 @@ pub fn game_connection_system(
                     commands.queue(move |world: &mut World| {
                         let mut player = world.entity_mut(player_entity);
                         if let Some(mut skill_list) = player.get_mut::<SkillList>() {
-                            if let Some(skill_slot) = skill_list.get_slot_mut(skill_slot) {
-                                *skill_slot = skill_id;
-                            }
+                            let skill_slot_ref = skill_list.ensure_slot_mut(skill_slot);
+                            *skill_slot_ref = skill_id;
                         }
                     });
 
@@ -1780,36 +1791,6 @@ pub fn game_connection_system(
                         None,
                         None,
                     ));
-
-                    if client_entity_list.player_entity == Some(entity) {
-                        if let Some(skill_data) = game_data.skills.get_skill(skill_id) {
-                            match skill_data.cooldown {
-                                SkillCooldown::Skill { duration } => {
-                                    commands.queue(move |world: &mut World| {
-                                        let mut character = world.entity_mut(entity);
-
-                                        if let Some(mut cooldowns) =
-                                            character.get_mut::<Cooldowns>()
-                                        {
-                                            cooldowns.set_skill_cooldown(skill_id, duration);
-                                        }
-                                    });
-                                }
-                                SkillCooldown::Group { group, duration } => {
-                                    commands.queue(move |world: &mut World| {
-                                        let mut character = world.entity_mut(entity);
-
-                                        if let Some(mut cooldowns) =
-                                            character.get_mut::<Cooldowns>()
-                                        {
-                                            cooldowns
-                                                .set_skill_group_cooldown(group.get(), duration);
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                    }
                 }
             }
             Ok(ServerMessage::CastSkillTargetEntity {
@@ -1830,36 +1811,6 @@ pub fn game_connection_system(
                             None,
                         ));
                     }
-
-                    if client_entity_list.player_entity == Some(entity) {
-                        if let Some(skill_data) = game_data.skills.get_skill(skill_id) {
-                            match skill_data.cooldown {
-                                SkillCooldown::Skill { duration } => {
-                                    commands.queue(move |world: &mut World| {
-                                        let mut character = world.entity_mut(entity);
-
-                                        if let Some(mut cooldowns) =
-                                            character.get_mut::<Cooldowns>()
-                                        {
-                                            cooldowns.set_skill_cooldown(skill_id, duration);
-                                        }
-                                    });
-                                }
-                                SkillCooldown::Group { group, duration } => {
-                                    commands.queue(move |world: &mut World| {
-                                        let mut character = world.entity_mut(entity);
-
-                                        if let Some(mut cooldowns) =
-                                            character.get_mut::<Cooldowns>()
-                                        {
-                                            cooldowns
-                                                .set_skill_group_cooldown(group.get(), duration);
-                                        }
-                                    });
-                                }
-                            }
-                        }
-                    }
                 }
             }
             Ok(ServerMessage::CastSkillTargetPosition {
@@ -1876,36 +1827,99 @@ pub fn game_connection_system(
                         None,
                         None,
                     ));
-
-                    if client_entity_list.player_entity == Some(entity) {
-                        if let Some(skill_data) = game_data.skills.get_skill(skill_id) {
-                            match skill_data.cooldown {
-                                SkillCooldown::Skill { duration } => {
-                                    commands.queue(move |world: &mut World| {
-                                        let mut character = world.entity_mut(entity);
-
-                                        if let Some(mut cooldowns) =
-                                            character.get_mut::<Cooldowns>()
-                                        {
-                                            cooldowns.set_skill_cooldown(skill_id, duration);
-                                        }
-                                    });
-                                }
-                                SkillCooldown::Group { group, duration } => {
-                                    commands.queue(move |world: &mut World| {
-                                        let mut character = world.entity_mut(entity);
-
-                                        if let Some(mut cooldowns) =
-                                            character.get_mut::<Cooldowns>()
-                                        {
-                                            cooldowns
-                                                .set_skill_group_cooldown(group.get(), duration);
-                                        }
-                                    });
-                                }
+                }
+            }
+            Ok(ServerMessage::UpdateCooldown { skill_id, duration }) => {
+                if let Some(player_entity) = client_entity_list.player_entity {
+                    // Extract cooldown type before the closure to avoid lifetime issues
+                    // SkillCooldown is Copy, so we can clone it out of the reference
+                    let cooldown_type = game_data.skills.get_skill(skill_id).map(|skill_data| {
+                        let cooldown = skill_data.cooldown; // Clone the Copy value
+                        match cooldown {
+                            rose_data::SkillCooldown::Skill { .. } => CooldownType::Skill(skill_id),
+                            rose_data::SkillCooldown::Group { group, .. } => {
+                                CooldownType::Group(group.get())
                             }
                         }
+                    });
+
+                    if let Some(cooldown_type) = cooldown_type {
+                        commands.queue(move |world: &mut World| {
+                            let mut character = world.entity_mut(player_entity);
+
+                            if let Some(mut cooldowns) = character.get_mut::<Cooldowns>() {
+                                cooldowns.set_global_cooldown(
+                                    duration.min(std::time::Duration::from_millis(250)),
+                                );
+
+                                match cooldown_type {
+                                    CooldownType::Skill(id) => {
+                                        cooldowns.set_skill_cooldown(id, duration);
+                                    }
+                                    CooldownType::Group(group) => {
+                                        cooldowns.set_skill_group_cooldown(group, duration);
+                                    }
+                                }
+                            }
+                        });
                     }
+                }
+            }
+            Ok(ServerMessage::UpdateConsumableCooldown {
+                cooldown_group,
+                duration,
+            }) => {
+                if let Some(player_entity) = client_entity_list.player_entity {
+                    commands.queue(move |world: &mut World| {
+                        let mut character = world.entity_mut(player_entity);
+
+                        if let Some(mut cooldowns) = character.get_mut::<Cooldowns>() {
+                            let cooldown_group = match cooldown_group {
+                                0 => crate::components::ConsumableCooldownGroup::HealthRecovery,
+                                1 => crate::components::ConsumableCooldownGroup::ManaRecovery,
+                                2 => crate::components::ConsumableCooldownGroup::MagicItem,
+                                _ => crate::components::ConsumableCooldownGroup::Others,
+                            };
+
+                            cooldowns.set_consumable_cooldown(cooldown_group, duration);
+                        }
+                    });
+                }
+            }
+            Ok(ServerMessage::UpdateAbilityValues {
+                entity_id,
+                attack_power,
+                defence,
+                hit,
+                resistance,
+                avoid,
+                attack_speed,
+                critical,
+                max_health,
+                max_mana,
+                move_speed,
+            }) => {
+                if let Some(entity) = client_entity_list.get(entity_id) {
+                    commands.queue(move |world: &mut World| {
+                        let mut entity_mut = world.entity_mut(entity);
+
+                        if let Some(mut ability_values) = entity_mut.get_mut::<AbilityValues>() {
+                            ability_values.attack_power = attack_power;
+                            ability_values.defence = defence;
+                            ability_values.hit = hit;
+                            ability_values.resistance = resistance;
+                            ability_values.avoid = avoid;
+                            ability_values.attack_speed = attack_speed;
+                            ability_values.critical = critical;
+                            ability_values.max_health = max_health;
+                            ability_values.max_mana = max_mana;
+                            // move_speed from server is in game units, convert to bevy units
+                            ability_values.run_speed = move_speed as f32 * 0.01;
+                        }
+
+                        // Note: HealthPoints and ManaPoints only track current values (hp/mp), not max values
+                        // The max values are stored in AbilityValues which we already updated above
+                    });
                 }
             }
             Ok(ServerMessage::CancelCastingSkill {

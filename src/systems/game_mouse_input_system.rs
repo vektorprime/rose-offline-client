@@ -17,14 +17,15 @@ use rose_game_common::components::{ItemDrop, Team};
 
 use crate::{
     components::{
-        ColliderParent, ClientEntity, ClientEntityType, FlightState, PlayerCharacter, Position, ZoneObject,
+        BoatState, ColliderParent, ClientEntity, ClientEntityType, FlightState, PlayerCharacter,
+        Position, ZoneObject,
         COLLISION_FILTER_CLICKABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_PLAYER,
     },
     events::{MoveDestinationEffectEvent, PlayerCommandEvent},
     resources::{AppState, SelectedTarget, UiCursorType},
 };
 
-pub type PlayerQuery<'w> = (Entity, &'w Team, Option<&'w FlightState>);
+pub type PlayerQuery<'w> = (Entity, &'w Team, Option<&'w FlightState>, Option<&'w BoatState>);
 
 /// Game mouse input system - handles mouse clicks for movement, attacking, and interaction
 /// This system has been refactored to reduce the number of parameters to 10
@@ -75,7 +76,7 @@ pub fn game_mouse_input_system(
         return Ok(());
     }
 
-    let (_player_entity, player_team, player_flight_state) = if let Ok(result) = query_player.single() {
+    let (_player_entity, player_team, player_flight_state, player_boat_state) = if let Ok(result) = query_player.single() {
         result
     } else {
         return Ok(());
@@ -84,6 +85,8 @@ pub fn game_mouse_input_system(
     // Check if player is flying - if so, skip terrain click-to-move
     // but still allow interaction with UI and entities
     let is_flying = player_flight_state.map_or(false, |fs| fs.is_flying);
+    let is_sailing = player_boat_state.map_or(false, |boat| boat.active);
+    let movement_locked = is_flying || is_sailing;
     
     let Ok((camera, camera_transform)) = query_camera.single() else {
         return Ok(());
@@ -140,7 +143,7 @@ pub fn game_mouse_input_system(
 
                 if hit_zone_object.is_some() {
                     // Only allow terrain click-to-move when NOT flying
-                    if !is_flying && mouse_button_input.just_pressed(MouseButton::Left) {
+                    if !movement_locked && mouse_button_input.just_pressed(MouseButton::Left) {
                         player_command_events.write(PlayerCommandEvent::Move(
                             Position::new(Vec3::new(
                                 hit_position.x * 100.0,
@@ -175,7 +178,7 @@ pub fn game_mouse_input_system(
                                 || hit_team.id == player_team.id
                             {
                                 // Only allow click-to-move to friendly units when NOT flying
-                                if !is_flying {
+                                if !movement_locked {
                                     if let Some(hit_entity_position) = hit_entity_position {
                                         player_command_events.write(PlayerCommandEvent::Move(
                                             hit_entity_position.clone(),

@@ -3466,8 +3466,11 @@ fn spawn_new_terrain(
     let material = standard_materials.add(StandardMaterial {
         base_color_texture: Some(albedo),
         normal_map_texture: Some(normal),
-        perceptual_roughness: 0.8,
+        // Reduce directional glossy highlights on terrain in --new-terrain mode.
+        // Keep terrain strongly diffuse/non-metallic to avoid metallic-looking sheen.
+        perceptual_roughness: 1.0,
         metallic: 0.0,
+        reflectance: 0.0,
         depth_bias: 0.1, // Small bias to mitigate Z-fighting in overlapping terrain
         ..Default::default()
     });

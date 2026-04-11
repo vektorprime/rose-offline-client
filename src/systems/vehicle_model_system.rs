@@ -141,6 +141,7 @@ pub fn vehicle_model_system(
                     &mut meshes,
                     &mut storage_buffers,
                     vehicle_model_entity,
+                    entity, // skinned_mesh_parent_entity - the root entity that has SkinnedMesh
                     driver_model_entity,
                     equipment,
                 );

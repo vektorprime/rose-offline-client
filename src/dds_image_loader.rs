@@ -86,6 +86,19 @@ impl AssetLoader for DdsImageLoader {
                    // info!("[DDS LOADER] Decompressing BC3/DXT5 to R8G8B8A8");
                     decompress_bc3_to_rgba(&bytes, &dds_info, is_cube)
                 }
+                DdsFormat::A8 => {
+                    // Alpha-only textures are common for particle masks.
+                    // Convert to white RGB + alpha so shader tinting remains visible.
+                    convert_a8_to_rgba(&bytes, &dds_info, is_cube)
+                }
+                DdsFormat::L8 => {
+                    // Luminance-only textures map luminance to RGB with full alpha.
+                    convert_l8_to_rgba(&bytes, &dds_info, is_cube)
+                }
+                DdsFormat::L8A8 => {
+                    // Luminance+alpha textures are often used by legacy VFX masks.
+                    convert_l8a8_to_rgba(&bytes, &dds_info, is_cube)
+                }
                 _ => {
                     // Try image crate as fallback - it will also convert to RGBA8
                     warn!("[DDS LOADER] Format {:?}, trying image crate", dds_info.format);
@@ -408,6 +421,76 @@ fn load_rgba_direct(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Resu
     }
     
     let rgba_data = bytes[data_start..data_start + expected_size].to_vec();
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
+}
+
+fn convert_a8_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
+    let data_start = info.data_offset;
+    let num_pixels = (info.width * info.height) as usize;
+    let expected_size = num_pixels;
+
+    if bytes.len() < data_start + expected_size {
+        anyhow::bail!("Not enough data for A8 conversion");
+    }
+
+    let src_data = &bytes[data_start..data_start + expected_size];
+    let mut rgba_data = Vec::with_capacity(num_pixels * 4);
+
+    for &a in src_data {
+        // White RGB + source alpha allows particle color keyframes to tint correctly.
+        rgba_data.push(255);
+        rgba_data.push(255);
+        rgba_data.push(255);
+        rgba_data.push(a);
+    }
+
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
+}
+
+fn convert_l8_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
+    let data_start = info.data_offset;
+    let num_pixels = (info.width * info.height) as usize;
+    let expected_size = num_pixels;
+
+    if bytes.len() < data_start + expected_size {
+        anyhow::bail!("Not enough data for L8 conversion");
+    }
+
+    let src_data = &bytes[data_start..data_start + expected_size];
+    let mut rgba_data = Vec::with_capacity(num_pixels * 4);
+
+    for &luma in src_data {
+        rgba_data.push(luma);
+        rgba_data.push(luma);
+        rgba_data.push(luma);
+        rgba_data.push(255);
+    }
+
+    Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
+}
+
+fn convert_l8a8_to_rgba(bytes: &[u8], info: &DdsInfo, is_cube: bool) -> anyhow::Result<Image> {
+    let data_start = info.data_offset;
+    let num_pixels = (info.width * info.height) as usize;
+    let expected_size = num_pixels * 2;
+
+    if bytes.len() < data_start + expected_size {
+        anyhow::bail!("Not enough data for L8A8 conversion");
+    }
+
+    let src_data = &bytes[data_start..data_start + expected_size];
+    let mut rgba_data = Vec::with_capacity(num_pixels * 4);
+
+    for i in 0..num_pixels {
+        let luma = src_data[i * 2];
+        let alpha = src_data[i * 2 + 1];
+
+        rgba_data.push(luma);
+        rgba_data.push(luma);
+        rgba_data.push(luma);
+        rgba_data.push(alpha);
+    }
+
     Ok(create_rgba_image(info.width, info.height, rgba_data, is_cube))
 }
 

@@ -8,13 +8,16 @@
 //! Note: Zone lighting has been temporarily removed to simplify the rendering
 //! pipeline. It can be added back later once basic rendering is confirmed working.
 
-use bevy::pbr::{MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, MeshPipelineKey, StandardMaterial};
+use bevy::pbr::{
+    MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, MeshPipelineKey,
+    StandardMaterial,
+};
 use bevy::prelude::*;
-use bevy_mesh::MeshVertexBufferLayoutRef;
-use bevy_image::Image;
 use bevy::render::render_resource::{
     AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
 };
+use bevy_image::Image;
+use bevy_mesh::MeshVertexBufferLayoutRef;
 use bevy_shader::ShaderRef;
 
 /// Material extension for ROSE object materials

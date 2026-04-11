@@ -19,16 +19,16 @@ use bevy::{
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_graph::{
-            NodeRunError, RenderGraphExt as _, RenderGraphContext, ViewNode, ViewNodeRunner,
+            NodeRunError, RenderGraphContext, RenderGraphExt as _, ViewNode, ViewNodeRunner,
         },
         render_resource::{
             binding_types::{sampler, texture_2d, uniform_buffer},
-            BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntries, CachedRenderPipelineId,
-            ColorTargetState, ColorWrites, DynamicUniformBuffer, FilterMode, FragmentState,
-            Operations, PipelineCache, RenderPassColorAttachment, RenderPassDescriptor,
-            RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor,
-            ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines,
-            TextureFormat, TextureSampleType,
+            BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
+            CachedRenderPipelineId, ColorTargetState, ColorWrites, DynamicUniformBuffer,
+            FilterMode, FragmentState, Operations, PipelineCache, RenderPassColorAttachment,
+            RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerBindingType,
+            SamplerDescriptor, ShaderStages, ShaderType, SpecializedRenderPipeline,
+            SpecializedRenderPipelines, TextureFormat, TextureSampleType,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         view::{ExtractedView, ViewTarget},
@@ -41,10 +41,7 @@ use bevy::{
 use bevy_camera::Camera;
 use bevy_shader::Shader;
 
-use crate::{
-    components::WaterSpawnedEvent,
-    resources::WaterSettings,
-};
+use crate::{components::WaterSpawnedEvent, resources::WaterSettings};
 
 /// Shader handle for the underwater effect shader
 pub const UNDERWATER_EFFECT_SHADER_HANDLE: Handle<Shader> =
@@ -233,7 +230,11 @@ impl ViewNode for UnderwaterEffectNode {
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (view_target, pipeline_id, _underwater_state, uniform_offset): QueryItem<'w, '_, Self::ViewQuery>,
+        (view_target, pipeline_id, _underwater_state, uniform_offset): QueryItem<
+            'w,
+            '_,
+            Self::ViewQuery,
+        >,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
         let pipeline_cache = world.resource::<PipelineCache>();
@@ -267,7 +268,8 @@ impl ViewNode for UnderwaterEffectNode {
         };
 
         // Create bind group with source texture, sampler, and uniforms
-        let bind_group_layout = pipeline_cache.get_bind_group_layout(&underwater_pipeline.bind_group_layout);
+        let bind_group_layout =
+            pipeline_cache.get_bind_group_layout(&underwater_pipeline.bind_group_layout);
         let bind_group = render_context.render_device().create_bind_group(
             "underwater_effect bind group",
             &bind_group_layout,
@@ -317,7 +319,10 @@ impl Plugin for UnderwaterEffectPlugin {
             ));
 
         // Track water volumes and detect underwater camera state.
-        app.add_systems(Update, (track_underwater_volumes, detect_underwater_camera).chain());
+        app.add_systems(
+            Update,
+            (track_underwater_volumes, detect_underwater_camera).chain(),
+        );
 
         // Setup render app
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
@@ -568,7 +573,11 @@ pub fn prepare_underwater_effect_uniforms(
 
     for (view_entity, underwater_state) in views.iter() {
         let uniform = UnderwaterEffectUniform {
-            is_underwater: if underwater_state.is_underwater { 1.0 } else { 0.0 },
+            is_underwater: if underwater_state.is_underwater {
+                1.0
+            } else {
+                0.0
+            },
             water_surface_y: underwater_state.water_surface_y,
             depth_below_surface: underwater_state.depth_below_surface,
             fog_density: underwater_settings.fog_density,
@@ -589,5 +598,7 @@ pub fn prepare_underwater_effect_uniforms(
     }
 
     // Upload to GPU
-    uniform_buffers.buffer.write_buffer(&render_device, &render_queue);
+    uniform_buffers
+        .buffer
+        .write_buffer(&render_device, &render_queue);
 }
