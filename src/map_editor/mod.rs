@@ -65,6 +65,7 @@ pub use components::{
 
 pub use resources::{
     AvailableModels,
+    CustomZonePath,
     DeletedZoneObjects,
     EditorGridSettings,
     EditorMode,
@@ -112,7 +113,8 @@ impl Plugin for MapEditorPlugin {
         app.init_resource::<MapEditorState>()
             .init_resource::<EditorGridSettings>()
             .init_resource::<SelectedModel>()
-            .init_resource::<DeletedZoneObjects>();
+            .init_resource::<DeletedZoneObjects>()
+            .init_resource::<CustomZonePath>();
         
         // Add subsystem plugins
         app.add_plugins(EditorSelectionPlugin)

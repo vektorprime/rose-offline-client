@@ -18,6 +18,22 @@ use crate::map_editor::components::SelectedInEditor;
 use crate::map_editor::resources::{DeletedZoneObjects, DuplicateSelectedEvent, EditorAction, EditorMode, MapEditorState, ZoneObjectType};
 use crate::systems::{FreeCamera, OrbitCamera};
 
+const ZONE_CENTER_X: f32 = 5200.0;
+const ZONE_CENTER_Z: f32 = -5200.0;
+const BLOCK_SIZE_METERS: f32 = 160.0;
+const ZONE_BLOCK_COUNT: u32 = 64;
+
+fn world_to_block_coords(world_translation: Vec3) -> (u32, u32) {
+    let local_x = world_translation.x - ZONE_CENTER_X;
+    let local_z = world_translation.z - ZONE_CENTER_Z;
+    let block_x = ((local_x + ZONE_CENTER_X) / BLOCK_SIZE_METERS).floor() as u32;
+    let block_y = ((local_z + ZONE_CENTER_X) / BLOCK_SIZE_METERS).floor() as u32;
+    (
+        block_x.clamp(0, ZONE_BLOCK_COUNT - 1),
+        block_y.clamp(0, ZONE_BLOCK_COUNT - 1),
+    )
+}
+
 /// System to handle keyboard shortcuts for the map editor
 pub fn keyboard_shortcuts_system(
     mut commands: Commands,
@@ -243,21 +259,11 @@ fn handle_delete_selected(
     }
     
     // Track deleted zone objects for save system
-    // Zone center is at world position (5200, 0, -5200)
-    let _zone_center = Vec3::new(5200.0, 0.0, -5200.0);
-    
     for entity in &entities {
         // Get transform and ZoneObject component to track deletion
         if let (Ok(global_transform), Ok(zone_object)) = (transforms.get(*entity), zone_objects.get(*entity)) {
             let translation = global_transform.translation();
-            
-            // Calculate block coordinates from WORLD coordinates
-            let block_x = (translation.x / 160.0).floor() as u32;
-            let block_y = ((translation.z + 10400.0) / 160.0).floor() as u32;
-            
-            // Clamp to valid range
-            let block_x = block_x.clamp(0, 63);
-            let block_y = block_y.clamp(0, 63);
+            let (block_x, block_y) = world_to_block_coords(translation);
             
             // Get ifo_object_id and object type from ZoneObject
             let (ifo_object_id, object_type) = match zone_object {

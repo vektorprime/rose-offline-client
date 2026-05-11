@@ -489,9 +489,7 @@ pub fn ui_chatbox_system(
                         ui_state_chatbox.textbox_text.clear();
                     } else if is_boat_command(&ui_state_chatbox.textbox_text) {
                         if let Ok(player_entity) = player_query.single() {
-                            // Send both and let boat_toggle_system consume the relevant one based on state.
                             board_boat_events.write(BoardBoatEvent { entity: player_entity });
-                            disembark_boat_events.write(DisembarkBoatEvent { entity: player_entity });
                         }
                         ui_state_chatbox.textbox_text.clear();
                     } else if is_ping_command(&ui_state_chatbox.textbox_text) {

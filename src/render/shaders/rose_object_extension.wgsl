@@ -40,6 +40,17 @@ var specular_texture: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(104)
 var specular_sampler: sampler;
 
+// Blood overlay texture and sampler (UV-space combat painting)
+@group(#{MATERIAL_BIND_GROUP}) @binding(106)
+var blood_overlay_texture: texture_2d<f32>;
+
+@group(#{MATERIAL_BIND_GROUP}) @binding(107)
+var blood_overlay_sampler: sampler;
+
+// x = intensity [0..1], y = enabled flag (0/1), z/w reserved
+@group(#{MATERIAL_BIND_GROUP}) @binding(108)
+var<uniform> blood_params: vec4<f32>;
+
 #ifdef PREPASS_PIPELINE
 @fragment
 fn fragment(
@@ -76,7 +87,7 @@ fn fragment(
     // Specular value controls the intensity of specular highlights (0.0 = matte, 1.0 = shiny)
     // Default to 0.5 (Bevy's default reflectance) if texture sampling fails
     var specular_value = 0.5;
-    #ifdef VERTEX_UVS
+    #ifdef VERTEX_UVS_A
     {
         let specular_sample = textureSample(specular_texture, specular_sampler, in.uv);
         specular_value = specular_sample.r;
@@ -106,15 +117,36 @@ fn fragment(
     #endif
     
     // Apply standard Bevy PBR lighting
-    // This includes response to directional lights, ambient lights, and environment
-    let color = apply_pbr_lighting(pbr_input);
-    
-    // Apply lightmap as ambient occlusion (multiply with lit color)
-    let lit_color = vec4<f32>(color.rgb * lightmap_color, color.a);
+// This includes response to directional lights, ambient lights, and environment
+let color = apply_pbr_lighting(pbr_input);
+
+// Apply lightmap as ambient occlusion (multiply with lit color) BEFORE blood overlay
+// so that dark lightmap values don't make blood invisible in shadowed areas.
+let lit_color = vec4<f32>(color.rgb * lightmap_color, color.a);
+
+// Apply UV-space blood overlay on top of the lit+lightmapped color.
+// Blood is blended after lightmap so it remains visible even in dark/shadowed areas.
+var blood_blended_rgb = lit_color.rgb;
+#ifdef VERTEX_UVS_A
+{
+    if blood_params.y > 0.5 && blood_params.x > 0.001 {
+        // DIAGNOSTIC: DEBUG_BLOOD_NEON forces bright green to verify pipeline execution
+        // If bright green appears on character models, the pipeline is working but blood texture generation or sampling has an issue.
+        #ifdef DEBUG_BLOOD_NEON
+        let blood_sample = vec4<f32>(0.0, 1.0, 0.0, 1.0); // Bright neon green for debugging
+        #else
+        let blood_sample = textureSample(blood_overlay_texture, blood_overlay_sampler, in.uv);
+        #endif
+        let blood_alpha = clamp(blood_sample.a * blood_params.x, 0.0, 1.0);
+        blood_blended_rgb = mix(lit_color.rgb, blood_sample.rgb, blood_alpha);
+    }
+}
+#endif
     
     // Apply post-processing (tonemapping, Bevy's built-in fog, etc.)
-    // Note: Bevy's fog is applied automatically in main_pass_post_lighting_processing
-    out.color = main_pass_post_lighting_processing(pbr_input, lit_color);
+// Note: Bevy's fog is applied automatically in main_pass_post_lighting_processing
+let final_color = vec4<f32>(blood_blended_rgb, lit_color.a);
+out.color = main_pass_post_lighting_processing(pbr_input, final_color);
     
     return out;
 }

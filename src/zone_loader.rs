@@ -280,7 +280,7 @@ use arrayvec::ArrayVec;
 use    bevy::{
         asset::{Asset, AssetLoader, Assets, io::Reader, LoadContext, LoadState},
         ecs::system::SystemParam,
-        math::{Quat, Vec2, Vec3},
+        math::{Quat, Vec2, Vec3, Vec4},
         pbr::{ExtendedMaterial, StandardMaterial},
         light::{NotShadowCaster, NotShadowReceiver},
         prelude::{
@@ -319,6 +319,7 @@ use crate::{
     components::{
         ColliderParent, EventObject, NightTimeEffect, TerrainMeshForGrass, WarpObject, WindSway, Zone, ZoneObject,
         ZoneObjectAnimatedObject, ZoneObjectId, ZoneObjectPart, ZoneObjectTerrain,
+        MapEditorTerrainBlock, MapEditorWaterPlane,
         COLLISION_FILTER_CLICKABLE, COLLISION_FILTER_COLLIDABLE, COLLISION_FILTER_INSPECTABLE,
         COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_ZONE_EVENT_OBJECT,
         COLLISION_GROUP_ZONE_OBJECT, COLLISION_GROUP_ZONE_TERRAIN,
@@ -2145,6 +2146,8 @@ pub fn spawn_zone(
                         let (water_entity, water_center, water_half_extents) = spawn_water(
                             commands,
                             meshes,
+                            block_x as u32,
+                            block_y as u32,
                             ifo.water_size,
                             Vec3::new(plane_start.x, plane_start.y, plane_start.z),
                             Vec3::new(plane_end.x, plane_end.y, plane_end.z),
@@ -2653,6 +2656,19 @@ fn spawn_terrain(
                 block_x: block_data.block_x as u32,
                 block_y: block_data.block_y as u32,
             }),
+            MapEditorTerrainBlock {
+                block_x: block_data.block_x as u32,
+                block_y: block_data.block_y as u32,
+                him_width: heightmap.width,
+                him_height: heightmap.height,
+                him_heights_cm: heightmap.heights.clone(),
+                til_width: tilemap.map(|t| t.width).unwrap_or(0),
+                til_height: tilemap.map(|t| t.height).unwrap_or(0),
+                til_tiles: tilemap.map(|t| t.tiles.clone()).unwrap_or_default(),
+                height_offset_cm: 0.0,
+                fill_tile_id: None,
+                dirty: false,
+            },
             TerrainMeshForGrass,
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(material_handle),
@@ -2690,6 +2706,8 @@ fn spawn_terrain(
 fn spawn_water(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
+    block_x: u32,
+    block_y: u32,
     water_size: f32,
     plane_start: Vec3,
     plane_end: Vec3,
@@ -2749,6 +2767,7 @@ fn spawn_water(
         .spawn((
             EditorSelectable,
             ZoneObject::Water,
+            MapEditorWaterPlane::new(block_x, block_y, plane_start, plane_end, water_size),
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(water_material.clone()),
             Transform::default(),
@@ -2956,6 +2975,8 @@ fn spawn_object(
                     lightmap_texture: lightmap_texture.clone(),
                     specular_texture: Some(specular_texture.image.clone()),
                     blink_state: 0, // Default to eyes open
+                    blood_overlay_texture: None,
+                    blood_params: bevy::math::Vec4::new(0.0, 0.0, 0.0, 0.0),
                 },
             });
 
@@ -3497,6 +3518,19 @@ fn spawn_new_terrain(
                 block_x: block_data.block_x as u32,
                 block_y: block_data.block_y as u32,
             }),
+            MapEditorTerrainBlock {
+                block_x: block_data.block_x as u32,
+                block_y: block_data.block_y as u32,
+                him_width: block_data.him.width,
+                him_height: block_data.him.height,
+                him_heights_cm: block_data.him.heights.clone(),
+                til_width: block_data.til.as_ref().map(|t| t.width).unwrap_or(0),
+                til_height: block_data.til.as_ref().map(|t| t.height).unwrap_or(0),
+                til_tiles: block_data.til.as_ref().map(|t| t.tiles.clone()).unwrap_or_default(),
+                height_offset_cm: 0.0,
+                fill_tile_id: None,
+                dirty: false,
+            },
             TerrainMeshForGrass,
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(material),

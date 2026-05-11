@@ -134,11 +134,22 @@ pub fn collision_player_system_join_zone(
     }
 }
 
+/// Server-authoritative player collision system.
+/// 
+/// This system handles client-side collision detection for smooth local gameplay,
+/// but does NOT mutate the Position component. Position is server-authoritative.
+/// 
+/// Key principles:
+/// - Position component is READ-ONLY (server authoritative)
+/// - Transform is updated from Position for rendering
+/// - Collision detection runs locally for responsive feedback
+/// - MoveCollision messages are sent to server when collision occurs
+/// - Server validates and sends AdjustPosition if correction needed
 #[allow(clippy::too_many_arguments)]
 pub fn collision_player_system(
     mut commands: Commands,
     mut query_collision_entity: Query<
-        (Entity, &mut Position, &mut Transform, Option<&FlightState>, Option<&BoatState>),
+        (Entity, &Position, &mut Transform, Option<&FlightState>, Option<&BoatState>),
         With<CollisionPlayer>,
     >,
     mut query_event_object: Query<&mut EventObject>,
@@ -169,22 +180,18 @@ pub fn collision_player_system(
         };
 
     let mut entity_count = 0;
-    for (entity, mut position, mut transform, flight_state, boat_state) in query_collision_entity.iter_mut() {
+    for (entity, position, mut transform, flight_state, boat_state) in query_collision_entity.iter_mut() {
         entity_count += 1;
         // Check if player is flying - if so, skip ground collision and use position directly
         let is_flying = flight_state.map_or(false, |fs| fs.is_flying);
         let is_sailing = boat_state.map_or(false, |bs| bs.active);
         
-        // DIAGNOSTIC: Disabled - Log first iteration to verify CollisionPlayer is present
-        // if entity_count == 1 {
-        //     log::info!("[RESPAWN_COLLISION_DIAG] Processing entity {:?} with CollisionPlayer, pos=({:.2}, {:.2}, {:.2}), transform_y={:.2}",
-        //         entity, position.x, position.y, position.z, transform.translation.y);
-        // }
+        // Position is server-authoritative - we read from it but don't write
+        // Position is in centimeters: x=right, y=forward, z=up
+        // Transform is in meters: x=right, y=up, z=back
         
       if is_flying {
             // When flying, sync transform directly from position (including Y/height)
-            // Position is in centimeters: x=right, y=forward, z=up
-            // Transform is in meters: x=right, y=up, z=back
             transform.translation.x = position.x / 100.0;
             transform.translation.y = position.z / 100.0;  // Use position.z for height
             transform.translation.z = -position.y / 100.0;
@@ -223,18 +230,25 @@ pub fn collision_player_system(
                         !COLLISION_GROUP_ZONE_TERRAIN & !COLLISION_GROUP_PHYSICS_TOY,
                     )),
                 ) {
+                    // Calculate collision position but don't mutate Position
+                    // Instead, send MoveCollision to server with the adjusted position
                     let collision_translation =
                         cast_origin + translation_delta * (distance.time_of_impact - 0.1).max(0.0);
-                    position.x = collision_translation.x * 100.0;
-                    position.y = -(collision_translation.z * 100.0);
+                    let collision_position = Vec3::new(
+                        collision_translation.x * 100.0,
+                        -(collision_translation.z * 100.0),
+                        position.z, // Preserve Z for sailing
+                    );
 
+                    // Stop movement intent
                     commands.entity(entity).insert(NextCommand::with_stop());
 
+                    // Send collision position to server for validation
                     if let Some(game_connection) = game_connection.as_ref() {
                         game_connection
                             .client_message_tx
                             .send(ClientMessage::MoveCollision {
-                                position: position.position,
+                                position: collision_position,
                             })
                             .ok();
                     }
@@ -246,8 +260,12 @@ pub fn collision_player_system(
             let terrain_height = current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
             let water_height = position.z / 100.0;
             if terrain_height > water_height - 0.05 {
-                position.x = transform.translation.x * 100.0;
-                position.y = -(transform.translation.z * 100.0);
+                // Send current transform position to server (indicating we can't move forward)
+                let current_position = Vec3::new(
+                    transform.translation.x * 100.0,
+                    -(transform.translation.z * 100.0),
+                    position.z,
+                );
 
                 commands.entity(entity).insert(NextCommand::with_stop());
 
@@ -255,12 +273,13 @@ pub fn collision_player_system(
                     game_connection
                         .client_message_tx
                         .send(ClientMessage::MoveCollision {
-                            position: position.position,
+                            position: current_position,
                         })
                         .ok();
                 }
             }
 
+            // Sync transform from server-authoritative position
             transform.translation.x = position.x / 100.0;
             transform.translation.y = position.z / 100.0;
             transform.translation.z = -position.y / 100.0;
@@ -296,19 +315,25 @@ pub fn collision_player_system(
                     !COLLISION_GROUP_ZONE_TERRAIN & !COLLISION_GROUP_PHYSICS_TOY,
                 )),
             ) {
+                // Calculate collision position but don't mutate Position
+                // Send MoveCollision to server with the adjusted position
                 let collision_translation =
                     cast_origin + translation_delta * (distance.time_of_impact - 0.1).max(0.0);
-                position.x = collision_translation.x * 100.0;
-                position.y = -(collision_translation.z * 100.0);
-                position.z = collision_translation.y * 100.0;
+                let collision_position = Vec3::new(
+                    collision_translation.x * 100.0,
+                    -(collision_translation.z * 100.0),
+                    collision_translation.y * 100.0,
+                );
 
+                // Stop movement intent
                 commands.entity(entity).insert(NextCommand::with_stop());
 
+                // Send collision position to server for validation
                 if let Some(game_connection) = game_connection.as_ref() {
                     game_connection
                         .client_message_tx
                         .send(ClientMessage::MoveCollision {
-                            position: position.position,
+                            position: collision_position,
                         })
                         .ok();
                 }
@@ -351,7 +376,8 @@ pub fn collision_player_system(
             terrain_height
         };
 
-        // Update entity translation and position
+        // Update entity translation based on server-authoritative position
+        // Z (height) is updated locally for smooth visual feedback
         let old_y = transform.translation.y;
         transform.translation.x = position.x / 100.0;
         transform.translation.z = -position.y / 100.0;
@@ -363,7 +389,8 @@ pub fn collision_player_system(
             transform.translation.y = target_y;
         }
 
-        position.z = transform.translation.y * 100.0;
+        // Note: We do NOT update position.z here - Position is server-authoritative
+        // The transform Y is updated for visual smoothness, but Position remains unchanged
 
         // Check if we are now colliding with any warp / event object
         let ball_collider = Collider::ball(1.0);

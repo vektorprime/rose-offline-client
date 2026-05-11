@@ -7,6 +7,7 @@ use bevy::prelude::*;
 
 use crate::components::{
     EventObject, WarpObject, ZoneObject, ZoneObjectPart, ZoneObjectPartCollisionShape,
+    MapEditorTerrainBlock, MapEditorWaterPlane,
 };
 use crate::map_editor::components::SelectedInEditor;
 use crate::map_editor::resources::{EditorAction, MapEditorState};
@@ -67,6 +68,24 @@ pub enum PropertyChangeEvent {
         old_value: String,
         new_value: String,
     },
+    /// Water plane metadata changed
+    WaterPlaneChanged {
+        entity: Entity,
+        old_start_ifo_cm: Vec3,
+        old_end_ifo_cm: Vec3,
+        old_water_size: f32,
+        new_start_ifo_cm: Vec3,
+        new_end_ifo_cm: Vec3,
+        new_water_size: f32,
+    },
+    /// Terrain block metadata changed
+    TerrainBlockChanged {
+        entity: Entity,
+        old_height_offset_cm: f32,
+        old_fill_tile_id: Option<u32>,
+        new_height_offset_cm: f32,
+        new_fill_tile_id: Option<u32>,
+    },
 }
 
 /// Resource to store pending property changes (for batch processing)
@@ -101,6 +120,8 @@ pub fn property_update_system(
     mut zone_objects: Query<&mut ZoneObject>,
     mut event_objects: Query<&mut EventObject>,
     mut warp_objects: Query<&mut WarpObject>,
+    mut terrain_blocks: Query<&mut MapEditorTerrainBlock>,
+    mut water_planes: Query<&mut MapEditorWaterPlane>,
     mut commands: Commands,
 ) {
     for event in events.read() {
@@ -378,6 +399,82 @@ pub fn property_update_system(
                         entity,
                         old_value,
                         new_value
+                    );
+                }
+            }
+
+            PropertyChangeEvent::WaterPlaneChanged {
+                entity,
+                old_start_ifo_cm,
+                old_end_ifo_cm,
+                old_water_size,
+                new_start_ifo_cm,
+                new_end_ifo_cm,
+                new_water_size,
+            } => {
+                if let Ok(mut plane) = water_planes.get_mut(*entity) {
+                    plane.start_ifo_cm = *new_start_ifo_cm;
+                    plane.end_ifo_cm = *new_end_ifo_cm;
+                    plane.water_size = *new_water_size;
+
+                    map_editor_state.push_action(EditorAction::ModifyComponent {
+                        entity: *entity,
+                        component_type: "MapEditorWaterPlane".to_string(),
+                        old_value: format!(
+                            "start={:?}, end={:?}, water_size={}",
+                            old_start_ifo_cm, old_end_ifo_cm, old_water_size
+                        ),
+                        new_value: format!(
+                            "start={:?}, end={:?}, water_size={}",
+                            new_start_ifo_cm, new_end_ifo_cm, new_water_size
+                        ),
+                    });
+
+                    log::info!(
+                        "[PropertyUpdate] WaterPlane changed for entity {:?}: start {:?}->{:?}, end {:?}->{:?}, size {}->{}",
+                        entity,
+                        old_start_ifo_cm,
+                        new_start_ifo_cm,
+                        old_end_ifo_cm,
+                        new_end_ifo_cm,
+                        old_water_size,
+                        new_water_size
+                    );
+                }
+            }
+
+            PropertyChangeEvent::TerrainBlockChanged {
+                entity,
+                old_height_offset_cm,
+                old_fill_tile_id,
+                new_height_offset_cm,
+                new_fill_tile_id,
+            } => {
+                if let Ok(mut terrain) = terrain_blocks.get_mut(*entity) {
+                    terrain.height_offset_cm = *new_height_offset_cm;
+                    terrain.fill_tile_id = *new_fill_tile_id;
+                    terrain.dirty = true;
+
+                    map_editor_state.push_action(EditorAction::ModifyComponent {
+                        entity: *entity,
+                        component_type: "MapEditorTerrainBlock".to_string(),
+                        old_value: format!(
+                            "height_offset_cm={}, fill_tile_id={:?}",
+                            old_height_offset_cm, old_fill_tile_id
+                        ),
+                        new_value: format!(
+                            "height_offset_cm={}, fill_tile_id={:?}",
+                            new_height_offset_cm, new_fill_tile_id
+                        ),
+                    });
+
+                    log::info!(
+                        "[PropertyUpdate] TerrainBlock changed for entity {:?}: height_offset {}->{}, fill {:?}->{:?}",
+                        entity,
+                        old_height_offset_cm,
+                        new_height_offset_cm,
+                        old_fill_tile_id,
+                        new_fill_tile_id
                     );
                 }
             }

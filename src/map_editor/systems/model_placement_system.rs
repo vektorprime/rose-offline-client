@@ -13,7 +13,7 @@ use bevy::{
     window::{PrimaryWindow, Window},
     light::{NotShadowCaster, NotShadowReceiver},
     pbr::ExtendedMaterial,
-    math::primitives::Cuboid,
+    math::{primitives::Cuboid, Vec4},
     ecs::schedule::IntoScheduleConfigs,
     render::alpha::AlphaMode,
     camera::visibility::RenderLayers,
@@ -224,13 +224,10 @@ fn place_model_at_position(
     let zsc = match model_info.category {
         ModelCategory::Deco => &zone_data.zsc_deco,
         ModelCategory::Cnst => &zone_data.zsc_cnst,
-        ModelCategory::Event | ModelCategory::Special | ModelCategory::All => {
-            log::warn!(
-                "[MODEL PLACEMENT] Category {:?} not fully supported yet, using deco ZSC",
-                model_info.category
-            );
-            &zone_data.zsc_deco
-        }
+        // Event and Special are authored from GameData ZSC lists in the browser,
+        // but model placement currently instantiates only zone DECO/CNST assets.
+        // Keep fallback behavior explicit and deterministic.
+        ModelCategory::Event | ModelCategory::Special | ModelCategory::All => &zone_data.zsc_deco,
     };
     
     // Check if the object ID is valid
@@ -377,6 +374,8 @@ fn place_model_at_position(
                 lightmap_texture: None,
                 specular_texture: None, // No specular for placed objects
                 blink_state: 0, // Default to eyes open
+                blood_overlay_texture: None,
+                blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
             },
         });
 

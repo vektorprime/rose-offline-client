@@ -8,6 +8,7 @@ use bevy_egui::egui;
 
 use crate::components::{
     EventObject, WarpObject, ZoneObject, ZoneObjectPart, ZoneObjectPartCollisionShape,
+    MapEditorTerrainBlock, MapEditorWaterPlane,
 };
 use crate::map_editor::components::SelectedInEditor;
 use crate::map_editor::resources::{DuplicateSelectedEvent, EditorMode, MapEditorState};
@@ -20,6 +21,8 @@ pub struct EntityDataQuery<'w, 's> {
     zone_objects: Query<'w, 's, &'static ZoneObject, With<SelectedInEditor>>,
     event_objects: Query<'w, 's, &'static EventObject, With<SelectedInEditor>>,
     warp_objects: Query<'w, 's, &'static WarpObject, With<SelectedInEditor>>,
+    terrain_blocks: Query<'w, 's, &'static MapEditorTerrainBlock, With<SelectedInEditor>>,
+    water_planes: Query<'w, 's, &'static MapEditorWaterPlane, With<SelectedInEditor>>,
     names: Query<'w, 's, &'static Name, With<SelectedInEditor>>,
 }
 
@@ -677,7 +680,7 @@ fn zone_object_editor_standalone(
     _map_editor_state: &MapEditorState,
 ) {
     if let Ok(zone_object) = entity_data.zone_objects.get(entity) {
-        zone_object_editor_inner_with_events(ui, entity, zone_object, event_writer);
+        zone_object_editor_inner_with_events(ui, entity, zone_object, entity_data, event_writer);
     }
 }
 
@@ -755,6 +758,7 @@ fn zone_object_editor_inner_with_events(
     ui: &mut egui::Ui,
     entity: Entity,
     zone_object: &ZoneObject,
+    entity_data: &EntityDataQuery,
     event_writer: &mut MessageWriter<PropertyChangeEvent>,
 ) {
     ui.label(egui::RichText::new("Object Info:").strong());
@@ -834,6 +838,117 @@ fn zone_object_editor_inner_with_events(
         let mut tag = String::new();
         ui.text_edit_singleline(&mut tag);
     });
+
+    match zone_object {
+        ZoneObject::Water => {
+            ui.separator();
+            ui.label(egui::RichText::new("Water Plane Authoring").strong());
+
+            if let Ok(plane) = entity_data.water_planes.get(entity) {
+                let mut water_size = plane.water_size;
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut water_size)
+                            .speed(1.0)
+                            .prefix("Water Size: "),
+                    )
+                    .changed()
+                {
+                    event_writer.write(PropertyChangeEvent::WaterPlaneChanged {
+                        entity,
+                        old_start_ifo_cm: plane.start_ifo_cm,
+                        old_end_ifo_cm: plane.end_ifo_cm,
+                        old_water_size: plane.water_size,
+                        new_start_ifo_cm: plane.start_ifo_cm,
+                        new_end_ifo_cm: plane.end_ifo_cm,
+                        new_water_size: water_size.max(1.0),
+                    });
+                }
+
+                let mut start = plane.start_ifo_cm;
+                let mut end = plane.end_ifo_cm;
+
+                ui.horizontal(|ui| {
+                    ui.label("Start X/Z (cm):");
+                    ui.add(egui::DragValue::new(&mut start.x).speed(10.0));
+                    ui.add(egui::DragValue::new(&mut start.z).speed(10.0));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("End X/Z (cm):");
+                    ui.add(egui::DragValue::new(&mut end.x).speed(10.0));
+                    ui.add(egui::DragValue::new(&mut end.z).speed(10.0));
+                });
+
+                if start != plane.start_ifo_cm || end != plane.end_ifo_cm {
+                    event_writer.write(PropertyChangeEvent::WaterPlaneChanged {
+                        entity,
+                        old_start_ifo_cm: plane.start_ifo_cm,
+                        old_end_ifo_cm: plane.end_ifo_cm,
+                        old_water_size: plane.water_size,
+                        new_start_ifo_cm: start,
+                        new_end_ifo_cm: end,
+                        new_water_size: plane.water_size,
+                    });
+                }
+            }
+        }
+        ZoneObject::Terrain(_) => {
+            ui.separator();
+            ui.label(egui::RichText::new("Terrain Authoring").strong());
+
+            if let Ok(terrain) = entity_data.terrain_blocks.get(entity) {
+                let mut height_offset = terrain.height_offset_cm;
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut height_offset)
+                            .speed(1.0)
+                            .prefix("Height Offset (cm): "),
+                    )
+                    .changed()
+                {
+                    event_writer.write(PropertyChangeEvent::TerrainBlockChanged {
+                        entity,
+                        old_height_offset_cm: terrain.height_offset_cm,
+                        old_fill_tile_id: terrain.fill_tile_id,
+                        new_height_offset_cm: height_offset,
+                        new_fill_tile_id: terrain.fill_tile_id,
+                    });
+                }
+
+                let mut fill_enabled = terrain.fill_tile_id.is_some();
+                let mut fill_value = terrain.fill_tile_id.unwrap_or(0);
+                if ui.checkbox(&mut fill_enabled, "Enable Fill Tile Override").changed() {
+                    let new_fill = if fill_enabled { Some(fill_value) } else { None };
+                    event_writer.write(PropertyChangeEvent::TerrainBlockChanged {
+                        entity,
+                        old_height_offset_cm: terrain.height_offset_cm,
+                        old_fill_tile_id: terrain.fill_tile_id,
+                        new_height_offset_cm: terrain.height_offset_cm,
+                        new_fill_tile_id: new_fill,
+                    });
+                }
+
+                if fill_enabled
+                    && ui
+                        .add(
+                            egui::DragValue::new(&mut fill_value)
+                                .speed(1.0)
+                                .prefix("Fill Tile ID: "),
+                        )
+                        .changed()
+                {
+                    event_writer.write(PropertyChangeEvent::TerrainBlockChanged {
+                        entity,
+                        old_height_offset_cm: terrain.height_offset_cm,
+                        old_fill_tile_id: terrain.fill_tile_id,
+                        new_height_offset_cm: terrain.height_offset_cm,
+                        new_fill_tile_id: Some(fill_value),
+                    });
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Event object editor

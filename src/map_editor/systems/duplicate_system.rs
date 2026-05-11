@@ -458,6 +458,8 @@ fn load_material_for_part(
             lightmap_texture: None,
             specular_texture: None,
             blink_state: 0, // Default to eyes open
+            blood_overlay_texture: None,
+            blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
         },
     });
     

@@ -47,6 +47,18 @@ pub struct RoseObjectExtension {
     /// Note: Vertex shader integration requires custom pipeline beyond ExtendedMaterial capabilities
     #[uniform(105)]
     pub blink_state: u32,
+
+    /// Blood overlay texture painted in UV space during combat.
+    #[texture(106)]
+    #[sampler(107)]
+    pub blood_overlay_texture: Option<Handle<Image>>,
+
+    /// Blood parameters:
+    /// - x: overlay intensity [0..1]
+    /// - y: enabled flag (0 disabled, 1 enabled)
+    /// - z/w: reserved
+    #[uniform(108)]
+    pub blood_params: Vec4,
 }
 
 impl Default for RoseObjectExtension {
@@ -56,6 +68,8 @@ impl Default for RoseObjectExtension {
             lightmap_texture: None,
             specular_texture: None,
             blink_state: 0, // Default to eyes open
+            blood_overlay_texture: None,
+            blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
         }
     }
 }

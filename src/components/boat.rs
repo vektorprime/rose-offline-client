@@ -71,6 +71,13 @@ pub struct SailMesh {
     /// 0 = limp, 1 = fully filled.
     pub billow: f32,
     pub side: SailSide,
+    /// Original undeformed sail vertices in local mesh space.
+    pub base_positions: Vec<[f32; 3]>,
+    /// Sail panel dimensions in meters.
+    pub width: f32,
+    pub height: f32,
+    /// Current mesh subdivision level used by this sail mesh.
+    pub subdivisions: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]

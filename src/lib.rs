@@ -170,7 +170,9 @@ use systems::{
     passive_recovery_system, pending_damage_system, pending_skill_effect_system,
     personal_store_model_add_collider_system, personal_store_model_system, player_command_system,
     projectile_system, quest_trigger_system, spawn_effect_system, spawn_projectile_system,
-    sail_camera_system, sailing_movement_system, status_effect_system, system_func_event_system,
+    sail_camera_system, sail_animation_system, sailing_movement_system, ensure_boat_wake_emitter_system,
+    boat_wake_spawn_system, boat_wake_update_system, setup_boat_wake_assets,
+    status_effect_system, system_func_event_system,
     monster_separation_system, update_position_system, use_item_event_system,
     vehicle_model_system, vehicle_sound_system, visible_status_effects_system,
     world_connection_system, world_time_system, zone_time_system, zone_viewer_enter_system,
@@ -1553,7 +1555,14 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // Sailing systems
     app.add_systems(Update, ensure_boat_state_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, boat_toggle_system.run_if(in_state(AppState::Game)).after(ensure_boat_state_system));
+    app.add_systems(Update, ensure_boat_wake_emitter_system.run_if(in_state(AppState::Game)).after(boat_toggle_system));
     app.add_systems(Update, sailing_movement_system.run_if(in_state(AppState::Game)).after(boat_toggle_system).after(wind_update_system));
+    app.add_systems(
+        Update,
+        sail_animation_system
+            .run_if(in_state(AppState::Game))
+            .after(sailing_movement_system),
+    );
     app.add_systems(
         Update,
         boat_buoyancy_system
@@ -1562,6 +1571,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             .after(facing_direction_system),
     );
     app.add_systems(Update, sail_camera_system.run_if(in_state(AppState::Game)).after(boat_toggle_system));
+    app.add_systems(Update, boat_wake_spawn_system.run_if(in_state(AppState::Game)).after(sailing_movement_system));
+    app.add_systems(Update, boat_wake_update_system.run_if(in_state(AppState::Game)).after(boat_wake_spawn_system));
 
     // Game systems - part 2
     app.add_systems(Update, (use_item_event_system.run_if(in_state(AppState::Game)),));
@@ -1642,6 +1653,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     
     // Create default particle texture before particle systems run
     app.add_systems(PostStartup, create_default_particle_texture);
+    app.add_systems(PostStartup, setup_boat_wake_assets);
     
     // TEST: Add StandardMaterial cube for rendering isolation test
     app.add_systems(PostStartup, spawn_test_cube);

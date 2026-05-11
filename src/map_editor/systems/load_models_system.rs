@@ -48,7 +48,10 @@ pub fn load_available_models_system(
         "Special",
     );
     
-    // Try to load deco and cnst from current zone if available
+    // Load fallback/global deco+cnst first so the browser is never empty
+    load_default_deco_cnst_from_vfs(&vfs_resource.vfs, &vfs_resource.base_path, &mut models);
+
+    // Try to load deco and cnst from current zone if available (merged with fallback set)
     if let Some(current_zone) = current_zone {
         if let Some(zone_asset) = zone_loader_assets.get(&current_zone.handle) {
             load_models_from_zsc(
@@ -71,13 +74,10 @@ pub fn load_available_models_system(
                 models.cnst_models.len()
             );
         } else {
-            log::debug!("[LOAD MODELS] Zone asset not yet loaded, loading defaults from VFS");
-            load_default_deco_cnst_from_vfs(&vfs_resource.vfs, &vfs_resource.base_path, &mut models);
+            log::debug!("[LOAD MODELS] Zone asset not yet loaded, keeping fallback DEC0/CNST catalogs");
         }
     } else {
-        // No zone loaded yet, try to load from VFS defaults
-        log::debug!("[LOAD MODELS] No zone loaded, loading defaults from VFS");
-        load_default_deco_cnst_from_vfs(&vfs_resource.vfs, &vfs_resource.base_path, &mut models);
+        log::debug!("[LOAD MODELS] No zone loaded, using fallback DEC0/CNST catalogs");
     }
     
     log::info!(
@@ -121,7 +121,12 @@ fn load_models_from_zsc(
             object.parts.len(),
         );
         
-        models.push(model_info);
+        let exists = models
+            .iter()
+            .any(|m| m.id == model_info.id && m.mesh_path == model_info.mesh_path && m.category == model_info.category);
+        if !exists {
+            models.push(model_info);
+        }
     }
 }
 
@@ -293,6 +298,7 @@ pub fn update_models_on_zone_load_system(
     mut events: MessageReader<ZoneEvent>,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
+    vfs_resource: Res<VfsResource>,
     mut available_models: Option<ResMut<AvailableModels>>,
 ) {
     // Check if any zone was loaded
@@ -304,7 +310,13 @@ pub fn update_models_on_zone_load_system(
         }
     }
     
-    if !zone_loaded {
+    let should_refresh = zone_loaded
+        || available_models
+            .as_ref()
+            .map(|m| m.deco_models.is_empty() || m.cnst_models.is_empty())
+            .unwrap_or(false);
+
+    if !should_refresh {
         return;
     }
     
@@ -321,9 +333,11 @@ pub fn update_models_on_zone_load_system(
     
     // Update or create AvailableModels
     if let Some(mut models) = available_models {
-        // Clear existing deco/cnst models and reload from zone
+        // Rebuild from fallback + zone to keep complete model availability.
         models.deco_models.clear();
         models.cnst_models.clear();
+
+        load_default_deco_cnst_from_vfs(&vfs_resource.vfs, &vfs_resource.base_path, &mut models);
         
         load_models_from_zsc(
             &zone_asset.zsc_deco,

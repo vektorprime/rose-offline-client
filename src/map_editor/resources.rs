@@ -449,6 +449,32 @@ pub struct SelectedModel {
     pub pending_placement: bool,
 }
 
+/// Resource to track the custom zone path for saving
+/// This is used when creating a new zone that isn't in the zone list
+#[derive(Resource, Default, Debug, Clone)]
+pub struct CustomZonePath {
+    /// The custom path to save the zone to (None = use original zone path)
+    pub path: Option<std::path::PathBuf>,
+    /// The zone ID being edited
+    pub zone_id: u16,
+}
+
+impl CustomZonePath {
+    /// Create a new CustomZonePath
+    pub fn new(path: std::path::PathBuf, zone_id: u16) -> Self {
+        Self {
+            path: Some(path),
+            zone_id,
+        }
+    }
+    
+    /// Clear the custom path
+    pub fn clear(&mut self) {
+        self.path = None;
+        self.zone_id = 0;
+    }
+}
+
 impl SelectedModel {
     /// Create a new SelectedModel with default values
     pub fn new() -> Self {

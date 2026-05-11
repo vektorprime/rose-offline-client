@@ -81,6 +81,8 @@ pub fn create_rose_object_material(
             lightmap_texture,
             specular_texture,
             blink_state: 0, // Default to eyes open
+            blood_overlay_texture: None,
+            blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
         },
     })
 }

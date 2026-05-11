@@ -180,39 +180,42 @@ fn cloud_density(local_pos: vec3<f32>, world_pos: vec3<f32>, cloud_origin: vec3<
 }
 
 fn cloud_lighting(world_pos: vec3<f32>, local_pos: vec3<f32>, view_dir: vec3<f32>, cloud_dens: f32) -> vec3<f32> {
-    let sun_direction = cloud_sun_direction();
+    let sun_direction = normalize(cloud_sun_direction());
     let up = vec3<f32>(0.0, 1.0, 0.0);
-    
-    // Top of cloud gets most direct light
-    let sun_dot = max(0.0, dot(up, sun_direction));
-    
-    // Surface normals
-    let normal = normalize(local_pos);
-    let sun_dot_surface = max(0.0, dot(normal, sun_direction));
-    
-    // Cumulus clouds are brightest on top
-    let top_brightness = pow(smoothstep(0.0, 1.0, local_pos.y), 0.5);
-    
-    // Direct sun lighting with emphasis on top
-    let direct_light = cloud_sun_color() * (sun_dot * 0.7 + sun_dot_surface * 0.3) * (0.7 + 0.5 * top_brightness);
-    
-    // Ambient lighting (reduced influence to avoid gray cast)
-    let ambient_light = vec3<f32>(cloud_ambient_color(), cloud_ambient_color_g(), cloud_ambient_color_b()) * 0.20;
-    
-    // Soft shadows on bottom
-    let shadow_factor = 1.0 - pow(smoothstep(-1.0, 0.3, local_pos.y), 1.5) * 0.3;
-    
-    // Rim lighting
-    let rim_factor = max(0.0, 1.0 - dot(view_dir, normal));
-    let rim_light = cloud_sun_color() * pow(rim_factor, 2.0) * 0.25 * shadow_factor;
-    
-    let total_light = (direct_light + ambient_light + rim_light) * shadow_factor;
 
-    // Push clouds much whiter while preserving some directional form.
-    let lit = total_light * cloud_brightness();
-    let white_base = vec3<f32>(1.12, 1.12, 1.10);
-    let lit_floor = max(lit, vec3<f32>(1.00, 1.00, 1.00));
-    return mix(white_base, lit_floor, 0.25);
+    // Surface normal on cloud blob shell.
+    let normal = normalize(local_pos);
+
+    // View vector from fragment to camera (for silhouette/rim calculations).
+    let to_camera = normalize(-view_dir);
+    let ndotv = clamp(dot(normal, to_camera), 0.0, 1.0);
+    let rim = 1.0 - ndotv;
+
+    // Toon body shading: quantized, very bright values so clouds stay white.
+    let top_amount = smoothstep(-0.1, 0.85, local_pos.y);
+    let sun_from_above = max(0.0, dot(up, sun_direction));
+    let toon_gate = step(0.45, top_amount * 0.75 + sun_from_above * 0.25);
+    let toon_light = mix(0.98, 1.10, toon_gate);
+
+    // Keep body color close to white regardless of ambient/day-night values,
+    // preventing gray shadowing on cloud texture.
+    let sun_tint = mix(vec3<f32>(1.0, 1.0, 1.0), cloud_sun_color(), 0.10);
+    var body_color = vec3<f32>(toon_light, toon_light, toon_light) * sun_tint * cloud_brightness();
+
+    // Slight internal puff variation while preserving white floor.
+    let puff = smoothstep(0.2, 0.9, cloud_dens);
+    body_color *= mix(0.95, 1.02, puff);
+    body_color = max(body_color, vec3<f32>(0.97, 0.97, 0.97));
+
+    // Cartoon outline band: darkened rim near silhouette.
+    let outline_band = smoothstep(0.62, 0.86, rim);
+    let outline_strength = outline_band * smoothstep(0.15, 0.75, cloud_dens);
+    let outline_color = vec3<f32>(0.58, 0.64, 0.76);
+
+    // Small bright rim accent keeps the outline from looking too flat.
+    let rim_highlight = cloud_sun_color() * pow(rim, 2.2) * 0.08;
+
+    return mix(body_color + rim_highlight, outline_color, outline_strength * 0.88);
 }
 
 @vertex

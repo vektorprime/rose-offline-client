@@ -1,5 +1,7 @@
 # Sailing System — Comprehensive Implementation Plan
 
+> **See also**: [`sailing-system-detailed-expansion.md`](sailing-system-detailed-expansion.md) — deep technical specifications for all remaining unimplemented work items (sail mesh deformation, wake/spray VFX, full HUD design, ocean zone block layout, server networking packets, audio system, multiplayer boat rendering, disembark mechanics, and dependency graph).
+
 ## Executive Summary
 
 This plan describes how to introduce a complete sailing system into ROSE Online, built on top of the existing Bevy 0.18.1 game client (`rose-offline-client`) and the `rose-offline` server. The feature spans:

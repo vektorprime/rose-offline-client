@@ -62,6 +62,13 @@ pub use water_material_extension::*;
 pub mod effect_mesh_extension;
 pub use effect_mesh_extension::*;
 
+// Blood overlay material extension for model texture blood effects
+pub mod blood_overlay_material;
+pub use blood_overlay_material::{BloodOverlayExtension, BloodOverlayUniform};
+
+pub mod blood_overlay_shader;
+pub use blood_overlay_shader::BLOOD_OVERLAY_SHADER_PATH;
+
 pub mod extension_material_plugin;
 pub use extension_material_plugin::ExtensionMaterialPlugin;
 pub use extension_material_plugin::RoseObjectMaterialPlugin;

@@ -2,7 +2,8 @@ use bevy::{
     input::ButtonInput,
     math::{Vec2, Vec3},
     prelude::{
-        Camera3d, KeyCode, Local, MessageWriter, Query, Res, State, Time, Transform, With,
+        Camera3d, Entity, KeyCode, Local, MessageWriter, Query, Res, State, Time, Transform,
+        With,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
@@ -11,7 +12,7 @@ use rose_game_common::components::MoveSpeed;
 
 use crate::{
     components::{BoatState, FlightState, PlayerCharacter, Position},
-    events::PlayerCommandEvent,
+    events::{DisembarkBoatEvent, PlayerCommandEvent},
     resources::AppState,
 };
 
@@ -27,12 +28,13 @@ pub fn game_keyboard_input_system(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     query_window: Query<&CursorOptions, With<PrimaryWindow>>,
     query_camera: Query<&Transform, With<Camera3d>>,
-    query_player: Query<(&Position, &MoveSpeed, Option<&FlightState>, Option<&BoatState>), With<PlayerCharacter>>,
+    query_player: Query<(Entity, &Position, &MoveSpeed, Option<&FlightState>, Option<&BoatState>), With<PlayerCharacter>>,
     mut egui_ctx: EguiContexts,
     time: Res<Time>,
     mut move_command_cooldown: Local<f32>,
     mut last_move_direction: Local<Option<Vec2>>,
     mut player_command_events: MessageWriter<PlayerCommandEvent>,
+    mut disembark_boat_events: MessageWriter<DisembarkBoatEvent>,
 ) {
     if *app_state.get() != AppState::Game {
         return;
@@ -55,14 +57,25 @@ pub fn game_keyboard_input_system(
         return;
     };
 
-    let Ok((player_position, move_speed, player_flight_state, player_boat_state)) = query_player.single() else {
+    let Ok((player_entity, player_position, move_speed, player_flight_state, player_boat_state)) = query_player.single() else {
         return;
     };
 
+    let is_flying = player_flight_state.map_or(false, |flight_state| flight_state.is_flying);
+    let is_sailing = player_boat_state.map_or(false, |boat_state| boat_state.active);
+
+    // While sailing, E disembarks; movement is handled by sailing systems.
+    if is_sailing {
+        if keyboard_input.just_pressed(KeyCode::KeyE) {
+            disembark_boat_events.write(DisembarkBoatEvent {
+                entity: player_entity,
+            });
+        }
+        return;
+    }
+
     // Disable WASD ground movement while flying; flight_movement_system handles flight controls.
-    if player_flight_state.map_or(false, |flight_state| flight_state.is_flying)
-        || player_boat_state.map_or(false, |boat_state| boat_state.active)
-    {
+    if is_flying {
         return;
     }
 

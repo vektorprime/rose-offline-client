@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use bevy::prelude::*;
 
 use crate::components::{
-    EventObject, WarpObject, ZoneObject,
+    EventObject, WarpObject, ZoneObject, MapEditorWaterPlane, MapEditorTerrainBlock,
 };
 use crate::map_editor::resources::{DeletedZoneObjects, ZoneObjectType};
 use crate::map_editor::systems::model_placement_system::EditorPlacedObject;
@@ -17,6 +17,53 @@ use crate::zone_loader::ZoneLoaderAsset;
 
 use super::ifo_export::{export_ifo_block, ExportStats};
 use super::ifo_types::*;
+
+const ZONE_CENTER_X: f32 = 5200.0;
+const ZONE_CENTER_Z: f32 = -5200.0;
+const BLOCK_SIZE_METERS: f32 = 160.0;
+const ZONE_BLOCK_COUNT: u32 = 64;
+
+fn world_to_block_coords(world_translation: Vec3) -> (u32, u32) {
+    // World coordinates are centered around zone transform at (5200, 0, -5200).
+    // Convert world -> local grid coordinates before block quantization.
+    let local_x = world_translation.x - ZONE_CENTER_X;
+    let local_z = world_translation.z - ZONE_CENTER_Z;
+    let block_x = ((local_x + ZONE_CENTER_X) / BLOCK_SIZE_METERS).floor() as u32;
+    let block_y = ((local_z + ZONE_CENTER_X) / BLOCK_SIZE_METERS).floor() as u32;
+    (
+        block_x.clamp(0, ZONE_BLOCK_COUNT - 1),
+        block_y.clamp(0, ZONE_BLOCK_COUNT - 1),
+    )
+}
+
+fn write_him_file(path: &std::path::Path, width: u32, height: u32, heights_cm: &[f32]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut data = Vec::with_capacity(16 + heights_cm.len() * 4);
+    data.extend_from_slice(&width.to_le_bytes());
+    data.extend_from_slice(&height.to_le_bytes());
+    data.extend_from_slice(&0u32.to_le_bytes());
+    data.extend_from_slice(&0u32.to_le_bytes());
+    for h in heights_cm {
+        data.extend_from_slice(&h.to_le_bytes());
+    }
+    let mut file = std::fs::File::create(path)?;
+    file.write_all(&data)?;
+    Ok(())
+}
+
+fn write_til_file(path: &std::path::Path, width: u32, height: u32, tiles: &[u32]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut data = Vec::with_capacity(8 + tiles.len() * 7);
+    data.extend_from_slice(&width.to_le_bytes());
+    data.extend_from_slice(&height.to_le_bytes());
+    for tile in tiles {
+        data.extend_from_slice(&[0u8; 3]);
+        data.extend_from_slice(&tile.to_le_bytes());
+    }
+    let mut file = std::fs::File::create(path)?;
+    file.write_all(&data)?;
+    Ok(())
+}
 
 /// Message to trigger saving a zone
 #[derive(Message, Debug, Clone)]
@@ -152,15 +199,18 @@ pub fn save_zone_system(
     mut save_status: ResMut<SaveStatus>,
     mut map_editor_state: ResMut<crate::map_editor::resources::MapEditorState>,
     mut deleted_zone_objects: ResMut<DeletedZoneObjects>,
+    custom_zone_path: Option<Res<crate::map_editor::resources::CustomZonePath>>,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     vfs_resource: Res<crate::resources::VfsResource>,
     zone_objects_query: Query<(
         Entity,
-        &Transform,
+        &GlobalTransform,
         &ZoneObject,
         Option<&EventObject>,
         Option<&WarpObject>,
+        Option<&MapEditorWaterPlane>,
+        Option<&MapEditorTerrainBlock>,
         Option<&EditorPlacedObject>,
     )>,
 ) {
@@ -188,15 +238,32 @@ pub fn save_zone_system(
         };
 
         // Determine output path:
-        // - The zone_path is a VFS path like "3DDATA/MAPS/JUNON/JDT01"
-        // - We need to join it with the base_path to get the real filesystem path
-        // - If a custom path is provided, use that instead
+        // - Priority 1: Custom path from SaveZoneEvent (Save As)
+        // - Priority 2: CustomZonePath resource (for new zones not in zone list)
+        // - Priority 3: Original zone path from zone_data
         let output_path = if let Some(ref custom_path) = event.path {
+            // Save As - use the provided path
             custom_path.clone()
+        } else if let Some(ref custom_path_res) = custom_zone_path {
+            // New zone - use the custom zone path if set
+            if let Some(ref path) = custom_path_res.path {
+                log::info!("[SaveSystem] Using custom zone path from resource: {:?}", path);
+                path.clone()
+            } else {
+                // No custom path set, use original zone path
+                vfs_resource.base_path.join(&zone_data.zone_path)
+            }
         } else {
             // Join base_path with zone_path to get the real filesystem path
             vfs_resource.base_path.join(&zone_data.zone_path)
         };
+
+        if let Err(err) = std::fs::create_dir_all(&output_path) {
+            let error = format!("Failed to create output directory {:?}: {}", output_path, err);
+            log::error!("[SaveSystem] {}", error);
+            save_status.set_complete(SaveResult::failure(error));
+            continue;
+        }
 
         log::info!("[SaveSystem] VFS base_path: {:?}", vfs_resource.base_path);
         log::info!("[SaveSystem] Zone path from zone_data: {:?}", zone_data.zone_path);
@@ -327,35 +394,94 @@ pub fn save_zone_system(
 
         // STEP 2: Track which blocks have been modified by the editor
         let mut modified_blocks: HashSet<(u32, u32)> = HashSet::new();
+        let mut water_blocks_cleared: HashSet<(u32, u32)> = HashSet::new();
+
+        // Export status and errors
+        let mut stats = ExportStats::default();
+        let mut errors = Vec::new();
+        let mut skipped_blocks = 0usize;
+        let mut terrain_blocks_written = 0usize;
+        let mut terrain_blocks_failed = 0usize;
 
         // STEP 3: Process all spawned zone objects - update existing or add new
         log::info!("[SaveSystem] ====== PROCESSING SPAWNED ZONE OBJECTS ======");
         let mut updated_objects_count = 0usize;
         let mut added_objects_count = 0usize;
         
-        for (_entity, transform, zone_object, event_object, warp_object, editor_placed) in zone_objects_query.iter() {
+        for (_entity, global_transform, zone_object, event_object, warp_object, water_plane, terrain_block, editor_placed) in zone_objects_query.iter() {
+            // Water planes are persisted through per-block IFO water data.
+            if matches!(zone_object, ZoneObject::Water) {
+                if let Some(water) = water_plane {
+                    let block_key = (water.block_x, water.block_y);
+                    let block = export_data.get_or_create_modified_block(water.block_x, water.block_y);
+                    if water_blocks_cleared.insert(block_key) {
+                        block.block.water_planes.clear();
+                    }
+                    block.block.water_size = water.water_size;
+                    block.block.water_planes.push(IfoWaterPlane {
+                        start: [water.start_ifo_cm.x, water.start_ifo_cm.y, water.start_ifo_cm.z],
+                        end: [water.end_ifo_cm.x, water.end_ifo_cm.y, water.end_ifo_cm.z],
+                    });
+                    modified_blocks.insert(block_key);
+                }
+                continue;
+            }
+
+            // Terrain blocks are persisted directly to HIM/TIL files.
+            if matches!(zone_object, ZoneObject::Terrain(_)) {
+                if let Some(terrain) = terrain_block {
+                    let mut out_heights = terrain.him_heights_cm.clone();
+                    if terrain.height_offset_cm.abs() > f32::EPSILON {
+                        for h in &mut out_heights {
+                            *h += terrain.height_offset_cm;
+                        }
+                    }
+
+                    let mut out_tiles = terrain.til_tiles.clone();
+                    if let Some(fill) = terrain.fill_tile_id {
+                        for t in &mut out_tiles {
+                            *t = fill;
+                        }
+                    }
+
+                    let mut block_ok = true;
+                    let him_path = output_path.join(format!("{}_{}.HIM", terrain.block_x, terrain.block_y));
+                    if let Err(err) = write_him_file(&him_path, terrain.him_width, terrain.him_height, &out_heights) {
+                        errors.push(format!("{}: {}", him_path.display(), err));
+                        terrain_blocks_failed += 1;
+                        block_ok = false;
+                        log::error!("[SaveSystem] Failed to write terrain HIM file {:?}: {}", him_path, err);
+                    }
+
+                    if terrain.til_width > 0 && terrain.til_height > 0 {
+                        let til_path = output_path.join(format!("{}_{}.TIL", terrain.block_x, terrain.block_y));
+                        if let Err(err) = write_til_file(&til_path, terrain.til_width, terrain.til_height, &out_tiles) {
+                            errors.push(format!("{}: {}", til_path.display(), err));
+                            terrain_blocks_failed += 1;
+                            block_ok = false;
+                            log::error!("[SaveSystem] Failed to write terrain TIL file {:?}: {}", til_path, err);
+                        }
+                    }
+
+                    if block_ok {
+                        terrain_blocks_written += 1;
+                    }
+                    modified_blocks.insert((terrain.block_x, terrain.block_y));
+                }
+                continue;
+            }
+
             // Determine block coordinates from position
             // Zone is 64x64 blocks, each block is 160 units
-            let (translation, rotation, scale) = (
-                transform.translation,
-                transform.rotation,
-                transform.scale,
-            );
+            let (scale, rotation, translation) = global_transform.to_scale_rotation_translation();
             
             // Calculate block coordinates from WORLD coordinates
-            // Zone center is at world position (5200, 0, -5200)
-            // Objects are in WORLD coordinates (not parented to zone entity)
-            let block_x = (translation.x / 160.0).floor() as u32;
-            let block_y = ((translation.z + 10400.0) / 160.0).floor() as u32;
-            
-            // Clamp to valid range
-            let block_x = block_x.clamp(0, 63);
-            let block_y = block_y.clamp(0, 63);
+            let (block_x, block_y) = world_to_block_coords(translation);
 
             // Convert WORLD coordinates to LOCAL coordinates for IFO file
             // Zone center is at world position (5200, 0, -5200)
             // local = world - zone_center
-            let zone_center = Vec3::new(5200.0, 0.0, -5200.0);
+            let zone_center = Vec3::new(ZONE_CENTER_X, 0.0, ZONE_CENTER_Z);
             let local_translation = translation - zone_center;
 
             // Create IfoObject from local coordinates
@@ -506,10 +632,10 @@ pub fn save_zone_system(
                         block.block.animated_objects.push(ifo_object.clone());
                     }
                     ZoneObject::Water => {
-                        // Water is handled separately via water planes
+                        // handled in dedicated branch above
                     }
                     ZoneObject::Terrain(_) => {
-                        // Terrain is not saved in IFO files
+                        // handled in dedicated branch above
                     }
                 }
             }
@@ -528,9 +654,6 @@ pub fn save_zone_system(
         }
 
         // Export only modified IFO files
-        let mut stats = ExportStats::default();
-        let mut errors = Vec::new();
-        let mut skipped_blocks = 0usize;
 
         for block_data in export_data.blocks.iter().filter_map(|b| b.as_ref()) {
             // Skip empty blocks
@@ -572,21 +695,23 @@ pub fn save_zone_system(
         }
 
         // Update save status
-        if stats.blocks_failed == 0 && stats.blocks_exported > 0 {
-            let result = SaveResult::success(stats.blocks_exported, stats.total_objects);
+        let any_exports = stats.blocks_exported > 0 || terrain_blocks_written > 0;
+        if stats.blocks_failed == 0 && terrain_blocks_failed == 0 && errors.is_empty() && any_exports {
+            let result = SaveResult::success(stats.blocks_exported + terrain_blocks_written, stats.total_objects);
             log::info!("[SaveSystem] {}", result.message());
             save_status.set_complete(result);
             
             // Mark zone as unmodified
             map_editor_state.is_modified = false;
-        } else if stats.blocks_exported == 0 {
-            let result = SaveResult::failure("No blocks were exported (no objects found or all blocks empty)".to_string());
+        } else if !any_exports {
+            let result = SaveResult::failure("No blocks were exported (no IFO/water/terrain changes detected)".to_string());
             log::error!("[SaveSystem] {}", result.message());
             save_status.set_complete(result);
         } else {
             let result = SaveResult::failure(format!(
-                "Partial save: {} blocks failed ({})",
+                "Partial save: ifo_failed={}, terrain_failed={} ({})",
                 stats.blocks_failed,
+                terrain_blocks_failed,
                 errors.join(", ")
             ));
             log::warn!("[SaveSystem] {}", result.message());

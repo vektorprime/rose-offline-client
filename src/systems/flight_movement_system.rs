@@ -1,11 +1,13 @@
 use bevy::prelude::*;
 
-use crate::components::{FacingDirection, FlightState, PlayerCharacter, Position};
-use crate::resources::{CurrentZone, FlightSettings};
+use crate::components::{FacingDirection, FlightState, NextCommand, PlayerCharacter, Position};
+use crate::resources::{CurrentZone, FlightSettings, GameConnection};
 use crate::systems::OrbitCamera;
 use crate::zone_loader::ZoneLoaderAsset;
+use rose_game_common::messages::client::ClientMessage;
 
-/// System that handles flight movement when Space bar is held.
+/// Server-authoritative flight movement system.
+/// 
 /// The character flies forward in the direction the camera is facing,
 /// including vertical movement (up/down based on camera pitch).
 ///
@@ -16,10 +18,10 @@ use crate::zone_loader::ZoneLoaderAsset;
 /// This system:
 /// - Checks if Space bar is held when the player is in flight mode
 /// - Gets the camera's view direction to determine flight direction
-/// - Accelerates the player in the camera's view direction
-/// - Stops at terrain (doesn't fly through ground)
-/// - When not thrusting: hovers in place (no descent)
-/// - Updates both Position and FacingDirection components
+/// - Calculates flight movement locally for smooth visual feedback
+/// - Sends movement intent to server via NextCommand and MoveCollision
+/// - Does NOT mutate Position directly (server-authoritative)
+/// - Updates FacingDirection component locally for responsive rotation
 pub fn flight_movement_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     flight_settings: Res<FlightSettings>,
@@ -27,7 +29,9 @@ pub fn flight_movement_system(
     camera_query: Query<&Transform, With<OrbitCamera>>,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
-    mut query: Query<(&mut FlightState, &mut FacingDirection, &mut Position), With<PlayerCharacter>>,
+    mut commands: Commands,
+    game_connection: Option<Res<GameConnection>>,
+    mut query: Query<(Entity, &mut FlightState, &mut FacingDirection, &Position), With<PlayerCharacter>>,
 ) {
     // Minimum height above terrain (in cm)
     let min_height_above_terrain = 100.0; // 1 meter above terrain
@@ -42,19 +46,16 @@ pub fn flight_movement_system(
         0.0
     };
     
-    for (mut flight_state, mut facing, mut position) in query.iter_mut() {
+    for (entity, mut flight_state, mut facing, position) in query.iter_mut() {
         // Only process if flying
         if !flight_state.is_flying {
             continue;
         }
 
-        // Ensure player stays above terrain
+        // Ensure player stays above terrain (local check for visual smoothness)
         let terrain_height = get_terrain_height(position.x, position.y);
         let min_z = terrain_height + min_height_above_terrain;
-        if position.z < min_z {
-            position.z = min_z;
-        }
-
+        
         // Check if Space bar is held
         let is_thrusting = keyboard.pressed(KeyCode::Space);
         flight_state.is_thrusting = is_thrusting;
@@ -66,22 +67,10 @@ pub fn flight_movement_system(
                 .min(flight_settings.max_speed);
 
             // Get camera's view direction from its transform
-            // The camera's forward() is the direction it's looking (-Z in view space)
             let (forward, horizontal_forward) = if let Ok(camera_transform) = camera_query.single() {
-                // Camera forward is the direction the camera is looking
                 let camera_forward = camera_transform.forward();
                 
-                // Convert from world space to position space:
-                // World: x=right, y=up, z=back (camera forward is -Z, so it points toward player)
-                // Position: x=right, y=forward, z=up
-                // 
-                // Camera looks toward player, so camera_forward points FROM camera TO player
-                // We want to fly in the direction the camera is looking (away from camera, through player)
-                // So we use the camera's forward direction as-is
-                //
-                // position.x = world.x
-                // position.y = -world.z (because world -Z is forward direction)
-                // position.z = world.y
+                // Convert from world space to position space
                 let position_x = camera_forward.x;
                 let position_y = -camera_forward.z;
                 let position_z = camera_forward.y;
@@ -97,7 +86,6 @@ pub fn flight_movement_system(
                 
                 (forward, horizontal)
             } else {
-                // Fallback to horizontal facing direction if no camera found
                 let forward = get_horizontal_forward_direction(facing.actual);
                 (forward, forward)
             };
@@ -109,25 +97,28 @@ pub fn flight_movement_system(
             let movement = forward * flight_state.current_speed * time.delta_secs() * 100.0;
             let new_x = position.x + movement.x;
             let new_y = position.y + movement.y;
-            let new_z = position.z + movement.z;
+            let new_z = (position.z + movement.z).max(min_z);
             
-            // Check terrain height at new position
-            let new_terrain_height = get_terrain_height(new_x, new_y);
-            let min_new_z = new_terrain_height + min_height_above_terrain;
-            
-            // Apply movement, but don't go below terrain
-            position.x = new_x;
-            position.y = new_y;
-            position.z = new_z.max(min_new_z);
-
             // Update facing direction to match horizontal component of movement
-            // This ensures the character model faces the direction of travel
-            // Set desired (not actual) so facing_direction_system smoothly rotates the character
             if horizontal_forward.x.abs() > 0.01 || horizontal_forward.y.abs() > 0.01 {
-                // Use the same formula as FacingDirection::set_desired_vector
-                // direction.y.atan2(direction.x) + PI
                 facing.desired = horizontal_forward.y.atan2(horizontal_forward.x) + std::f32::consts::PI;
             }
+
+            // Send movement intent to server
+            // The server will validate and update Position accordingly
+            let intended_position = Vec3::new(new_x, new_y, new_z);
+            
+            commands.entity(entity).insert(NextCommand::with_move(intended_position, None, None));
+            
+            if let Some(game_connection) = game_connection.as_ref() {
+                game_connection
+                    .client_message_tx
+                    .send(ClientMessage::MoveCollision {
+                        position: intended_position,
+                    })
+                    .ok();
+            }
+
         } else {
             // Not thrusting - decelerate and hover in place (no descent)
             flight_state.current_speed = (flight_state.current_speed
@@ -142,16 +133,21 @@ pub fn flight_movement_system(
                 // Calculate potential new position
                 let new_x = position.x + movement.x;
                 let new_y = position.y + movement.y;
-                let new_z = position.z + movement.z;
+                let new_z = (position.z + movement.z).max(min_z);
                 
-                // Check terrain height at new position
-                let new_terrain_height = get_terrain_height(new_x, new_y);
-                let min_new_z = new_terrain_height + min_height_above_terrain;
+                // Send movement intent to server
+                let intended_position = Vec3::new(new_x, new_y, new_z);
                 
-                // Apply movement, maintaining height above terrain
-                position.x = new_x;
-                position.y = new_y;
-                position.z = new_z.max(min_new_z);
+                commands.entity(entity).insert(NextCommand::with_move(intended_position, None, None));
+                
+                if let Some(game_connection) = game_connection.as_ref() {
+                    game_connection
+                        .client_message_tx
+                        .send(ClientMessage::MoveCollision {
+                            position: intended_position,
+                        })
+                        .ok();
+                }
             }
             
             // No descent - player hovers in place when not thrusting

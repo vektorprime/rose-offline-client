@@ -32,7 +32,7 @@ use bevy::{core_pipeline::prepass::DepthPrepass, prelude::*};
 use crate::{
     events::BloodEffectEvent,
     resources::{BloodDecalAtlas, BloodEffectConfig, BloodEffectDiagnostics, BloodEffectRuntime},
-    systems::{BloodSpatterPlugin, GashWoundPlugin},
+    systems::{BloodSpatterPlugin, GashWoundPlugin, BloodOverlayPlugin},
 };
 
 /// Plugin that registers all blood effect systems and resources.
@@ -67,7 +67,7 @@ impl Plugin for BloodEffectPlugin {
         app.add_message::<BloodEffectEvent>();
 
         // Add the sub-plugins
-        app.add_plugins((BloodSpatterPlugin, GashWoundPlugin));
+        app.add_plugins((BloodSpatterPlugin, GashWoundPlugin, BloodOverlayPlugin));
 
         log::info!("Blood effect plugin initialized");
     }

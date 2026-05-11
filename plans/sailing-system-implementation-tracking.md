@@ -86,3 +86,156 @@ Implement client-side sailing based on `plans/sailing-system-plan.md` in `rose-o
 ## Updated Status
 - Sailing now uses dynamic water-surface height sampling instead of locking to activation altitude.
 - Sailing now collides with walls/obstacles and is blocked from moving onto land above the water surface.
+
+### Attempt 4 - Visual Upgrade (Sailboat Shape + Sails)
+- User request: make the boat look more realistic (actual sailboat silhouette, not raft-like).
+- Updated procedural model construction in [`spawn_boat_visual()`](src/systems/boat_spawn_system.rs:81):
+  - Reworked hull into a multi-part form (core hull, angled port/starboard sides, tapered bow pieces).
+  - Added deck and cabin volume to break the flat-raft look.
+  - Added sailboat rig details: fore mast, boom, bowsprit.
+  - Kept and enlarged mainsail; added a second forward sail (jib-like sail).
+  - Adjusted rider seat and rudder placement to match new hull profile.
+  - Updated materials/colors for clearer wood + canvas visual separation.
+- Build validation:
+  - Executed required separate `cargo build` subtask after visual changes.
+  - Result: **no compilation errors**.
+
+## Latest Status
+- Sailing visuals now render as a stylized sailboat (hull + mast rig + multiple sails), replacing the previous raft-like profile.
+
+### Attempt 5 - Detailed Expansion Integration (A + C + G)
+- Added sail subdivision + deformation data support:
+  - Expanded [`SailMesh`](src/components/boat.rs:70) with base vertex storage, dimensions, and subdivision level.
+  - Added subdivided sail mesh generation in [`create_subdivided_sail_mesh()`](src/systems/boat_spawn_system.rs:86) and quality selection in [`create_sail_mesh_for_quality()`](src/systems/boat_spawn_system.rs:149).
+  - Boat spawn now uses [`GraphicsSettings.sailing.sail_deformation_quality`](src/systems/boat_spawn_system.rs:68) for sail mesh density.
+- Added runtime sail deformation system:
+  - New system [`sail_animation_system()`](src/systems/sail_animation_system.rs:45) with billow/luffing behavior and port/starboard side selection.
+  - Registered module export in [`src/systems/mod.rs`](src/systems/mod.rs:76) and app scheduling in [`src/lib.rs`](src/lib.rs:1556).
+- Expanded sailing HUD implementation:
+  - Replaced minimal HUD with custom compass/speed/trim/prompt rendering in [`ui_sailing_hud_system()`](src/ui/ui_sailing_hud_system.rs:243).
+  - Added wind compass painter in [`draw_wind_compass()`](src/ui/ui_sailing_hud_system.rs:34), speed gauge in [`draw_speed_gauge()`](src/ui/ui_sailing_hud_system.rs:113), and trim indicator in [`draw_trim_indicator()`](src/ui/ui_sailing_hud_system.rs:179).
+- Expanded sail camera behavior:
+  - Added smooth behind-boat yaw tracking, speed-adaptive follow distance, right-mouse free-look override compatibility, and pitch settling in [`sail_camera_system()`](src/systems/sail_camera_system.rs:6).
+
+### Build Validation
+- Executed required separate `cargo build` subtask after these continued changes.
+- Result: **no compilation errors**.
+
+## Current Status
+- Section A (sail deformation), Section C (HUD), and Section G (camera) are now integrated client-side per the detailed expansion document scope for this pass.
+
+### Attempt 6 - Detailed Expansion Integration (B: Wake + Bow Spray)
+- Implemented wake/spray components in [`src/components/boat_wake.rs`](src/components/boat_wake.rs):
+  - `WakeEmitter`
+  - `WakeParticle`
+  - `BowSprayParticle`
+  - `WakeSource`
+- Exported new components via [`src/components/mod.rs`](src/components/mod.rs).
+- Implemented wake/spray systems in [`src/systems/boat_wake_system.rs`](src/systems/boat_wake_system.rs):
+  - `setup_boat_wake_assets` (shared quad mesh + wake/spray materials)
+  - `ensure_boat_wake_emitter_system`
+  - `boat_wake_spawn_system`
+  - `boat_wake_update_system`
+- Registered system module and exports in [`src/systems/mod.rs`](src/systems/mod.rs).
+- Registered scheduling in [`src/lib.rs`](src/lib.rs):
+  - Post-startup wake asset setup
+  - Game update emitter/spawn/update ordering
+- Runtime behavior added:
+  - V-shaped wake spawn behind boat while moving
+  - Bow spray burst at higher speeds
+  - Camera-distance budget (~50m) and per-boat particle caps
+  - Graphics toggles honored (`wake_particles_enabled`, `bow_spray_enabled`)
+
+### Build Validation
+- Executed required separate `cargo build` subtask after wake/spray implementation.
+- Result: **no compilation errors**.
+
+## Latest Status
+- Detailed expansion section B is now integrated client-side in this repository.
+
+### Attempt 7 - Detailed Expansion Integration (I: Disembark Mechanics)
+- Implemented disembark input binding:
+  - Updated [`game_keyboard_input_system()`](../src/systems/game_keyboard_input_system.rs:26) to emit [`DisembarkBoatEvent`](../src/events/boat_event.rs:9) on `E` while sailing.
+  - Sailing input path now handles `E` without re-enabling normal WASD walk movement.
+- Refined `/boat` command semantics:
+  - Updated chat command path in [`ui_chatbox_system()`](../src/ui/ui_chatbox_system.rs:490) so `/boat` now sends only [`BoardBoatEvent`](../src/events/boat_event.rs:4) (no implicit toggle/disembark).
+- Implemented boarding validation and disembark shore placement in [`boat_toggle_system()`](../src/systems/boat_spawn_system.rs:138):
+  - Added client-side boarding validation checks:
+    - Zone must be ocean zone `200` (from [`CurrentZone`](../src/resources/current_zone.rs:8)).
+    - Must be near a water volume (10m horizontal threshold) using [`UnderwaterVolumes`](../src/render/underwater_effect.rs:124).
+    - Cannot board while dead.
+    - Cannot board while in combat-like states (`Attack` / `CastSkill`) from [`Command`](../src/components/command.rs:62).
+    - Cannot board while in drive mode.
+  - Added helper functions for water and shore logic:
+    - [`distance_to_volume_horizontal_m()`](../src/systems/boat_spawn_system.rs:24)
+    - [`nearest_water_surface_height_cm()`](../src/systems/boat_spawn_system.rs:35)
+    - [`is_near_water_plane()`](../src/systems/boat_spawn_system.rs:49)
+    - [`find_nearest_shore_position()`](../src/systems/boat_spawn_system.rs:60)
+  - Implemented disembark placement:
+    - On `DisembarkBoatEvent`, scans 8 compass directions every 2m up to 20m.
+    - Finds nearest terrain point above water by margin (`+50cm`) using zone height sampling.
+    - Teleports player to shore candidate and deactivates boat.
+    - Rejects disembark if no shoreline candidate is found.
+  - Added player visual visibility toggling:
+    - [`set_character_model_visibility()`](../src/systems/boat_spawn_system.rs:101) hides character mesh parts when boarding and restores on disembark.
+  - Added system feedback via [`ChatboxEvent::System`](../src/events/chatbox_event.rs:12) for invalid board/disembark attempts.
+
+### Build Validation
+- Executed required separate `cargo build` subtask after disembark mechanics changes.
+- Result: **no compilation errors**.
+
+## Latest Status
+- Detailed expansion section I is now integrated client-side for this pass:
+  - `E` key disembark flow
+  - nearest-shore terrain placement
+  - client-side boarding validation
+  - character visibility toggling during sailing
+
+### Attempt 8 - Next Zone Work (Section D Initial Integration)
+- User-requested follow-up: proceed with next zone work after disembark implementation.
+- Implemented client-side ocean-zone behavior for zone `200`:
+  - Updated [`game_zone_change_system()`](../src/systems/game_system.rs:74) to apply zone-specific water tuning on [`ZoneEvent::Loaded`](../src/events/zone_event.rs:23).
+  - Added ocean constants + helper application paths in [`src/systems/game_system.rs`](../src/systems/game_system.rs):
+    - [`OCEAN_ZONE_ID`](../src/systems/game_system.rs:15)
+    - [`apply_ocean_zone_water_settings()`](../src/systems/game_system.rs:26)
+    - [`apply_default_zone_water_settings()`](../src/systems/game_system.rs:19)
+  - Ocean-zone water tuning now applies:
+    - `wave_amplitude = 1.5`
+    - `wave_frequency = 0.8`
+    - `foam_intensity = 1.2`
+- Added initial data scaffold for zone content authoring:
+  - [`3DDATA/MAPS/OCEAN/.gitkeep`](../3DDATA/MAPS/OCEAN/.gitkeep)
+  - [`3DDATA/MAPS/OCEAN/OCEAN-zone-scaffold.md`](../3DDATA/MAPS/OCEAN/OCEAN-zone-scaffold.md)
+  - Scaffold documents expected exported zone artifacts and map-editor workflow handoff.
+
+### Build Validation
+- Executed required separate `cargo build` subtask after zone integration changes.
+- Result: **no compilation errors**.
+
+## Latest Status
+- Initial section D (Ocean Zone) integration is in place for this pass:
+  - zone-200 runtime water behavior in client code
+  - OCEAN folder scaffold ready for map export content
+
+### Attempt 9 - Runtime Crash Fix (Bevy Query B0001)
+- User-reported runtime crash:
+  - Bevy error `B0001` in [`boat_wake_update_system()`](../src/systems/boat_wake_system.rs:221)
+  - conflicting mutable access to `Transform` across wake and spray queries.
+- Applied fix in [`src/systems/boat_wake_system.rs`](../src/systems/boat_wake_system.rs):
+  - Added disjoint filters to the two queries:
+    - wake query now uses [`Without<BowSprayParticle>`](../src/systems/boat_wake_system.rs:232)
+    - spray query now uses [`Without<WakeParticle>`](../src/systems/boat_wake_system.rs:240)
+- This guarantees query disjointness for Bevy's runtime borrow checker and prevents the crash.
+
+### Build Validation
+- Executed required separate `cargo build` subtask after the crash fix.
+- Result: **no compilation errors**.
+
+### Attempt 10 - Usage Documentation for Ocean Map
+- Added end-user run instructions for zone 200 in:
+  - [`docs/how-to-run-game.md`](../docs/how-to-run-game.md)
+- Documentation includes:
+  - current scaffold status
+  - prerequisites (exported `ZON/HIM/TIL/IFO` + server registration)
+  - zone viewer and map editor launch examples for zone 200
+  - notes on server integration requirements for in-game travel.

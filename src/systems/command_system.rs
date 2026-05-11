@@ -869,8 +869,20 @@ pub fn command_system(
                     // Not in range, move towards target
                     let motion = get_move_animation(move_mode, character_model, npc_model, vehicle);
                     if let Some(motion) = motion {
+                        let direction_to_target = target.1.position.xy() - position.position.xy();
+                        let move_destination = if direction_to_target.length_squared() > 0.0 {
+                            let offset = direction_to_target.normalize() * attack_range;
+                            Vec3::new(
+                                target.1.position.x - offset.x,
+                                target.1.position.y - offset.y,
+                                target.1.position.z,
+                            )
+                        } else {
+                            target.1.position
+                        };
+
                         *command = Command::with_move(
-                            target.1.position,
+                            move_destination,
                             Some(target_entity),
                             Some(MoveMode::Run),
                         );

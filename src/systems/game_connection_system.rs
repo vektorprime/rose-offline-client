@@ -43,9 +43,9 @@ use rose_network_common::ConnectionError;
 use crate::{
     bundles::{ability_values_add_value_exclusive, ability_values_set_value_exclusive},
     components::{
-        Bank, Clan, ClanMember, ClanMembership, ClientEntity, ClientEntityName, ClientEntityType,
+        Bank, BoatState, Clan, ClanMember, ClanMembership, ClientEntity, ClientEntityName, ClientEntityType,
         CollisionHeightOnly, CollisionPlayer, Command, CommandCastSkillTarget, Cooldowns, Dead,
-        DirtDashEffect, FacingDirection, ItemDropOwner, ItemDropRemainingTime, MonsterSeparation,
+        DirtDashEffect, FacingDirection, FlightState, ItemDropOwner, ItemDropRemainingTime, MonsterSeparation,
         NextCommand, PartyInfo, PartyOwner, PassiveRecoveryTime, PendingDamage, PendingDamageList,
         PendingSkillEffect, PendingSkillEffectList, PendingSkillTarget, PendingSkillTargetList,
         PersonalStore, PlayerCharacter, Position, VisibleStatusEffects,
@@ -735,9 +735,36 @@ pub fn game_connection_system(
                 position,
             }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
-                    commands
-                        .entity(entity)
-                        .insert(NextCommand::with_move(position, None, None));
+                    commands.queue(move |world: &mut World| {
+                        if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+                            let is_flying = entity_mut
+                                .get::<FlightState>()
+                                .map(|state| state.is_flying)
+                                .unwrap_or(false);
+                            let is_sailing = entity_mut
+                                .get::<BoatState>()
+                                .map(|state| state.active)
+                                .unwrap_or(false);
+
+                            let mut corrected_position = position;
+                            if !is_flying && !is_sailing {
+                                if let Some(existing_position) = entity_mut.get::<Position>() {
+                                    corrected_position.z = existing_position.z;
+                                }
+                            }
+
+                            entity_mut.insert(Position::new(corrected_position));
+
+                            if let Some(mut transform) = entity_mut.get_mut::<Transform>() {
+                                transform.translation.x = corrected_position.x / 100.0;
+                                transform.translation.z = -corrected_position.y / 100.0;
+
+                                if is_flying || is_sailing {
+                                    transform.translation.y = corrected_position.z / 100.0;
+                                }
+                            }
+                        }
+                    });
                 }
             }
             Ok(ServerMessage::StopMoveEntity {
