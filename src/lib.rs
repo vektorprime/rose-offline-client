@@ -88,6 +88,7 @@ pub mod vfs_asset_io;
 pub mod zms_asset_loader;
 pub mod zone_loader;
 pub mod blood_effect_plugin;
+pub mod sailing;
 
 use audio::OddioPlugin;
 use diagnostics::RenderDiagnosticsPlugin;

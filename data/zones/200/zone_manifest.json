@@ -1,0 +1,265 @@
+{
+  "zone_id": 200,
+  "zone_name": "SailingZone",
+  "zone_type": "sailing",
+  "dimensions": {
+    "width_m": 10400,
+    "height_m": 10400,
+    "grid_size": 257
+  },
+  "islands": [
+    {
+      "index": 0,
+      "center": [
+        5200,
+        -5200
+      ],
+      "radius_m": 300,
+      "peak_height_m": 15
+    },
+    {
+      "index": 1,
+      "center": [
+        2000,
+        -2000
+      ],
+      "radius_m": 150,
+      "peak_height_m": 10
+    },
+    {
+      "index": 2,
+      "center": [
+        8000,
+        -2000
+      ],
+      "radius_m": 120,
+      "peak_height_m": 8
+    },
+    {
+      "index": 3,
+      "center": [
+        2000,
+        -8000
+      ],
+      "radius_m": 180,
+      "peak_height_m": 12
+    },
+    {
+      "index": 4,
+      "center": [
+        8000,
+        -8000
+      ],
+      "radius_m": 100,
+      "peak_height_m": 7
+    },
+    {
+      "index": 5,
+      "center": [
+        5200,
+        -2000
+      ],
+      "radius_m": 200,
+      "peak_height_m": 11
+    },
+    {
+      "index": 6,
+      "center": [
+        5200,
+        -8000
+      ],
+      "radius_m": 160,
+      "peak_height_m": 9
+    },
+    {
+      "index": 7,
+      "center": [
+        3000,
+        -5200
+      ],
+      "radius_m": 140,
+      "peak_height_m": 8
+    },
+    {
+      "index": 8,
+      "center": [
+        7400,
+        -5200
+      ],
+      "radius_m": 130,
+      "peak_height_m": 10
+    },
+    {
+      "index": 9,
+      "center": [
+        1000,
+        -5200
+      ],
+      "radius_m": 100,
+      "peak_height_m": 6
+    },
+    {
+      "index": 10,
+      "center": [
+        9400,
+        -5200
+      ],
+      "radius_m": 110,
+      "peak_height_m": 7
+    },
+    {
+      "index": 11,
+      "center": [
+        5200,
+        -1000
+      ],
+      "radius_m": 90,
+      "peak_height_m": 5
+    },
+    {
+      "index": 12,
+      "center": [
+        5200,
+        -9400
+      ],
+      "radius_m": 80,
+      "peak_height_m": 6
+    },
+    {
+      "index": 13,
+      "center": [
+        3500,
+        -3500
+      ],
+      "radius_m": 50,
+      "peak_height_m": 3
+    },
+    {
+      "index": 14,
+      "center": [
+        6900,
+        -3500
+      ],
+      "radius_m": 40,
+      "peak_height_m": 2
+    },
+    {
+      "index": 15,
+      "center": [
+        3500,
+        -6900
+      ],
+      "radius_m": 45,
+      "peak_height_m": 3
+    },
+    {
+      "index": 16,
+      "center": [
+        6900,
+        -6900
+      ],
+      "radius_m": 35,
+      "peak_height_m": 2
+    }
+  ],
+  "docks": [
+    {
+      "index": 0,
+      "island": 0,
+      "offset": [
+        0,
+        100
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "index": 1,
+      "island": 0,
+      "offset": [
+        100,
+        0
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "index": 2,
+      "island": 1,
+      "offset": [
+        0,
+        50
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "index": 3,
+      "island": 2,
+      "offset": [
+        0,
+        -50
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "index": 4,
+      "island": 3,
+      "offset": [
+        50,
+        0
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "index": 5,
+      "island": 4,
+      "offset": [
+        -50,
+        0
+      ],
+      "rotation_deg": 270
+    },
+    {
+      "index": 6,
+      "island": 5,
+      "offset": [
+        0,
+        70
+      ],
+      "rotation_deg": 0
+    },
+    {
+      "index": 7,
+      "island": 6,
+      "offset": [
+        0,
+        -70
+      ],
+      "rotation_deg": 180
+    },
+    {
+      "index": 8,
+      "island": 7,
+      "offset": [
+        70,
+        0
+      ],
+      "rotation_deg": 90
+    },
+    {
+      "index": 9,
+      "island": 8,
+      "offset": [
+        -70,
+        0
+      ],
+      "rotation_deg": 270
+    }
+  ],
+  "features": [
+    "Water planes covering entire zone",
+    "17 islands of varying sizes",
+    "10 dock positions with warp points",
+    "6 monster spawn points (pirate ships, sea creatures)",
+    "4 NPCs (dock masters, merchants)",
+    "8 decorative objects (lighthouses, rocks)"
+  ]
+}
