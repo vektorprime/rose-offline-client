@@ -1,13 +1,13 @@
-use bevy::prelude::*;
 use bevy::asset::RenderAssetUsages;
+use bevy::prelude::*;
 use bevy::render::alpha::AlphaMode;
 use bevy_mesh::{Indices, PrimitiveTopology};
 use rose_game_common::components::MoveMode;
 use std::collections::HashSet;
 
 use crate::components::{
-    BoatModel, BoatState, CharacterModel, Command, Dead, FacingDirection, PlayerCharacter, Position,
-    SailMesh, SailSide,
+    BoatModel, BoatState, CharacterModel, Command, Dead, FacingDirection, PlayerCharacter,
+    Position, SailMesh, SailSide,
 };
 use crate::events::{BoardBoatEvent, ChatboxEvent, DisembarkBoatEvent};
 use crate::graphics::{GraphicsSettings, SailQuality};
@@ -32,7 +32,10 @@ fn distance_to_volume_horizontal_m(position_cm: Vec3, volume: &WaterVolume) -> f
     (dx * dx + dz * dz).sqrt()
 }
 
-fn nearest_water_surface_height_cm(position_cm: Vec3, underwater_volumes: &UnderwaterVolumes) -> Option<f32> {
+fn nearest_water_surface_height_cm(
+    position_cm: Vec3,
+    underwater_volumes: &UnderwaterVolumes,
+) -> Option<f32> {
     underwater_volumes
         .volumes
         .iter()
@@ -166,7 +169,8 @@ pub fn boat_toggle_system(
         .and_then(|zone| zone_loader_assets.get(&zone.handle));
 
     let board_set: HashSet<Entity> = board_events.read().map(|event| event.entity).collect();
-    let disembark_set: HashSet<Entity> = disembark_events.read().map(|event| event.entity).collect();
+    let disembark_set: HashSet<Entity> =
+        disembark_events.read().map(|event| event.entity).collect();
 
     let mut target_entities = board_set.clone();
     target_entities.extend(disembark_set.iter().copied());
@@ -286,11 +290,9 @@ pub fn boat_toggle_system(
                 boat_state.speed = 0.0;
                 boat_state.sail_trim = std::f32::consts::FRAC_PI_4;
                 boat_state.rudder = 0.0;
-                boat_state.water_height_cm = nearest_water_surface_height_cm(
-                    position.position,
-                    &underwater_volumes,
-                )
-                .unwrap_or(position.z);
+                boat_state.water_height_cm =
+                    nearest_water_surface_height_cm(position.position, &underwater_volumes)
+                        .unwrap_or(position.z);
                 position.z = boat_state.water_height_cm;
 
                 let model_root = spawn_boat_visual(
@@ -310,7 +312,11 @@ pub fn boat_toggle_system(
     }
 }
 
-fn create_subdivided_sail_mesh(width: f32, height: f32, subdivisions: u32) -> (Mesh, Vec<[f32; 3]>) {
+fn create_subdivided_sail_mesh(
+    width: f32,
+    height: f32,
+    subdivisions: u32,
+) -> (Mesh, Vec<[f32; 3]>) {
     if subdivisions == 0 {
         let positions = vec![
             [-0.5 * width, 0.0, 0.0],
@@ -510,8 +516,9 @@ fn spawn_boat_visual(
         .spawn((
             Mesh3d(bow_stem_mesh.clone()),
             MeshMaterial3d(hull_trim_mat.clone()),
-            Transform::from_xyz(0.0, 0.05, -1.6)
-                .with_rotation(Quat::from_rotation_x(-0.12) * Quat::from_rotation_y(std::f32::consts::PI)),
+            Transform::from_xyz(0.0, 0.05, -1.6).with_rotation(
+                Quat::from_rotation_x(-0.12) * Quat::from_rotation_y(std::f32::consts::PI),
+            ),
             GlobalTransform::default(),
             Visibility::Inherited,
             InheritedVisibility::default(),
@@ -650,11 +657,10 @@ fn spawn_boat_visual(
             },
             Mesh3d(jib_sail_mesh),
             MeshMaterial3d(sail_trim_mat),
-            Transform::from_xyz(0.0, 1.35, -1.25)
-                .with_rotation(
-                    Quat::from_axis_angle(Vec3::Y, std::f32::consts::FRAC_PI_2)
-                        * Quat::from_axis_angle(Vec3::Y, 0.25),
-                ),
+            Transform::from_xyz(0.0, 1.35, -1.25).with_rotation(
+                Quat::from_axis_angle(Vec3::Y, std::f32::consts::FRAC_PI_2)
+                    * Quat::from_axis_angle(Vec3::Y, 0.25),
+            ),
             GlobalTransform::default(),
             Visibility::Inherited,
             InheritedVisibility::default(),
@@ -711,4 +717,3 @@ fn spawn_boat_visual(
 
     root
 }
-

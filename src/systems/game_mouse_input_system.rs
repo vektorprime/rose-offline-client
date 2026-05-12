@@ -2,8 +2,8 @@ use bevy::{
     input::ButtonInput,
     math::Vec3,
     prelude::{
-        BevyError, Camera, Camera3d, Entity, MessageWriter, GlobalTransform, Local, MouseButton, Query, Res, ResMut,
-        State, With,
+        BevyError, Camera, Camera3d, Entity, GlobalTransform, Local, MessageWriter, MouseButton,
+        Query, Res, ResMut, State, With,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
@@ -17,15 +17,20 @@ use rose_game_common::components::{ItemDrop, Team};
 
 use crate::{
     components::{
-        BoatState, ColliderParent, ClientEntity, ClientEntityType, FlightState, PlayerCharacter,
-        Position, ZoneObject,
-        COLLISION_FILTER_CLICKABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_PLAYER,
+        BoatState, ClientEntity, ClientEntityType, ColliderParent, FlightState, PlayerCharacter,
+        Position, ZoneObject, COLLISION_FILTER_CLICKABLE, COLLISION_GROUP_PHYSICS_TOY,
+        COLLISION_GROUP_PLAYER,
     },
     events::{MoveDestinationEffectEvent, PlayerCommandEvent},
     resources::{AppState, SelectedTarget, UiCursorType},
 };
 
-pub type PlayerQuery<'w> = (Entity, &'w Team, Option<&'w FlightState>, Option<&'w BoatState>);
+pub type PlayerQuery<'w> = (
+    Entity,
+    &'w Team,
+    Option<&'w FlightState>,
+    Option<&'w BoatState>,
+);
 
 /// Game mouse input system - handles mouse clicks for movement, attacking, and interaction
 /// This system has been refactored to reduce the number of parameters to 10
@@ -51,7 +56,7 @@ pub fn game_mouse_input_system(
     let Ok(rapier_context) = rapier_context.single() else {
         return Ok(());
     };
-    
+
     // Check if we're in the game state
     if *app_state.get() != AppState::Game {
         return Ok(());
@@ -76,18 +81,19 @@ pub fn game_mouse_input_system(
         return Ok(());
     }
 
-    let (_player_entity, player_team, player_flight_state, player_boat_state) = if let Ok(result) = query_player.single() {
-        result
-    } else {
-        return Ok(());
-    };
-    
+    let (_player_entity, player_team, player_flight_state, player_boat_state) =
+        if let Ok(result) = query_player.single() {
+            result
+        } else {
+            return Ok(());
+        };
+
     // Check if player is flying - if so, skip terrain click-to-move
     // but still allow interaction with UI and entities
     let is_flying = player_flight_state.map_or(false, |fs| fs.is_flying);
     let is_sailing = player_boat_state.map_or(false, |boat| boat.active);
     let movement_locked = is_flying || is_sailing;
-    
+
     let Ok((camera, camera_transform)) = query_camera.single() else {
         return Ok(());
     };
@@ -124,9 +130,7 @@ pub fn game_mouse_input_system(
                         ClientEntityType::Monster => {
                             selected_target.cursor_type = UiCursorType::Attack
                         }
-                        ClientEntityType::Npc => {
-                            selected_target.cursor_type = UiCursorType::Npc
-                        }
+                        ClientEntityType::Npc => selected_target.cursor_type = UiCursorType::Npc,
                         ClientEntityType::ItemDrop => {
                             selected_target.cursor_type = UiCursorType::PickupItem
                         }

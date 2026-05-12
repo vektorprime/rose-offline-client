@@ -2,8 +2,8 @@ use bevy::{
     ecs::query::QueryEntityError,
     math::{Quat, Vec3, Vec3A},
     prelude::{
-        Assets, Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Res,
-        Transform, With, Without,
+        Assets, Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Res, Transform,
+        With, Without,
     },
 };
 use bevy_camera::primitives::Aabb;
@@ -79,14 +79,20 @@ pub fn character_model_add_collider_system(
                 }
                 Ok(None) | Err(QueryEntityError::NotSpawned(_)) => {
                     all_parts_loaded = false;
-                    info!("AABB query failed for part entity {:?}: no AABB or no such entity", part_entity);
+                    info!(
+                        "AABB query failed for part entity {:?}: no AABB or no such entity",
+                        part_entity
+                    );
                     break;
                 }
                 _ => {}
             }
         }
 
-        info!("Collected {} AABB data points from {} model parts for entity {:?}", aabb_data_count, parts_found, entity);
+        info!(
+            "Collected {} AABB data points from {} model parts for entity {:?}",
+            aabb_data_count, parts_found, entity
+        );
 
         let inverse_bindpose = inverse_bindposes.get(&skinned_mesh.inverse_bindposes);
         if min.is_none() || max.is_none() || !all_parts_loaded || inverse_bindpose.is_none() {

@@ -57,11 +57,7 @@ fn ui_add_bank_slot(
     ui_state_dnd: &mut UiStateDragAndDrop,
     player_command_events: &mut MessageWriter<PlayerCommandEvent>,
 ) {
-    let item = player
-        .0
-        .slots
-        .get(bank_slot_index)
-        .and_then(|x| x.as_ref());
+    let item = player.0.slots.get(bank_slot_index).and_then(|x| x.as_ref());
 
     let mut dropped_item = None;
     let response = ui
@@ -164,13 +160,7 @@ pub fn ui_bank_system(
         .and_then(|bank_entity| query_position.get(bank_entity).ok())
     {
         // If player has moved away from bank entity, close's dialog
-        if player
-            .2
-            .position
-            .xy()
-            .distance(bank_position.position.xy())
-            > 1000.0
-        {
+        if player.2.position.xy().distance(bank_position.position.xy()) > 1000.0 {
             ui_state_windows.bank_open = false;
             ui_state.bank_entity = None;
             return;

@@ -1,4 +1,4 @@
-use bevy::prelude::{MessageWriter, Local, Res, State};
+use bevy::prelude::{Local, MessageWriter, Res, State};
 
 use crate::{
     events::{CharacterSelectEvent, LoginEvent},
@@ -105,7 +105,8 @@ pub fn auto_login_system(
                                     );
                                     character_select_events
                                         .write(CharacterSelectEvent::SelectCharacter(i));
-                                    character_select_events.write(CharacterSelectEvent::PlaySelected);
+                                    character_select_events
+                                        .write(CharacterSelectEvent::PlaySelected);
                                     *auto_login_state = AutoLoginState::SelectedCharacter;
                                 }
                             }

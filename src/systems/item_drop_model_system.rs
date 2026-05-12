@@ -1,17 +1,15 @@
+use crate::render::object_material_extension::RoseObjectExtension;
 use bevy::{
     ecs::query::QueryEntityError,
     math::{Vec3, Vec3A},
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Changed, Commands, Entity, GlobalTransform, Handle,
-        Mesh, Mesh3d, Query, Res, ResMut, Transform, With, Without,
+        AssetServer, Assets, Changed, Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d,
+        Query, Res, ResMut, Transform, With, Without,
     },
-    render::{
-        alpha::AlphaMode,
-    },
+    render::alpha::AlphaMode,
 };
 use bevy_camera::primitives::Aabb;
-use crate::render::object_material_extension::RoseObjectExtension;
 use bevy_rapier3d::prelude::{Collider, CollisionGroups};
 
 use rose_game_common::components::ItemDrop;

@@ -1,6 +1,9 @@
 use bevy::{
-    prelude::{AssetServer, ChildSpawnerCommands, Commands, Component, Entity, GlobalTransform, Query, Res, ResMut, Transform, With},
     math::Vec3,
+    prelude::{
+        AssetServer, ChildSpawnerCommands, Commands, Component, Entity, GlobalTransform, Query,
+        Res, ResMut, Transform, With,
+    },
 };
 use rand::Rng;
 
@@ -9,9 +12,9 @@ use rose_game_common::components::Npc;
 use crate::{
     animation::SkeletalAnimation,
     audio::{queue_monster_sound, MonsterSoundQueue, SpatialSound},
+    components::PlayerCharacter,
     components::{Command, SoundCategory},
     resources::{GameData, SoundCache, SoundSettings},
-    components::PlayerCharacter,
 };
 
 #[derive(Component, Default)]

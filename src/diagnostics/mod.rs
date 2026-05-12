@@ -7,11 +7,6 @@
 pub mod render_diagnostics;
 
 pub use render_diagnostics::{
-    RenderDiagnosticsPlugin,
-    log_pipeline_cache_access,
-    log_pipeline_creation,
-    log_alpha_blend_mesh_setup,
-    log_alpha_blend_mesh_setup_simple,
-    log_shader_binding_config,
-    log_render_state,
+    log_alpha_blend_mesh_setup, log_alpha_blend_mesh_setup_simple, log_pipeline_cache_access,
+    log_pipeline_creation, log_render_state, log_shader_binding_config, RenderDiagnosticsPlugin,
 };

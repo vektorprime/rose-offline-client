@@ -1,8 +1,8 @@
 use std::future::Future;
 
 use bevy::{
-    asset::{Asset, AssetLoader, io::Reader, LoadContext},
-    reflect::{TypePath},
+    asset::{io::Reader, Asset, AssetLoader, LoadContext},
+    reflect::TypePath,
     tasks::futures_lite::AsyncReadExt,
 };
 
@@ -32,14 +32,16 @@ impl AssetLoader for ExeResourceLoader {
             reader.read_to_end(&mut bytes).await?;
 
             let path = load_context.path().path().to_string_lossy().to_string();
-            
+
             // Note: Custom cursor loading is handled directly in ui_resources.rs
             // to properly use Bevy 0.16's CustomCursorImage API
-            log::debug!("[EXE RESOURCE LOADER] Cursor requested from {}: {} bytes", path, bytes.len());
-            
-            Ok(ExeResourceCursor { 
-                processed: true
-            })
+            log::debug!(
+                "[EXE RESOURCE LOADER] Cursor requested from {}: {} bytes",
+                path,
+                bytes.len()
+            );
+
+            Ok(ExeResourceCursor { processed: true })
         }
     }
 

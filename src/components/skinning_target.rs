@@ -2,7 +2,7 @@ use bevy::prelude::Component;
 
 /// Marker component for mesh entities that should receive SkinnedMesh component
 /// if their mesh has joint attributes (bone_indices/bone_weights).
-/// 
+///
 /// In Bevy 0.16, we can't insert SkinnedMesh at spawn time because:
 /// 1. Mesh loading is async - we don't know if the mesh has joint attributes
 /// 2. If SkinnedMesh is inserted but mesh lacks joint attributes, it causes a bind group mismatch

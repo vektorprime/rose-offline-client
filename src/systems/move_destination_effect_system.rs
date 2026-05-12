@@ -1,12 +1,10 @@
 use bevy::{
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Commands, ViewVisibility, InheritedVisibility, Entity, MessageReader,
-        GlobalTransform, Local, Res, ResMut, Transform, Visibility, Mesh,
+        AssetServer, Assets, Commands, Entity, GlobalTransform, InheritedVisibility, Local, Mesh,
+        MessageReader, Res, ResMut, Transform, ViewVisibility, Visibility,
     },
-    render::{
-        alpha::AlphaMode,
-    },
+    render::alpha::AlphaMode,
 };
 use rose_data::EffectFileId;
 
@@ -30,7 +28,9 @@ pub fn move_destination_effect_system(
     asset_server: Res<AssetServer>,
     vfs_resource: Res<VfsResource>,
     effect_cache: Res<EffectCache>,
-    mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+    mut effect_mesh_materials: ResMut<
+        Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
+    >,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
     mut meshes: ResMut<Assets<Mesh>>,

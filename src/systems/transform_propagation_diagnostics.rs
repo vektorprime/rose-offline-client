@@ -4,7 +4,13 @@ use bevy::transform::TransformSystems;
 /// Diagnostic system to check if transform propagation is running
 /// This helps diagnose why GlobalTransform is not being computed from Transform
 pub fn transform_propagation_diagnostics(
-    transforms: Query<(Entity, &Transform, &GlobalTransform, Option<&ChildOf>, Option<&Name>)>,
+    transforms: Query<(
+        Entity,
+        &Transform,
+        &GlobalTransform,
+        Option<&ChildOf>,
+        Option<&Name>,
+    )>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
@@ -19,7 +25,10 @@ pub fn transform_propagation_diagnostics(
     info!("========================================");
 
     let total_entities = transforms.iter().count();
-    info!("[TRANSFORM PROPAGATION] Total entities with Transform and GlobalTransform: {}", total_entities);
+    info!(
+        "[TRANSFORM PROPAGATION] Total entities with Transform and GlobalTransform: {}",
+        total_entities
+    );
 
     let mut matching_count = 0;
     let mut mismatched_count = 0;
@@ -42,13 +51,23 @@ pub fn transform_propagation_diagnostics(
         };
 
         if logged < 10 {
-            info!("[TRANSFORM PROPAGATION] Entity {:?} ('{}') [Root: {}]:", entity, name_str, is_root);
-            info!("[TRANSFORM PROPAGATION]   Local Transform: ({:.2}, {:.2}, {:.2})",
-                local_pos.x, local_pos.y, local_pos.z);
-            info!("[TRANSFORM PROPAGATION]   Global Transform: ({:.2}, {:.2}, {:.2})",
-                global_pos.x, global_pos.y, global_pos.z);
-            info!("[TRANSFORM PROPAGATION]   Valid propagation: {}", positions_match);
-            
+            info!(
+                "[TRANSFORM PROPAGATION] Entity {:?} ('{}') [Root: {}]:",
+                entity, name_str, is_root
+            );
+            info!(
+                "[TRANSFORM PROPAGATION]   Local Transform: ({:.2}, {:.2}, {:.2})",
+                local_pos.x, local_pos.y, local_pos.z
+            );
+            info!(
+                "[TRANSFORM PROPAGATION]   Global Transform: ({:.2}, {:.2}, {:.2})",
+                global_pos.x, global_pos.y, global_pos.z
+            );
+            info!(
+                "[TRANSFORM PROPAGATION]   Valid propagation: {}",
+                positions_match
+            );
+
             logged += 1;
         }
 
@@ -64,8 +83,14 @@ pub fn transform_propagation_diagnostics(
     }
 
     info!("[TRANSFORM PROPAGATION] Summary:");
-    info!("[TRANSFORM PROPAGATION]   Matching transforms: {}", matching_count);
-    info!("[TRANSFORM PROPAGATION]   Mismatched transforms: {}", mismatched_count);
+    info!(
+        "[TRANSFORM PROPAGATION]   Matching transforms: {}",
+        matching_count
+    );
+    info!(
+        "[TRANSFORM PROPAGATION]   Mismatched transforms: {}",
+        mismatched_count
+    );
 
     if mismatched_count > 0 && total_entities > 0 {
         error!("[TRANSFORM PROPAGATION] CRITICAL: Transform propagation is NOT working!");

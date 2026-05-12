@@ -6,10 +6,7 @@ use crate::components::PassiveRecoveryTime;
 
 const RECOVERY_INTERVAL: Duration = Duration::from_secs(4);
 
-pub fn passive_recovery_system(
-    mut query: Query<&mut PassiveRecoveryTime>,
-    time: Res<Time>,
-) {
+pub fn passive_recovery_system(mut query: Query<&mut PassiveRecoveryTime>, time: Res<Time>) {
     // Server-authoritative recovery:
     // the server applies passive HP/MP regen and sends UpdateHealthPoints/UpdateManaPoints.
     // Client keeps timer progression only and never mutates HP/MP locally.

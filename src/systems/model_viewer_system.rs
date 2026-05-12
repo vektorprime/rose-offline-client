@@ -7,7 +7,7 @@ use bevy::{
         Resource, Transform, Visibility, With,
     },
 };
-use bevy_camera::visibility::{ViewVisibility, InheritedVisibility};
+use bevy_camera::visibility::{InheritedVisibility, ViewVisibility};
 use bevy_egui::{egui, EguiContexts};
 use enum_map::{enum_map, EnumMap};
 use rand::{prelude::SliceRandom, Rng};
@@ -94,7 +94,7 @@ pub fn model_viewer_enter_system(
     // Reset ambient light
     commands.insert_resource(GlobalAmbientLight {
         color: Color::WHITE,
-        brightness: 80.0,  // Bevy 0.13 requires much higher values (was ~1.0 in 0.12)
+        brightness: 80.0, // Bevy 0.13 requires much higher values (was ~1.0 in 0.12)
         affects_lightmapped_meshes: true,
     });
 

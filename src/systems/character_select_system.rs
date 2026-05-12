@@ -5,14 +5,14 @@ use log::info;
 use bevy::{
     input::ButtonInput,
     prelude::{
-        AssetServer, Camera, Camera3d, Commands, Component, ViewVisibility, InheritedVisibility,
-        Entity, MessageReader, MessageWriter, GlobalTransform, Handle, Local,
-        MouseButton, NextState, Query, Res, ResMut, Resource, Vec2, Visibility, With, World,
+        AssetServer, Camera, Camera3d, Commands, Component, Entity, GlobalTransform, Handle,
+        InheritedVisibility, Local, MessageReader, MessageWriter, MouseButton, NextState, Query,
+        Res, ResMut, Resource, Vec2, ViewVisibility, Visibility, With, World,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
-use bevy_mesh::skinning::SkinnedMesh;
 use bevy_egui::{egui, EguiContexts};
+use bevy_mesh::skinning::SkinnedMesh;
 use bevy_rapier3d::{
     plugin::context::systemparams::ReadRapierContext,
     prelude::{CollisionGroups, QueryFilter},
@@ -27,7 +27,10 @@ use crate::{
         CharacterModel, ColliderParent, COLLISION_FILTER_CLICKABLE, COLLISION_GROUP_CHARACTER,
         COLLISION_GROUP_PLAYER,
     },
-    events::{CharacterSelectEvent, GameConnectionEvent, LoadZoneEvent, MessageBoxEvent, WorldConnectionEvent},
+    events::{
+        CharacterSelectEvent, GameConnectionEvent, LoadZoneEvent, MessageBoxEvent,
+        WorldConnectionEvent,
+    },
     resources::{
         AppState, CharacterList, CharacterSelectState, GameData, ServerConfiguration,
         WorldConnection,
@@ -284,11 +287,12 @@ pub fn character_select_system(
             let camera_result = query_camera.single();
             let camera_motion = camera_result.ok().and_then(|(_, _, _, m)| m);
             let camera_completed = camera_motion.map_or(true, |animation| animation.completed());
-            log::info!("[CHAR_SELECT] Entering state - camera_completed: {}, auto_login: {}",
-                camera_completed, server_configuration.auto_login);
-            if camera_completed
-                || server_configuration.auto_login
-            {
+            log::info!(
+                "[CHAR_SELECT] Entering state - camera_completed: {}, auto_login: {}",
+                camera_completed,
+                server_configuration.auto_login
+            );
+            if camera_completed || server_configuration.auto_login {
                 log::info!("[CHAR_SELECT] Transitioning to CharacterSelect(None)");
                 *character_select_state = CharacterSelectState::CharacterSelect(None);
             }
@@ -480,21 +484,21 @@ pub fn character_select_input_system(
         return;
     };
 
-    log::info!("[CHAR_SELECT_INPUT] Casting ray from origin {:?} direction {:?}", ray.origin, ray.direction);
-    
+    log::info!(
+        "[CHAR_SELECT_INPUT] Casting ray from origin {:?} direction {:?}",
+        ray.origin,
+        ray.direction
+    );
+
     // Cast ray and find the closest hit
     let query_filter = QueryFilter::new().groups(CollisionGroups::new(
         COLLISION_FILTER_CLICKABLE,
         COLLISION_GROUP_CHARACTER | COLLISION_GROUP_PLAYER,
     ));
 
-    if let Some((collider_entity, _distance)) = rapier_context.cast_ray(
-        ray.origin,
-        *ray.direction,
-        f32::MAX,
-        true,
-        query_filter,
-    ) {
+    if let Some((collider_entity, _distance)) =
+        rapier_context.cast_ray(ray.origin, *ray.direction, f32::MAX, true, query_filter)
+    {
         log::info!("[CHAR_SELECT_INPUT] Ray hit entity {:?}", collider_entity);
         // The hit entity might be the collider, so we need to find the parent
         if let Ok((Some(collider_parent), _)) = query_entities.get(collider_entity) {
@@ -503,7 +507,8 @@ pub fn character_select_input_system(
                 input_state.selected_character_index = Some(selected_index);
 
                 // Send character select event
-                character_select_events.write(CharacterSelectEvent::SelectCharacter(selected_index));
+                character_select_events
+                    .write(CharacterSelectEvent::SelectCharacter(selected_index));
             }
         } else if let Ok((_, Some(character_select))) = query_entities.get(collider_entity) {
             let selected_index = character_select.index;

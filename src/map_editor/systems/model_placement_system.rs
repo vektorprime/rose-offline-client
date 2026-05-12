@@ -3,39 +3,40 @@
 //! This system handles placing selected models at cursor position in the 3D world.
 
 use bevy::{
-    input::ButtonInput,
-    prelude::{
-        App, AssetServer, Camera, Camera3d, Commands, Entity, GlobalTransform,
-        KeyCode, MouseButton, Plugin, Query, Res, ResMut, Transform, Update, Vec3, With,
-        Mesh3d, MeshMaterial3d, Visibility, InheritedVisibility, ViewVisibility,
-        Name, Assets, StandardMaterial, Color, Local, Handle, Quat,
-    },
-    window::{PrimaryWindow, Window},
-    light::{NotShadowCaster, NotShadowReceiver},
-    pbr::ExtendedMaterial,
-    math::{primitives::Cuboid, Vec4},
-    ecs::schedule::IntoScheduleConfigs,
-    render::alpha::AlphaMode,
     camera::visibility::RenderLayers,
+    ecs::schedule::IntoScheduleConfigs,
+    input::ButtonInput,
+    light::{NotShadowCaster, NotShadowReceiver},
+    math::{primitives::Cuboid, Vec4},
+    pbr::ExtendedMaterial,
+    prelude::{
+        App, AssetServer, Assets, Camera, Camera3d, Color, Commands, Entity, GlobalTransform,
+        Handle, InheritedVisibility, KeyCode, Local, Mesh3d, MeshMaterial3d, MouseButton, Name,
+        Plugin, Quat, Query, Res, ResMut, StandardMaterial, Transform, Update, Vec3,
+        ViewVisibility, Visibility, With,
+    },
+    render::alpha::AlphaMode,
+    window::{PrimaryWindow, Window},
 };
-use bevy_mesh::Mesh;
 use bevy_egui::EguiContexts;
-use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter, RigidBody, Collider, AsyncCollider, ComputedColliderShape};
+use bevy_mesh::Mesh;
 use bevy_rapier3d::plugin::context::systemparams::ReadRapierContext;
+use bevy_rapier3d::prelude::{
+    AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, Group, QueryFilter, RigidBody,
+};
 
 use crate::{
     components::{
-        ZoneObject, ZoneObjectId, ZoneObjectPart, ColliderParent,
-        COLLISION_FILTER_INSPECTABLE, COLLISION_FILTER_COLLIDABLE,
-        COLLISION_GROUP_ZONE_OBJECT,
+        ColliderParent, ZoneObject, ZoneObjectId, ZoneObjectPart, COLLISION_FILTER_COLLIDABLE,
+        COLLISION_FILTER_INSPECTABLE, COLLISION_GROUP_ZONE_OBJECT,
     },
     map_editor::{
-        resources::{MapEditorState, SelectedModel, EditorMode, ModelCategory},
         components::EditorSelectable,
+        resources::{EditorMode, MapEditorState, ModelCategory, SelectedModel},
     },
-    zone_loader::ZoneLoaderAsset,
-    resources::CurrentZone,
     render::RoseObjectExtension,
+    resources::CurrentZone,
+    zone_loader::ZoneLoaderAsset,
     VfsResource,
 };
 
@@ -46,18 +47,15 @@ impl Plugin for ModelPlacementPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            model_placement_system
-                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+            model_placement_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
         )
         .add_systems(
             Update,
-            model_preview_system
-                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+            model_preview_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
         )
         .add_systems(
             Update,
-            add_to_zone_system
-                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+            add_to_zone_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
         );
     }
 }
@@ -87,28 +85,28 @@ pub fn model_placement_system(
     if !map_editor_state.enabled {
         return;
     }
-    
+
     if map_editor_state.editor_mode != EditorMode::Add {
         // Only log occasionally to avoid spam
         return;
     }
-    
+
     // Check if a model is selected
     let Some(ref model_info) = selected_model.model else {
         return;
     };
-    
+
     // Skip if egui wants pointer input (mouse is over UI)
     if egui_ctx.ctx_mut().unwrap().wants_pointer_input() {
         return;
     }
-    
+
     // Check if we have zone data available for spawning meshes
     let Some(current_zone) = current_zone else {
         log::warn!("[MODEL PLACEMENT] No current zone loaded - cannot place model with meshes");
         return;
     };
-    
+
     let Some(zone_data) = zone_loader_assets.get(&current_zone.handle) else {
         log::warn!("[MODEL PLACEMENT] Zone data not loaded yet - cannot place model");
         return;
@@ -169,7 +167,7 @@ pub fn model_placement_system(
                 model_info.id,
                 placement_position
             );
-            
+
             // CRITICAL: The placement_position is in WORLD coordinates from the raycast.
             // The entity is NOT parented to the zone entity, so it needs WORLD coordinates
             // for its Transform to render at the correct position.
@@ -181,7 +179,7 @@ pub fn model_placement_system(
             // For saving: local = world - zone_center
             //   block_x = ((local_x + 5200.0) / 160.0).floor()
             //   block_y = ((local_z + 5200.0) / 160.0).floor()
-            
+
             // Place the model with full mesh spawning using WORLD coordinates
             // (entity is not parented to zone, so transform is in world space)
             place_model_at_position(
@@ -190,9 +188,9 @@ pub fn model_placement_system(
                 object_materials.into_inner(),
                 zone_data,
                 model_info,
-                placement_position,  // Use WORLD coordinates for rendering
+                placement_position, // Use WORLD coordinates for rendering
             );
-            
+
             log::info!(
                 "[MODEL PLACEMENT] Successfully placed model '{}' (ID: {}) at WORLD position {:?}",
                 model_info.name,
@@ -217,9 +215,9 @@ fn place_model_at_position(
     position: Vec3,
 ) {
     use rose_file_readers::ZscCollisionFlags;
-    
+
     let zsc_object_id = model_info.id as usize;
-    
+
     // Get the appropriate ZSC file based on category
     let zsc = match model_info.category {
         ModelCategory::Deco => &zone_data.zsc_deco,
@@ -229,7 +227,7 @@ fn place_model_at_position(
         // Keep fallback behavior explicit and deterministic.
         ModelCategory::Event | ModelCategory::Special | ModelCategory::All => &zone_data.zsc_deco,
     };
-    
+
     // Check if the object ID is valid
     if zsc_object_id >= zsc.objects.len() {
         log::error!(
@@ -239,9 +237,9 @@ fn place_model_at_position(
         );
         return;
     }
-    
+
     let object = &zsc.objects[zsc_object_id];
-    
+
     // Determine the ZoneObject type based on category
     let object_type = match model_info.category {
         ModelCategory::Deco => ZoneObject::DecoObject(ZoneObjectId {
@@ -265,10 +263,10 @@ fn place_model_at_position(
             zsc_object_id,
         }),
     };
-    
+
     // Create the parent entity with transform
     let object_transform = Transform::from_translation(position);
-    
+
     let mut object_entity_commands = commands.spawn((
         object_type,
         object_transform,
@@ -285,19 +283,21 @@ fn place_model_at_position(
         },
         RigidBody::Fixed,
     ));
-    
+
     let object_entity = object_entity_commands.id();
-    
+
     // Spawn each part of the object with mesh and material
     let mut mesh_cache: Vec<Option<Handle<Mesh>>> = vec![None; zsc.meshes.len()];
-    
+
     for (part_index, object_part) in object.parts.iter().enumerate() {
         let part_transform = Transform::default()
-            .with_translation(Vec3::new(
-                object_part.position.x,
-                object_part.position.z,
-                -object_part.position.y,
-            ) / 100.0)
+            .with_translation(
+                Vec3::new(
+                    object_part.position.x,
+                    object_part.position.z,
+                    -object_part.position.y,
+                ) / 100.0,
+            )
             .with_rotation(Quat::from_xyzw(
                 object_part.rotation.x,
                 object_part.rotation.z,
@@ -316,7 +316,9 @@ fn place_model_at_position(
         if mesh_id >= zsc.meshes.len() {
             log::warn!(
                 "[MODEL PLACEMENT] Part {} has invalid mesh_id {} (max: {}), skipping",
-                part_index, mesh_id, zsc.meshes.len().saturating_sub(1)
+                part_index,
+                mesh_id,
+                zsc.meshes.len().saturating_sub(1)
             );
             continue;
         }
@@ -326,7 +328,9 @@ fn place_model_at_position(
         if material_id >= zsc.materials.len() {
             log::warn!(
                 "[MODEL PLACEMENT] Part {} has invalid material_id {} (max: {}), skipping",
-                part_index, material_id, zsc.materials.len().saturating_sub(1)
+                part_index,
+                material_id,
+                zsc.materials.len().saturating_sub(1)
             );
             continue;
         }
@@ -354,7 +358,7 @@ fn place_model_at_position(
         let material = object_materials.add(ExtendedMaterial {
             base: StandardMaterial {
                 base_color_texture: Some(base_texture_handle),
-                unlit: false,  // Enable PBR lighting
+                unlit: false, // Enable PBR lighting
                 double_sided: zsc_material.two_sided,
                 perceptual_roughness: 0.8,
                 metallic: 0.0,
@@ -373,7 +377,7 @@ fn place_model_at_position(
                 lightmap_params: Vec3::new(0.0, 0.0, 1.0).extend(0.0), // No lightmap for placed objects
                 lightmap_texture: None,
                 specular_texture: None, // No specular for placed objects
-                blink_state: 0, // Default to eyes open
+                blink_state: 0,         // Default to eyes open
                 blood_overlay_texture: None,
                 blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
             },
@@ -382,10 +386,16 @@ fn place_model_at_position(
         // Determine collision settings
         let mut collision_filter = COLLISION_FILTER_INSPECTABLE;
         if object_part.collision_shape.is_some() {
-            if !object_part.collision_flags.contains(ZscCollisionFlags::HEIGHT_ONLY) {
+            if !object_part
+                .collision_flags
+                .contains(ZscCollisionFlags::HEIGHT_ONLY)
+            {
                 collision_filter |= COLLISION_FILTER_COLLIDABLE;
             }
-            if !object_part.collision_flags.contains(ZscCollisionFlags::NOT_PICKABLE) {
+            if !object_part
+                .collision_flags
+                .contains(ZscCollisionFlags::NOT_PICKABLE)
+            {
                 collision_filter |= Group::from_bits_retain(1 << 4); // COLLISION_FILTER_CLICKABLE
             }
         }
@@ -401,10 +411,18 @@ fn place_model_at_position(
                 zsc_part_id: part_index,
                 mesh_path: zsc.meshes[mesh_id].path().to_string_lossy().into(),
                 collision_shape: (&object_part.collision_shape).into(),
-                collision_not_moveable: object_part.collision_flags.contains(ZscCollisionFlags::NOT_MOVEABLE),
-                collision_not_pickable: object_part.collision_flags.contains(ZscCollisionFlags::NOT_PICKABLE),
-                collision_height_only: object_part.collision_flags.contains(ZscCollisionFlags::HEIGHT_ONLY),
-                collision_no_camera: object_part.collision_flags.contains(ZscCollisionFlags::NOT_CAMERA_COLLISION),
+                collision_not_moveable: object_part
+                    .collision_flags
+                    .contains(ZscCollisionFlags::NOT_MOVEABLE),
+                collision_not_pickable: object_part
+                    .collision_flags
+                    .contains(ZscCollisionFlags::NOT_PICKABLE),
+                collision_height_only: object_part
+                    .collision_flags
+                    .contains(ZscCollisionFlags::HEIGHT_ONLY),
+                collision_no_camera: object_part
+                    .collision_flags
+                    .contains(ZscCollisionFlags::NOT_CAMERA_COLLISION),
             },
             Mesh3d(mesh),
             MeshMaterial3d(material),
@@ -432,7 +450,7 @@ fn place_model_at_position(
         ));
 
         let part_entity = part_cmd.id();
-        
+
         // Disable shadow casting for transparent materials
         if is_transparent {
             commands.entity(part_entity).insert(NotShadowCaster);
@@ -441,7 +459,7 @@ fn place_model_at_position(
         // Add the part as a child of the object entity
         commands.entity(object_entity).add_child(part_entity);
     }
-    
+
     log::info!(
         "[MODEL PLACEMENT] Created entity {:?} for model '{}' with {} parts at {:?}",
         object_entity,
@@ -479,9 +497,9 @@ pub fn model_preview_system(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // Only run when map editor is enabled and in Add mode with a selected model
-    if !map_editor_state.enabled 
-        || map_editor_state.editor_mode != EditorMode::Add 
-        || selected_model.model.is_none() 
+    if !map_editor_state.enabled
+        || map_editor_state.editor_mode != EditorMode::Add
+        || selected_model.model.is_none()
     {
         // Hide/remove preview if it exists
         if let Some(entity) = *preview_entity {
@@ -490,7 +508,7 @@ pub fn model_preview_system(
         }
         return;
     }
-    
+
     // Skip if egui wants pointer input
     if egui_ctx.ctx_mut().unwrap().wants_pointer_input() {
         return;
@@ -555,21 +573,25 @@ pub fn model_preview_system(
                 unlit: true,
                 ..Default::default()
             });
-            
-            let entity = commands.spawn((
-                Mesh3d(mesh),
-                MeshMaterial3d(material),
-                Transform::from_translation(placement_position),
-                Visibility::Visible,
-                NotShadowCaster,
-                NotShadowReceiver,
-                Name::new("Model Preview"),
-            )).id();
-            
+
+            let entity = commands
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material),
+                    Transform::from_translation(placement_position),
+                    Visibility::Visible,
+                    NotShadowCaster,
+                    NotShadowReceiver,
+                    Name::new("Model Preview"),
+                ))
+                .id();
+
             *preview_entity = Some(entity);
         } else if let Some(entity) = *preview_entity {
             // Update position
-            commands.entity(entity).insert(Transform::from_translation(placement_position));
+            commands
+                .entity(entity)
+                .insert(Transform::from_translation(placement_position));
         }
 
         break;
@@ -593,54 +615,54 @@ pub fn add_to_zone_system(
     if !map_editor_state.enabled {
         return;
     }
-    
+
     // Check if there's a pending placement request
     if !selected_model.take_pending_placement() {
         return;
     }
-    
+
     // Check if a model is selected
     let Some(ref model_info) = selected_model.model else {
         log::warn!("[ADD TO ZONE] No model selected for placement");
         return;
     };
-    
+
     // Check if we have zone data available for spawning meshes
     let Some(current_zone) = current_zone else {
         log::warn!("[ADD TO ZONE] No current zone loaded - cannot place model with meshes");
         return;
     };
-    
+
     let Some(zone_data) = zone_loader_assets.get(&current_zone.handle) else {
         log::warn!("[ADD TO ZONE] Zone data not loaded yet - cannot place model");
         return;
     };
-    
+
     // Get camera position to place model in front of it
     // Default to zone center in WORLD coordinates
     let zone_center_world = Vec3::new(5200.0, 0.0, -5200.0);
     let mut world_position = zone_center_world;
-    
+
     if let Ok((_camera, camera_transform)) = query_camera.single() {
         let camera_pos = camera_transform.translation();
         let camera_forward = camera_transform.forward();
-        
+
         // Place 10 units in front of the camera, at ground level
         world_position = camera_pos + camera_forward * 10.0;
         world_position.y = 0.0; // Snap to ground level
     }
-    
+
     // CRITICAL: The entity is NOT parented to the zone entity, so it needs WORLD coordinates
     // for its Transform to render at the correct position.
     // The save_system will convert world coordinates to local coordinates when saving.
-    
+
     log::info!(
         "[ADD TO ZONE] Placing model '{}' (ID: {}) at WORLD position {:?}",
         model_info.name,
         model_info.id,
         world_position
     );
-    
+
     // Place the model with full mesh spawning using WORLD coordinates
     place_model_at_position(
         &mut commands,
@@ -648,16 +670,16 @@ pub fn add_to_zone_system(
         object_materials.into_inner(),
         zone_data,
         model_info,
-        world_position,  // Use WORLD coordinates for rendering
+        world_position, // Use WORLD coordinates for rendering
     );
-    
+
     // Note: The pending_placement flag is already cleared by take_pending_placement()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_placement_system_exists() {
         // Basic test to ensure the module compiles

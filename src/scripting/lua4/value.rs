@@ -10,7 +10,10 @@ pub enum Lua4Value {
     UserData(Arc<dyn Any + Send + Sync>),
     Number(f64),
     String(String),
-    Table { fields: HashMap<String, Lua4Value>, array: Vec<Lua4Value> },
+    Table {
+        fields: HashMap<String, Lua4Value>,
+        array: Vec<Lua4Value>,
+    },
     Closure(Arc<Lua4Function>, Vec<Lua4Value>),
     RustClosure(String),
 }
@@ -70,7 +73,11 @@ impl PartialEq for Lua4Value {
                 }
             }
             Lua4Value::Table { fields, array } => {
-                if let Lua4Value::Table { fields: other_fields, array: other_array } = other {
+                if let Lua4Value::Table {
+                    fields: other_fields,
+                    array: other_array,
+                } = other
+                {
                     fields == other_fields && array == other_array
                 } else {
                     false

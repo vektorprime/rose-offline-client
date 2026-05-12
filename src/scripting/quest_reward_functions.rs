@@ -2,11 +2,9 @@ use rose_data::{QuestTrigger, StackableItem, WorldTicks};
 use rose_file_readers::{QsdItem, QsdReward, QsdRewardOperator, QsdVariableType};
 use rose_game_common::components::ActiveQuest;
 
-use crate::{
-    scripting::{
-        quest::{get_quest_variable, set_quest_variable},
-        QuestFunctionContext, ScriptFunctionContext, ScriptFunctionResources,
-    },
+use crate::scripting::{
+    quest::{get_quest_variable, set_quest_variable},
+    QuestFunctionContext, ScriptFunctionContext, ScriptFunctionResources,
 };
 
 fn quest_reward_operator(operator: QsdRewardOperator, variable_value: i32, value: i32) -> i32 {

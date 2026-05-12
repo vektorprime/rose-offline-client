@@ -93,11 +93,11 @@ pub fn setup_season_materials(
 
     // Create grass materials for summer (various shades of green)
     let grass_colors = vec![
-        Color::srgb(0.2, 0.6, 0.1),  // Dark green
-        Color::srgb(0.3, 0.7, 0.2),  // Medium green
-        Color::srgb(0.4, 0.8, 0.2),  // Light green
+        Color::srgb(0.2, 0.6, 0.1),    // Dark green
+        Color::srgb(0.3, 0.7, 0.2),    // Medium green
+        Color::srgb(0.4, 0.8, 0.2),    // Light green
         Color::srgb(0.35, 0.65, 0.15), // Forest green
-        Color::srgb(0.5, 0.75, 0.3),  // Yellow-green
+        Color::srgb(0.5, 0.75, 0.3),   // Yellow-green
     ];
 
     let grass_materials: Vec<_> = grass_colors
@@ -114,12 +114,12 @@ pub fn setup_season_materials(
 
     // Create summer flower materials (bright warm colors)
     let summer_flower_colors = vec![
-        Color::srgb(1.0, 0.9, 0.2),  // Bright yellow
-        Color::srgb(1.0, 0.5, 0.1),  // Orange
-        Color::srgb(0.9, 0.2, 0.3),  // Red
-        Color::srgb(0.8, 0.3, 0.8),  // Purple
-        Color::srgb(0.3, 0.5, 1.0),  // Blue
-        Color::srgb(1.0, 0.3, 0.5),  // Pink
+        Color::srgb(1.0, 0.9, 0.2), // Bright yellow
+        Color::srgb(1.0, 0.5, 0.1), // Orange
+        Color::srgb(0.9, 0.2, 0.3), // Red
+        Color::srgb(0.8, 0.3, 0.8), // Purple
+        Color::srgb(0.3, 0.5, 1.0), // Blue
+        Color::srgb(1.0, 0.3, 0.5), // Pink
     ];
 
     let summer_flower_materials: Vec<_> = summer_flower_colors

@@ -1,8 +1,8 @@
 use bevy::{
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Commands, GlobalTransform, MessageReader, Query, Res, ResMut, Transform,
-        Mesh,
+        AssetServer, Assets, Commands, GlobalTransform, Mesh, MessageReader, Query, Res, ResMut,
+        Transform,
     },
 };
 use bevy_mesh::skinning::SkinnedMesh;
@@ -12,8 +12,8 @@ use crate::{
     components::DummyBoneOffset,
     effect_loader::{spawn_effect, EffectCache},
     events::{SpawnEffect, SpawnEffectData, SpawnEffectEvent},
-    resources::GameData,
     render::{ParticleMaterial, RoseEffectExtension},
+    resources::GameData,
     VfsResource,
 };
 
@@ -39,18 +39,24 @@ pub fn spawn_effect_system(
     asset_server: Res<AssetServer>,
     vfs_resource: Res<VfsResource>,
     effect_cache: Res<EffectCache>,
-    mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+    mut effect_mesh_materials: ResMut<
+        Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
+    >,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     for event in events.read() {
         log::info!("[SPAWN EFFECT SYSTEM] Processing event: {:?}", event);
-        
+
         match event {
             SpawnEffectEvent::InEntity(effect_entity, spawn_effect_data) => {
-                if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data) {
-                    log::info!("[SPAWN EFFECT SYSTEM] Spawning effect InEntity: {}", effect_file_path.path().to_string_lossy());
+                if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data)
+                {
+                    log::info!(
+                        "[SPAWN EFFECT SYSTEM] Spawning effect InEntity: {}",
+                        effect_file_path.path().to_string_lossy()
+                    );
                     spawn_effect(
                         &vfs_resource.vfs,
                         &mut commands,
@@ -66,12 +72,18 @@ pub fn spawn_effect_system(
                         None, // No position for InEntity effects
                     );
                 } else {
-                    log::warn!("[SPAWN EFFECT SYSTEM] No effect file path found for InEntity event");
+                    log::warn!(
+                        "[SPAWN EFFECT SYSTEM] No effect file path found for InEntity event"
+                    );
                 }
             }
             SpawnEffectEvent::AtEntity(at_entity, spawn_effect_data) => {
-                if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data) {
-                    log::info!("[SPAWN EFFECT SYSTEM] Spawning effect AtEntity: {}", effect_file_path.path().to_string_lossy());
+                if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data)
+                {
+                    log::info!(
+                        "[SPAWN EFFECT SYSTEM] Spawning effect AtEntity: {}",
+                        effect_file_path.path().to_string_lossy()
+                    );
                     if let Ok(at_global_transform) = query_transform.get(*at_entity) {
                         if let Some(effect_entity) = spawn_effect(
                             &vfs_resource.vfs,

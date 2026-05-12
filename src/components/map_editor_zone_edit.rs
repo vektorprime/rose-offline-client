@@ -60,5 +60,3 @@ pub struct MapEditorTerrainBlock {
     /// Tracks whether this block was edited in the map editor
     pub dirty: bool,
 }
-
-

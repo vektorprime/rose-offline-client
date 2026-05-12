@@ -1,6 +1,4 @@
-use bevy::prelude::{
-    AssetServer, Changed, Commands, GlobalTransform, Or, Query, Res, Transform,
-};
+use bevy::prelude::{AssetServer, Changed, Commands, GlobalTransform, Or, Query, Res, Transform};
 use enum_map::enum_map;
 use rose_data::{VehiclePartIndex, VehicleType};
 
@@ -80,7 +78,8 @@ pub fn vehicle_sound_system(
                     commands
                         .entity(*sound_entity)
                         .insert(SpatialSound::new_repeating(
-                            asset_server.load(sound_data.path.path().to_string_lossy().into_owned()),
+                            asset_server
+                                .load(sound_data.path.path().to_string_lossy().into_owned()),
                         ));
                 }
             }

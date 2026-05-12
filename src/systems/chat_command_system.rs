@@ -45,19 +45,19 @@ pub fn is_help_command(message: &str) -> bool {
 }
 
 /// Parses chat input to determine the chat type and extract target/message
-/// 
+///
 /// This function handles:
 /// - Chat prefixes (!, @, #, &, ~, $) for routing to different chat channels
 /// - Unicode variants of prefixes (full-width characters)
 /// - Whisper name extraction (@name message format)
 /// - Invalid commands default to regular chat
-/// 
+///
 /// # Arguments
 /// * `input` - The raw chat input string
-/// 
+///
 /// # Returns
 /// A ParsedChatInput containing the chat type, optional target (for whispers), and the message
-/// 
+///
 /// # Examples
 /// ```
 /// let parsed = parse_chat_input("!Hello everyone!");
@@ -75,7 +75,7 @@ pub fn is_help_command(message: &str) -> bool {
 /// ```
 pub fn parse_chat_input(input: &str) -> ParsedChatInput {
     let trimmed = input.trim();
-    
+
     // Check if input is empty
     if trimmed.is_empty() {
         return ParsedChatInput {
@@ -84,10 +84,10 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
             message: String::new(),
         };
     }
-    
+
     let chars: Vec<char> = trimmed.chars().collect();
     let first_char = chars.first().copied();
-    
+
     match first_char {
         Some(prefix) if SHOUT_PREFIXES.contains(&prefix) => {
             // Shout: !message or !message
@@ -97,7 +97,7 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
             } else {
                 String::new()
             };
-            
+
             ParsedChatInput {
                 chat_type: ChatType::Shout,
                 target: None,
@@ -107,7 +107,7 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
         Some(prefix) if WHISPER_PREFIXES.contains(&prefix) => {
             // Whisper: @name message or @name message
             let prefix_width = char_byte_width(prefix);
-            
+
             if chars.len() <= 1 {
                 // No target or message, return as normal chat
                 return ParsedChatInput {
@@ -116,12 +116,12 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
                     message: trimmed.to_string(),
                 };
             }
-            
+
             // Find the first space character to separate target from message
             let remaining = &trimmed[prefix_width..];
             let mut target_end = remaining.len();
             let mut found_space = false;
-            
+
             for (i, ch) in remaining.char_indices() {
                 if SPACE_CHARS.contains(&ch) {
                     target_end = i;
@@ -129,7 +129,7 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
                     break;
                 }
             }
-            
+
             let target = &remaining[..target_end];
             let message = if found_space {
                 remaining[target_end..].trim().to_string()
@@ -138,7 +138,7 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
                 // or check if it's just a name
                 String::new()
             };
-            
+
             ParsedChatInput {
                 chat_type: ChatType::Whisper,
                 target: if !target.is_empty() {
@@ -157,7 +157,7 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
             } else {
                 String::new()
             };
-            
+
             ParsedChatInput {
                 chat_type: ChatType::Party,
                 target: None,
@@ -172,7 +172,7 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
             } else {
                 String::new()
             };
-            
+
             ParsedChatInput {
                 chat_type: ChatType::Clan,
                 target: None,
@@ -187,7 +187,7 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
             } else {
                 String::new()
             };
-            
+
             ParsedChatInput {
                 chat_type: ChatType::Allied,
                 target: None,
@@ -202,7 +202,7 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
             } else {
                 String::new()
             };
-            
+
             ParsedChatInput {
                 chat_type: ChatType::Trade,
                 target: None,
@@ -230,11 +230,11 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
 }
 
 /// Converts a ParsedChatInput to a ClientMessage for sending to the server
-/// 
+///
 /// # Arguments
 /// * `parsed` - The parsed chat input
 /// * `username` - The username of the sender (for whispers)
-/// 
+///
 /// # Returns
 /// A ClientMessage that can be sent to the server
 impl ParsedChatInput {
@@ -243,7 +243,7 @@ impl ParsedChatInput {
         // The chat_command_system just parses, the ui_chatbox_system handles sending
         ""
     }
-    
+
     /// Check if this is a client-side only command
     pub fn is_client_command(&self) -> bool {
         matches!(self.chat_type, ChatType::Help) && {

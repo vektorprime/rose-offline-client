@@ -13,7 +13,9 @@
 
 use bevy::prelude::*;
 
-use crate::components::{CharacterModel, CharacterModelPart, FacingDirection, FlightState, PlayerCharacter};
+use crate::components::{
+    CharacterModel, CharacterModelPart, FacingDirection, FlightState, PlayerCharacter,
+};
 
 /// Forward lean angle for flight pose in radians (~17 degrees)
 const FLIGHT_PITCH_ANGLE: f32 = 0.3;
@@ -73,41 +75,48 @@ pub fn flight_pose_system(
     for (flight_state, _facing_direction, character_model) in player_query.iter() {
         // Check if character is airborne (actually moving in flight)
         // Pose should only apply after lift-off, not just when flight mode is toggled
-        let is_airborne = flight_state.is_flying && flight_state.current_speed > AIRBORNE_SPEED_THRESHOLD;
+        let is_airborne =
+            flight_state.is_flying && flight_state.current_speed > AIRBORNE_SPEED_THRESHOLD;
 
         if is_airborne {
             // Flying and airborne - blend towards full flight pose
             // Get current pose blend (we'll update it on FlightState in a separate query)
             let pose_blend = flight_state.pose_blend;
             let blend_factor = POSE_BLEND_SPEED * delta_time;
-            
+
             // Calculate target pose blend
             let _target_blend = (pose_blend + POSE_BLEND_SPEED * delta_time).min(1.0);
-            
+
             // ============================================
             // BODY: Forward lean + hanging effect
             // ============================================
-            if let Some(body_entities) = get_model_part_entities(character_model, CharacterModelPart::Body) {
+            if let Some(body_entities) =
+                get_model_part_entities(character_model, CharacterModelPart::Body)
+            {
                 for &body_entity in body_entities {
                     if let Ok(mut transform) = body_transforms.get_mut(body_entity) {
                         // Calculate the flight pitch rotation (forward lean)
                         let flight_pitch = Quat::from_rotation_x(-FLIGHT_PITCH_ANGLE);
-                        
+
                         // Interpolate rotation
                         transform.rotation = transform.rotation.slerp(flight_pitch, blend_factor);
-                        
+
                         // Apply hanging effect - lower body slightly
                         // This simulates the character hanging from their wings
                         let target_translation = Vec3::new(0.0, RAGDOLL_BODY_HANG_OFFSET, 0.0);
-                        transform.translation = transform.translation.lerp(target_translation, blend_factor * 0.5);
+                        transform.translation = transform
+                            .translation
+                            .lerp(target_translation, blend_factor * 0.5);
                     }
                 }
             }
-            
+
             // ============================================
             // HANDS/ARMS: Dangling downward (ragdoll style)
             // ============================================
-            if let Some(hands_entities) = get_model_part_entities(character_model, CharacterModelPart::Hands) {
+            if let Some(hands_entities) =
+                get_model_part_entities(character_model, CharacterModelPart::Hands)
+            {
                 for &hands_entity in hands_entities {
                     if let Ok(mut transform) = body_transforms.get_mut(hands_entity) {
                         // Arms dangle down - rotate around X-axis to point downward
@@ -115,16 +124,19 @@ pub fn flight_pose_system(
                         let arm_dangle = Quat::from_rotation_x(RAGDOLL_ARMS_DANGLE_ANGLE);
                         let flight_pitch = Quat::from_rotation_x(-FLIGHT_PITCH_ANGLE * 0.5);
                         let combined_rotation = flight_pitch * arm_dangle;
-                        
-                        transform.rotation = transform.rotation.slerp(combined_rotation, blend_factor);
+
+                        transform.rotation =
+                            transform.rotation.slerp(combined_rotation, blend_factor);
                     }
                 }
             }
-            
+
             // ============================================
             // FEET/LEGS: Hanging naturally with toe-down
             // ============================================
-            if let Some(feet_entities) = get_model_part_entities(character_model, CharacterModelPart::Feet) {
+            if let Some(feet_entities) =
+                get_model_part_entities(character_model, CharacterModelPart::Feet)
+            {
                 for &feet_entity in feet_entities {
                     if let Ok(mut transform) = body_transforms.get_mut(feet_entity) {
                         // Legs hang with slight back angle (like dangling from a bar)
@@ -132,16 +144,19 @@ pub fn flight_pose_system(
                         let leg_hang = Quat::from_rotation_x(-RAGDOLL_LEGS_HANG_ANGLE);
                         let toe_down = Quat::from_rotation_x(TOE_DOWN_ANGLE);
                         let combined_rotation = leg_hang * toe_down;
-                        
-                        transform.rotation = transform.rotation.slerp(combined_rotation, blend_factor);
+
+                        transform.rotation =
+                            transform.rotation.slerp(combined_rotation, blend_factor);
                     }
                 }
             }
-            
+
             // ============================================
             // HEAD: Tilt up to look forward while hanging
             // ============================================
-            if let Some(head_entities) = get_model_part_entities(character_model, CharacterModelPart::Head) {
+            if let Some(head_entities) =
+                get_model_part_entities(character_model, CharacterModelPart::Head)
+            {
                 for &head_entity in head_entities {
                     if let Ok(mut transform) = body_transforms.get_mut(head_entity) {
                         // Head tilts up to look forward while body hangs
@@ -153,44 +168,53 @@ pub fn flight_pose_system(
         } else {
             // Not airborne - blend back to normal pose
             let pose_blend = flight_state.pose_blend;
-            
+
             if pose_blend > 0.01 {
                 let blend_factor = POSE_BLEND_SPEED * delta_time;
-                
+
                 // Blend back to identity rotation and zero translation for body parts
                 let identity = Quat::IDENTITY;
-                
+
                 // Reset Body rotation and translation
-                if let Some(body_entities) = get_model_part_entities(character_model, CharacterModelPart::Body) {
+                if let Some(body_entities) =
+                    get_model_part_entities(character_model, CharacterModelPart::Body)
+                {
                     for &body_entity in body_entities {
                         if let Ok(mut transform) = body_transforms.get_mut(body_entity) {
                             transform.rotation = transform.rotation.slerp(identity, blend_factor);
                             // Reset translation to zero (remove hanging offset)
-                            transform.translation = transform.translation.lerp(Vec3::ZERO, blend_factor * 0.5);
+                            transform.translation =
+                                transform.translation.lerp(Vec3::ZERO, blend_factor * 0.5);
                         }
                     }
                 }
-                
+
                 // Reset Hands rotation
-                if let Some(hands_entities) = get_model_part_entities(character_model, CharacterModelPart::Hands) {
+                if let Some(hands_entities) =
+                    get_model_part_entities(character_model, CharacterModelPart::Hands)
+                {
                     for &hands_entity in hands_entities {
                         if let Ok(mut transform) = body_transforms.get_mut(hands_entity) {
                             transform.rotation = transform.rotation.slerp(identity, blend_factor);
                         }
                     }
                 }
-                
+
                 // Reset Feet rotation
-                if let Some(feet_entities) = get_model_part_entities(character_model, CharacterModelPart::Feet) {
+                if let Some(feet_entities) =
+                    get_model_part_entities(character_model, CharacterModelPart::Feet)
+                {
                     for &feet_entity in feet_entities {
                         if let Ok(mut transform) = body_transforms.get_mut(feet_entity) {
                             transform.rotation = transform.rotation.slerp(identity, blend_factor);
                         }
                     }
                 }
-                
+
                 // Reset Head rotation
-                if let Some(head_entities) = get_model_part_entities(character_model, CharacterModelPart::Head) {
+                if let Some(head_entities) =
+                    get_model_part_entities(character_model, CharacterModelPart::Head)
+                {
                     for &head_entity in head_entities {
                         if let Ok(mut transform) = body_transforms.get_mut(head_entity) {
                             transform.rotation = transform.rotation.slerp(identity, blend_factor);
@@ -203,7 +227,10 @@ pub fn flight_pose_system(
 }
 
 /// Helper function to get entities for a specific model part
-fn get_model_part_entities(character_model: &CharacterModel, part: CharacterModelPart) -> Option<&Vec<Entity>> {
+fn get_model_part_entities(
+    character_model: &CharacterModel,
+    part: CharacterModelPart,
+) -> Option<&Vec<Entity>> {
     let (_, entities) = &character_model.model_parts[part];
     if entities.is_empty() {
         None
@@ -219,16 +246,19 @@ pub fn flight_pose_blend_update_system(
     mut query: Query<&mut FlightState, With<PlayerCharacter>>,
 ) {
     let delta_time = time.delta_secs();
-    
+
     for mut flight_state in query.iter_mut() {
-        let is_airborne = flight_state.is_flying && flight_state.current_speed > AIRBORNE_SPEED_THRESHOLD;
-        
+        let is_airborne =
+            flight_state.is_flying && flight_state.current_speed > AIRBORNE_SPEED_THRESHOLD;
+
         if is_airborne {
             // Increase pose blend towards 1.0
-            flight_state.pose_blend = (flight_state.pose_blend + POSE_BLEND_SPEED * delta_time).min(1.0);
+            flight_state.pose_blend =
+                (flight_state.pose_blend + POSE_BLEND_SPEED * delta_time).min(1.0);
         } else {
             // Decrease pose blend towards 0.0
-            flight_state.pose_blend = (flight_state.pose_blend - POSE_BLEND_SPEED * delta_time).max(0.0);
+            flight_state.pose_blend =
+                (flight_state.pose_blend - POSE_BLEND_SPEED * delta_time).max(0.0);
         }
     }
 }
@@ -265,11 +295,11 @@ mod tests {
         assert!(AIRBORNE_SPEED_THRESHOLD > 0.0);
         assert!(AIRBORNE_SPEED_THRESHOLD < 1.0);
     }
-    
+
     // ============================================
     // Ragdoll Hanging Pose Tests
     // ============================================
-    
+
     #[test]
     fn test_ragdoll_body_hang_offset() {
         // Body should hang down slightly (negative Y)
@@ -277,21 +307,21 @@ mod tests {
         // But not too extreme
         assert!(RAGDOLL_BODY_HANG_OFFSET > -0.2);
     }
-    
+
     #[test]
     fn test_ragdoll_arms_dangle_angle() {
         // Arms should dangle approximately 45 degrees down
         let angle_degrees = RAGDOLL_ARMS_DANGLE_ANGLE.to_degrees();
         assert!(angle_degrees > 40.0 && angle_degrees < 50.0);
     }
-    
+
     #[test]
     fn test_ragdoll_legs_hang_angle() {
         // Legs should hang back approximately 15 degrees
         let angle_degrees = RAGDOLL_LEGS_HANG_ANGLE.to_degrees();
         assert!(angle_degrees > 10.0 && angle_degrees < 20.0);
     }
-    
+
     #[test]
     fn test_ragdoll_head_tilt_angle() {
         // Head should tilt up approximately 10 degrees

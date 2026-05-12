@@ -90,7 +90,7 @@ impl ShadowQuality {
             ShadowQuality::Off => 0,
             ShadowQuality::Low => 1,
             ShadowQuality::Medium => 2,
-            ShadowQuality::High => 3,  // Reduced from4 to avoid buffer overrun
+            ShadowQuality::High => 3, // Reduced from4 to avoid buffer overrun
             ShadowQuality::Ultra => 4,
         }
     }

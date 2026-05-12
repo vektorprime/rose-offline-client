@@ -140,4 +140,3 @@ pub fn sail_animation_system(
         }
     }
 }
-

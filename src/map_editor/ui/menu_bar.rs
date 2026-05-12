@@ -6,10 +6,12 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 use std::path::PathBuf;
 
-use crate::map_editor::resources::{DuplicateSelectedEvent, MapEditorState, EditorMode, SelectedModel};
-use crate::map_editor::save::{SaveZoneEvent, SaveStatus};
-use crate::map_editor::ui::{AddWaterPlaneEvent, NewZoneEvent};
+use crate::map_editor::resources::{
+    DuplicateSelectedEvent, EditorMode, MapEditorState, SelectedModel,
+};
+use crate::map_editor::save::{SaveStatus, SaveZoneEvent};
 use crate::map_editor::ui::zone_list_panel::ZoneListPanelState;
+use crate::map_editor::ui::{AddWaterPlaneEvent, NewZoneEvent};
 
 /// Resource to track help window state
 #[derive(Resource, Default)]
@@ -79,19 +81,18 @@ pub fn editor_menu_bar(
             view_menu(ui, map_editor_state, selected_model);
             zone_menu(ui, zone_list_state);
             object_menu(ui, add_water_events);
-            help_menu(ui, &mut help_state.show_shortcuts, &mut help_state.show_about);
+            help_menu(
+                ui,
+                &mut help_state.show_shortcuts,
+                &mut help_state.show_about,
+            );
         });
     });
-    
+
     // Show help windows
     show_keyboard_shortcuts_window(ctx, &mut help_state.show_shortcuts);
     show_about_window(ctx, &mut help_state.show_about);
-    show_save_version_dialog(
-        ctx,
-        save_version_dialog_state,
-        current_zone_id,
-        save_events,
-    );
+    show_save_version_dialog(ctx, save_version_dialog_state, current_zone_id, save_events);
     show_new_zone_dialog(
         ctx,
         new_zone_dialog_state,
@@ -126,21 +127,21 @@ fn file_menu(
             new_zone_dialog_state.is_open = true;
             ui.close_menu();
         }
-        
+
         if ui.button("Open Zone...").clicked() {
             log::info!("[MapEditor] File > Open Zone clicked");
             zone_list_state.is_open = true;
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         // Save button
         let save_button = ui.add_enabled(
             current_zone_id.is_some() && !save_status.is_saving,
             egui::Button::new("Save"),
         );
-        
+
         if save_button.clicked() {
             if let Some(zone_id) = current_zone_id {
                 log::info!("[MapEditor] File > Save clicked for zone {}", zone_id);
@@ -152,16 +153,19 @@ fn file_menu(
             }
             ui.close_menu();
         }
-        
+
         // Save As button (creates timestamped backup)
         let save_as_button = ui.add_enabled(
             current_zone_id.is_some() && !save_status.is_saving,
             egui::Button::new("Save Version..."),
         );
-        
+
         if save_as_button.clicked() {
             if let Some(zone_id) = current_zone_id {
-                log::info!("[MapEditor] File > Save Version clicked for zone {}", zone_id);
+                log::info!(
+                    "[MapEditor] File > Save Version clicked for zone {}",
+                    zone_id
+                );
                 if save_version_dialog_state.path_input.is_empty() {
                     save_version_dialog_state.path_input = format!("zone_{}_export", zone_id);
                 }
@@ -169,7 +173,7 @@ fn file_menu(
             }
             ui.close_menu();
         }
-        
+
         // Show save status
         if save_status.is_saving {
             ui.label(egui::RichText::new("Saving...").color(egui::Color32::YELLOW));
@@ -180,9 +184,9 @@ fn file_menu(
                 ui.label(egui::RichText::new("✗ Save failed").color(egui::Color32::RED));
             }
         }
-        
+
         ui.separator();
-        
+
         if ui.button("Exit Editor").clicked() {
             log::info!("[MapEditor] File > Exit Editor clicked");
             ui.close_menu();
@@ -307,10 +311,7 @@ fn show_new_zone_dialog(
 }
 
 /// Edit menu with Undo, Redo, Cut, Copy, Paste, Delete, Duplicate options
-fn edit_menu(
-    ui: &mut egui::Ui,
-    map_editor_state: &MapEditorState,
-) {
+fn edit_menu(ui: &mut egui::Ui, map_editor_state: &MapEditorState) {
     ui.menu_button("Edit", |ui| {
         // Undo with shortcut
         let undo_button = ui.add_enabled(
@@ -321,7 +322,7 @@ fn edit_menu(
             log::info!("[MapEditor] Edit > Undo clicked");
             ui.close_menu();
         }
-        
+
         // Redo with shortcut
         let redo_button = ui.add_enabled(
             map_editor_state.can_redo(),
@@ -331,26 +332,26 @@ fn edit_menu(
             log::info!("[MapEditor] Edit > Redo clicked");
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         if ui.button("Cut").clicked() {
             log::info!("[MapEditor] Edit > Cut clicked");
             ui.close_menu();
         }
-        
+
         if ui.button("Copy").clicked() {
             log::info!("[MapEditor] Edit > Copy clicked");
             ui.close_menu();
         }
-        
+
         if ui.button("Paste").clicked() {
             log::info!("[MapEditor] Edit > Paste clicked");
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         // Delete button - only enabled when something is selected
         let delete_button = ui.add_enabled(
             map_editor_state.selection_count() > 0,
@@ -360,7 +361,7 @@ fn edit_menu(
             log::info!("[MapEditor] Edit > Delete clicked");
             ui.close_menu();
         }
-        
+
         // Duplicate button - only enabled when something is selected
         // Note: Actual duplication is handled by keyboard_shortcuts_system via Ctrl+D
         let duplicate_button = ui.add_enabled(
@@ -371,14 +372,14 @@ fn edit_menu(
             log::info!("[MapEditor] Edit > Duplicate clicked - use Ctrl+D shortcut");
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         if ui.button("Select All").clicked() {
             log::info!("[MapEditor] Edit > Select All clicked");
             ui.close_menu();
         }
-        
+
         if ui.button("Deselect All").clicked() {
             log::info!("[MapEditor] Edit > Deselect All clicked");
             ui.close_menu();
@@ -387,7 +388,11 @@ fn edit_menu(
 }
 
 /// View menu with grid and camera options
-fn view_menu(ui: &mut egui::Ui, map_editor_state: &MapEditorState, selected_model: &mut SelectedModel) {
+fn view_menu(
+    ui: &mut egui::Ui,
+    map_editor_state: &MapEditorState,
+    selected_model: &mut SelectedModel,
+) {
     ui.menu_button("View", |ui| {
         // Model Browser toggle
         let browser_text = if selected_model.browser_visible {
@@ -395,14 +400,20 @@ fn view_menu(ui: &mut egui::Ui, map_editor_state: &MapEditorState, selected_mode
         } else {
             "  Model Browser"
         };
-        if ui.add(egui::Button::new(browser_text).shortcut_text("Ctrl+M")).clicked() {
+        if ui
+            .add(egui::Button::new(browser_text).shortcut_text("Ctrl+M"))
+            .clicked()
+        {
             selected_model.toggle_browser();
-            log::info!("[MapEditor] View > Model Browser clicked (visible: {})", selected_model.browser_visible);
+            log::info!(
+                "[MapEditor] View > Model Browser clicked (visible: {})",
+                selected_model.browser_visible
+            );
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         // Toggle Grid
         let grid_text = if map_editor_state.show_grid {
             "✓ Toggle Grid"
@@ -413,7 +424,7 @@ fn view_menu(ui: &mut egui::Ui, map_editor_state: &MapEditorState, selected_mode
             log::info!("[MapEditor] View > Toggle Grid clicked");
             ui.close_menu();
         }
-        
+
         // Snap to Grid
         let snap_text = if map_editor_state.snap_to_grid {
             "✓ Snap to Grid"
@@ -424,26 +435,26 @@ fn view_menu(ui: &mut egui::Ui, map_editor_state: &MapEditorState, selected_mode
             log::info!("[MapEditor] View > Snap to Grid clicked");
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         if ui.button("Reset Camera").clicked() {
             log::info!("[MapEditor] View > Reset Camera clicked");
             ui.close_menu();
         }
-        
+
         if ui.button("Frame Selection").clicked() {
             log::info!("[MapEditor] View > Frame Selection clicked");
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         if ui.button("Toggle Colliders").clicked() {
             log::info!("[MapEditor] View > Toggle Colliders clicked");
             ui.close_menu();
         }
-        
+
         if ui.button("Toggle Gizmos").clicked() {
             log::info!("[MapEditor] View > Toggle Gizmos clicked");
             ui.close_menu();
@@ -459,14 +470,14 @@ fn zone_menu(ui: &mut egui::Ui, zone_list_state: &mut ZoneListPanelState) {
             zone_list_state.is_open = true;
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         if ui.button("Zone Info").clicked() {
             log::info!("[MapEditor] Zone > Zone Info clicked");
             ui.close_menu();
         }
-        
+
         if ui.button("Validate Zone").clicked() {
             log::info!("[MapEditor] Zone > Validate Zone clicked");
             ui.close_menu();
@@ -487,31 +498,31 @@ fn object_menu(ui: &mut egui::Ui, add_water_events: &mut MessageWriter<AddWaterP
             add_water_events.write(AddWaterPlaneEvent);
             ui.close_menu();
         }
-        
+
         if ui.button("Add Effect...").clicked() {
             log::info!("[MapEditor] Object > Add Effect clicked");
             ui.close_menu();
         }
-        
+
         if ui.button("Add Sound...").clicked() {
             log::info!("[MapEditor] Object > Add Sound clicked");
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         if ui.button("Delete Selected").clicked() {
             log::info!("[MapEditor] Object > Delete Selected clicked");
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         if ui.button("Group Selected").clicked() {
             log::info!("[MapEditor] Object > Group Selected clicked");
             ui.close_menu();
         }
-        
+
         if ui.button("Ungroup Selected").clicked() {
             log::info!("[MapEditor] Object > Ungroup Selected clicked");
             ui.close_menu();
@@ -526,9 +537,9 @@ pub fn help_menu(ui: &mut egui::Ui, show_shortcuts: &mut bool, show_about: &mut 
             *show_shortcuts = true;
             ui.close_menu();
         }
-        
+
         ui.separator();
-        
+
         if ui.button("About Map Editor").clicked() {
             *show_about = true;
             ui.close_menu();
@@ -541,7 +552,7 @@ pub fn show_keyboard_shortcuts_window(ctx: &egui::Context, is_open: &mut bool) {
     if !*is_open {
         return;
     }
-    
+
     egui::Window::new("Keyboard Shortcuts")
         .open(is_open)
         .collapsible(true)
@@ -553,7 +564,7 @@ pub fn show_keyboard_shortcuts_window(ctx: &egui::Context, is_open: &mut bool) {
             ui.label("Ctrl+Click - Add to selection");
             ui.label("Ctrl+A - Select all");
             ui.label("Escape - Deselect all");
-            
+
             ui.add_space(8.0);
             ui.heading("Transform Modes");
             ui.separator();
@@ -562,7 +573,7 @@ pub fn show_keyboard_shortcuts_window(ctx: &egui::Context, is_open: &mut bool) {
             ui.label("R - Scale mode");
             ui.label("V - Add mode");
             ui.label("X - Delete mode");
-            
+
             ui.add_space(8.0);
             ui.heading("Actions");
             ui.separator();
@@ -573,7 +584,7 @@ pub fn show_keyboard_shortcuts_window(ctx: &egui::Context, is_open: &mut bool) {
             ui.label("Ctrl+Shift+Z - Redo (alternative)");
             ui.label("G - Toggle snap to grid");
             ui.label("F - Focus on selected object");
-            
+
             ui.add_space(8.0);
             ui.heading("Camera");
             ui.separator();
@@ -581,12 +592,12 @@ pub fn show_keyboard_shortcuts_window(ctx: &egui::Context, is_open: &mut bool) {
             ui.label("WASD - Move camera (free camera mode)");
             ui.label("Mouse - Look around (free camera mode)");
             ui.label("Scroll - Zoom in/out");
-            
+
             ui.add_space(8.0);
             ui.heading("Panels");
             ui.separator();
             ui.label("Ctrl+M - Toggle Model Browser");
-            
+
             ui.add_space(8.0);
             ui.heading("File Operations");
             ui.separator();
@@ -599,7 +610,7 @@ pub fn show_about_window(ctx: &egui::Context, is_open: &mut bool) {
     if !*is_open {
         return;
     }
-    
+
     egui::Window::new("About Map Editor")
         .open(is_open)
         .collapsible(true)

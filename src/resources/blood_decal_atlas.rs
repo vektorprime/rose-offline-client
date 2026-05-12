@@ -11,4 +11,3 @@ pub struct BloodDecalAtlas {
     /// Procedural wound texture variants.
     pub wound_textures: Vec<Handle<Image>>,
 }
-

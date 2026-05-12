@@ -1,12 +1,12 @@
 //! IFO File Export System
-//! 
+//!
 //! This module provides functionality to write IFO files in the binary format
 //! used by Rose Online. The format uses a block-based structure where each
 //! block type has its own section with a type ID and offset.
 
+use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
-use std::fs::File;
 
 use super::ifo_types::*;
 
@@ -48,7 +48,7 @@ impl IfoWriter {
         // String length as u8 (max 255)
         let len = s.len().min(255) as u8;
         self.buffer.push(len);
-        
+
         // String bytes
         self.buffer.extend_from_slice(&s.as_bytes()[..len as usize]);
     }
@@ -67,35 +67,38 @@ impl IfoWriter {
     fn write_object(&mut self, obj: &IfoObject) {
         // Object name (u8 length-prefixed string)
         self.write_u8_string(&obj.object_name);
-        
+
         // warp_id (u16)
         self.buffer.extend_from_slice(&obj.warp_id.to_le_bytes());
-        
+
         // event_id (u16)
         self.buffer.extend_from_slice(&obj.event_id.to_le_bytes());
-        
+
         // object_type (u32)
-        self.buffer.extend_from_slice(&obj.object_type.to_le_bytes());
-        
+        self.buffer
+            .extend_from_slice(&obj.object_type.to_le_bytes());
+
         // object_id (u32)
         self.buffer.extend_from_slice(&obj.object_id.to_le_bytes());
-        
+
         // minimap_pos_x (u32)
-        self.buffer.extend_from_slice(&obj.minimap_pos_x.to_le_bytes());
-        
+        self.buffer
+            .extend_from_slice(&obj.minimap_pos_x.to_le_bytes());
+
         // minimap_pos_y (u32)
-        self.buffer.extend_from_slice(&obj.minimap_pos_y.to_le_bytes());
-        
+        self.buffer
+            .extend_from_slice(&obj.minimap_pos_y.to_le_bytes());
+
         // rotation (Quat4<f32> XYZW order)
         for &v in &obj.rotation {
             self.buffer.extend_from_slice(&v.to_le_bytes());
         }
-        
+
         // position (Vec3<f32>)
         for &v in &obj.position {
             self.buffer.extend_from_slice(&v.to_le_bytes());
         }
-        
+
         // scale (Vec3<f32>)
         for &v in &obj.scale {
             self.buffer.extend_from_slice(&v.to_le_bytes());
@@ -160,10 +163,10 @@ impl IfoWriter {
     fn write_monster_spawn(&mut self, spawn: &IfoMonsterSpawnPoint) {
         // Write base object
         self.write_object(&spawn.object);
-        
+
         // Write spawn name
         self.write_u8_string(&spawn.spawn_name);
-        
+
         // Write basic spawns
         let basic_count = spawn.basic_spawns.len() as u32;
         self.buffer.extend_from_slice(&basic_count.to_le_bytes());
@@ -175,7 +178,7 @@ impl IfoWriter {
             // Monster count
             self.buffer.extend_from_slice(&basic.count.to_le_bytes());
         }
-        
+
         // Write tactic spawns
         let tactic_count = spawn.tactic_spawns.len() as u32;
         self.buffer.extend_from_slice(&tactic_count.to_le_bytes());
@@ -187,12 +190,14 @@ impl IfoWriter {
             // Monster count
             self.buffer.extend_from_slice(&tactic.count.to_le_bytes());
         }
-        
+
         // Write spawn parameters
         self.buffer.extend_from_slice(&spawn.interval.to_le_bytes());
-        self.buffer.extend_from_slice(&spawn.limit_count.to_le_bytes());
+        self.buffer
+            .extend_from_slice(&spawn.limit_count.to_le_bytes());
         self.buffer.extend_from_slice(&spawn.range.to_le_bytes());
-        self.buffer.extend_from_slice(&spawn.tactic_points.to_le_bytes());
+        self.buffer
+            .extend_from_slice(&spawn.tactic_points.to_le_bytes());
     }
 
     /// Write a water plane (start Vec3 + end Vec3)
@@ -214,7 +219,11 @@ impl IfoWriter {
     /// - Then the actual block data at each offset
     pub fn write_block(&mut self, block: &IfoBlock) -> io::Result<()> {
         log::info!("[IFO Writer] ====== WRITE_BLOCK START ======");
-        log::info!("[IFO Writer] Block coordinates: ({}, {})", block.block_x, block.block_z);
+        log::info!(
+            "[IFO Writer] Block coordinates: ({}, {})",
+            block.block_x,
+            block.block_z
+        );
         log::info!("[IFO Writer] Object counts: deco={}, cnst={}, event={}, warp={}, sound={}, effect={}, animated={}, collision={}, npc={}, monster={}",
             block.deco_objects.len(),
             block.cnst_objects.len(),
@@ -227,15 +236,23 @@ impl IfoWriter {
             block.npcs.len(),
             block.monster_spawns.len()
         );
-        log::info!("[IFO Writer] Water: size={}, planes={}", block.water_size, block.water_planes.len());
-        log::info!("[IFO Writer] Original block order: {:?}", block.original_block_order);
-        
+        log::info!(
+            "[IFO Writer] Water: size={}, planes={}",
+            block.water_size,
+            block.water_planes.len()
+        );
+        log::info!(
+            "[IFO Writer] Original block order: {:?}",
+            block.original_block_order
+        );
+
         self.buffer.clear();
-        
+
         // Build data for each block type that has objects
         // Use a map to store block data by type for order preservation
-        let mut block_data_map: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
-        
+        let mut block_data_map: std::collections::HashMap<u32, Vec<u8>> =
+            std::collections::HashMap::new();
+
         // Build data for each block type that has objects
         if !block.deco_objects.is_empty() {
             let mut data = Vec::new();
@@ -246,7 +263,7 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::DecoObject as u32, data);
         }
-        
+
         if !block.cnst_objects.is_empty() {
             let mut data = Vec::new();
             let count = block.cnst_objects.len() as u32;
@@ -256,7 +273,7 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::CnstObject as u32, data);
         }
-        
+
         if !block.event_objects.is_empty() {
             let mut data = Vec::new();
             let count = block.event_objects.len() as u32;
@@ -266,7 +283,7 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::EventObject as u32, data);
         }
-        
+
         if !block.warp_objects.is_empty() {
             let mut data = Vec::new();
             let count = block.warp_objects.len() as u32;
@@ -276,7 +293,7 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::Warp as u32, data);
         }
-        
+
         if !block.sound_objects.is_empty() {
             let mut data = Vec::new();
             let count = block.sound_objects.len() as u32;
@@ -286,7 +303,7 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::SoundObject as u32, data);
         }
-        
+
         if !block.effect_objects.is_empty() {
             let mut data = Vec::new();
             let count = block.effect_objects.len() as u32;
@@ -296,7 +313,7 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::EffectObject as u32, data);
         }
-        
+
         if !block.animated_objects.is_empty() {
             let mut data = Vec::new();
             let count = block.animated_objects.len() as u32;
@@ -306,7 +323,7 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::AnimatedObject as u32, data);
         }
-        
+
         if !block.collision_objects.is_empty() {
             let mut data = Vec::new();
             let count = block.collision_objects.len() as u32;
@@ -316,7 +333,7 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::CollisionObject as u32, data);
         }
-        
+
         if !block.npcs.is_empty() {
             let mut data = Vec::new();
             let count = block.npcs.len() as u32;
@@ -326,7 +343,7 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::Npc as u32, data);
         }
-        
+
         // Add monster spawn support
         if !block.monster_spawns.is_empty() {
             let mut data = Vec::new();
@@ -337,7 +354,7 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::MonsterSpawn as u32, data);
         }
-        
+
         if !block.water_planes.is_empty() || block.water_size > 0.0 {
             let mut data = Vec::new();
             // water_size (f32)
@@ -350,11 +367,13 @@ impl IfoWriter {
             }
             block_data_map.insert(BlockType::WaterPlanes as u32, data);
         }
-        
+
         // Determine block order: use original order if available, otherwise use sorted order
         let block_order: Vec<u32> = if !block.original_block_order.is_empty() {
             // Use original order, but only include blocks that still have data
-            block.original_block_order.iter()
+            block
+                .original_block_order
+                .iter()
                 .filter(|&&block_type| block_data_map.contains_key(&block_type))
                 .copied()
                 .collect()
@@ -364,14 +383,14 @@ impl IfoWriter {
             keys.sort();
             keys
         };
-        
+
         // Now write the file header
         let block_count = block_order.len() as u32;
         self.buffer.extend_from_slice(&block_count.to_le_bytes());
-        
+
         // Calculate the header size: block_count (4 bytes) + each block entry (8 bytes)
         let header_size = 4 + (block_count as usize * 8);
-        
+
         // Calculate offsets for each block in order
         let mut current_offset = header_size as u32;
         let mut block_offsets: Vec<(u32, u32)> = Vec::new();
@@ -381,37 +400,60 @@ impl IfoWriter {
                 current_offset += data.len() as u32;
             }
         }
-        
+
         // Write block headers (type + offset pairs)
-        log::info!("[IFO Writer] Writing {} block headers at offset {}", block_offsets.len(), self.buffer.len());
+        log::info!(
+            "[IFO Writer] Writing {} block headers at offset {}",
+            block_offsets.len(),
+            self.buffer.len()
+        );
         for (block_type, offset) in &block_offsets {
-            log::info!("[IFO Writer]   Block type {} -> offset {}", block_type, offset);
+            log::info!(
+                "[IFO Writer]   Block type {} -> offset {}",
+                block_type,
+                offset
+            );
             self.buffer.extend_from_slice(&block_type.to_le_bytes());
             self.buffer.extend_from_slice(&offset.to_le_bytes());
         }
-        
+
         // Write block data in order
-        log::info!("[IFO Writer] Writing block data starting at offset {}", self.buffer.len());
+        log::info!(
+            "[IFO Writer] Writing block data starting at offset {}",
+            self.buffer.len()
+        );
         for block_type in &block_order {
             if let Some(data) = block_data_map.remove(block_type) {
-                log::info!("[IFO Writer]   Block type {} data: {} bytes (offset {}->{})",
-                    block_type, data.len(), self.buffer.len(), self.buffer.len() + data.len());
+                log::info!(
+                    "[IFO Writer]   Block type {} data: {} bytes (offset {}->{})",
+                    block_type,
+                    data.len(),
+                    self.buffer.len(),
+                    self.buffer.len() + data.len()
+                );
                 self.buffer.extend_from_slice(&data);
             }
         }
-        
-        log::info!("[IFO Writer] ====== WRITE_BLOCK END: {} total bytes ======", self.buffer.len());
+
+        log::info!(
+            "[IFO Writer] ====== WRITE_BLOCK END: {} total bytes ======",
+            self.buffer.len()
+        );
         Ok(())
     }
-    
+
     // Helper functions to write to a separate vector
     fn write_u8_string_to_vec(vec: &mut Vec<u8>, s: &str) {
-        log::trace!("[IFO Writer] Writing u8_string: len={}, content='{}'", s.len().min(255), s);
+        log::trace!(
+            "[IFO Writer] Writing u8_string: len={}, content='{}'",
+            s.len().min(255),
+            s
+        );
         let len = s.len().min(255) as u8;
         vec.push(len);
         vec.extend_from_slice(&s.as_bytes()[..len as usize]);
     }
-    
+
     fn write_object_to_vec(vec: &mut Vec<u8>, obj: &IfoObject) {
         let start_len = vec.len();
         log::debug!("[IFO Writer]   Writing object: name='{}', warp_id={}, event_id={}, obj_type={}, obj_id={}, minimap=({},{})",
@@ -421,7 +463,7 @@ impl IfoWriter {
             obj.position[0], obj.position[1], obj.position[2],
             obj.rotation[0], obj.rotation[1], obj.rotation[2], obj.rotation[3],
             obj.scale[0], obj.scale[1], obj.scale[2]);
-        
+
         Self::write_u8_string_to_vec(vec, &obj.object_name);
         vec.extend_from_slice(&obj.warp_id.to_le_bytes());
         vec.extend_from_slice(&obj.event_id.to_le_bytes());
@@ -438,45 +480,50 @@ impl IfoWriter {
         for &v in &obj.scale {
             vec.extend_from_slice(&v.to_le_bytes());
         }
-        
-        log::debug!("[IFO Writer]     Object written: {} bytes (offset {}->{})", vec.len() - start_len, start_len, vec.len());
+
+        log::debug!(
+            "[IFO Writer]     Object written: {} bytes (offset {}->{})",
+            vec.len() - start_len,
+            start_len,
+            vec.len()
+        );
     }
-    
+
     fn write_event_object_to_vec(vec: &mut Vec<u8>, obj: &IfoEventObject) {
         Self::write_object_to_vec(vec, &obj.object);
         Self::write_u8_string_to_vec(vec, &obj.quest_trigger_name);
         Self::write_u8_string_to_vec(vec, &obj.script_function_name);
     }
-    
+
     fn write_warp_object_to_vec(vec: &mut Vec<u8>, obj: &IfoWarpObject) {
         Self::write_object_to_vec(vec, &obj.object);
     }
-    
+
     fn write_sound_object_to_vec(vec: &mut Vec<u8>, obj: &IfoSoundObject) {
         Self::write_object_to_vec(vec, &obj.object);
         Self::write_u8_string_to_vec(vec, &obj.sound_path);
         vec.extend_from_slice(&obj.range.to_le_bytes());
         vec.extend_from_slice(&obj.interval.to_le_bytes());
     }
-    
+
     fn write_effect_object_to_vec(vec: &mut Vec<u8>, obj: &IfoEffectObject) {
         Self::write_object_to_vec(vec, &obj.object);
         Self::write_u8_string_to_vec(vec, &obj.effect_path);
     }
-    
+
     fn write_npc_to_vec(vec: &mut Vec<u8>, npc: &IfoNpc) {
         Self::write_object_to_vec(vec, &npc.object);
         vec.extend_from_slice(&npc.ai_id.to_le_bytes());
         Self::write_u8_string_to_vec(vec, &npc.quest_file_name);
     }
-    
+
     fn write_monster_spawn_to_vec(vec: &mut Vec<u8>, spawn: &IfoMonsterSpawnPoint) {
         // Write base object
         Self::write_object_to_vec(vec, &spawn.object);
-        
+
         // Write spawn name
         Self::write_u8_string_to_vec(vec, &spawn.spawn_name);
-        
+
         // Write basic spawns
         let basic_count = spawn.basic_spawns.len() as u32;
         vec.extend_from_slice(&basic_count.to_le_bytes());
@@ -488,7 +535,7 @@ impl IfoWriter {
             // Monster count
             vec.extend_from_slice(&basic.count.to_le_bytes());
         }
-        
+
         // Write tactic spawns
         let tactic_count = spawn.tactic_spawns.len() as u32;
         vec.extend_from_slice(&tactic_count.to_le_bytes());
@@ -500,14 +547,14 @@ impl IfoWriter {
             // Monster count
             vec.extend_from_slice(&tactic.count.to_le_bytes());
         }
-        
+
         // Write spawn parameters
         vec.extend_from_slice(&spawn.interval.to_le_bytes());
         vec.extend_from_slice(&spawn.limit_count.to_le_bytes());
         vec.extend_from_slice(&spawn.range.to_le_bytes());
         vec.extend_from_slice(&spawn.tactic_points.to_le_bytes());
     }
-    
+
     fn write_water_plane_to_vec(vec: &mut Vec<u8>, plane: &IfoWaterPlane) {
         for &v in &plane.start {
             vec.extend_from_slice(&v.to_le_bytes());
@@ -571,19 +618,11 @@ pub fn export_zone_ifo_files(
             Ok(size) => {
                 stats.blocks_exported += 1;
                 stats.bytes_written += size;
-                log::info!(
-                    "[IFO Export] Exported {} ({} bytes)",
-                    file_name,
-                    size
-                );
+                log::info!("[IFO Export] Exported {} ({} bytes)", file_name, size);
             }
             Err(e) => {
                 stats.blocks_failed += 1;
-                log::error!(
-                    "[IFO Export] Failed to export {}: {}",
-                    file_name,
-                    e
-                );
+                log::error!("[IFO Export] Failed to export {}: {}", file_name, e);
             }
         }
     }
@@ -615,10 +654,7 @@ impl ExportStats {
     pub fn summary(&self) -> String {
         format!(
             "Exported {} blocks ({} objects, {} bytes), {} failed",
-            self.blocks_exported,
-            self.total_objects,
-            self.bytes_written,
-            self.blocks_failed
+            self.blocks_exported, self.total_objects, self.bytes_written, self.blocks_failed
         )
     }
 }
@@ -631,7 +667,7 @@ mod tests {
     fn test_write_u8_string() {
         let mut writer = IfoWriter::new();
         writer.write_u8_string("test");
-        
+
         // Length prefix (1 byte) + string bytes (4 bytes)
         assert_eq!(writer.buffer.len(), 5);
         assert_eq!(writer.buffer[0], 4); // Length as u8
@@ -642,10 +678,10 @@ mod tests {
     fn test_write_object() {
         let mut writer = IfoWriter::new();
         let obj = IfoObject::new(42);
-        
+
         writer.write_object(&obj);
-        
-        // Object should have: 
+
+        // Object should have:
         // - 1 byte length + 0 bytes string = 1 byte
         // - warp_id (2) + event_id (2) + object_type (4) + object_id (4) = 12 bytes
         // - minimap_pos_x (4) + minimap_pos_y (4) = 8 bytes
@@ -659,19 +695,34 @@ mod tests {
         let mut writer = IfoWriter::new();
         let mut block = IfoBlock::new(0, 0);
         block.deco_objects.push(IfoObject::new(1));
-        
+
         writer.write_block(&block).unwrap();
-        
+
         // Should start with block_count
-        let block_count = u32::from_le_bytes([writer.buffer[0], writer.buffer[1], writer.buffer[2], writer.buffer[3]]);
+        let block_count = u32::from_le_bytes([
+            writer.buffer[0],
+            writer.buffer[1],
+            writer.buffer[2],
+            writer.buffer[3],
+        ]);
         assert_eq!(block_count, 1); // One block type (DecoObject)
-        
+
         // Next should be block_type (1 = DecoObject)
-        let block_type = u32::from_le_bytes([writer.buffer[4], writer.buffer[5], writer.buffer[6], writer.buffer[7]]);
+        let block_type = u32::from_le_bytes([
+            writer.buffer[4],
+            writer.buffer[5],
+            writer.buffer[6],
+            writer.buffer[7],
+        ]);
         assert_eq!(block_type, BlockType::DecoObject as u32);
-        
+
         // Then block_offset
-        let _block_offset = u32::from_le_bytes([writer.buffer[8], writer.buffer[9], writer.buffer[10], writer.buffer[11]]);
+        let _block_offset = u32::from_le_bytes([
+            writer.buffer[8],
+            writer.buffer[9],
+            writer.buffer[10],
+            writer.buffer[11],
+        ]);
         // Offset should be 12 (4 for block_count + 8 for header entry)
     }
 }

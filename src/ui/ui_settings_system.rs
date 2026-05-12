@@ -582,7 +582,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                                         .show_value(true),
                                 );
                                 ui.end_row();
-                                
+
                                 // Show time description
                                 let time_desc = format_time_of_day(sky_settings.manual_time);
                                 ui.label("");
@@ -844,10 +844,10 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                             ui.label("⚠️ GHOSTING DEBUG");
                             ui.label("Change settings to fix ghosting");
                             ui.end_row();
-                            
+
                             ui.separator();
                             ui.end_row();
-                            
+
                             ui.label("Blend Mode:");
                             let blend_text = match starry_sky_render_settings.blend_mode {
                                 SkyBlendMode::Additive => "Additive (One)",
@@ -880,7 +880,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                                     );
                                 });
                             ui.end_row();
-                            
+
                             ui.label("Depth Compare:");
                             let depth_text = match starry_sky_render_settings.depth_compare {
                                 SkyDepthCompare::Always => "Always (CURRENT)",
@@ -919,42 +919,42 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                                     );
                                 });
                             ui.end_row();
-                            
+
                             ui.label("Depth Write:");
                             ui.checkbox(&mut starry_sky_render_settings.depth_write_enabled, "Enabled (usually OFF for sky)");
                             ui.end_row();
-                            
+
                             ui.label("Depth Bias:");
                             ui.add(
                                 egui::Slider::new(&mut starry_sky_render_settings.depth_bias, -10.0..=10.0)
                                     .show_value(true),
                             );
                             ui.end_row();
-                            
+
                             ui.label("Alpha Cutoff:");
                             ui.add(
                                 egui::Slider::new(&mut starry_sky_render_settings.alpha_cutoff, 0.0..=1.0)
                                     .show_value(true),
                             );
                             ui.end_row();
-                            
+
                             ui.label("Force Full Brightness:");
                             ui.checkbox(&mut starry_sky_render_settings.force_full_brightness, "Ignore night factor (DEBUG)");
                             ui.end_row();
-                            
+
                             ui.separator();
                             ui.end_row();
-                            
+
                             // Quick fix buttons
                             ui.label("Quick Fixes:");
                             ui.end_row();
-                            
+
                             if ui.button("Fix: Alpha Blend + LessEqual Depth").clicked() {
                                 starry_sky_render_settings.blend_mode = SkyBlendMode::Alpha;
                                 starry_sky_render_settings.depth_compare = SkyDepthCompare::LessEqual;
                             }
                             ui.end_row();
-                            
+
                             if ui.button("Reset: Additive + Always Depth").clicked() {
                                 starry_sky_render_settings.blend_mode = SkyBlendMode::Additive;
                                 starry_sky_render_settings.depth_compare = SkyDepthCompare::Always;
@@ -1450,7 +1450,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
 
                     ui.separator();
                     ui.label("Procedural Grass Settings (GPU-based)");
-                    
+
                     egui::Grid::new("procedural_grass_settings")
                         .num_columns(2)
                         .show(ui, |ui| {
@@ -1690,10 +1690,10 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                             ui.label("🔍 GHOSTING DEBUG");
                             ui.label("Toggle effects to isolate ghosting cause");
                             ui.end_row();
-                            
+
                             ui.separator();
                             ui.end_row();
-                            
+
                             ui.label("Bloom:");
                             ui.checkbox(&mut post_processing_settings.bloom_enabled, "Enabled");
                             ui.end_row();
@@ -1729,7 +1729,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                 }
                 SettingsPage::Graphics => {
                     use crate::graphics::{GraphicsShadowFilteringMethod, MsaaSamples, ShadowQuality, SsaoQuality, TextureQuality, TonemappingMode, VsyncMode};
-                    
+
                     // === Display Section ===
                     ui.collapsing("Display", |ui| {
                         egui::Grid::new("graphics_display")
@@ -1969,7 +1969,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                     });
 
                     ui.separator();
-                    
+
                     // Preset buttons
                     ui.horizontal(|ui| {
                         if ui.button("Low Preset").clicked() {
@@ -1985,7 +1985,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                             *graphics_settings = GraphicsSettings::ultra_preset();
                         }
                     });
-                    
+
                     ui.separator();
                     ui.label("Tip: Higher shadow quality improves visual fidelity but reduces FPS.");
                     ui.label("Changes to MSAA and VSync may require restart to take full effect.");

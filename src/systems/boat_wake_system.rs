@@ -1,8 +1,5 @@
-use bevy::{
-    prelude::*,
-    render::alpha::AlphaMode,
-};
 use bevy::pbr::MeshMaterial3d;
+use bevy::{prelude::*, render::alpha::AlphaMode};
 use rand::Rng;
 
 use crate::components::{
@@ -80,7 +77,10 @@ pub fn boat_wake_spawn_system(
     wake_assets: Res<BoatWakeAssets>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
-    mut boat_query: Query<(Entity, &BoatState, &Transform, &mut WakeEmitter), With<PlayerCharacter>>,
+    mut boat_query: Query<
+        (Entity, &BoatState, &Transform, &mut WakeEmitter),
+        With<PlayerCharacter>,
+    >,
     wake_particles: Query<&WakeSource, With<WakeParticle>>,
     spray_particles: Query<&WakeSource, With<BowSprayParticle>>,
     mut commands: Commands,
@@ -128,7 +128,8 @@ pub fn boat_wake_spawn_system(
             let wake_lifetime_secs = 2.0;
 
             for side in [-1.0f32, 1.0f32] {
-                let spawn_pos = center - forward * 1.5 + right * side * 0.9 + Vec3::new(0.0, -0.03, 0.0);
+                let spawn_pos =
+                    center - forward * 1.5 + right * side * 0.9 + Vec3::new(0.0, -0.03, 0.0);
                 let wake_dir = (-forward + right * side * 0.3).normalize_or_zero();
                 let velocity = wake_dir * (boat.speed * 0.3);
 
@@ -286,4 +287,3 @@ pub fn boat_wake_update_system(
         }
     }
 }
-

@@ -1,8 +1,8 @@
 use bevy::{
     math::{EulerRot, Vec3},
     prelude::{
-        ButtonInput, Camera3d, Commands, Entity, KeyCode, Local, NextState, Query, Res, ResMut, Resource,
-        Transform, With,
+        ButtonInput, Camera3d, Commands, Entity, KeyCode, Local, NextState, Query, Res, ResMut,
+        Resource, Transform, With,
     },
 };
 use bevy_egui::{egui, EguiContexts};

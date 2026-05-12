@@ -1,10 +1,7 @@
-use bevy::{
-    pbr::MeshMaterial3d,
-    prelude::*,
-};
-use bevy_mesh::Mesh3d;
-use crate::components::{PlayerCharacter, Season, SeasonMarker, WeatherParticle, SpringFlower};
+use crate::components::{PlayerCharacter, Season, SeasonMarker, SpringFlower, WeatherParticle};
 use crate::resources::{SeasonMaterials, SeasonSettings, SpringSettings};
+use bevy::{pbr::MeshMaterial3d, prelude::*};
+use bevy_mesh::Mesh3d;
 
 /// Spawns rain particles for spring season
 /// Particles use billboard behavior to always face the camera
@@ -15,7 +12,14 @@ pub fn spring_rain_system(
     season_materials: Res<SeasonMaterials>,
     player_query: Query<&GlobalTransform, With<PlayerCharacter>>,
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
-    mut query: Query<(Entity, &mut Transform, &mut WeatherParticle), (Without<SpringFlower>, Without<PlayerCharacter>, Without<Camera3d>)>,
+    mut query: Query<
+        (Entity, &mut Transform, &mut WeatherParticle),
+        (
+            Without<SpringFlower>,
+            Without<PlayerCharacter>,
+            Without<Camera3d>,
+        ),
+    >,
     flower_query: Query<(Entity, &SpringFlower)>,
     time: Res<Time>,
 ) {
@@ -45,11 +49,7 @@ pub fn spring_rain_system(
             // Spawn 15-25 units above player
             let spawn_y = player_pos.y + 15.0 + rand::random::<f32>() * 10.0;
 
-            let position = Vec3::new(
-                player_pos.x + offset_x,
-                spawn_y,
-                player_pos.z + offset_z,
-            );
+            let position = Vec3::new(player_pos.x + offset_x, spawn_y, player_pos.z + offset_z);
 
             // Use pre-created elongated rain mesh
             let rain_mesh = season_materials.rain_mesh.clone();
@@ -112,10 +112,10 @@ pub fn spring_rain_system(
             let up = Vec3::Y;
             let right = up.cross(forward).normalize();
             let corrected_up = forward.cross(right).normalize();
-            
+
             // Build rotation matrix and convert to quaternion
             let look_rotation = Quat::from_mat3(&Mat3::from_cols(right, corrected_up, forward));
-            
+
             transform.rotation = look_rotation;
         }
     }
@@ -164,7 +164,8 @@ pub fn spawn_flower_system(
 
     // Get random flower material from pre-created materials
     let flower_material = season_materials.flower_materials
-        [rand::random::<usize>() % season_materials.flower_materials.len()].clone();
+        [rand::random::<usize>() % season_materials.flower_materials.len()]
+    .clone();
 
     // Use pre-created circle mesh for flower
     let flower_mesh = season_materials.flower_mesh.clone();

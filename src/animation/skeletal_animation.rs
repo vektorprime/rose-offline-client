@@ -3,7 +3,7 @@ use std::f32::consts::FRAC_PI_2;
 use bevy::{
     asset::LoadState,
     prelude::{
-        AssetServer, Assets, Component, Deref, DerefMut, Entity, MessageWriter, Handle, Query, Res,
+        AssetServer, Assets, Component, Deref, DerefMut, Entity, Handle, MessageWriter, Query, Res,
         Transform,
     },
     reflect::Reflect,
@@ -46,10 +46,10 @@ pub fn skeletal_animation_system(
     let mut anim_count = 0;
     let mut completed_count = 0;
     let mut no_skinned_mesh_count = 0;
-    
+
     for (entity, mut skeletal_animation, skinned_mesh) in query_animations.iter_mut() {
         anim_count += 1;
-        
+
         if skeletal_animation.completed() {
             completed_count += 1;
             continue;
@@ -85,7 +85,7 @@ pub fn skeletal_animation_system(
             no_skinned_mesh_count += 1;
             continue;
         };
-        
+
         let current_frame_fract = animation.current_frame_fract();
         let current_frame_index = animation.current_frame_index();
         let next_frame_index = animation.next_frame_index();
@@ -117,7 +117,7 @@ pub fn skeletal_animation_system(
                     //log::info!("Bone {}: translation = ({:.4}, {:.4}, {:.4})",
                     //    bone_id, translation.x, translation.y, translation.z);
                 }
-                
+
                 if let Some(blend_weight) = interpolate_weight {
                     bone_transform.translation =
                         bone_transform.translation.lerp(translation, blend_weight);
@@ -137,7 +137,7 @@ pub fn skeletal_animation_system(
                     //log::info!("Bone {}: rotation = ({:.4}, {:.4}, {:.4}, {:.4})",
                     //    bone_id, rotation.w, rotation.x, rotation.y, rotation.z);
                 }
-                
+
                 if let Some(blend_weight) = interpolate_weight {
                     bone_transform.rotation = bone_transform.rotation.slerp(rotation, blend_weight);
                 } else {
@@ -145,9 +145,9 @@ pub fn skeletal_animation_system(
                 }
             }
         }
-        
+
         if should_log {
-        //    log::info!("=== End Rust Animation Debug ===");
+            //    log::info!("=== End Rust Animation Debug ===");
         }
     }
 }

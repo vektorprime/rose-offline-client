@@ -35,7 +35,7 @@ pub struct SpringFlower {
 }
 
 /// Component for grass blade entities spawned in summer
-/// 
+///
 /// **DEPRECATED**: This component is used by the old CPU-based grass system.
 /// Use the GPU-based `bevy_procedural_grass` system instead (see `Grass` component).
 /// This will be removed in a future version.

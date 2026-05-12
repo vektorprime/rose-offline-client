@@ -63,7 +63,8 @@ pub fn ui_character_select_system(
     };
 
     let screen_size = egui_context
-        .ctx_mut().unwrap()
+        .ctx_mut()
+        .unwrap()
         .input(|input| input.screen_rect().size());
 
     // Position buttons at bottom of screen - adjust both X and Y coordinates
@@ -123,11 +124,9 @@ pub fn ui_character_select_system(
         })
     {
         if let Ok(camera_entity) = query_camera.single() {
-            commands
-                .entity(camera_entity)
-                .insert(CameraAnimation::once(
-                    asset_server.load("3DDATA/TITLE/CAMERA01_CREATE01.ZMO"),
-                ));
+            commands.entity(camera_entity).insert(CameraAnimation::once(
+                asset_server.load("3DDATA/TITLE/CAMERA01_CREATE01.ZMO"),
+            ));
         }
 
         *character_select_state = CharacterSelectState::CharacterCreate;

@@ -4,11 +4,11 @@ use crate::components::{FlightState, PlayerCharacter};
 use crate::events::FlightToggleEvent;
 
 /// System that handles flight toggle events.
-/// 
+///
 /// This system listens for [`FlightToggleEvent`] events and toggles the
 /// [`FlightState::is_flying`] flag on the target entity. When enabling flight,
 /// it initializes the flight state (sets current_speed to 0).
-/// 
+///
 /// Wing spawning is handled separately in the wing spawn system.
 pub fn flight_toggle_system(
     mut commands: Commands,
@@ -20,12 +20,12 @@ pub fn flight_toggle_system(
         if let Ok((entity, mut flight_state)) = query.get_mut(event.entity) {
             // Toggle flight state
             flight_state.is_flying = !flight_state.is_flying;
-            
+
             if flight_state.is_flying {
                 // Initialize flight state when entering flight mode
                 flight_state.is_thrusting = false;
                 flight_state.current_speed = 0.0;
-                
+
                 // Ensure FlightState component exists, if not add it
                 // (This handles the case where the entity doesn't have FlightState yet)
                 info!(
@@ -36,7 +36,7 @@ pub fn flight_toggle_system(
                 // Reset thrust state when exiting flight mode
                 flight_state.is_thrusting = false;
                 flight_state.current_speed = 0.0;
-                
+
                 // Clean up wing entities if they exist
                 if let Some(wing_left) = flight_state.wing_entity_left {
                     commands.entity(wing_left).despawn();
@@ -50,7 +50,7 @@ pub fn flight_toggle_system(
                     commands.entity(wind_emitter).despawn();
                     flight_state.wind_emitter_entity = None;
                 }
-                
+
                 info!(
                     "Flight mode DISABLED for entity {:?}. Wings retracted.",
                     entity

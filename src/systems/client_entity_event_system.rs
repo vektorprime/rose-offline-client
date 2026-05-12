@@ -1,7 +1,8 @@
 use bevy::{
     math::Vec3,
     prelude::{
-        AssetServer, Commands, MessageReader, MessageWriter, GlobalTransform, Query, Res, ResMut, Transform, With,
+        AssetServer, Commands, GlobalTransform, MessageReader, MessageWriter, Query, Res, ResMut,
+        Transform, With,
     },
 };
 

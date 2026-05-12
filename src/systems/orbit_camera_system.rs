@@ -5,8 +5,8 @@ use bevy::{
     },
     math::{Quat, Vec2, Vec3},
     prelude::{
-        BevyError, Component, Entity, GlobalTransform, Local, MessageReader, MouseButton, Query, Res, Time,
-        Transform, With, Window,
+        BevyError, Component, Entity, GlobalTransform, Local, MessageReader, MouseButton, Query,
+        Res, Time, Transform, Window, With,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
@@ -86,7 +86,7 @@ pub fn orbit_camera_system(
     let Ok(rapier_context) = rapier_context.single() else {
         return Ok(());
     };
-    
+
     // Log camera system execution once per second to avoid spam
     if time.elapsed().as_secs_f32() % 1.0 < time.delta().as_secs_f32() {
         //log::info!("[CAMERA] Orbit camera system running");
@@ -138,7 +138,8 @@ pub fn orbit_camera_system(
         return Ok(());
     }
 
-    let allow_mouse_input = control_state.is_dragging || !egui_ctx.ctx_mut().unwrap().wants_pointer_input();
+    let allow_mouse_input =
+        control_state.is_dragging || !egui_ctx.ctx_mut().unwrap().wants_pointer_input();
     let right_pressed = mouse_buttons.pressed(MouseButton::Right);
     let mut drag_delta = Vec2::ZERO;
     let mut zoom_multiplier = 1.0;
@@ -270,7 +271,7 @@ pub fn orbit_camera_system(
         calculated_transform.rotation.v.z,
         calculated_transform.rotation.s,
     );
-    
+
     Ok(())
 }
 

@@ -36,9 +36,9 @@ pub struct DebugRenderConfig {
 impl Default for DebugRenderConfig {
     fn default() -> Self {
         Self {
-            colliders: true,      // Enable collider debug rendering
-            skeleton: true,      // Enable skeleton debug rendering
-            bone_up: true,       // Enable bone up vector debug rendering
+            colliders: true,                         // Enable collider debug rendering
+            skeleton: true,                          // Enable skeleton debug rendering
+            bone_up: true,                           // Enable bone up vector debug rendering
             directional_light_frustum: true, // Enable directional light frustum debug rendering
             directional_light_frustum_freeze: false, // Don't freeze frustum by default
         }

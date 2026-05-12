@@ -1,12 +1,11 @@
 use bevy::{
     ecs::message::MessageWriter,
     prelude::{
-        AssetServer, Assets, Camera3d, Commands, Entity,
-        GlobalTransform, Local, Quat, Query, Res, ResMut, Transform, Vec3, Visibility,
-        With,
+        AssetServer, Assets, Camera3d, Commands, Entity, GlobalTransform, Local, Quat, Query, Res,
+        ResMut, Transform, Vec3, Visibility, With,
     },
 };
-use bevy_camera::visibility::{ViewVisibility, InheritedVisibility};
+use bevy_camera::visibility::{InheritedVisibility, ViewVisibility};
 use bevy_egui::{egui, EguiContexts};
 use rose_data::ZoneId;
 use rose_game_common::{
@@ -137,8 +136,7 @@ pub fn ui_character_create_system(
     let mut response_next_birthstone = None;
 
     let ctx = egui_context.ctx_mut().unwrap();
-    let screen_size = ctx
-        .input(|input| input.screen_rect().size());
+    let screen_size = ctx.input(|input| input.screen_rect().size());
 
     egui::Window::new("Character Create")
         .frame(egui::Frame::none())
@@ -302,11 +300,9 @@ pub fn ui_character_create_system(
 
     if response_cancel.map_or(false, |r| r.clicked()) {
         if let Ok(camera_entity) = query_camera.single() {
-            commands
-                .entity(camera_entity)
-                .insert(CameraAnimation::once(
-                    asset_server.load("3DDATA/TITLE/CAMERA01_OUTCREATE01.ZMO"),
-                ));
+            commands.entity(camera_entity).insert(CameraAnimation::once(
+                asset_server.load("3DDATA/TITLE/CAMERA01_OUTCREATE01.ZMO"),
+            ));
         }
         *character_select_state = CharacterSelectState::CharacterSelect(None);
     }

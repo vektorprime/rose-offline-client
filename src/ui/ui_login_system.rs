@@ -40,7 +40,7 @@ pub fn ui_login_system(
     mut login_events: MessageWriter<LoginEvent>,
 ) {
     ////log::info!("[UI LOGIN] ui_login_system running");
-    
+
     if !matches!(*login_state, LoginState::Input) {
         ui_state.initial_focus_set = false;
         //log::warn!("[UI LOGIN] Skipping - not in Input state, current state: {:?}", *login_state);
@@ -58,7 +58,7 @@ pub fn ui_login_system(
 
     let dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_login) {
         //log::info!("[UI LOGIN] Dialog found, loaded: {}, widget count: {}", dialog.loaded, dialog.widgets.len());
-        
+
         // Only render if dialog is fully loaded (widgets have been processed)
         // This requires ui_resources.loaded_all_textures to be true first
         if !dialog.loaded {
@@ -68,7 +68,7 @@ pub fn ui_login_system(
             );
             return;
         }
-        
+
         dialog
     } else {
         log::warn!("[UI LOGIN] Dialog asset not found - UI will not render!");
@@ -82,7 +82,8 @@ pub fn ui_login_system(
     let mut enter_pressed = false;
 
     let screen_size = egui_context
-        .ctx_mut().unwrap()
+        .ctx_mut()
+        .unwrap()
         .input(|input| input.screen_rect().size());
     let position = egui::pos2(screen_size.x - dialog.width - 100.0, 100.0);
 

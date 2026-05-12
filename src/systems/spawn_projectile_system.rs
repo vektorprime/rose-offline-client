@@ -1,8 +1,6 @@
-use bevy::{
-    prelude::{
-        Commands, GlobalTransform, MessageReader, MessageWriter, Query, Res,
-        Transform, Visibility, InheritedVisibility, ViewVisibility,
-    },
+use bevy::prelude::{
+    Commands, GlobalTransform, InheritedVisibility, MessageReader, MessageWriter, Query, Res,
+    Transform, ViewVisibility, Visibility,
 };
 use bevy_mesh::skinning::SkinnedMesh;
 

@@ -1,13 +1,8 @@
 use bevy::{
     math::Vec3,
     pbr::{ExtendedMaterial, StandardMaterial},
-    prelude::{
-        AssetServer, Assets, Changed, Commands, Entity, Query, Res, ResMut,
-        Transform,
-    },
-    render::{
-        alpha::AlphaMode,
-    },
+    prelude::{AssetServer, Assets, Changed, Commands, Entity, Query, Res, ResMut, Transform},
+    render::alpha::AlphaMode,
 };
 use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 
@@ -38,7 +33,9 @@ pub fn npc_model_update_system(
     >,
     asset_server: Res<AssetServer>,
     model_loader: Res<ModelLoader>,
-    mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+    mut effect_mesh_materials: ResMut<
+        Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
+    >,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
     mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
     mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
@@ -81,73 +78,74 @@ pub fn npc_model_update_system(
                 .remove::<ModelHeight>();
         }
 
-        let (npc_model, skinned_mesh, dummy_bone_offset) =
-            if let Some((npc_model, skinned_mesh, dummy_bone_offset)) = model_loader
-                .spawn_npc_model(
-                    &mut commands,
-                    &asset_server,
-                    &mut standard_materials,
-                    &mut object_materials,
-                    &mut skinned_mesh_inverse_bindposes_assets,
-                    &mut particle_materials,
-                    &mut effect_mesh_materials,
-                    &mut meshes,
-                    &mut storage_buffers,
-                    entity,
-                    npc.id,
-                )
-            {
-                (npc_model, skinned_mesh, dummy_bone_offset)
-            } else {
-                // CRITICAL FIX: NPC model data not found - do NOT add SkinnedMesh component
-                // This prevents bind group mismatch errors when NPC has no skeleton
-                log::warn!(
+        let (npc_model, skinned_mesh, dummy_bone_offset) = if let Some((
+            npc_model,
+            skinned_mesh,
+            dummy_bone_offset,
+        )) = model_loader.spawn_npc_model(
+            &mut commands,
+            &asset_server,
+            &mut standard_materials,
+            &mut object_materials,
+            &mut skinned_mesh_inverse_bindposes_assets,
+            &mut particle_materials,
+            &mut effect_mesh_materials,
+            &mut meshes,
+            &mut storage_buffers,
+            entity,
+            npc.id,
+        ) {
+            (npc_model, skinned_mesh, dummy_bone_offset)
+        } else {
+            // CRITICAL FIX: NPC model data not found - do NOT add SkinnedMesh component
+            // This prevents bind group mismatch errors when NPC has no skeleton
+            log::warn!(
                     "[SKINNED_MESH_FIX] NPC {} model data not found, spawning as non-skinned entity to prevent bind group mismatch",
                     npc.id.get()
                 );
-                // Insert empty model so we do not retry every frame.
-                // Note: We do NOT insert SkinnedMesh here, only NpcModel
-                let empty_npc_model = NpcModel {
-                    npc_id: npc.id,
-                    model_parts: Vec::new(),
-                    action_motions: EnumMap::default(),
-                    root_bone_position: Vec3::ZERO,
-                };
-
-                let mut entity_commands = commands.entity(entity);
-
-                // Update scale
-                if let Some(npc_data) = game_data.npcs.get_npc(npc.id) {
-                    entity_commands.insert(transform.with_scale(Vec3::new(
-                        npc_data.scale,
-                        npc_data.scale,
-                        npc_data.scale,
-                    )));
-                }
-
-                // Update ClientEntityName
-                entity_commands.insert(ClientEntityName::new(
-                    game_data
-                        .npcs
-                        .get_npc(npc.id)
-                        .map(|npc_data| npc_data.name.to_string())
-                        .unwrap_or_else(|| format!("??? [{}]", npc.id.get())),
-                ));
-
-                // Update model without SkinnedMesh
-                if let Some(mut current_npc_model) = current_npc_model {
-                    *current_npc_model = empty_npc_model;
-                } else {
-                    entity_commands.insert(empty_npc_model);
-                }
-
-                // Remove any existing SkinnedMesh and DummyBoneOffset components
-                entity_commands
-                    .remove::<SkinnedMesh>()
-                    .remove::<DummyBoneOffset>();
-
-                continue;
+            // Insert empty model so we do not retry every frame.
+            // Note: We do NOT insert SkinnedMesh here, only NpcModel
+            let empty_npc_model = NpcModel {
+                npc_id: npc.id,
+                model_parts: Vec::new(),
+                action_motions: EnumMap::default(),
+                root_bone_position: Vec3::ZERO,
             };
+
+            let mut entity_commands = commands.entity(entity);
+
+            // Update scale
+            if let Some(npc_data) = game_data.npcs.get_npc(npc.id) {
+                entity_commands.insert(transform.with_scale(Vec3::new(
+                    npc_data.scale,
+                    npc_data.scale,
+                    npc_data.scale,
+                )));
+            }
+
+            // Update ClientEntityName
+            entity_commands.insert(ClientEntityName::new(
+                game_data
+                    .npcs
+                    .get_npc(npc.id)
+                    .map(|npc_data| npc_data.name.to_string())
+                    .unwrap_or_else(|| format!("??? [{}]", npc.id.get())),
+            ));
+
+            // Update model without SkinnedMesh
+            if let Some(mut current_npc_model) = current_npc_model {
+                *current_npc_model = empty_npc_model;
+            } else {
+                entity_commands.insert(empty_npc_model);
+            }
+
+            // Remove any existing SkinnedMesh and DummyBoneOffset components
+            entity_commands
+                .remove::<SkinnedMesh>()
+                .remove::<DummyBoneOffset>();
+
+            continue;
+        };
 
         let mut entity_commands = commands.entity(entity);
 

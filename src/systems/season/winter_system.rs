@@ -1,10 +1,7 @@
-use bevy::{
-    pbr::MeshMaterial3d,
-    prelude::*,
-};
-use bevy_mesh::Mesh3d;
 use crate::components::{PlayerCharacter, Season, SeasonMarker, WeatherParticle};
 use crate::resources::{SeasonMaterials, SeasonSettings, WinterSettings};
+use bevy::{pbr::MeshMaterial3d, prelude::*};
+use bevy_mesh::Mesh3d;
 
 /// Spawns and updates snow particles for winter season
 /// Particles use billboard behavior to always face the camera
@@ -15,7 +12,10 @@ pub fn winter_snow_system(
     season_materials: Res<SeasonMaterials>,
     player_query: Query<&GlobalTransform, With<PlayerCharacter>>,
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
-    mut query: Query<(Entity, &mut Transform, &mut WeatherParticle), (Without<PlayerCharacter>, Without<Camera3d>)>,
+    mut query: Query<
+        (Entity, &mut Transform, &mut WeatherParticle),
+        (Without<PlayerCharacter>, Without<Camera3d>),
+    >,
     time: Res<Time>,
 ) {
     if !settings.enabled || settings.current_season != Season::Winter {
@@ -44,17 +44,14 @@ pub fn winter_snow_system(
             // Spawn 15-25 units above player
             let spawn_y = player_pos.y + 15.0 + rand::random::<f32>() * 10.0;
 
-            let position = Vec3::new(
-                player_pos.x + offset_x,
-                spawn_y,
-                player_pos.z + offset_z,
-            );
+            let position = Vec3::new(player_pos.x + offset_x, spawn_y, player_pos.z + offset_z);
 
             let size_range = winter_settings.snowflake_size_range;
             let size = size_range.0 + rand::random::<f32>() * (size_range.1 - size_range.0);
 
             let lifetime_range = winter_settings.lifetime_range;
-            let lifetime = lifetime_range.0 + rand::random::<f32>() * (lifetime_range.1 - lifetime_range.0);
+            let lifetime =
+                lifetime_range.0 + rand::random::<f32>() * (lifetime_range.1 - lifetime_range.0);
 
             // Use pre-created hexagon mesh for snowflake
             let snow_mesh = season_materials.snow_mesh.clone();
@@ -108,8 +105,8 @@ pub fn winter_snow_system(
 
         // Turbulent swirling motion
         particle.wobble_phase += dt * 3.0;
-        let swirl_x = (particle.wobble_phase.sin() * particle.wobble_amplitude)
-            * settings.wind_strength;
+        let swirl_x =
+            (particle.wobble_phase.sin() * particle.wobble_amplitude) * settings.wind_strength;
         let swirl_z = (particle.wobble_phase.cos() * particle.wobble_amplitude * 0.7)
             * settings.wind_strength;
 
@@ -132,14 +129,14 @@ pub fn winter_snow_system(
             let up = Vec3::Y;
             let right = up.cross(forward).normalize();
             let corrected_up = forward.cross(right).normalize();
-            
+
             // Build rotation matrix and convert to quaternion
             let look_rotation = Quat::from_mat3(&Mat3::from_cols(right, corrected_up, forward));
-            
+
             // Apply particle's own rotation on top (for visual variety)
             particle.rotation += particle.rotation_speed * dt;
             let particle_rotation = Quat::from_rotation_z(particle.rotation);
-            
+
             transform.rotation = look_rotation * particle_rotation;
         }
 

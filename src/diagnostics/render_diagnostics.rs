@@ -14,7 +14,7 @@
 //!
 //! The diagnostic functions in this module log at key decision points in the rendering pipeline
 //! to help trace back to what state the rendering system was in when crashes occur.
-//! 
+//!
 use bevy::{
     asset::{AssetId, Handle},
     ecs::{
@@ -23,16 +23,16 @@ use bevy::{
         system::{Local, Res, ResMut},
     },
     log,
-    prelude::{App, Plugin, Query, Assets, Image, BevyError, Resource},
+    platform::collections::HashMap,
+    prelude::{App, Assets, BevyError, Image, Plugin, Query, Resource},
     render::{
+        render_asset::RenderAssets,
         render_resource::{
             BindGroupLayout, BindGroupLayoutEntry, BindingType, PipelineCache, ShaderStages,
             TextureSampleType, TextureViewDimension,
         },
-        render_asset::RenderAssets,
         ExtractSchedule, Render, RenderApp, RenderSystems,
     },
-    platform::collections::HashMap,
 };
 use std::fmt;
 
@@ -120,22 +120,16 @@ pub struct RenderDiagnosticsPlugin;
 impl Plugin for RenderDiagnosticsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RenderDiagnosticsState>();
-        
+
         // Add diagnostic systems to main world
-        app.add_systems(
-            bevy::prelude::Update,
-            update_frame_counter,
-        );
-        
+        app.add_systems(bevy::prelude::Update, update_frame_counter);
+
         // Add diagnostic systems to render world
         if let Some(render_app) = app.get_sub_app_mut(bevy::render::RenderApp) {
             render_app.init_resource::<RenderDiagnosticsState>();
-            render_app.add_systems(
-                ExtractSchedule,
-                log_render_state_extraction,
-            );
+            render_app.add_systems(ExtractSchedule, log_render_state_extraction);
         }
-        
+
         log::info!("[RENDER DIAGNOSTICS] RenderDiagnosticsPlugin registered");
     }
 }
@@ -143,7 +137,7 @@ impl Plugin for RenderDiagnosticsPlugin {
 /// Update frame counter
 pub fn update_frame_counter(mut state: ResMut<RenderDiagnosticsState>) -> Result<(), BevyError> {
     state.frame_count += 1;
-    
+
     // Clear diagnostic vectors periodically to prevent unbounded growth
     if state.frame_count % 300 == 0 {
         state.pipeline_cache_accesses.clear();
@@ -151,7 +145,7 @@ pub fn update_frame_counter(mut state: ResMut<RenderDiagnosticsState>) -> Result
         state.alpha_blend_mesh_events.clear();
         state.shader_binding_configs.clear();
     }
-    
+
     Ok(())
 }
 
@@ -190,9 +184,9 @@ pub fn log_pipeline_cache_access(
         cache_size,
         success: false, // Will be updated after access
     };
-    
+
     state.pipeline_cache_accesses.push(access.clone());
-    
+
     // Log detailed information for each access
     match pipeline_type {
         PipelineType::Compute => {
@@ -202,7 +196,7 @@ pub fn log_pipeline_cache_access(
                 pipeline_id,
                 cache_size,
             );
-            
+
             // CRITICAL: Log if trying to access index 5 with empty cache (Crash #1 scenario)
             if let Some(id) = pipeline_id {
                 if id == 5 && cache_size == 0 {
@@ -436,39 +430,60 @@ pub fn log_render_state(
             format!(": {}", additional_context)
         },
     );
-    
+
     log::info!(
         "[RENDER STATE]   Pipeline cache accesses: {} (last 5: {:?})",
         state.pipeline_cache_accesses.len(),
-        state.pipeline_cache_accesses.iter().rev().take(5).collect::<Vec<_>>(),
+        state
+            .pipeline_cache_accesses
+            .iter()
+            .rev()
+            .take(5)
+            .collect::<Vec<_>>(),
     );
-    
+
     log::info!(
         "[RENDER STATE]   Pipeline creations: {} (last 5: {:?})",
         state.pipeline_creations.len(),
-        state.pipeline_creations.iter().rev().take(5).collect::<Vec<_>>(),
+        state
+            .pipeline_creations
+            .iter()
+            .rev()
+            .take(5)
+            .collect::<Vec<_>>(),
     );
-    
+
     log::info!(
         "[RENDER STATE]   Alpha blend mesh events: {} (last 5: {:?})",
         state.alpha_blend_mesh_events.len(),
-        state.alpha_blend_mesh_events.iter().rev().take(5).collect::<Vec<_>>(),
+        state
+            .alpha_blend_mesh_events
+            .iter()
+            .rev()
+            .take(5)
+            .collect::<Vec<_>>(),
     );
-    
+
     log::info!(
         "[RENDER STATE]   Shader binding configs: {} (last 5: {:?})",
         state.shader_binding_configs.len(),
-        state.shader_binding_configs.iter().rev().take(5).collect::<Vec<_>>(),
+        state
+            .shader_binding_configs
+            .iter()
+            .rev()
+            .take(5)
+            .collect::<Vec<_>>(),
     );
-    
+
     // Log recent failed accesses
-    let failed_accesses: Vec<_> = state.pipeline_cache_accesses
+    let failed_accesses: Vec<_> = state
+        .pipeline_cache_accesses
         .iter()
         .filter(|a| !a.success)
         .rev()
         .take(10)
         .collect();
-    
+
     if !failed_accesses.is_empty() {
         log::error!(
             "[RENDER STATE]   Recent FAILED pipeline cache accesses: {:?}",
@@ -483,30 +498,30 @@ pub fn log_render_state(
 #[allow(dead_code)]
 pub fn diagnostic_mesh_material_system(
     meshes: Query<(Entity, &bevy::prelude::Mesh3d)>,
-    standard_materials: Query<(Entity, &bevy::pbr::MeshMaterial3d<bevy::pbr::StandardMaterial>)>,
+    standard_materials: Query<(
+        Entity,
+        &bevy::pbr::MeshMaterial3d<bevy::pbr::StandardMaterial>,
+    )>,
     state: Res<RenderDiagnosticsState>,
 ) {
     if state.frame_count % 600 != 0 {
         // Only log every ~10 seconds at 60fps
         return;
     }
-    
+
     let mesh_count = meshes.iter().count();
     let material_count = standard_materials.iter().count();
-    
+
     log::info!(
         "[MESH MATERIAL DIAGNOSTIC] Frame {} - Mesh entities: {}, StandardMaterial entities: {}",
         state.frame_count,
         mesh_count,
         material_count,
     );
-    
+
     // Log first few mesh entities
     for (entity, _mesh_handle) in meshes.iter().take(5) {
-        log::info!(
-            "[MESH MATERIAL DIAGNOSTIC]   Mesh entity: {:?}",
-            entity,
-        );
+        log::info!("[MESH MATERIAL DIAGNOSTIC]   Mesh entity: {:?}", entity,);
     }
 }
 
@@ -514,30 +529,27 @@ pub fn diagnostic_mesh_material_system(
 ///
 /// This runs periodically to capture texture loading state
 #[allow(dead_code)]
-pub fn diagnostic_gpu_image_system(
-    images: Res<Assets<Image>>,
-    state: Res<RenderDiagnosticsState>,
-) {
+pub fn diagnostic_gpu_image_system(images: Res<Assets<Image>>, state: Res<RenderDiagnosticsState>) {
     if state.frame_count % 600 != 0 {
         // Only log every ~10 seconds at 60fps
         return;
     }
-    
+
     let image_count = images.iter().count();
-    
+
     log::info!(
         "[GPU IMAGE DIAGNOSTIC] Frame {} - Loaded images: {}",
         state.frame_count,
         image_count,
     );
-    
+
     // Log image formats
     let mut format_counts: HashMap<String, usize> = HashMap::default();
     for (_, image) in images.iter() {
         let format_str = format!("{:?}", image.texture_descriptor.format);
         *format_counts.entry(format_str).or_insert(0) += 1;
     }
-    
+
     log::info!(
         "[GPU IMAGE DIAGNOSTIC]   Image format distribution: {:?}",
         format_counts,
@@ -552,19 +564,20 @@ pub fn check_pipeline_cache_health(
     state: &RenderDiagnosticsState,
     pipeline_cache: Option<&PipelineCache>,
 ) {
-    let recent_compute_accesses: Vec<_> = state.pipeline_cache_accesses
+    let recent_compute_accesses: Vec<_> = state
+        .pipeline_cache_accesses
         .iter()
         .rev()
         .filter(|a| a.pipeline_type == PipelineType::Compute)
         .take(10)
         .collect();
-    
+
     if !recent_compute_accesses.is_empty() {
         log::info!(
             "[PIPELINE CACHE HEALTH] Recent compute pipeline accesses (last 10): {:?}",
             recent_compute_accesses,
         );
-        
+
         // Check for dangerous patterns
         for access in &recent_compute_accesses {
             if let Some(id) = access.pipeline_id {

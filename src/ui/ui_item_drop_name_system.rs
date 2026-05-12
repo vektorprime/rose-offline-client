@@ -76,7 +76,9 @@ pub fn ui_item_drop_name_system(
             DroppedItem::Money(money) => (format!("{} Zuly", money.0), egui::Color32::YELLOW),
         };
 
-        let galley = ctx.layer_painter(egui::LayerId::background()).layout_no_wrap(text, egui::FontSelection::Default.resolve(&style), colour);
+        let galley = ctx
+            .layer_painter(egui::LayerId::background())
+            .layout_no_wrap(text, egui::FontSelection::Default.resolve(&style), colour);
         let pos = egui::pos2(
             screen_pos.x - galley.rect.width() / 2.0,
             screen_size.y - screen_pos.y,

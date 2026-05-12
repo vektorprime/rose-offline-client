@@ -1,19 +1,17 @@
 //! Editor Grid System
-//! 
+//!
 //! This module provides a visual grid for the map editor at y=0.
 //! The grid helps with positioning and alignment of objects.
 
-use bevy::{
-    prelude::{
-        App, Commands, Entity, Gizmos, IntoScheduleConfigs, Plugin, Query, Res, ResMut, 
-        Update, Vec3, Color, With, Without, InheritedVisibility, Transform, Mesh, 
-        MeshMaterial3d, StandardMaterial, Assets, Handle, Component,
-    },
+use bevy::prelude::{
+    App, Assets, Color, Commands, Component, Entity, Gizmos, Handle, InheritedVisibility,
+    IntoScheduleConfigs, Mesh, MeshMaterial3d, Plugin, Query, Res, ResMut, StandardMaterial,
+    Transform, Update, Vec3, With, Without,
 };
 
 use crate::map_editor::{
     components::{EditorGrid, EditorOnly},
-    resources::{MapEditorState, EditorGridSettings},
+    resources::{EditorGridSettings, MapEditorState},
 };
 
 /// Plugin for the editor grid system
@@ -26,7 +24,7 @@ impl Plugin for EditorGridPlugin {
 }
 
 /// System that renders the editor grid using gizmos
-/// 
+///
 /// This system:
 /// - Draws a grid at y=0 using Bevy's gizmo system
 /// - Respects the grid visibility setting
@@ -51,11 +49,16 @@ pub fn grid_render_system(
 
     for i in 0..num_lines {
         let z = -half_extent + (i as f32) * cell_size;
-        
+
         // Vary line intensity for major lines
         let is_major_line = i % 10 == 0;
         let line_color = if is_major_line {
-            Color::srgba(grid_color.to_srgba().red, grid_color.to_srgba().green, grid_color.to_srgba().blue, 0.8)
+            Color::srgba(
+                grid_color.to_srgba().red,
+                grid_color.to_srgba().green,
+                grid_color.to_srgba().blue,
+                0.8,
+            )
         } else {
             grid_color
         };
@@ -71,11 +74,16 @@ pub fn grid_render_system(
     // Draw grid lines along Z axis
     for i in 0..num_lines {
         let x = -half_extent + (i as f32) * cell_size;
-        
+
         // Vary line intensity for major lines
         let is_major_line = i % 10 == 0;
         let line_color = if is_major_line {
-            Color::srgba(grid_color.to_srgba().red, grid_color.to_srgba().green, grid_color.to_srgba().blue, 0.8)
+            Color::srgba(
+                grid_color.to_srgba().red,
+                grid_color.to_srgba().green,
+                grid_color.to_srgba().blue,
+                0.8,
+            )
         } else {
             grid_color
         };
@@ -90,21 +98,21 @@ pub fn grid_render_system(
 
     // Draw origin axes for reference
     let axis_length = 5.0;
-    
+
     // X axis (red)
     gizmos.line(
         Vec3::ZERO,
         Vec3::X * axis_length,
         Color::srgba(1.0, 0.0, 0.0, 1.0),
     );
-    
+
     // Y axis (green)
     gizmos.line(
         Vec3::ZERO,
         Vec3::Y * axis_length,
         Color::srgba(0.0, 1.0, 0.0, 1.0),
     );
-    
+
     // Z axis (blue)
     gizmos.line(
         Vec3::ZERO,
@@ -114,7 +122,7 @@ pub fn grid_render_system(
 }
 
 /// System to spawn a mesh-based grid (alternative to gizmo grid)
-/// 
+///
 /// This is useful if you want a more permanent grid that doesn't
 /// rely on gizmos. Currently not used, but available for future use.
 #[allow(dead_code)]

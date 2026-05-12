@@ -67,7 +67,10 @@ pub fn sailing_movement_system(
     underwater_volumes: Res<UnderwaterVolumes>,
     water_settings: Res<WaterSettings>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut boat_query: Query<(&mut BoatState, &mut Position, &mut FacingDirection), With<PlayerCharacter>>,
+    mut boat_query: Query<
+        (&mut BoatState, &mut Position, &mut FacingDirection),
+        With<PlayerCharacter>,
+    >,
 ) {
     for (mut boat, mut position, mut facing) in boat_query.iter_mut() {
         if !boat.active {
@@ -76,7 +79,8 @@ pub fn sailing_movement_system(
 
         let dt = time.delta_secs();
 
-        let steer_input = if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft) {
+        let steer_input = if keyboard.pressed(KeyCode::KeyA) || keyboard.pressed(KeyCode::ArrowLeft)
+        {
             -1.0
         } else if keyboard.pressed(KeyCode::KeyD) || keyboard.pressed(KeyCode::ArrowRight) {
             1.0
@@ -131,4 +135,3 @@ pub fn sailing_movement_system(
         facing.desired = boat.heading;
     }
 }
-

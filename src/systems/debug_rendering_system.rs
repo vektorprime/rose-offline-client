@@ -1,46 +1,48 @@
-use bevy::prelude::*;
-use bevy::camera::visibility::Visibility;
+use crate::components::{Zone, ZoneObject};
+use crate::render::{DamageDigitMaterial, ParticleMaterial, RoseEffectExtension};
+use crate::resources::RenderExtractionDiagnostics;
 use bevy::camera::primitives::Aabb;
+use bevy::camera::visibility::Visibility;
 use bevy::camera::RenderTarget;
-use bevy::render::{Extract, ExtractSchedule, Render, RenderApp, RenderSystems};
 use bevy::core_pipeline::core_3d::{Opaque3d, Transparent3d};
+use bevy::pbr::{ExtendedMaterial, MeshMaterial3d};
+use bevy::prelude::*;
 use bevy::render::render_phase::ViewSortedRenderPhases;
 use bevy::render::view::ViewUniformOffset;
-use bevy::pbr::{ExtendedMaterial, MeshMaterial3d};
-use crate::components::{Zone, ZoneObject};
-use crate::render::{
-    ParticleMaterial, DamageDigitMaterial, RoseEffectExtension
-};
-use crate::resources::RenderExtractionDiagnostics;
+use bevy::render::{Extract, ExtractSchedule, Render, RenderApp, RenderSystems};
 
-use log::{info, warn, error};
+use log::{error, info, warn};
 
 /// Debug system to log entity visibility information
 pub fn debug_entity_visibility(
-    query: Query<(
-        Entity,
-        &Transform,
-        &ViewVisibility,
-        &Visibility,
-        Option<&Name>,
-    ), (With<Mesh3d>, Without<Camera>)>,
+    query: Query<
+        (
+            Entity,
+            &Transform,
+            &ViewVisibility,
+            &Visibility,
+            Option<&Name>,
+        ),
+        (With<Mesh3d>, Without<Camera>),
+    >,
 ) {
     let total_entities = query.iter().count();
-    
+
     if total_entities == 0 {
         warn!("[DEBUG] No mesh entities found in scene!");
         return;
     }
-    
-    let visible_count = query.iter()
+
+    let visible_count = query
+        .iter()
         .filter(|(_, _, view_vis, _, _)| view_vis.get())
         .count();
-    
+
     // Count visibility component states
     let mut visible_component_count = 0;
     let mut hidden_component_count = 0;
     let mut inherited_component_count = 0;
-    
+
     for (_, _, _, visibility, _) in query.iter() {
         match visibility {
             Visibility::Visible => visible_component_count += 1,
@@ -48,16 +50,22 @@ pub fn debug_entity_visibility(
             Visibility::Inherited => inherited_component_count += 1,
         }
     }
-    
+
     info!("[DEBUG] Entity visibility stats:");
     info!("[DEBUG]   Total mesh entities: {}", total_entities);
-    info!("[DEBUG]   Visible entities (ViewVisibility): {}", visible_count);
-    info!("[DEBUG]   Hidden entities (ViewVisibility): {}", total_entities - visible_count);
+    info!(
+        "[DEBUG]   Visible entities (ViewVisibility): {}",
+        visible_count
+    );
+    info!(
+        "[DEBUG]   Hidden entities (ViewVisibility): {}",
+        total_entities - visible_count
+    );
     info!("[DEBUG]   Visibility component states:");
     info!("[DEBUG]     Visible: {}", visible_component_count);
     info!("[DEBUG]     Hidden: {}", hidden_component_count);
     info!("[DEBUG]     Inherited: {}", inherited_component_count);
-    
+
     // Log first 5 visible entities with more detail
     let mut visible_logged = 0;
     for (_entity, transform, view_vis, visibility, name) in query.iter() {
@@ -74,7 +82,7 @@ pub fn debug_entity_visibility(
             visible_logged += 1;
         }
     }
-    
+
     // Log first 5 hidden entities with more detail
     let mut hidden_logged = 0;
     for (_entity, transform, view_vis, visibility, name) in query.iter() {
@@ -96,23 +104,18 @@ pub fn debug_entity_visibility(
 /// Comprehensive render diagnostic system that runs every frame
 /// to help diagnose black screen issues
 pub fn render_diagnostics_system(
-    cameras: Query<(
-        Entity,
-        &Camera,
-        &GlobalTransform,
-        &RenderTarget,
-    )>,
+    cameras: Query<(Entity, &Camera, &GlobalTransform, &RenderTarget)>,
     meshes: Query<(
-    Entity,
-    &Mesh3d,
-    &GlobalTransform,
-    &ViewVisibility,
-    &Visibility,
-    Option<&MeshMaterial3d<StandardMaterial>>,
-    Option<&MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
-    Option<&MeshMaterial3d<ParticleMaterial>>,
-    Option<&MeshMaterial3d<DamageDigitMaterial>>,
-)>,
+        Entity,
+        &Mesh3d,
+        &GlobalTransform,
+        &ViewVisibility,
+        &Visibility,
+        Option<&MeshMaterial3d<StandardMaterial>>,
+        Option<&MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+        Option<&MeshMaterial3d<ParticleMaterial>>,
+        Option<&MeshMaterial3d<DamageDigitMaterial>>,
+    )>,
     mesh_assets: Res<Assets<Mesh>>,
     material_assets: Res<Assets<StandardMaterial>>,
     effect_material_assets: Res<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
@@ -122,59 +125,73 @@ pub fn render_diagnostics_system(
     windows: Query<&Window>,
 ) {
     use bevy::log::info;
-    
+
     info!("========================================");
     info!("[RENDER DIAGNOSTICS] Frame Report");
     info!("========================================");
-    
+
     // Check window state
     for window in windows.iter() {
-        info!("[RENDER DIAGNOSTICS] Window: {}x{}, present mode: {:?}",
-            window.resolution.width(), window.resolution.height(), window.present_mode);
+        info!(
+            "[RENDER DIAGNOSTICS] Window: {}x{}, present mode: {:?}",
+            window.resolution.width(),
+            window.resolution.height(),
+            window.present_mode
+        );
     }
-    
+
     // Check camera state
     let camera_count = cameras.iter().count();
     info!("[RENDER DIAGNOSTICS] Cameras found: {}", camera_count);
-    
+
     if camera_count == 0 {
         error!("[RENDER DIAGNOSTICS] CRITICAL: No cameras found! This will cause black screen.");
     } else {
         for (entity, camera, transform, render_target) in cameras.iter() {
             let position = transform.translation();
             let forward = transform.forward();
- 
+
             info!("[RENDER DIAGNOSTICS] Camera {:?}:", entity);
-            info!("[RENDER DIAGNOSTICS]   Position: ({:.2}, {:.2}, {:.2})", position.x, position.y, position.z);
-            info!("[RENDER DIAGNOSTICS]   Forward vector: ({:.2}, {:.2}, {:.2})", forward.x, forward.y, forward.z);
+            info!(
+                "[RENDER DIAGNOSTICS]   Position: ({:.2}, {:.2}, {:.2})",
+                position.x, position.y, position.z
+            );
+            info!(
+                "[RENDER DIAGNOSTICS]   Forward vector: ({:.2}, {:.2}, {:.2})",
+                forward.x, forward.y, forward.z
+            );
             info!("[RENDER DIAGNOSTICS]   Is active: {}", camera.is_active);
             info!("[RENDER DIAGNOSTICS]   Target: {:?}", render_target);
-            
+
             // Check for invalid camera values
             if position.x.is_nan() || position.y.is_nan() || position.z.is_nan() {
                 error!("[RENDER DIAGNOSTICS]   CRITICAL: Camera position contains NaN!");
             }
-            
+
             if !camera.is_active {
                 warn!("[RENDER DIAGNOSTICS]   WARNING: Camera is not active!");
             }
         }
     }
-    
+
     // Check mesh entities
     let mesh_entity_count = meshes.iter().count();
     info!("[RENDER DIAGNOSTICS] Mesh entities: {}", mesh_entity_count);
-    
-    let visible_meshes = meshes.iter()
+
+    let visible_meshes = meshes
+        .iter()
         .filter(|(_, _, _, vis, _, _, _, _, _)| vis.get())
         .count();
-    info!("[RENDER DIAGNOSTICS] Visible mesh entities: {}", visible_meshes);
-    
+    info!(
+        "[RENDER DIAGNOSTICS] Visible mesh entities: {}",
+        visible_meshes
+    );
+
     // Count visibility component states
     let mut visible_component_count = 0;
     let mut hidden_component_count = 0;
     let mut inherited_component_count = 0;
-    
+
     for (_, _, _, _, visibility, _, _, _, _) in meshes.iter() {
         match visibility {
             Visibility::Visible => visible_component_count += 1,
@@ -182,16 +199,22 @@ pub fn render_diagnostics_system(
             Visibility::Inherited => inherited_component_count += 1,
         }
     }
-    
+
     info!("[RENDER DIAGNOSTICS] Visibility component states:");
-    info!("[RENDER DIAGNOSTICS]   Visible: {}", visible_component_count);
+    info!(
+        "[RENDER DIAGNOSTICS]   Visible: {}",
+        visible_component_count
+    );
     info!("[RENDER DIAGNOSTICS]   Hidden: {}", hidden_component_count);
-    info!("[RENDER DIAGNOSTICS]   Inherited: {}", inherited_component_count);
-    
+    info!(
+        "[RENDER DIAGNOSTICS]   Inherited: {}",
+        inherited_component_count
+    );
+
     if mesh_entity_count == 0 {
         warn!("[RENDER DIAGNOSTICS] WARNING: No mesh entities in scene!");
     }
-    
+
     if visible_meshes == 0 && mesh_entity_count > 0 {
         warn!("[RENDER DIAGNOSTICS] WARNING: Mesh entities exist but none are visible!");
         warn!("[RENDER DIAGNOSTICS]   - Check if meshes are in camera frustum");
@@ -200,11 +223,21 @@ pub fn render_diagnostics_system(
         warn!("[RENDER DIAGNOSTICS]   - Check if meshes have zero scale");
         warn!("[RENDER DIAGNOSTICS]   - Check if materials are fully transparent");
     }
-    
+
     // Check first few mesh entities with more detail
     let mut logged = 0;
-    for (entity, mesh_handle, transform, view_vis, visibility,
-         material, effect_material, particle_material, damage_digit_material) in meshes.iter() {
+    for (
+        entity,
+        mesh_handle,
+        transform,
+        view_vis,
+        visibility,
+        material,
+        effect_material,
+        particle_material,
+        damage_digit_material,
+    ) in meshes.iter()
+    {
         if logged < 3 {
             let position = transform.translation();
             let visibility_str = match visibility {
@@ -212,18 +245,31 @@ pub fn render_diagnostics_system(
                 Visibility::Hidden => "Hidden",
                 Visibility::Inherited => "Inherited",
             };
-            
-            let has_material = material.is_some() || effect_material.is_some() ||
-                              particle_material.is_some() ||
-                              damage_digit_material.is_some();
-            
+
+            let has_material = material.is_some()
+                || effect_material.is_some()
+                || particle_material.is_some()
+                || damage_digit_material.is_some();
+
             info!("[RENDER DIAGNOSTICS] Mesh entity {:?}:", entity);
-            info!("[RENDER DIAGNOSTICS]   Position: ({:.2}, {:.2}, {:.2})", position.x, position.y, position.z);
-            info!("[RENDER DIAGNOSTICS]   Visibility component: {}", visibility_str);
-            info!("[RENDER DIAGNOSTICS]   ViewVisibility (computed): {}", view_vis.get());
-            info!("[RENDER DIAGNOSTICS]   Has mesh asset: {}", mesh_assets.contains(mesh_handle));
+            info!(
+                "[RENDER DIAGNOSTICS]   Position: ({:.2}, {:.2}, {:.2})",
+                position.x, position.y, position.z
+            );
+            info!(
+                "[RENDER DIAGNOSTICS]   Visibility component: {}",
+                visibility_str
+            );
+            info!(
+                "[RENDER DIAGNOSTICS]   ViewVisibility (computed): {}",
+                view_vis.get()
+            );
+            info!(
+                "[RENDER DIAGNOSTICS]   Has mesh asset: {}",
+                mesh_assets.contains(mesh_handle)
+            );
             info!("[RENDER DIAGNOSTICS]   Has material: {}", has_material);
-            
+
             if !has_material {
                 warn!("[RENDER DIAGNOSTICS]   WARNING: Entity has no recognized material!");
             }
@@ -232,60 +278,80 @@ pub fn render_diagnostics_system(
             if position.x.is_nan() || position.y.is_nan() || position.z.is_nan() {
                 error!("[RENDER DIAGNOSTICS]   CRITICAL: Mesh position contains NaN!");
             }
-            
+
             // Check material transparency for StandardMaterial
             if let Some(mat_handle) = material {
                 if let Some(mat) = material_assets.get(mat_handle) {
                     let alpha = mat.base_color.alpha();
-                    info!("[RENDER DIAGNOSTICS]   StandardMaterial alpha: {:.3}", alpha);
-                    info!("[RENDER DIAGNOSTICS]   StandardMaterial alpha mode: {:?}", mat.alpha_mode);
+                    info!(
+                        "[RENDER DIAGNOSTICS]   StandardMaterial alpha: {:.3}",
+                        alpha
+                    );
+                    info!(
+                        "[RENDER DIAGNOSTICS]   StandardMaterial alpha mode: {:?}",
+                        mat.alpha_mode
+                    );
                     if alpha < 0.01 {
                         warn!("[RENDER DIAGNOSTICS]   WARNING: Material is nearly transparent!");
                     }
                 }
             }
-            
+
             logged += 1;
         }
     }
-    
+
     // Check asset counts
     info!("[RENDER DIAGNOSTICS] Asset counts:");
     info!("[RENDER DIAGNOSTICS]   Meshes: {}", mesh_assets.len());
-    info!("[RENDER DIAGNOSTICS]   StandardMaterials: {}", material_assets.len());
-    info!("[RENDER DIAGNOSTICS]   ExtendedMaterials<StandardMaterial, RoseEffectExtension>: {}", effect_material_assets.len());
-    info!("[RENDER DIAGNOSTICS]   ParticleMaterials: {}", particle_material_assets.len());
-    info!("[RENDER DIAGNOSTICS]   DamageDigitMaterials: {}", damage_digit_material_assets.len());
+    info!(
+        "[RENDER DIAGNOSTICS]   StandardMaterials: {}",
+        material_assets.len()
+    );
+    info!(
+        "[RENDER DIAGNOSTICS]   ExtendedMaterials<StandardMaterial, RoseEffectExtension>: {}",
+        effect_material_assets.len()
+    );
+    info!(
+        "[RENDER DIAGNOSTICS]   ParticleMaterials: {}",
+        particle_material_assets.len()
+    );
+    info!(
+        "[RENDER DIAGNOSTICS]   DamageDigitMaterials: {}",
+        damage_digit_material_assets.len()
+    );
     info!("[RENDER DIAGNOSTICS]   Images: {}", images.len());
-    
+
     if mesh_assets.len() == 0 {
         warn!("[RENDER DIAGNOSTICS] WARNING: No mesh assets loaded!");
     }
-    
+
     if images.len() == 0 {
         warn!("[RENDER DIAGNOSTICS] WARNING: No images/textures loaded!");
     }
-    
+
     // Check for common black screen causes
     if camera_count > 0 && mesh_entity_count > 0 && visible_meshes == 0 {
-        warn!("[RENDER DIAGNOSTICS] POSSIBLE CAUSE: Camera and meshes exist but meshes not visible");
+        warn!(
+            "[RENDER DIAGNOSTICS] POSSIBLE CAUSE: Camera and meshes exist but meshes not visible"
+        );
         warn!("[RENDER DIAGNOSTICS]   - Camera may be facing wrong direction");
         warn!("[RENDER DIAGNOSTICS]   - Meshes may be outside camera frustum");
         warn!("[RENDER DIAGNOSTICS]   - Mesh transforms may be incorrect (zero scale, NaN)");
         warn!("[RENDER DIAGNOSTICS]   - Materials may be fully transparent");
         warn!("[RENDER DIAGNOSTICS]   - Visibility component may be set to Hidden");
     }
-    
+
     if camera_count > 0 && mesh_entity_count == 0 {
         warn!("[RENDER DIAGNOSTICS] POSSIBLE CAUSE: Camera exists but no mesh entities");
         warn!("[RENDER DIAGNOSTICS]   - Zone may not be loading properly");
         warn!("[RENDER DIAGNOSTICS]   - Entities may be despawned");
     }
-    
+
     if camera_count == 0 {
         error!("[RENDER DIAGNOSTICS] CRITICAL CAUSE: No cameras - nothing will render!");
     }
-    
+
     info!("========================================");
 }
 
@@ -299,24 +365,24 @@ pub fn render_diagnostics_system_lightweight(
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // Always log first frame to confirm system is running
     if *frame_count == 1 {
         log::info!("[RENDER STATUS] Diagnostic system initialized - will report every 60 frames");
     }
-    
+
     // Only log every 60 frames (approximately once per second at 60fps)
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     let camera_count = cameras.iter().count();
     let mesh_entity_count = meshes.iter().count();
     let visible_meshes = meshes.iter().filter(|vis| vis.get()).count();
     let mesh_asset_count = mesh_assets.len();
     let image_count = images.len();
     let extracted_count = diagnostics.last_extracted_count;
-    
+
     // Log camera position for first camera
     if let Some((_, _, transform)) = cameras.iter().next() {
         let pos = transform.translation();
@@ -325,16 +391,19 @@ pub fn render_diagnostics_system_lightweight(
     } else {
         log::warn!("[RENDER STATUS] Frame {}: NO CAMERA FOUND!", *frame_count);
     }
-    
+
     // Log warnings if something looks wrong
     if camera_count == 0 {
         warn!("[RENDER STATUS] No cameras found!");
     }
-    
+
     if mesh_entity_count > 0 && visible_meshes == 0 {
-        warn!("[RENDER STATUS] {} meshes exist but none visible - possible culling or frustum issue", mesh_entity_count);
+        warn!(
+            "[RENDER STATUS] {} meshes exist but none visible - possible culling or frustum issue",
+            mesh_entity_count
+        );
     }
-    
+
     // CRITICAL: Compare Main World vs Render World counts to detect extraction failure
     if visible_meshes > 0 && extracted_count == 0 {
         error!("[RENDER STATUS] CRITICAL: {} entities visible in Main World but 0 extracted to Render World!", visible_meshes);
@@ -345,38 +414,40 @@ pub fn render_diagnostics_system_lightweight(
             visible_meshes, extracted_count);
         warn!("[RENDER STATUS]   Some entities are not being extracted - possible culling or extraction issue");
     } else if extracted_count > visible_meshes {
-        info!("[RENDER STATUS] Render World has {} entities, Main World has {} visible", extracted_count, visible_meshes);
+        info!(
+            "[RENDER STATUS] Render World has {} entities, Main World has {} visible",
+            extracted_count, visible_meshes
+        );
     }
 }
 
 /// Comprehensive frustum culling diagnostics to check if meshes are in camera view
 pub fn frustum_culling_diagnostics(
-    cameras: Query<(
-        Entity,
-        &Camera,
-        &GlobalTransform,
-    )>,
-    meshes: Query<(
-        Entity,
-        &GlobalTransform,
-        &ViewVisibility,
-        &Visibility,
-        Option<&Mesh3d>,
-    ), Without<Camera>>,
+    cameras: Query<(Entity, &Camera, &GlobalTransform)>,
+    meshes: Query<
+        (
+            Entity,
+            &GlobalTransform,
+            &ViewVisibility,
+            &Visibility,
+            Option<&Mesh3d>,
+        ),
+        Without<Camera>,
+    >,
     mesh_assets: Res<Assets<Mesh>>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // Only run every 60 frames to avoid spam
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     // info!("========================================");
     // info!("[FRUSTUM DIAGNOSTICS] Frame {}", *frame_count);
     // info!("========================================");
-    
+
     for (cam_entity, camera, cam_transform) in cameras.iter() {
         // info!("[FRUSTUM] Camera {:?}:", cam_entity);
         // info!("[FRUSTUM]   Position: {:?}", cam_transform.translation());
@@ -387,7 +458,7 @@ pub fn frustum_culling_diagnostics(
         // Calculate distance to first few meshes
         let cam_pos = cam_transform.translation();
         let mut logged = 0;
-        
+
         for (mesh_entity, mesh_transform, view_vis, visibility, mesh_handle) in meshes.iter() {
             if logged >= 5 {
                 break;
@@ -399,13 +470,13 @@ pub fn frustum_culling_diagnostics(
             let cam_forward = cam_transform.forward();
             let dot_product = cam_forward.dot(direction_to_mesh);
             let angle_to_mesh = dot_product.acos().to_degrees();
-            
+
             let visibility_str = match visibility {
                 Visibility::Visible => "Visible",
                 Visibility::Hidden => "Hidden",
                 Visibility::Inherited => "Inherited",
             };
-            
+
             // info!("[FRUSTUM]   Mesh {:?}:", mesh_entity);
             // info!("[FRUSTUM]     Position: {:?}", mesh_pos);
             // info!("[FRUSTUM]     Distance: {:.2}", distance);
@@ -414,16 +485,16 @@ pub fn frustum_culling_diagnostics(
             // info!("[FRUSTUM]     ViewVisibility (computed): {}", view_vis.get());
             // info!("[FRUSTUM]     In front of camera: {} (dot={:.2})",
             //     dot_product > 0.0, dot_product);
-            
+
             // Check if mesh has valid asset
             if let Some(handle) = mesh_handle {
                 // info!("[FRUSTUM]     Mesh asset loaded: {}", mesh_assets.contains(handle));
             }
-            
+
             logged += 1;
         }
     }
-    
+
     // info!("========================================");
 }
 
@@ -445,30 +516,38 @@ pub fn material_transparency_diagnostics(
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // Only run every 60 frames to avoid spam
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     let mut transparent_count = 0;
     let mut opaque_count = 0;
     let mut no_material_count = 0;
     let mut logged = 0;
-    
+
     info!("========================================");
     info!("[MATERIAL DIAGNOSTICS] Frame {}", *frame_count);
     info!("========================================");
-    
-    for (entity, transform, view_vis,
-         material_handle, effect_handle, particle_handle, damage_digit_handle) in meshes.iter() {
+
+    for (
+        entity,
+        transform,
+        view_vis,
+        material_handle,
+        effect_handle,
+        particle_handle,
+        damage_digit_handle,
+    ) in meshes.iter()
+    {
         if logged >= 5 {
             break;
         }
 
         let position = transform.translation();
         let is_visible = view_vis.get();
-        
+
         let mut found_material = false;
 
         // Check StandardMaterial
@@ -477,15 +556,18 @@ pub fn material_transparency_diagnostics(
             if let Some(material) = material_assets.get(handle) {
                 let alpha = material.base_color.alpha();
                 let alpha_mode = material.alpha_mode;
-                
+
                 info!("[MATERIAL] Entity {:?} (StandardMaterial):", entity);
                 info!("[MATERIAL]   Position: {:?}", position);
                 info!("[MATERIAL]   ViewVisibility: {}", is_visible);
                 info!("[MATERIAL]   Alpha: {:.3}", alpha);
                 info!("[MATERIAL]   Alpha mode: {:?}", alpha_mode);
-                
+
                 if alpha < 0.01 {
-                    warn!("[MATERIAL]   WARNING: Material is nearly invisible (alpha={:.3})", alpha);
+                    warn!(
+                        "[MATERIAL]   WARNING: Material is nearly invisible (alpha={:.3})",
+                        alpha
+                    );
                     transparent_count += 1;
                 } else if alpha < 1.0 {
                     info!("[MATERIAL]   Material is partially transparent");
@@ -494,7 +576,10 @@ pub fn material_transparency_diagnostics(
                     opaque_count += 1;
                 }
             } else {
-                warn!("[MATERIAL] Entity {:?} has StandardMaterial handle but material not loaded!", entity);
+                warn!(
+                    "[MATERIAL] Entity {:?} has StandardMaterial handle but material not loaded!",
+                    entity
+                );
             }
         }
 
@@ -533,40 +618,38 @@ pub fn material_transparency_diagnostics(
             info!("[MATERIAL] Entity {:?} has no recognized material", entity);
             no_material_count += 1;
         }
-        
+
         logged += 1;
     }
-    
-    info!("[MATERIAL] Summary: {} opaque, {} transparent, {} no material",
-        opaque_count, transparent_count, no_material_count);
+
+    info!(
+        "[MATERIAL] Summary: {} opaque, {} transparent, {} no material",
+        opaque_count, transparent_count, no_material_count
+    );
     info!("========================================");
 }
 
 /// Transform validation diagnostics to check for invalid transforms
 pub fn transform_validation_diagnostics(
-    meshes: Query<(
-        Entity,
-        &GlobalTransform,
-        &ViewVisibility,
-    )>,
+    meshes: Query<(Entity, &GlobalTransform, &ViewVisibility)>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // Only run every 60 frames to avoid spam
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     let mut invalid_count = 0;
     let zero_scale_count = 0;
     let mut nan_count = 0;
     let mut logged = 0;
-    
+
     info!("========================================");
     info!("[TRANSFORM DIAGNOSTICS] Frame {}", *frame_count);
     info!("========================================");
-    
+
     for (entity, transform, view_vis) in meshes.iter() {
         if logged >= 5 {
             break;
@@ -575,58 +658,55 @@ pub fn transform_validation_diagnostics(
         let translation = transform.translation();
 
         let has_nan = translation.x.is_nan() || translation.y.is_nan() || translation.z.is_nan();
-        
+
         info!("[TRANSFORM] Entity {:?}:", entity);
         info!("[TRANSFORM]   Translation: {:?}", translation);
         info!("[TRANSFORM]   ViewVisibility: {}", view_vis.get());
-        
+
         if has_nan {
             error!("[TRANSFORM]   CRITICAL: Transform contains NaN values!");
             nan_count += 1;
             invalid_count += 1;
         }
-        
+
         logged += 1;
     }
-    
+
     if invalid_count > 0 {
-        warn!("[TRANSFORM] Found {} invalid transforms ({} with NaN, {} with zero scale)",
-            invalid_count, nan_count, zero_scale_count);
+        warn!(
+            "[TRANSFORM] Found {} invalid transforms ({} with NaN, {} with zero scale)",
+            invalid_count, nan_count, zero_scale_count
+        );
     } else {
         info!("[TRANSFORM] All transforms appear valid");
     }
-    
+
     info!("========================================");
 }
 
 /// Visibility component state diagnostics to check inherited visibility
 pub fn visibility_state_diagnostics(
-    meshes: Query<(
-        Entity,
-        &GlobalTransform,
-        &ViewVisibility,
-        &Visibility,
-    )>,
+    meshes: Query<(Entity, &GlobalTransform, &ViewVisibility, &Visibility)>,
     parents: Query<&ChildOf>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // Only run every 60 frames to avoid spam
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     let mut visible_count = 0;
     let mut hidden_count = 0;
     let mut inherited_count = 0;
     let mut mismatch_count = 0;
     let mut logged = 0;
-    
+
     info!("========================================");
     info!("[VISIBILITY STATE DIAGNOSTICS] Frame {}", *frame_count);
     info!("========================================");
-    
+
     for (entity, transform, view_vis, visibility) in meshes.iter() {
         if logged >= 5 {
             break;
@@ -638,21 +718,21 @@ pub fn visibility_state_diagnostics(
             Visibility::Hidden => "Hidden",
             Visibility::Inherited => "Inherited",
         };
-        
+
         let is_visible = view_vis.get();
-        
+
         // Check if there's a mismatch
         let is_mismatch = match visibility {
             Visibility::Visible => !is_visible,
             Visibility::Hidden => is_visible,
             Visibility::Inherited => false, // Inherited depends on parent
         };
-        
+
         info!("[VISIBILITY] Entity {:?}:", entity);
         info!("[VISIBILITY]   Position: {:?}", position);
         info!("[VISIBILITY]   Visibility component: {}", visibility_str);
         info!("[VISIBILITY]   ViewVisibility (computed): {}", is_visible);
-        
+
         // Check for parent
         if let Ok(parent) = parents.get(entity) {
             info!("[VISIBILITY]   Has parent: {:?}", parent.parent());
@@ -660,74 +740,78 @@ pub fn visibility_state_diagnostics(
                 info!("[VISIBILITY]   Visibility depends on parent");
             }
         }
-        
+
         if is_mismatch {
-            warn!("[VISIBILITY]   MISMATCH: Visibility component is {} but ViewVisibility is {}!",
-                visibility_str, is_visible);
+            warn!(
+                "[VISIBILITY]   MISMATCH: Visibility component is {} but ViewVisibility is {}!",
+                visibility_str, is_visible
+            );
             mismatch_count += 1;
         }
-        
+
         match visibility {
             Visibility::Visible => visible_count += 1,
             Visibility::Hidden => hidden_count += 1,
             Visibility::Inherited => inherited_count += 1,
         }
-        
+
         logged += 1;
     }
-    
-    info!("[VISIBILITY] Component states: {} Visible, {} Hidden, {} Inherited",
-        visible_count, hidden_count, inherited_count);
-    
+
+    info!(
+        "[VISIBILITY] Component states: {} Visible, {} Hidden, {} Inherited",
+        visible_count, hidden_count, inherited_count
+    );
+
     if mismatch_count > 0 {
-        warn!("[VISIBILITY] Found {} visibility component mismatches!", mismatch_count);
+        warn!(
+            "[VISIBILITY] Found {} visibility component mismatches!",
+            mismatch_count
+        );
     }
-    
+
     info!("========================================");
 }
 
 /// Explicit active camera diagnostics to clearly show which camera is being used for rendering
 pub fn active_camera_diagnostics(
-    cameras: Query<(
-        Entity,
-        &Camera,
-        &GlobalTransform,
-    )>,
+    cameras: Query<(Entity, &Camera, &GlobalTransform)>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // Always log first frame to confirm system is running
     if *frame_count == 1 {
         //log::info!("[ACTIVE CAMERA] Diagnostic system initialized - will report every 60 frames");
     }
-    
+
     // Only run every 60 frames (approximately once per second at 60fps)
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     //info!("========================================");
     //info!("[ACTIVE CAMERA] Frame {}", *frame_count);
     //info!("========================================");
-    
+
     let total_cameras = cameras.iter().count();
     //info!("[ACTIVE CAMERA] Found {} camera(s) in scene", total_cameras);
-    
+
     // Count active cameras
-    let active_cameras: Vec<_> = cameras.iter()
+    let active_cameras: Vec<_> = cameras
+        .iter()
         .filter(|(_, camera, _)| camera.is_active)
         .collect();
-    
+
     let active_count = active_cameras.len();
     //info!("[ACTIVE CAMERA] Active camera(s): {}", active_count);
-    
+
     if total_cameras == 0 {
         //warn!("[ACTIVE CAMERA] WARNING: No active camera found - this would cause black screen!");
         //info!("========================================");
         return;
     }
-    
+
     if active_count == 0 {
         //warn!("[ACTIVE CAMERA] WARNING: NO active camera found - this would cause black screen!");
         //warn!("[ACTIVE CAMERA] All {} camera(s) are inactive!", total_cameras);
@@ -737,7 +821,7 @@ pub fn active_camera_diagnostics(
     } else {
         //info!("[ACTIVE CAMERA] Exactly one active camera - OK");
     }
-    
+
     // Log details for each camera, highlighting active ones
     for (entity, camera, transform) in cameras.iter() {
         let position = transform.translation();
@@ -751,12 +835,12 @@ pub fn active_camera_diagnostics(
             //info!("[ACTIVE CAMERA]     Up: ({:.2}, {:.2}, {:.2})", up.x, up.y, up.z);
             //info!("[ACTIVE CAMERA]     Target: {:?}", camera.target);
             //info!("[ACTIVE CAMERA]     Order: {:?}", camera.order);
-            
+
             // Check for invalid camera values
             if position.x.is_nan() || position.y.is_nan() || position.z.is_nan() {
                 error!("[ACTIVE CAMERA]     CRITICAL: Active camera position contains NaN!");
             }
-            
+
             if forward.x.is_nan() || forward.y.is_nan() || forward.z.is_nan() {
                 error!("[ACTIVE CAMERA]     CRITICAL: Active camera forward vector contains NaN!");
             }
@@ -764,45 +848,41 @@ pub fn active_camera_diagnostics(
             //info!("[ACTIVE CAMERA] Inactive camera Entity: {:?} (not being used for rendering)", entity);
         }
     }
-    
+
     // Summary for quick diagnosis
     if active_count == 1 {
         if let Some((entity, _camera, transform)) = active_cameras.first() {
             let position = transform.translation();
             let forward = transform.forward();
             let _ = (entity, position, forward); // Suppress unused variable warnings
-            //info!("[ACTIVE CAMERA] SUMMARY: Active camera {:?} at ({:.1}, {:.1}, {:.1}), facing ({:.1}, {:.1}, {:.1})",
-            //    entity, position.x, position.y, position.z, forward.x, forward.y, forward.z);
+                                                 //info!("[ACTIVE CAMERA] SUMMARY: Active camera {:?} at ({:.1}, {:.1}, {:.1}), facing ({:.1}, {:.1}, {:.1})",
+                                                 //    entity, position.x, position.y, position.z, forward.x, forward.y, forward.z);
         }
     } else if active_count == 0 {
         //error!("[ACTIVE CAMERA] SUMMARY: CRITICAL - No active camera! Rendering will fail!");
     } else {
         //warn!("[ACTIVE CAMERA] SUMMARY: Multiple active cameras detected - rendering may be ambiguous");
     }
-    
+
     //info!("========================================");
 }
 
 /// Camera configuration diagnostics to check camera setup
 pub fn camera_configuration_diagnostics(
-    cameras: Query<(
-        Entity,
-        &Camera,
-        &GlobalTransform,
-    )>,
+    cameras: Query<(Entity, &Camera, &GlobalTransform)>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // Only run every 60 frames to avoid spam
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     //info!("========================================");
     //info!("[CAMERA CONFIG DIAGNOSTICS] Frame {}", *frame_count);
     //info!("========================================");
-    
+
     for (entity, camera, transform) in cameras.iter() {
         //info!("[CAMERA] Camera {:?}:", entity);
         //info!("[CAMERA]   Is active: {}", camera.is_active);
@@ -819,36 +899,29 @@ pub fn camera_configuration_diagnostics(
         //info!("[CAMERA]     Position: {:?}", position);
         //info!("[CAMERA]     Forward vector: {:?}", forward);
         //info!("[CAMERA]     Up vector: {:?}", up);
-        
+
         // Check for invalid camera values
         if position.x.is_nan() || position.y.is_nan() || position.z.is_nan() {
             error!("[CAMERA]   CRITICAL: Camera position contains NaN!");
         }
-        
+
         if forward.x.is_nan() || forward.y.is_nan() || forward.z.is_nan() {
             error!("[CAMERA]   CRITICAL: Camera forward vector contains NaN!");
         }
-        
+
         if !camera.is_active {
             //warn!("[CAMERA]   WARNING: Camera is not active!");
         }
         let _ = entity; // Suppress unused variable warning
     }
-    
+
     //info!("========================================");
 }
 
 /// Render layer diagnostics to check if entities are in correct render layers
 pub fn render_layer_diagnostics(
-    meshes: Query<(
-        Entity,
-        &GlobalTransform,
-        &ViewVisibility,
-    ), With<Mesh3d>>,
-    cameras: Query<(
-        Entity,
-        &Camera,
-    )>,
+    meshes: Query<(Entity, &GlobalTransform, &ViewVisibility), With<Mesh3d>>,
+    cameras: Query<(Entity, &Camera)>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
@@ -890,12 +963,7 @@ pub fn render_layer_diagnostics(
 
 /// AABB validation diagnostics to check if mesh bounding boxes are valid
 pub fn aabb_validation_diagnostics(
-    meshes: Query<(
-        Entity,
-        &GlobalTransform,
-        &ViewVisibility,
-        Option<&Aabb>,
-    ), With<Mesh3d>>,
+    meshes: Query<(Entity, &GlobalTransform, &ViewVisibility, Option<&Aabb>), With<Mesh3d>>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
@@ -931,10 +999,16 @@ pub fn aabb_validation_diagnostics(
             let half_extents = aabb.half_extents;
 
             // Check if AABB is valid (not placeholder NEG_INFINITY to INFINITY)
-            let is_placeholder = center.x.is_finite() && center.y.is_finite() && center.z.is_finite()
-                && half_extents.x.is_finite() && half_extents.y.is_finite() && half_extents.z.is_finite()
+            let is_placeholder = center.x.is_finite()
+                && center.y.is_finite()
+                && center.z.is_finite()
+                && half_extents.x.is_finite()
+                && half_extents.y.is_finite()
+                && half_extents.z.is_finite()
                 && (half_extents.x > 0.0 || half_extents.y > 0.0 || half_extents.z > 0.0)
-                && half_extents.x < 1_000_000.0 && half_extents.y < 1_000_000.0 && half_extents.z < 1_000_000.0;
+                && half_extents.x < 1_000_000.0
+                && half_extents.y < 1_000_000.0
+                && half_extents.z < 1_000_000.0;
 
             info!("[AABB]   Center: {:?}", center);
             info!("[AABB]   Half extents: {:?}", half_extents);
@@ -956,12 +1030,16 @@ pub fn aabb_validation_diagnostics(
         logged += 1;
     }
 
-    info!("[AABB] Summary: {} valid AABBs, {} invalid AABBs, {} no AABB",
-        valid_aabb_count, invalid_aabb_count, no_aabb_count);
+    info!(
+        "[AABB] Summary: {} valid AABBs, {} invalid AABBs, {} no AABB",
+        valid_aabb_count, invalid_aabb_count, no_aabb_count
+    );
 
     if invalid_aabb_count > 0 || no_aabb_count > 0 {
-        warn!("[AABB] WARNING: {} meshes have invalid or missing AABBs!",
-            invalid_aabb_count + no_aabb_count);
+        warn!(
+            "[AABB] WARNING: {} meshes have invalid or missing AABBs!",
+            invalid_aabb_count + no_aabb_count
+        );
     }
 
     info!("========================================");
@@ -969,16 +1047,19 @@ pub fn aabb_validation_diagnostics(
 
 /// Render pipeline submission diagnostics to check if entities are being submitted
 pub fn render_pipeline_diagnostics(
-    meshes: Query<(
-        Entity,
-        &Mesh3d,
-        &GlobalTransform,
-        &ViewVisibility,
-        Option<&MeshMaterial3d<StandardMaterial>>,
-        Option<&MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
-        Option<&MeshMaterial3d<ParticleMaterial>>,
-        Option<&MeshMaterial3d<DamageDigitMaterial>>,
-    ), With<Mesh3d>>,
+    meshes: Query<
+        (
+            Entity,
+            &Mesh3d,
+            &GlobalTransform,
+            &ViewVisibility,
+            Option<&MeshMaterial3d<StandardMaterial>>,
+            Option<&MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+            Option<&MeshMaterial3d<ParticleMaterial>>,
+            Option<&MeshMaterial3d<DamageDigitMaterial>>,
+        ),
+        With<Mesh3d>,
+    >,
     mesh_assets: Res<Assets<Mesh>>,
     material_assets: Res<Assets<StandardMaterial>>,
     effect_material_assets: Res<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
@@ -1008,8 +1089,17 @@ pub fn render_pipeline_diagnostics(
     let mut not_visible = 0;
     let mut logged = 0;
 
-    for (entity, mesh_handle, transform, view_vis,
-         material_handle, effect_handle, particle_handle, damage_digit_handle) in meshes.iter() {
+    for (
+        entity,
+        mesh_handle,
+        transform,
+        view_vis,
+        material_handle,
+        effect_handle,
+        particle_handle,
+        damage_digit_handle,
+    ) in meshes.iter()
+    {
         if logged >= 5 {
             break;
         }
@@ -1017,11 +1107,11 @@ pub fn render_pipeline_diagnostics(
         let position = transform.translation();
         let is_visible = view_vis.get();
         let has_mesh = mesh_assets.contains(mesh_handle);
-        
-        let has_material = material_handle.map_or(false, |h| material_assets.contains(h)) ||
-                          effect_handle.map_or(false, |h| effect_material_assets.contains(h)) ||
-                          particle_handle.map_or(false, |h| particle_material_assets.contains(h)) ||
-                          damage_digit_handle.map_or(false, |h| damage_digit_material_assets.contains(h));
+
+        let has_material = material_handle.map_or(false, |h| material_assets.contains(h))
+            || effect_handle.map_or(false, |h| effect_material_assets.contains(h))
+            || particle_handle.map_or(false, |h| particle_material_assets.contains(h))
+            || damage_digit_handle.map_or(false, |h| damage_digit_material_assets.contains(h));
 
         info!("[RENDER PIPELINE] Entity {:?}:", entity);
         info!("[RENDER PIPELINE]   Position: {:?}", position);
@@ -1091,7 +1181,10 @@ pub fn render_stage_diagnostics(
     info!("[RENDER STAGE] Entity counts by type:");
     info!("[RENDER STAGE]   Mesh entities: {}", mesh_count);
     info!("[RENDER STAGE]   Camera entities: {}", camera_count);
-    info!("[RENDER STAGE]   DirectionalLight entities: {}", light_count);
+    info!(
+        "[RENDER STAGE]   DirectionalLight entities: {}",
+        light_count
+    );
 
     if camera_count == 0 {
         error!("[RENDER STAGE] CRITICAL: No cameras - nothing will render!");
@@ -1120,11 +1213,7 @@ pub fn zone_entity_visibility_diagnostics(
         &ViewVisibility,
         &Visibility,
     )>,
-    cameras: Query<(
-        Entity,
-        &Camera,
-        &GlobalTransform,
-    )>,
+    cameras: Query<(Entity, &Camera, &GlobalTransform)>,
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
@@ -1135,9 +1224,12 @@ pub fn zone_entity_visibility_diagnostics(
     }
 
     info!("========================================");
-    info!("[ZONE ENTITY VISIBILITY DIAGNOSTICS] Frame {}", *frame_count);
+    info!(
+        "[ZONE ENTITY VISIBILITY DIAGNOSTICS] Frame {}",
+        *frame_count
+    );
     info!("========================================");
-    
+
     // DIAGNOSTIC: Querying for Zone entities
     log::info!("[ZONE ENTITY DIAGNOSTIC] About to query for entities with Zone component");
 
@@ -1154,31 +1246,59 @@ pub fn zone_entity_visibility_diagnostics(
     for (entity, zone, transform, global_transform, view_vis, visibility) in zones.iter() {
         let position = transform.translation;
         let global_position = global_transform.translation();
-        
+
         // Get InheritedVisibility if it exists
-        let has_no_frustum_culling = world.get::<bevy::camera::visibility::NoFrustumCulling>(entity).is_some();
+        let has_no_frustum_culling = world
+            .get::<bevy::camera::visibility::NoFrustumCulling>(entity)
+            .is_some();
         let aabb = world.get::<Aabb>(entity);
         let has_aabb = aabb.is_some();
         let parent = world.get::<ChildOf>(entity);
         let render_layers = world.get::<bevy::camera::visibility::RenderLayers>(entity);
         let has_mesh = world.get::<Mesh3d>(entity).is_some();
-        let has_computed_visibility = world.get::<bevy::camera::visibility::ViewVisibility>(entity).is_some();
+        let has_computed_visibility = world
+            .get::<bevy::camera::visibility::ViewVisibility>(entity)
+            .is_some();
         let inherited_vis_comp = world.get::<InheritedVisibility>(entity);
 
         info!("[ZONE ENTITY] Zone entity {:?}:", entity);
-        info!("[ZONE ENTITY]   Has ViewVisibility component: {}", has_computed_visibility);
+        info!(
+            "[ZONE ENTITY]   Has ViewVisibility component: {}",
+            has_computed_visibility
+        );
         info!("[ZONE ENTITY]   Has Mesh: {}", has_mesh);
-        info!("[ZONE ENTITY]   Parent: {:?}", parent.map(|p: &ChildOf| p.parent()));
+        info!(
+            "[ZONE ENTITY]   Parent: {:?}",
+            parent.map(|p: &ChildOf| p.parent())
+        );
         info!("[ZONE ENTITY]   Zone ID: {}", zone.id.get());
-        info!("[ZONE ENTITY]   Local Position: ({:.2}, {:.2}, {:.2})", position.x, position.y, position.z);
-        info!("[ZONE ENTITY]   Global Position: ({:.2}, {:.2}, {:.2})", global_position.x, global_position.y, global_position.z);
+        info!(
+            "[ZONE ENTITY]   Local Position: ({:.2}, {:.2}, {:.2})",
+            position.x, position.y, position.z
+        );
+        info!(
+            "[ZONE ENTITY]   Global Position: ({:.2}, {:.2}, {:.2})",
+            global_position.x, global_position.y, global_position.z
+        );
         info!("[ZONE ENTITY]   Visibility component: {:?}", visibility);
-        info!("[ZONE ENTITY]   InheritedVisibility component: {:?}", inherited_vis_comp.map(|v| v.get()));
-        info!("[ZONE ENTITY]   ViewVisibility (computed): {}", view_vis.get());
-        info!("[ZONE ENTITY]   Has NoFrustumCulling: {}", has_no_frustum_culling);
+        info!(
+            "[ZONE ENTITY]   InheritedVisibility component: {:?}",
+            inherited_vis_comp.map(|v| v.get())
+        );
+        info!(
+            "[ZONE ENTITY]   ViewVisibility (computed): {}",
+            view_vis.get()
+        );
+        info!(
+            "[ZONE ENTITY]   Has NoFrustumCulling: {}",
+            has_no_frustum_culling
+        );
         info!("[ZONE ENTITY]   Has Aabb: {}", has_aabb);
         if let Some(aabb) = aabb {
-            info!("[ZONE ENTITY]   Aabb: center={:?}, half_extents={:?}", aabb.center, aabb.half_extents);
+            info!(
+                "[ZONE ENTITY]   Aabb: center={:?}, half_extents={:?}",
+                aabb.center, aabb.half_extents
+            );
         }
         info!("[ZONE ENTITY]   RenderLayers: {:?}", render_layers);
 
@@ -1204,8 +1324,14 @@ pub fn zone_entity_visibility_diagnostics(
         let cam_render_layers = world.get::<bevy::camera::visibility::RenderLayers>(cam_entity);
 
         info!("[ZONE ENTITY]   Camera {:?}:", cam_entity);
-        info!("[ZONE ENTITY]     Position: ({:.2}, {:.2}, {:.2})", cam_pos.x, cam_pos.y, cam_pos.z);
-        info!("[ZONE ENTITY]     Forward: ({:.2}, {:.2}, {:.2})", cam_forward.x, cam_forward.y, cam_forward.z);
+        info!(
+            "[ZONE ENTITY]     Position: ({:.2}, {:.2}, {:.2})",
+            cam_pos.x, cam_pos.y, cam_pos.z
+        );
+        info!(
+            "[ZONE ENTITY]     Forward: ({:.2}, {:.2}, {:.2})",
+            cam_forward.x, cam_forward.y, cam_forward.z
+        );
         info!("[ZONE ENTITY]     Is active: {}", camera.is_active);
         info!("[ZONE ENTITY]     RenderLayers: {:?}", cam_render_layers);
 
@@ -1224,12 +1350,7 @@ pub fn zone_entity_visibility_diagnostics(
 /// Check if child entities are inheriting visibility from parent correctly
 pub fn parent_child_visibility_diagnostics(
     world: &World,
-    zones: Query<(
-        Entity,
-        &Zone,
-        &ViewVisibility,
-        &InheritedVisibility,
-    )>,
+    zones: Query<(Entity, &Zone, &ViewVisibility, &InheritedVisibility)>,
     children: Query<(
         Entity,
         &ChildOf,
@@ -1261,7 +1382,15 @@ pub fn parent_child_visibility_diagnostics(
         let mut visible_children = 0;
         let mut invisible_children = 0;
 
-        for (child_entity, parent, child_view_vis, child_visibility, _child_inherited_vis, mesh_handle) in children.iter() {
+        for (
+            child_entity,
+            parent,
+            child_view_vis,
+            child_visibility,
+            _child_inherited_vis,
+            mesh_handle,
+        ) in children.iter()
+        {
             // Check if this child is a child of zone
             if parent.parent() == zone_entity {
                 child_count += 1;
@@ -1279,11 +1408,16 @@ pub fn parent_child_visibility_diagnostics(
                         Visibility::Hidden => "Hidden",
                         Visibility::Inherited => "Inherited",
                     };
-                    
-                    let child_render_layers = world.get::<bevy::camera::visibility::RenderLayers>(child_entity);
+
+                    let child_render_layers =
+                        world.get::<bevy::camera::visibility::RenderLayers>(child_entity);
                     let child_has_aabb = world.get::<Aabb>(child_entity).is_some();
-                    let child_has_no_frustum_culling = world.get::<bevy::camera::visibility::NoFrustumCulling>(child_entity).is_some();
-                    let child_has_computed_visibility = world.get::<bevy::camera::visibility::ViewVisibility>(child_entity).is_some();
+                    let child_has_no_frustum_culling = world
+                        .get::<bevy::camera::visibility::NoFrustumCulling>(child_entity)
+                        .is_some();
+                    let child_has_computed_visibility = world
+                        .get::<bevy::camera::visibility::ViewVisibility>(child_entity)
+                        .is_some();
                     let child_inherited_vis_comp = world.get::<InheritedVisibility>(child_entity);
 
                     // info!("[PARENT-CHILD]   Child {:?} (Mesh: {}):", child_entity, mesh_handle.is_some());
@@ -1337,22 +1471,32 @@ pub fn zone_component_lifecycle_diagnostics(
 
     // Count all entities (excluding cameras)
     let total_entities = all_entities.iter().count();
-    info!("[ZONE COMPONENT] Total entities (excluding cameras): {}", total_entities);
+    info!(
+        "[ZONE COMPONENT] Total entities (excluding cameras): {}",
+        total_entities
+    );
 
     // Query for entities with Zone component
     let zone_count = zone_entities.iter().count();
-    info!("[ZONE COMPONENT] Entities with Zone component: {}", zone_count);
+    info!(
+        "[ZONE COMPONENT] Entities with Zone component: {}",
+        zone_count
+    );
 
     if zone_count > 0 {
         // Log each zone entity
         for (entity, zone) in zone_entities.iter() {
-            info!("[ZONE COMPONENT] ✓ Zone entity found: {:?}, zone_id={}", entity, zone.id.get());
+            info!(
+                "[ZONE COMPONENT] ✓ Zone entity found: {:?}, zone_id={}",
+                entity,
+                zone.id.get()
+            );
         }
     } else {
         warn!("[ZONE COMPONENT] ✗ NO entities with Zone component found!");
         warn!("[ZONE COMPONENT] This explains why zone entity query returns 0 results");
     }
-    
+
     // Check for each required component individually using world.get()
     let mut entities_with_transform = 0;
     let mut entities_with_global_transform = 0;
@@ -1360,7 +1504,7 @@ pub fn zone_component_lifecycle_diagnostics(
     let mut entities_with_zone_object = 0;
     let mut entities_with_view_visibility = 0;
     let mut entities_with_inherited_visibility = 0;
-    
+
     for entity in all_entities.iter() {
         if world.get::<Transform>(entity).is_some() {
             entities_with_transform += 1;
@@ -1381,15 +1525,27 @@ pub fn zone_component_lifecycle_diagnostics(
             entities_with_inherited_visibility += 1;
         }
     }
-    
+
     info!("[ZONE COMPONENT] Component counts:");
     info!("[ZONE COMPONENT]   Transform: {}", entities_with_transform);
-    info!("[ZONE COMPONENT]   GlobalTransform: {}", entities_with_global_transform);
+    info!(
+        "[ZONE COMPONENT]   GlobalTransform: {}",
+        entities_with_global_transform
+    );
     info!("[ZONE COMPONENT]   Zone: {}", entities_with_zone);
-    info!("[ZONE COMPONENT]   ZoneObject: {}", entities_with_zone_object);
-    info!("[ZONE COMPONENT]   ViewVisibility: {}", entities_with_view_visibility);
-    info!("[ZONE COMPONENT]   InheritedVisibility: {}", entities_with_inherited_visibility);
-    
+    info!(
+        "[ZONE COMPONENT]   ZoneObject: {}",
+        entities_with_zone_object
+    );
+    info!(
+        "[ZONE COMPONENT]   ViewVisibility: {}",
+        entities_with_view_visibility
+    );
+    info!(
+        "[ZONE COMPONENT]   InheritedVisibility: {}",
+        entities_with_inherited_visibility
+    );
+
     info!("========================================");
 }
 
@@ -1402,12 +1558,12 @@ pub fn diagnose_render_world_extraction(
 ) {
     let extracted_count = render_entities.iter().count();
     diagnostics.last_extracted_count = extracted_count;
-    
+
     // info!(
     //     "[RENDER WORLD] {} entities extracted to render world",
     //     extracted_count
     // );
-    
+
     // Log details for first few extracted entities
     let mut logged = 0;
     for (_view_offset, transform) in render_entities.iter() {
@@ -1431,32 +1587,40 @@ pub fn diagnose_render_phase(
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // Only log every 60 frames to avoid spam
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     info!("========================================");
     info!("[RENDER PHASE DIAGNOSTICS] Frame {}", *frame_count);
     info!("========================================");
-    
+
     let mut transparent_count = 0;
-    
+
     // Count items in each view's render phases
     // NOTE: retained_view_entity is on ExtractedView, not ExtractedCamera
     // The query needs to be changed to Query<&ExtractedView> if we want to access it
     // For now, we'll skip this diagnostic to avoid the compilation error
-    
-    info!("[RENDER PHASE] Transparent3d render phase: {} items", transparent_count);
-    
+
+    info!(
+        "[RENDER PHASE] Transparent3d render phase: {} items",
+        transparent_count
+    );
+
     if transparent_count == 0 {
         error!("[RENDER PHASE] CRITICAL: No items in Transparent3d render queue!");
-        error!("[RENDER PHASE]   This indicates extraction failure or culling removed all entities");
+        error!(
+            "[RENDER PHASE]   This indicates extraction failure or culling removed all entities"
+        );
     } else {
-        info!("[RENDER PHASE] {} items in Transparent3d render queue", transparent_count);
+        info!(
+            "[RENDER PHASE] {} items in Transparent3d render queue",
+            transparent_count
+        );
     }
-    
+
     info!("========================================");
 }
 
@@ -1469,34 +1633,34 @@ pub fn diagnose_camera_entity_distances(
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // Only log every 60 frames to avoid spam
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     //info!("========================================");
     //info!("[CAMERA-ENTITY DISTANCE] Frame {}", *frame_count);
     //info!("========================================");
-    
+
     for (camera_transform, _camera) in cameras.iter() {
         let camera_pos = camera_transform.translation();
         //info!("[CAMERA-ENTITY DISTANCE] Camera position: ({:.1}, {:.1}, {:.1})",
         //    camera_pos.x, camera_pos.y, camera_pos.z);
-        
+
         let mut visible_count = 0;
         let mut _far_entities = 0;
         let mut logged = 0;
-        
+
         for (entity, entity_transform, view_vis) in visible_entities.iter() {
             if !view_vis.get() {
                 continue;
             }
-            
+
             visible_count += 1;
             let entity_pos = entity_transform.translation();
             let distance = camera_pos.distance(entity_pos);
-            
+
             // Check if entity is suspiciously far (more than 1000 units)
             if distance > 1000.0 && logged < 5 {
                 //warn!(
@@ -1506,7 +1670,7 @@ pub fn diagnose_camera_entity_distances(
                 _far_entities += 1;
                 logged += 1;
             }
-            
+
             // Log first few visible entities
             if logged < 3 {
                 //info!(
@@ -1517,7 +1681,7 @@ pub fn diagnose_camera_entity_distances(
             }
             let _ = entity; // Suppress unused variable warning
         }
-        
+
         //info!("[CAMERA-ENTITY DISTANCE] Total visible entities: {}", visible_count);
         //if far_entities > 0 {
         //    warn!(
@@ -1527,7 +1691,7 @@ pub fn diagnose_camera_entity_distances(
         //}
         let _ = visible_count; // Suppress unused variable warning
     }
-    
+
     //info!("========================================");
 }
 
@@ -1539,22 +1703,25 @@ pub fn verify_material_plugins(
     mut frame_count: Local<u32>,
 ) {
     *frame_count += 1;
-    
+
     // Only log every 60 frames to avoid spam
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     info!("========================================");
     info!("[MATERIAL PLUGIN VERIFICATION] Frame {}", *frame_count);
     info!("========================================");
-    
-    info!("[MATERIAL PLUGIN] StandardMaterial assets: {}", materials.len());
-    
+
+    info!(
+        "[MATERIAL PLUGIN] StandardMaterial assets: {}",
+        materials.len()
+    );
+
     if materials.len() == 0 {
         warn!("[MATERIAL PLUGIN] WARNING: No StandardMaterial assets loaded!");
         warn!("[MATERIAL PLUGIN]   This may indicate MaterialPlugin extraction failure");
     }
-    
+
     info!("========================================");
 }

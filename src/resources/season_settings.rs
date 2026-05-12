@@ -1,5 +1,5 @@
-use bevy::prelude::*;
 use crate::components::Season;
+use bevy::prelude::*;
 
 /// Global season settings
 #[derive(Resource, Debug, Clone, Reflect)]
@@ -17,8 +17,8 @@ impl Default for SeasonSettings {
         Self {
             enabled: true,
             current_season: Season::None,
-            max_particles: 2000,   // Maximum particles for season weather effects
-            spawn_rate: 100.0,     // Particles per second
+            max_particles: 2000, // Maximum particles for season weather effects
+            spawn_rate: 100.0,   // Particles per second
             wind_strength: 1.0,
             wind_direction: Vec2::X,
         }
@@ -40,10 +40,10 @@ impl Default for FallSettings {
     fn default() -> Self {
         Self {
             leaf_colors: vec![
-                Color::srgb(0.8, 0.3, 0.1),  // Orange-red
-                Color::srgb(0.9, 0.5, 0.0),  // Orange
-                Color::srgb(0.8, 0.6, 0.1),  // Gold
-                Color::srgb(0.6, 0.2, 0.0),  // Brown
+                Color::srgb(0.8, 0.3, 0.1), // Orange-red
+                Color::srgb(0.9, 0.5, 0.0), // Orange
+                Color::srgb(0.8, 0.6, 0.1), // Gold
+                Color::srgb(0.6, 0.2, 0.0), // Brown
             ],
             fall_speed: 2.0,
             drift_factor: 1.5,
@@ -74,10 +74,10 @@ impl Default for SpringSettings {
             flower_spawn_chance: 0.01,
             flower_lifetime: 30.0,
             flower_colors: vec![
-                Color::srgb(1.0, 0.5, 0.8),  // Pink
-                Color::srgb(0.8, 0.5, 1.0),  // Purple
-                Color::srgb(1.0, 1.0, 0.5),  // Yellow
-                Color::srgb(1.0, 1.0, 1.0),  // White
+                Color::srgb(1.0, 0.5, 0.8), // Pink
+                Color::srgb(0.8, 0.5, 1.0), // Purple
+                Color::srgb(1.0, 1.0, 0.5), // Yellow
+                Color::srgb(1.0, 1.0, 1.0), // White
             ],
         }
     }
@@ -109,23 +109,38 @@ impl Default for WinterSettings {
 #[derive(Resource, Debug, Clone, Reflect)]
 pub struct SummerSettings {
     /// Maximum number of grass blades to spawn (CPU-based, deprecated)
-    #[deprecated(since = "0.2.0", note = "CPU-based grass is deprecated. Use GPU-based procedural grass instead.")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "CPU-based grass is deprecated. Use GPU-based procedural grass instead."
+    )]
     pub max_grass_blades: usize,
     /// Maximum number of flowers to spawn
     pub max_flowers: usize,
     /// Spawn radius around player for vegetation
     pub spawn_radius: f32,
     /// Grass blade height range (CPU-based, deprecated)
-    #[deprecated(since = "0.2.0", note = "CPU-based grass is deprecated. Use blade_length for GPU grass instead.")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "CPU-based grass is deprecated. Use blade_length for GPU grass instead."
+    )]
     pub grass_height_range: (f32, f32),
     /// Grass blade width (CPU-based, deprecated)
-    #[deprecated(since = "0.2.0", note = "CPU-based grass is deprecated. Use blade_width for GPU grass instead.")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "CPU-based grass is deprecated. Use blade_width for GPU grass instead."
+    )]
     pub grass_width: f32,
     /// Grass sway speed (CPU-based, deprecated)
-    #[deprecated(since = "0.2.0", note = "CPU-based grass animation is deprecated. GPU grass uses GrassWind resource.")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "CPU-based grass animation is deprecated. GPU grass uses GrassWind resource."
+    )]
     pub grass_sway_speed: f32,
     /// Grass sway amplitude (radians) (CPU-based, deprecated)
-    #[deprecated(since = "0.2.0", note = "CPU-based grass animation is deprecated. GPU grass uses GrassWind resource.")]
+    #[deprecated(
+        since = "0.2.0",
+        note = "CPU-based grass animation is deprecated. GPU grass uses GrassWind resource."
+    )]
     pub grass_sway_amplitude: f32,
     /// Flower spawn chance per frame
     pub flower_spawn_chance: f32,
@@ -159,23 +174,23 @@ pub struct SummerSettings {
 impl Default for SummerSettings {
     fn default() -> Self {
         Self {
-            max_grass_blades: 50000,    // Increased to 50000
-            max_flowers: 1000,          // Increased 10x from 100 for visibility
+            max_grass_blades: 50000, // Increased to 50000
+            max_flowers: 1000,       // Increased 10x from 100 for visibility
             spawn_radius: 50.0,
-            grass_height_range: (0.6, 1.6),  // 2x original (0.3, 0.8)
-            grass_width: 0.2,           // 2x original (0.1)
+            grass_height_range: (0.6, 1.6), // 2x original (0.3, 0.8)
+            grass_width: 0.2,               // 2x original (0.1)
             grass_sway_speed: 1.5,
             grass_sway_amplitude: 0.1,
             flower_spawn_chance: 0.02,
             flower_colors: vec![
-                Color::srgb(1.0, 0.9, 0.3),  // Yellow (sunflower-like)
-                Color::srgb(1.0, 0.5, 0.2),  // Orange
-                Color::srgb(0.9, 0.3, 0.3),  // Red
-                Color::srgb(0.8, 0.4, 0.8),  // Purple
-                Color::srgb(0.3, 0.6, 1.0),  // Blue
+                Color::srgb(1.0, 0.9, 0.3), // Yellow (sunflower-like)
+                Color::srgb(1.0, 0.5, 0.2), // Orange
+                Color::srgb(0.9, 0.3, 0.3), // Red
+                Color::srgb(0.8, 0.4, 0.8), // Purple
+                Color::srgb(0.3, 0.6, 1.0), // Blue
             ],
-            flower_stem_height_range: (4.0, 7.0),  // Increased 10x from (0.4, 0.7) for visibility
-            flower_head_size: 1.5,       // Increased 10x from 0.15 for visibility
+            flower_stem_height_range: (4.0, 7.0), // Increased 10x from (0.4, 0.7) for visibility
+            flower_head_size: 1.5,                // Increased 10x from 0.15 for visibility
             wind_intensity: 1.0,
             // Procedural grass settings (GPU-based)
             grass_density: 25,

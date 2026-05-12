@@ -252,24 +252,24 @@ fn add_item_equip_requirement(
     for &(ability_type, value) in item_data.equip_ability_requirement.iter() {
         let mut color = egui::Color32::RED;
 
-    if let Some(player) = player {
-        if let Some(current_value) = ability_values_get_value(
-            ability_type,
-            player.ability_values,
-            Some(player.character_info),
-            Some(player.experience_points),
-            Some(player.guild_membership),
-            Some(player.health_points),
-            Some(player.inventory),
-            Some(player.level),
-            Some(player.mana_points),
-            Some(player.move_speed),
-            Some(player.skill_points),
-            Some(player.stamina),
-            Some(player.stat_points),
-            Some(player.team),
-            Some(player.union_membership),
-        ) {
+        if let Some(player) = player {
+            if let Some(current_value) = ability_values_get_value(
+                ability_type,
+                player.ability_values,
+                Some(player.character_info),
+                Some(player.experience_points),
+                Some(player.guild_membership),
+                Some(player.health_points),
+                Some(player.inventory),
+                Some(player.level),
+                Some(player.mana_points),
+                Some(player.move_speed),
+                Some(player.skill_points),
+                Some(player.stamina),
+                Some(player.stat_points),
+                Some(player.team),
+                Some(player.union_membership),
+            ) {
                 if current_value >= value as i32 {
                     color = egui::Color32::GREEN;
                 }
@@ -1145,36 +1145,36 @@ fn add_skill_use_ability_value(
     skill_data: &SkillData,
 ) {
     for &(ability_type, mut value) in skill_data.use_ability.iter() {
-       let mut color = egui::Color32::RED;
+        let mut color = egui::Color32::RED;
 
-            if let Some(player) = player {
-                if matches!(ability_type, AbilityType::Mana) {
-                    let use_mana_rate = (100 - player.ability_values.get_save_mana()) as f32 / 100.0;
-                    value = (value as f32 * use_mana_rate) as i32;
-                }
+        if let Some(player) = player {
+            if matches!(ability_type, AbilityType::Mana) {
+                let use_mana_rate = (100 - player.ability_values.get_save_mana()) as f32 / 100.0;
+                value = (value as f32 * use_mana_rate) as i32;
+            }
 
-                if let Some(current_value) = ability_values_get_value(
-                    ability_type,
-                    player.ability_values,
-                    Some(player.character_info),
-                    Some(player.experience_points),
-                    Some(player.guild_membership),
-                    Some(player.health_points),
-                    Some(player.inventory),
-                    Some(player.level),
-                    Some(player.mana_points),
-                    Some(player.move_speed),
-                    Some(player.skill_points),
-                    Some(player.stamina),
-                    Some(player.stat_points),
-                    Some(player.team),
-                    Some(player.union_membership),
-                ) {
-                    if current_value >= value {
-                        color = egui::Color32::GREEN;
-                    }
+            if let Some(current_value) = ability_values_get_value(
+                ability_type,
+                player.ability_values,
+                Some(player.character_info),
+                Some(player.experience_points),
+                Some(player.guild_membership),
+                Some(player.health_points),
+                Some(player.inventory),
+                Some(player.level),
+                Some(player.mana_points),
+                Some(player.move_speed),
+                Some(player.skill_points),
+                Some(player.stamina),
+                Some(player.stat_points),
+                Some(player.team),
+                Some(player.union_membership),
+            ) {
+                if current_value >= value {
+                    color = egui::Color32::GREEN;
                 }
             }
+        }
 
         ui.colored_label(
             color,

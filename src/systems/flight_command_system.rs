@@ -11,12 +11,12 @@ pub fn is_fly_command(message: &str) -> bool {
 }
 
 /// System that handles flight command detection from chat messages.
-/// 
+///
 /// This system is designed to work alongside the chatbox system.
 /// The chatbox system should check messages before sending to the server
 /// using the [`is_fly_command`] helper function, and if it returns true,
 /// send a [`FlightToggleEvent`] instead of sending the chat message.
-/// 
+///
 /// This system provides a standalone way to process flight commands
 /// if needed for other input methods.
 pub fn flight_command_system(

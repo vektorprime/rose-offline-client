@@ -1,5 +1,5 @@
 use bevy_egui::egui;
-use serde::{Deserialize, Deserializer, de::IgnoredAny};
+use serde::{de::IgnoredAny, Deserialize, Deserializer};
 
 use crate::resources::UiResources;
 
@@ -158,7 +158,7 @@ impl Widget {
 impl DrawWidget for Widget {
     fn draw_widget(&self, ui: &mut egui::Ui, bindings: &mut DataBindings) {
         //log::trace!("[WIDGET DRAW] Drawing widget: type={:?}, id={}",
-            //std::mem::discriminant(self), self.id());
+        //std::mem::discriminant(self), self.id());
         match self {
             Widget::Button(this) => this.draw_widget(ui, bindings),
             Widget::Caption(this) => this.draw_widget(ui, bindings),
@@ -190,14 +190,14 @@ impl LoadWidget for Widget {
     fn load_widget(&mut self, ui_resources: &UiResources) {
         let discriminant = std::mem::discriminant(self);
         //log::trace!("[WIDGET LOAD] Loading widget: type={:?}, id={}",
-            //discriminant, self.id());
-        
+        //discriminant, self.id());
+
         // Log if this is an Unknown widget
         if matches!(self, Widget::Unknown) {
-           // log::error!("[WIDGET LOAD] CRITICAL: Attempting to load Unknown widget! Discriminant: {:?}", discriminant);
+            // log::error!("[WIDGET LOAD] CRITICAL: Attempting to load Unknown widget! Discriminant: {:?}", discriminant);
             //log::error!("[WIDGET LOAD] This indicates a widget type in the XML that doesn't match any known variant");
         }
-        
+
         match self {
             Widget::Button(this) => this.load_widget(ui_resources),
             Widget::Caption(this) => this.load_widget(ui_resources),
@@ -230,7 +230,7 @@ impl DrawWidget for Vec<Widget> {
         // log::debug!("[WIDGETS DRAW] Drawing {} widgets", self.len());
         for (index, widget) in self.iter().enumerate() {
             // log::debug!("[WIDGETS DRAW] Drawing widget {}/{}: type={:?}, id={}",
-                //index + 1, self.len(), std::mem::discriminant(widget), widget.id());
+            //index + 1, self.len(), std::mem::discriminant(widget), widget.id());
             widget.draw_widget(ui, bindings);
         }
         // log::debug!("[WIDGETS DRAW] Completed drawing {} widgets", self.len());
@@ -243,18 +243,18 @@ impl LoadWidget for Vec<Widget> {
         // // log::debug!("[WIDGETS LOAD] Loading {} widgets", widget_count);
         for (index, widget) in self.iter_mut().enumerate() {
             let discriminant = std::mem::discriminant(widget);
-            
+
             // Check if widget is Unknown before trying to get its id
             if matches!(widget, Widget::Unknown) {
                 //log::error!("[WIDGETS LOAD] CRITICAL at index {}/{}: Found Unknown widget! Discriminant: {:?}",
-                    //index + 1, widget_count, discriminant);
-               // log::error!("[WIDGETS LOAD] This widget will cause a panic when trying to get its id");
+                //index + 1, widget_count, discriminant);
+                // log::error!("[WIDGETS LOAD] This widget will cause a panic when trying to get its id");
                 // Don't try to get id for Unknown widgets as it will panic
                 continue;
             }
-            
+
             // // log::debug!("[WIDGETS LOAD] Loading widget {}/{}: type={:?}, id={}",
-                //index + 1, widget_count, discriminant, widget.id());
+            //index + 1, widget_count, discriminant, widget.id());
             widget.load_widget(ui_resources);
         }
         // // log::debug!("[WIDGETS LOAD] Completed loading {} widgets", widget_count);

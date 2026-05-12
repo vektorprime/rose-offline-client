@@ -197,8 +197,10 @@ pub fn ui_clan_system(
                             .calculate_clan_max_members(clan.level.0);
                         ui.add_label_at(
                             egui::pos2(15.0, 208.0),
-                            egui::RichText::new(game_data.client_strings.clan_member_count.as_str())
-                                .color(egui::Color32::BLACK),
+                            egui::RichText::new(
+                                game_data.client_strings.clan_member_count.as_str(),
+                            )
+                            .color(egui::Color32::BLACK),
                         );
                         ui.add_label_at(
                             egui::pos2(88.0, 208.0),

@@ -27,8 +27,14 @@ use crate::{
 fn collect_material_entities_recursive(
     entity: Entity,
     query_children: &Query<&Children>,
-    query_materials: &Query<(Entity, &MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>)>,
-    results: &mut Vec<(Entity, Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>)>,
+    query_materials: &Query<(
+        Entity,
+        &MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    )>,
+    results: &mut Vec<(
+        Entity,
+        Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    )>,
     visited: &mut std::collections::HashSet<Entity>,
 ) {
     // Avoid infinite loops from circular references
@@ -44,7 +50,13 @@ fn collect_material_entities_recursive(
     // Recurse into children
     if let Ok(children) = query_children.get(entity) {
         for child in children.iter() {
-            collect_material_entities_recursive(child, query_children, query_materials, results, visited);
+            collect_material_entities_recursive(
+                child,
+                query_children,
+                query_materials,
+                results,
+                visited,
+            );
         }
     }
 }
@@ -69,7 +81,10 @@ pub fn blood_overlay_generate_system(
         With<BloodOverlay>,
     >,
     query_children: Query<&Children>,
-    query_materials: Query<(Entity, &MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>)>,
+    query_materials: Query<(
+        Entity,
+        &MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    )>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     atlas: Res<BloodOverlayAtlas>,
@@ -94,9 +109,13 @@ pub fn blood_overlay_generate_system(
         return;
     }
 
-    for (entity, mut blood_overlay, _children, own_material, existing_textures) in query.iter_mut() {
+    for (entity, mut blood_overlay, _children, own_material, existing_textures) in query.iter_mut()
+    {
         // Collect all material entities from this entity and descendants
-        let mut material_entities: Vec<(Entity, Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>)> = Vec::new();
+        let mut material_entities: Vec<(
+            Entity,
+            Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+        )> = Vec::new();
         let mut visited = std::collections::HashSet::new();
 
         // Add own material if present
@@ -167,20 +186,21 @@ pub fn blood_overlay_generate_system(
             }
 
             // Reuse existing texture image when possible
-            let overlay_handle = if let Some(existing_handle) = per_material_textures.get(mat_entity) {
-                if let Some(image) = images.get_mut(existing_handle) {
-                    if image.data.is_some() {
-                        paint_overlay_texture(image, &material_stains, &atlas);
-                        existing_handle.clone()
+            let overlay_handle =
+                if let Some(existing_handle) = per_material_textures.get(mat_entity) {
+                    if let Some(image) = images.get_mut(existing_handle) {
+                        if image.data.is_some() {
+                            paint_overlay_texture(image, &material_stains, &atlas);
+                            existing_handle.clone()
+                        } else {
+                            generate_overlay_texture(&mut images, &material_stains, &atlas)
+                        }
                     } else {
                         generate_overlay_texture(&mut images, &material_stains, &atlas)
                     }
                 } else {
                     generate_overlay_texture(&mut images, &material_stains, &atlas)
-                }
-            } else {
-                generate_overlay_texture(&mut images, &material_stains, &atlas)
-            };
+                };
 
             per_material_textures.insert(*mat_entity, overlay_handle);
             blood_overlay.mark_material_clean(*mat_entity);
@@ -196,7 +216,8 @@ pub fn blood_overlay_generate_system(
             if let Some(material) = materials.get_mut(mat_handle) {
                 if let Some(overlay_handle) = per_material_textures.get(mat_entity) {
                     material.extension.blood_overlay_texture = Some(overlay_handle.clone());
-                    material.extension.blood_params = Vec4::new(config.intensity.clamp(0.0, 1.0), 1.0, 0.0, 0.0);
+                    material.extension.blood_params =
+                        Vec4::new(config.intensity.clamp(0.0, 1.0), 1.0, 0.0, 0.0);
                 } else {
                     // No stains for this material — disable blood on it
                     material.extension.blood_overlay_texture = None;
@@ -226,10 +247,7 @@ pub struct BloodOverlayTexture {
 }
 
 /// System that updates blood overlay intensity based on configuration.
-pub fn blood_overlay_update_system(
-    query: Query<&BloodOverlay>,
-    config: Res<BloodEffectConfig>,
-) {
+pub fn blood_overlay_update_system(query: Query<&BloodOverlay>, config: Res<BloodEffectConfig>) {
     if !config.enable_blood || !config.show_wounds {
         return;
     }
@@ -247,15 +265,15 @@ pub fn blood_overlay_force_enable_system(
     mut materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
 ) {
     // Only run when DEBUG_FORCE_BLOOD environment variable is set to "1"
-    let debug_force_blood = std::env::var("DEBUG_FORCE_BLOOD")
-        .unwrap_or_default()
-        == "1";
+    let debug_force_blood = std::env::var("DEBUG_FORCE_BLOOD").unwrap_or_default() == "1";
 
     if !debug_force_blood {
         return;
     }
 
-    bevy::log::warn!("[BloodOverlay Force Enable] DEBUG_FORCE_BLOOD=1 detected - forcing blood on all materials");
+    bevy::log::warn!(
+        "[BloodOverlay Force Enable] DEBUG_FORCE_BLOOD=1 detected - forcing blood on all materials"
+    );
 
     let mut count = 0;
     for (_handle, mut material) in materials.iter_mut() {
@@ -263,8 +281,11 @@ pub fn blood_overlay_force_enable_system(
         material.extension.blood_params = Vec4::new(1.0, 1.0, 0.0, 0.0);
         count += 1;
     }
-    
-    bevy::log::info!("[BloodOverlay Force Enable] Set blood_params on {} materials", count);
+
+    bevy::log::info!(
+        "[BloodOverlay Force Enable] Set blood_params on {} materials",
+        count
+    );
 }
 
 /// DIAGNOSTIC: Debug query system that logs blood overlay component state.
@@ -277,11 +298,11 @@ pub fn blood_overlay_debug_query_system(
     query: Query<(Entity, &BloodOverlay, Option<&BloodOverlayTextures>)>,
 ) {
     let mut entities_with_blood: Vec<Entity> = Vec::new();
-    
+
     for (entity, blood_overlay, textures) in query.iter() {
         let stain_count = blood_overlay.stain_count();
         let texture_count = textures.map(|t| t.textures.len()).unwrap_or(0);
-        
+
         // Only log entities that have stains or textures
         if stain_count > 0 || texture_count > 0 {
             entities_with_blood.push(entity);
@@ -295,11 +316,14 @@ pub fn blood_overlay_debug_query_system(
             );
         }
     }
-    
+
     if entities_with_blood.is_empty() {
         bevy::log::warn!("[BloodOverlay Debug] No entities with blood stains found!");
     } else {
-        bevy::log::info!("[BloodOverlay Debug] Total entities with blood: {}", entities_with_blood.len());
+        bevy::log::info!(
+            "[BloodOverlay Debug] Total entities with blood: {}",
+            entities_with_blood.len()
+        );
     }
 }
 
@@ -418,14 +442,17 @@ impl Plugin for BloodOverlayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<BloodOverlayAtlas>();
         app.add_systems(Startup, initialize_blood_overlay_atlas_system);
-        app.add_systems(PostUpdate, (
-            blood_overlay_generate_system,
-            blood_overlay_update_system,
-            // DIAGNOSTIC: Debug query system for troubleshooting blood rendering issues
-            blood_overlay_debug_query_system,
-            // DIAGNOSTIC: Force enable blood on all materials when DEBUG_FORCE_BLOOD=1
-            blood_overlay_force_enable_system,
-        ));
+        app.add_systems(
+            PostUpdate,
+            (
+                blood_overlay_generate_system,
+                blood_overlay_update_system,
+                // DIAGNOSTIC: Debug query system for troubleshooting blood rendering issues
+                blood_overlay_debug_query_system,
+                // DIAGNOSTIC: Force enable blood on all materials when DEBUG_FORCE_BLOOD=1
+                blood_overlay_force_enable_system,
+            ),
+        );
     }
 }
 

@@ -1,9 +1,9 @@
 use std::num::NonZeroUsize;
 
 use bevy::{ecs::world, prelude::Mut};
-use world::EntityWorldMut;
 use num_traits::{AsPrimitive, Saturating, Signed};
 use rose_data::AbilityType;
+use world::EntityWorldMut;
 
 use rose_game_common::components::{
     AbilityValues, BasicStats, CharacterGender, CharacterInfo, ExperiencePoints, GuildMembership,
@@ -90,9 +90,7 @@ pub fn ability_values_get_value(
             })
         }),
         // SaveMana: Mana save percentage (0-100), clamped
-        AbilityType::SaveMana => character_info.map(|ci| {
-            ci.save_mana.min(100) as i32
-        }),
+        AbilityType::SaveMana => character_info.map(|ci| ci.save_mana.min(100) as i32),
         // PvpFlag: PvP flag state (0 = off, non-zero = on)
         AbilityType::PvpFlag => character_info.map(|ci| ci.pvp_flag),
         // HeadSize: Head size for appearance customization
@@ -105,13 +103,25 @@ pub fn ability_values_get_value(
         AbilityType::CurrentPlanet => character_info.map(|ci| ci.current_planet as i32),
         // Guild values: return 0 when not in guild
         AbilityType::GuildNumber => guild_membership.and_then(|gm| {
-            if gm.is_none() { Some(0) } else { Some(gm.guild_number as i32) }
+            if gm.is_none() {
+                Some(0)
+            } else {
+                Some(gm.guild_number as i32)
+            }
         }),
         AbilityType::GuildScore => guild_membership.and_then(|gm| {
-            if gm.is_none() { Some(0) } else { Some(gm.score) }
+            if gm.is_none() {
+                Some(0)
+            } else {
+                Some(gm.score)
+            }
         }),
         AbilityType::GuildPosition => guild_membership.and_then(|gm| {
-            if gm.is_none() { Some(0) } else { Some(gm.position as i32) }
+            if gm.is_none() {
+                Some(0)
+            } else {
+                Some(gm.position as i32)
+            }
         }),
         _ => {
             log::warn!(

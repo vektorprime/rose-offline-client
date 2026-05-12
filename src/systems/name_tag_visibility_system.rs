@@ -1,7 +1,6 @@
 use bevy::{
-    
-    prelude::{Children, Entity, Local, Or, Query, Res, ResMut, Visibility, With},
     ecs::query::QueryData,
+    prelude::{Children, Entity, Local, Or, Query, Res, ResMut, Visibility, With},
 };
 use rose_game_common::components::Npc;
 

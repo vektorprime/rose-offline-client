@@ -1,5 +1,5 @@
 //! Fish component for swimming fish in water
-//! 
+//!
 //! Fish swim around in water areas using simple AI behavior.
 //! They spawn when water is created and stay within water bounds.
 

@@ -1,18 +1,18 @@
 //! Fish spawning and swimming behavior system
-//! 
+//!
 //! This system handles:
 //! - Spawning fish when water is created
 //! - Fish swimming AI (picking targets, moving, turning)
 //! - Fish animation (tail wobble)
 //! - Keeping fish within water bounds
 
-use bevy::prelude::*;
-use bevy::math::Vec3;
-use bevy::render::render_resource::Face;
-use bevy::pbr::{MeshMaterial3d, StandardMaterial};
-use bevy::render::alpha::AlphaMode;
 use bevy::asset::RenderAssetUsages;
-use bevy_mesh::{Mesh, Indices, PrimitiveTopology};
+use bevy::math::Vec3;
+use bevy::pbr::{MeshMaterial3d, StandardMaterial};
+use bevy::prelude::*;
+use bevy::render::alpha::AlphaMode;
+use bevy::render::render_resource::Face;
+use bevy_mesh::{Indices, Mesh, PrimitiveTopology};
 use rand::Rng;
 
 use crate::components::{Fish, FishSettings, FishWaterRef, WaterSpawnedEvent};
@@ -31,14 +31,17 @@ pub fn spawn_fish_on_water_system(
         event_count += 1;
         //log::info!("[FISH DEBUG] Received WaterSpawnedEvent #{}: water_entity={:?}, zone_entity={:?}, center={:?}, extents={:?}",
         //    event_count, event.water_entity, event.zone_entity, event.water_center, event.water_half_extents);
-        
+
         // Check if zone_entity still exists before spawning fish
         let zone_exists = zone_query.get(event.zone_entity).is_ok();
         if !zone_exists {
-            log::warn!("[FISH] Zone entity {:?} no longer exists, skipping fish spawn", event.zone_entity);
+            log::warn!(
+                "[FISH] Zone entity {:?} no longer exists, skipping fish spawn",
+                event.zone_entity
+            );
             continue;
         }
-        
+
         spawn_fish_in_water(
             event.water_entity,
             event.zone_entity,
@@ -50,7 +53,7 @@ pub fn spawn_fish_on_water_system(
             &settings,
         );
     }
-    
+
     if event_count > 0 {
         //log::info!("[FISH DEBUG] Processed {} WaterSpawnedEvent(s) this frame", event_count);
     }
@@ -69,17 +72,17 @@ fn spawn_fish_in_water(
     settings: &Res<FishSettings>,
 ) {
     let mut rng = rand::thread_rng();
-    
+
     log::info!(
         "[FISH] Spawning {} fish in water at {:?} with extents {:?}",
         settings.fish_count_per_water,
         water_center,
         water_half_extents
     );
-    
+
     // Create fish mesh (simple elongated shape)
     let fish_mesh = create_fish_mesh(meshes);
-    
+
     // Create fish material with slight transparency for underwater effect
     // Use a gold/orange color for visibility
     let fish_material = materials.add(StandardMaterial {
@@ -90,7 +93,7 @@ fn spawn_fish_in_water(
         cull_mode: None,
         ..default()
     });
-    
+
     // Create a second material for variation (blue-ish fish)
     let fish_material_blue = materials.add(StandardMaterial {
         base_color: Color::srgba(0.3, 0.5, 0.8, 0.9), // Blue with slight transparency
@@ -100,7 +103,7 @@ fn spawn_fish_in_water(
         cull_mode: None,
         ..default()
     });
-    
+
     // Create a third material for variation (silver fish)
     let fish_material_silver = materials.add(StandardMaterial {
         base_color: Color::srgba(0.7, 0.75, 0.8, 0.9), // Silver with slight transparency
@@ -110,9 +113,9 @@ fn spawn_fish_in_water(
         cull_mode: None,
         ..default()
     });
-    
+
     let materials_vec = vec![fish_material, fish_material_blue, fish_material_silver];
-    
+
     for i in 0..settings.fish_count_per_water {
         // Random position within water bounds - use stratified sampling to ensure better spread
         // Divide the water area into a grid and spawn fish in random cells
@@ -120,95 +123,110 @@ fn spawn_fish_in_water(
         let grid_cells_z = 8; // Number of cells along Z axis
         let cell_x = i % grid_cells_x;
         let cell_z = (i / grid_cells_x) % grid_cells_z;
-        
+
         // Calculate cell size
-        let cell_width = (water_half_extents.x * 2.0 * settings.boundary_margin) / grid_cells_x as f32;
-        let cell_height = (water_half_extents.y * 2.0 * settings.boundary_margin) / grid_cells_z as f32;
-        
+        let cell_width =
+            (water_half_extents.x * 2.0 * settings.boundary_margin) / grid_cells_x as f32;
+        let cell_height =
+            (water_half_extents.y * 2.0 * settings.boundary_margin) / grid_cells_z as f32;
+
         // Base position for this cell (centered in cell)
-        let cell_base_x = -water_half_extents.x * settings.boundary_margin + cell_x as f32 * cell_width + cell_width * 0.5;
-        let cell_base_z = -water_half_extents.y * settings.boundary_margin + cell_z as f32 * cell_height + cell_height * 0.5;
-        
+        let cell_base_x = -water_half_extents.x * settings.boundary_margin
+            + cell_x as f32 * cell_width
+            + cell_width * 0.5;
+        let cell_base_z = -water_half_extents.y * settings.boundary_margin
+            + cell_z as f32 * cell_height
+            + cell_height * 0.5;
+
         // Add random offset within the cell (70% of cell size for some overlap)
         let random_offset_x = rng.gen_range(-0.35..0.35) * cell_width;
         let random_offset_z = rng.gen_range(-0.35..0.35) * cell_height;
-        
+
         let x_offset = cell_base_x + random_offset_x;
         let z_offset = cell_base_z + random_offset_z;
-        
+
         // Clamp min/max to prevent crash if settings are invalid
         let min_depth = settings.min_depth.min(settings.max_depth);
         let max_depth = settings.max_depth.max(settings.min_depth);
         let depth = rng.gen_range(min_depth..max_depth);
-        
+
         let position = Vec3::new(
             water_center.x + x_offset,
             water_center.y - depth, // Below water surface
             water_center.z + z_offset,
         );
-        
+
         // Random speed - clamp min/max to prevent crash
         let min_speed = settings.min_speed.min(settings.max_speed);
         let max_speed = settings.max_speed.max(settings.min_speed);
         let speed = rng.gen_range(min_speed..max_speed);
-        
+
         // Random initial target
-        let target = pick_new_target(water_center, water_half_extents, settings.boundary_margin, depth);
-        
+        let target = pick_new_target(
+            water_center,
+            water_half_extents,
+            settings.boundary_margin,
+            depth,
+        );
+
         // Random rotation
         let rotation = Quat::from_rotation_y(rng.gen_range(0.0..std::f32::consts::TAU));
-        
+
         // Pick a random material for variety
         let material_idx = rng.gen_range(0..materials_vec.len());
         let material = materials_vec[material_idx].clone();
-        
+
         // Spawn fish entity
-        let fish_entity = commands.spawn((
-            Fish {
-                speed,
-                turn_speed: rng.gen_range(2.0..4.0),
-                target_position: target,
-                depth,
-                school_id: (i % 3) as u32, // Simple schooling groups
-                water_center,
-                water_half_extents,
-                wobble_time: rng.gen_range(0.0..std::f32::consts::TAU), // Random phase offset
-            },
-            FishWaterRef { water_entity },
-            Transform::from_translation(position)
-                .with_rotation(rotation)
-                .with_scale(Vec3::splat(0.3)), // Scale down the fish
-            GlobalTransform::default(),
-            Visibility::Visible,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        )).id();
-        
+        let fish_entity = commands
+            .spawn((
+                Fish {
+                    speed,
+                    turn_speed: rng.gen_range(2.0..4.0),
+                    target_position: target,
+                    depth,
+                    school_id: (i % 3) as u32, // Simple schooling groups
+                    water_center,
+                    water_half_extents,
+                    wobble_time: rng.gen_range(0.0..std::f32::consts::TAU), // Random phase offset
+                },
+                FishWaterRef { water_entity },
+                Transform::from_translation(position)
+                    .with_rotation(rotation)
+                    .with_scale(Vec3::splat(0.3)), // Scale down the fish
+                GlobalTransform::default(),
+                Visibility::Visible,
+                InheritedVisibility::default(),
+                ViewVisibility::default(),
+            ))
+            .id();
+
         // Spawn fish mesh as child entity
-        let mesh_entity = commands.spawn((
-            Mesh3d(fish_mesh.clone()),
-            MeshMaterial3d(material),
-            Transform::default(),
-            GlobalTransform::default(),
-            Visibility::Visible,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        )).id();
-        
+        let mesh_entity = commands
+            .spawn((
+                Mesh3d(fish_mesh.clone()),
+                MeshMaterial3d(material),
+                Transform::default(),
+                GlobalTransform::default(),
+                Visibility::Visible,
+                InheritedVisibility::default(),
+                ViewVisibility::default(),
+            ))
+            .id();
+
         commands.entity(fish_entity).add_child(mesh_entity);
-        
+
         // Parent fish to zone entity so it inherits zone transform
         // Only add as child if zone_entity is valid (not PLACEHOLDER)
         if zone_entity != Entity::PLACEHOLDER {
             commands.entity(zone_entity).add_child(fish_entity);
         }
-        
+
         // log::info!(
         //     "[FISH DEBUG] Spawned fish {} at position {:?} (water_center={:?}, depth={}), parented to zone {:?}",
         //     i, position, water_center, depth, zone_entity
         // );
     }
-    
+
     log::info!(
         "[FISH] Spawned {} fish total",
         settings.fish_count_per_water
@@ -219,106 +237,74 @@ fn spawn_fish_in_water(
 fn create_fish_mesh(meshes: &mut ResMut<Assets<Mesh>>) -> Handle<Mesh> {
     // Create a simple fish shape using vertices
     // Fish body is elongated along X axis, with nose at +X and tail at -X
-    
+
     let vertices: Vec<[f32; 3]> = vec![
         // Nose (point)
         [1.0, 0.0, 0.0],
-        
         // Body front (wider)
         [0.5, 0.0, 0.3],
         [0.5, 0.2, 0.0],
         [0.5, 0.0, -0.3],
         [0.5, -0.15, 0.0],
-        
         // Body middle (widest)
         [0.0, 0.0, 0.4],
         [0.0, 0.25, 0.0],
         [0.0, 0.0, -0.4],
         [0.0, -0.2, 0.0],
-        
         // Body back (narrower)
         [-0.5, 0.0, 0.25],
         [-0.5, 0.15, 0.0],
         [-0.5, 0.0, -0.25],
         [-0.5, -0.1, 0.0],
-        
         // Tail base
         [-0.8, 0.0, 0.0],
-        
         // Tail fin (top and bottom)
         [-1.2, 0.3, 0.0],
         [-1.2, -0.2, 0.0],
-        
         // Dorsal fin (top)
         [0.0, 0.4, 0.0],
         [-0.3, 0.35, 0.0],
     ];
-    
+
     // Define triangles using indices
     let indices: Vec<u32> = vec![
         // Nose to body front
-        0, 1, 2,
-        0, 2, 3,
-        0, 3, 4,
-        0, 4, 1,
-        
-        // Body front to body middle
-        1, 5, 2,
-        2, 5, 6,
-        2, 6, 3,
-        3, 6, 7,
-        3, 7, 4,
-        4, 7, 8,
-        4, 8, 1,
-        1, 8, 5,
-        
+        0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1, // Body front to body middle
+        1, 5, 2, 2, 5, 6, 2, 6, 3, 3, 6, 7, 3, 7, 4, 4, 7, 8, 4, 8, 1, 1, 8, 5,
         // Body middle to body back
-        5, 9, 6,
-        6, 9, 10,
-        6, 10, 7,
-        7, 10, 11,
-        7, 11, 8,
-        8, 11, 12,
-        8, 12, 5,
-        5, 12, 9,
-        
+        5, 9, 6, 6, 9, 10, 6, 10, 7, 7, 10, 11, 7, 11, 8, 8, 11, 12, 8, 12, 5, 5, 12, 9,
         // Body back to tail
-        9, 13, 10,
-        10, 13, 11,
-        11, 13, 12,
-        12, 13, 9,
-        
-        // Tail fin
-        13, 14, 15,
-        
-        // Dorsal fin
-        6, 16, 17,
-        6, 17, 10,
+        9, 13, 10, 10, 13, 11, 11, 13, 12, 12, 13, 9, // Tail fin
+        13, 14, 15, // Dorsal fin
+        6, 16, 17, 6, 17, 10,
     ];
-    
+
     // Calculate normals (simple approximation)
     let mut normals: Vec<[f32; 3]> = Vec::with_capacity(vertices.len());
     for _ in &vertices {
         normals.push([0.0, 1.0, 0.0]); // Simple upward normals
     }
-    
+
     // UV coordinates (simple mapping)
-    let uvs: Vec<[f32; 2]> = vertices.iter().map(|v| {
-        let u = (v[0] + 1.2) / 2.2; // Map -1.2..1.0 to 0..1
-        let v = (v[2] + 0.4) / 0.8; // Map -0.4..0.4 to 0..1
-        [u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)]
-    }).collect();
-    
+    let uvs: Vec<[f32; 2]> = vertices
+        .iter()
+        .map(|v| {
+            let u = (v[0] + 1.2) / 2.2; // Map -1.2..1.0 to 0..1
+            let v = (v[2] + 0.4) / 0.8; // Map -0.4..0.4 to 0..1
+            [u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)]
+        })
+        .collect();
+
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
-    
+
     mesh.insert_indices(Indices::U32(indices));
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    
+
     meshes.add(mesh)
 }
 
@@ -330,11 +316,13 @@ fn pick_new_target(
     depth: f32,
 ) -> Vec3 {
     let mut rng = rand::thread_rng();
-    
+
     Vec3::new(
-        water_center.x + rng.gen_range(-water_half_extents.x..water_half_extents.x) * boundary_margin,
+        water_center.x
+            + rng.gen_range(-water_half_extents.x..water_half_extents.x) * boundary_margin,
         water_center.y - depth, // Stay at same depth
-        water_center.z + rng.gen_range(-water_half_extents.y..water_half_extents.y) * boundary_margin,
+        water_center.z
+            + rng.gen_range(-water_half_extents.y..water_half_extents.y) * boundary_margin,
     )
 }
 
@@ -345,17 +333,17 @@ pub fn update_fish_movement_system(
     mut query: Query<(&mut Transform, &mut Fish)>,
 ) {
     let mut rng = rand::thread_rng();
-    
+
     for (mut transform, mut fish) in query.iter_mut() {
         let delta = time.delta_secs();
-        
+
         // Update wobble time for swimming animation - each fish has unique wobble speed
         fish.wobble_time += delta * fish.speed * (2.5 + rng.gen_range(0.0..1.0));
-        
+
         // Calculate direction to target
         let direction = fish.target_position - transform.translation;
         let distance = direction.length();
-        
+
         // Check if we reached the target
         if distance < settings.target_reach_distance {
             // Pick a new random target with some randomness in depth
@@ -369,32 +357,31 @@ pub fn update_fish_movement_system(
             );
             continue;
         }
-        
+
         // Normalize direction
         let direction_normalized = direction / distance;
-        
+
         // Calculate target rotation (face direction of movement)
         // Fish mesh has nose at +X, so we rotate to make +X face the target direction
         // atan2(z, x) gives the angle from +X axis to the direction
         // Add slight random variation to prevent perfect alignment
         let rotation_noise = rng.gen_range(-0.05..0.05);
         let target_rotation = Quat::from_rotation_y(
-            direction_normalized.z.atan2(direction_normalized.x) + rotation_noise
+            direction_normalized.z.atan2(direction_normalized.x) + rotation_noise,
         );
-        
+
         // Smoothly rotate towards target with slight speed variation
         let turn_speed_variation = fish.turn_speed * rng.gen_range(0.9..1.1);
-        transform.rotation = transform.rotation.slerp(
-            target_rotation,
-            turn_speed_variation * delta
-        );
-        
+        transform.rotation = transform
+            .rotation
+            .slerp(target_rotation, turn_speed_variation * delta);
+
         // Move forward in facing direction with slight speed variation
         // Fish mesh faces +X, so use right() instead of forward()
         let speed_variation = fish.speed * rng.gen_range(0.95..1.05);
         let forward = transform.right();
         transform.translation += forward * speed_variation * delta;
-        
+
         // Add swimming wobble (side-to-side motion) with unique amplitude per fish
         let wobble_amplitude = 0.015 + (fish.wobble_time.sin() * 0.005).abs(); // Varies between 0.01 and 0.02
         let wobble = (fish.wobble_time.sin() * wobble_amplitude * fish.speed);
@@ -403,19 +390,22 @@ pub fn update_fish_movement_system(
         transform.translation.z += transform.left().z * wobble;
         // Add slight vertical wobble for more natural movement
         transform.translation.y += wobble_z * 0.3;
-        
+
         // Keep fish within water bounds (clamp position)
         let min_x = fish.water_center.x - fish.water_half_extents.x * settings.boundary_margin;
         let max_x = fish.water_center.x + fish.water_half_extents.x * settings.boundary_margin;
         let min_z = fish.water_center.z - fish.water_half_extents.y * settings.boundary_margin;
         let max_z = fish.water_center.z + fish.water_half_extents.y * settings.boundary_margin;
-        
+
         transform.translation.x = transform.translation.x.clamp(min_x, max_x);
         transform.translation.z = transform.translation.z.clamp(min_z, max_z);
         // Maintain depth with slight variation
         let target_y = fish.water_center.y - fish.depth;
-        transform.translation.y = transform.translation.y.clamp(target_y - 0.1, target_y + 0.1);
-        
+        transform.translation.y = transform
+            .translation
+            .y
+            .clamp(target_y - 0.1, target_y + 0.1);
+
         // If fish hit boundary, pick new target away from boundary
         if transform.translation.x <= min_x + 0.5
             || transform.translation.x >= max_x - 0.5
@@ -447,9 +437,9 @@ impl Plugin for FishPlugin {
             // Add messages
             .add_message::<WaterSpawnedEvent>()
             // Add systems
-            .add_systems(Update, (
-                spawn_fish_on_water_system,
-                update_fish_movement_system,
-            ).chain());
+            .add_systems(
+                Update,
+                (spawn_fish_on_water_system, update_fish_movement_system).chain(),
+            );
     }
 }

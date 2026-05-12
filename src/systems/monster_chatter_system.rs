@@ -3,7 +3,7 @@ use bevy::{log::info, prelude::*};
 use rose_game_common::components::Npc;
 
 use crate::{
-    components::{MonsterChatter, ClientEntityName, ClientEntity, ClientEntityType, ModelHeight},
+    components::{ClientEntity, ClientEntityName, ClientEntityType, ModelHeight, MonsterChatter},
     events::{ChatBubbleEvent, ChatBubbleType},
     resources::MonsterChatterPhrases,
 };
@@ -12,7 +12,16 @@ use crate::{
 pub fn monster_chatter_system(
     mut commands: Commands,
     time: Res<Time<Virtual>>,
-    mut query_entities: Query<(Entity, &mut MonsterChatter, Option<&ClientEntityName>, Option<&ClientEntity>, Option<&ModelHeight>), With<Npc>>,
+    mut query_entities: Query<
+        (
+            Entity,
+            &mut MonsterChatter,
+            Option<&ClientEntityName>,
+            Option<&ClientEntity>,
+            Option<&ModelHeight>,
+        ),
+        With<Npc>,
+    >,
     mut chat_bubble_events: MessageWriter<ChatBubbleEvent>,
     phrases: Res<MonsterChatterPhrases>,
 ) {
@@ -34,16 +43,16 @@ pub fn monster_chatter_system(
             let phrase = phrases.get_random_phrase(entity_type);
 
             // Get entity name or use default based on type
-            let entity_name = name.map(|n| n.name.clone()).unwrap_or_else(|| {
-                match entity_type {
+            let entity_name = name
+                .map(|n| n.name.clone())
+                .unwrap_or_else(|| match entity_type {
                     ClientEntityType::Npc => "NPC".to_string(),
                     _ => "Monster".to_string(),
-                }
-            });
+                });
 
             // info!("[MONSTER_CHATTER] Sending chat bubble for entity {:?} name='{}' text='{}'",
             //     entity, entity_name, phrase);
-            
+
             // Determine bubble type based on entity type
             let bubble_type = match entity_type {
                 ClientEntityType::Npc => ChatBubbleType::Npc,
@@ -56,7 +65,7 @@ pub fn monster_chatter_system(
                     .with_entity(entity)
                     .with_duration(10.0)
                     .with_color(Color::BLACK)
-                    .with_bubble_type(bubble_type)
+                    .with_bubble_type(bubble_type),
             );
             events_sent += 1;
 
@@ -66,7 +75,7 @@ pub fn monster_chatter_system(
                 + chatter.min_interval;
         }
     }
-    
+
     // if events_sent > 0 {
     //     info!("[MONSTER_CHATTER] Sent {} chat bubble events this frame", events_sent);
     // }

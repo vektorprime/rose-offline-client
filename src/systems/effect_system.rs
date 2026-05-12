@@ -1,6 +1,4 @@
-use bevy::{
-    prelude::{Children, Commands, Entity, Query},
-};
+use bevy::prelude::{Children, Commands, Entity, Query};
 
 use crate::{
     animation::{MeshAnimation, TransformAnimation},

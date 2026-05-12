@@ -30,4 +30,3 @@ pub fn boat_buoyancy_system(
         position.z = (base_y_m + heave_m) * 100.0;
     }
 }
-

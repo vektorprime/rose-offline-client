@@ -47,7 +47,9 @@ use wav::WavLoader;
 
 pub use audio_source::{AudioSource, StreamingAudioSource};
 pub use global_sound::GlobalSound;
-pub use monster_sound_cap::{queue_monster_sound, MonsterSoundQueue, PendingMonsterSound, PendingMonsterSoundData};
+pub use monster_sound_cap::{
+    queue_monster_sound, MonsterSoundQueue, PendingMonsterSound, PendingMonsterSoundData,
+};
 pub use spatial_sound::SpatialSound;
 
 use self::{

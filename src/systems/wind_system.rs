@@ -30,4 +30,3 @@ pub fn sync_vegetation_wind_system(
 ) {
     sway_settings.global_intensity = (wind.speed / 10.0).clamp(0.05, 0.3);
 }
-

@@ -51,4 +51,3 @@ pub struct BowSprayParticle {
 pub struct WakeSource {
     pub boat_entity: Entity,
 }
-

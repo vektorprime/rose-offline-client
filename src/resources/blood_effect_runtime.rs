@@ -20,4 +20,3 @@ pub struct BloodEffectDiagnostics {
     pub droplets_spawned: u64,
     pub accum_time_secs: f32,
 }
-

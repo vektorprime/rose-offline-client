@@ -2,8 +2,7 @@ use bevy::{
     ecs::query::QueryEntityError,
     math::{Vec3, Vec3A},
     prelude::{
-        Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Transform, With,
-        Without,
+        Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d, Query, Transform, With, Without,
     },
 };
 use bevy_camera::primitives::Aabb;

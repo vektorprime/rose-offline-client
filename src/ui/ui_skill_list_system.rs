@@ -1,5 +1,5 @@
-use bevy::prelude::{Assets, Entity, MessageWriter, Local, Query, Res, ResMut, With};
 use bevy::ecs::query::QueryData;
+use bevy::prelude::{Assets, Entity, Local, MessageWriter, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_data::AbilityType;
@@ -121,7 +121,10 @@ pub fn ui_skill_list_system(
     mut ui_state_windows: ResMut<UiStateWindows>,
     mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut player_command_events: MessageWriter<PlayerCommandEvent>,
-    mut query_player: Query<(Entity, &CharacterInfo, &SkillList, &SkillPoints, &Cooldowns), With<PlayerCharacter>>,
+    mut query_player: Query<
+        (Entity, &CharacterInfo, &SkillList, &SkillPoints, &Cooldowns),
+        With<PlayerCharacter>,
+    >,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
@@ -143,12 +146,12 @@ pub fn ui_skill_list_system(
 
     let (_, character_info, skill_list, skill_points, cooldowns) = player;
 
-    let listbox_extent = if let Some(Widget::ZListbox(listbox)) = dialog.get_widget(IID_ZLISTBOX_BASIC)
-    {
-        ((listbox.height / 44.0).floor() as i32).max(1)
-    } else {
-        1
-    };
+    let listbox_extent =
+        if let Some(Widget::ZListbox(listbox)) = dialog.get_widget(IID_ZLISTBOX_BASIC) {
+            ((listbox.height / 44.0).floor() as i32).max(1)
+        } else {
+            1
+        };
     let scrollbar_range = 0..SKILL_PAGE_SIZE as i32;
 
     let mut response_close_button = None;
@@ -235,18 +238,22 @@ pub fn ui_skill_list_system(
                             if skill_data.level > 0 {
                                 ui.add_label_at(
                                     egui::pos2(start_x + 46.0, start_y + 5.0),
-                                    format!("{} (Lv: {})", skill_data.name.as_str(), skill_data.level),
+                                    format!(
+                                        "{} (Lv: {})",
+                                        skill_data.name.as_str(),
+                                        skill_data.level
+                                    ),
                                 );
 
                                 // Skill level up button
-                                let button_pos = window_min + egui::vec2(start_x + 200.0, start_y + 5.0);
-                                let button_rect = egui::Rect::from_min_size(
-                                    button_pos,
-                                    egui::vec2(20.0, 20.0),
-                                );
+                                let button_pos =
+                                    window_min + egui::vec2(start_x + 200.0, start_y + 5.0);
+                                let button_rect =
+                                    egui::Rect::from_min_size(button_pos, egui::vec2(20.0, 20.0));
                                 let response = ui.allocate_rect(button_rect, egui::Sense::click());
                                 if response.clicked() {
-                                    player_command_events.write(PlayerCommandEvent::LevelUpSkill(skill_slot));
+                                    player_command_events
+                                        .write(PlayerCommandEvent::LevelUpSkill(skill_slot));
                                 }
                                 ui.painter().text(
                                     button_pos + egui::vec2(10.0, 10.0),
@@ -266,13 +273,13 @@ pub fn ui_skill_list_system(
                                 );
                             }
 
-                           // Skill use ability values
+                            // Skill use ability values
                             if !skill_data.use_ability.is_empty() {
-                                  ui.allocate_ui_at_rect(
-                                      egui::Rect::from_min_size(
-                                          window_min + egui::vec2(start_x + 46.0, start_y + 25.0),
-                                          egui::vec2(100.0, 18.0),
-                                      ),
+                                ui.allocate_ui_at_rect(
+                                    egui::Rect::from_min_size(
+                                        window_min + egui::vec2(start_x + 46.0, start_y + 25.0),
+                                        egui::vec2(100.0, 18.0),
+                                    ),
                                     |ui| {
                                         ui.horizontal(|ui| {
                                             for &(ability_type, mut value) in
@@ -281,7 +288,7 @@ pub fn ui_skill_list_system(
                                                 let mut color = egui::Color32::RED;
 
                                                 if let Some(player_tooltip_data) =
-                                                     player_tooltip_data_ref.as_ref()
+                                                    player_tooltip_data_ref.as_ref()
                                                 {
                                                     if matches!(ability_type, AbilityType::Mana) {
                                                         let use_mana_rate = (100
@@ -295,29 +302,40 @@ pub fn ui_skill_list_system(
                                                     }
 
                                                     if let Some(current_value) =
-                                                         ability_values_get_value(
-                                                             ability_type,
-                                                             player_tooltip_data.ability_values,
-                                                             Some(player_tooltip_data.character_info),
-                                                             Some(player_tooltip_data.experience_points),
-                                                             Some(player_tooltip_data.guild_membership),
-                                                             Some(player_tooltip_data.health_points),
-                                                             Some(player_tooltip_data.inventory),
-                                                             Some(player_tooltip_data.level),
-                                                             Some(player_tooltip_data.mana_points),
-                                                             Some(player_tooltip_data.move_speed),
-                                                             Some(player_tooltip_data.skill_points),
-                                                             Some(player_tooltip_data.stamina),
-                                                             Some(player_tooltip_data.stat_points),
-                                                             Some(player_tooltip_data.team),
-                                                             Some(player_tooltip_data.union_membership),
-                                                         )
-                                                        {
-                                                            if current_value >= value {
-                                                                color = egui::Color32::GREEN;
-                                                            }
+                                                        ability_values_get_value(
+                                                            ability_type,
+                                                            player_tooltip_data.ability_values,
+                                                            Some(
+                                                                player_tooltip_data.character_info,
+                                                            ),
+                                                            Some(
+                                                                player_tooltip_data
+                                                                    .experience_points,
+                                                            ),
+                                                            Some(
+                                                                player_tooltip_data
+                                                                    .guild_membership,
+                                                            ),
+                                                            Some(player_tooltip_data.health_points),
+                                                            Some(player_tooltip_data.inventory),
+                                                            Some(player_tooltip_data.level),
+                                                            Some(player_tooltip_data.mana_points),
+                                                            Some(player_tooltip_data.move_speed),
+                                                            Some(player_tooltip_data.skill_points),
+                                                            Some(player_tooltip_data.stamina),
+                                                            Some(player_tooltip_data.stat_points),
+                                                            Some(player_tooltip_data.team),
+                                                            Some(
+                                                                player_tooltip_data
+                                                                    .union_membership,
+                                                            ),
+                                                        )
+                                                    {
+                                                        if current_value >= value {
+                                                            color = egui::Color32::GREEN;
                                                         }
-                                                   }
+                                                    }
+                                                }
 
                                                 ui.colored_label(
                                                     color,

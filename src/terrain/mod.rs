@@ -6,12 +6,7 @@
 mod noise_overlay;
 
 pub use noise_overlay::{
-    TerrainEnhancementSettings,
-    TerrainEnhancementPlugin,
-    GlobalTerrainNoise,
+    apply_noise_to_height, get_terrain_noise, get_thread_local_noise, init_thread_local_noise,
+    GlobalTerrainNoise, TerrainEnhancementPlugin, TerrainEnhancementSettings,
     TerrainNoiseGenerator,
-    apply_noise_to_height,
-    get_terrain_noise,
-    get_thread_local_noise,
-    init_thread_local_noise,
 };

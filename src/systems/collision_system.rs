@@ -1,12 +1,10 @@
 use bevy::{
     math::{Quat, Vec3},
-    prelude::{
-        Assets, Commands, Entity, MessageWriter, Query, Res, State, Time, Transform, With,
-    },
+    prelude::{Assets, Commands, Entity, MessageWriter, Query, Res, State, Time, Transform, With},
 };
-use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter};
-use bevy_rapier3d::plugin::context::systemparams::ReadRapierContext;
 use bevy_rapier3d::geometry::ShapeCastOptions;
+use bevy_rapier3d::plugin::context::systemparams::ReadRapierContext;
+use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter};
 use bevy_rapier3d::rapier::prelude::Shape;
 
 use rose_game_common::messages::client::ClientMessage;
@@ -43,19 +41,21 @@ pub fn collision_height_only_system(
         log::warn!("[NPC_TERRAIN_DIAG] collision_height_only_system: No CurrentZone resource!");
         return;
     };
-    
-    let current_zone_data =
-        if let Some(current_zone_data) = zone_loader_assets.get(&current_zone.handle) {
-            current_zone_data
-        } else {
-            log::warn!("[NPC_TERRAIN_DIAG] collision_height_only_system: Zone data not loaded yet!");
-            return;
-        };
-    
+
+    let current_zone_data = if let Some(current_zone_data) =
+        zone_loader_assets.get(&current_zone.handle)
+    {
+        current_zone_data
+    } else {
+        log::warn!("[NPC_TERRAIN_DIAG] collision_height_only_system: Zone data not loaded yet!");
+        return;
+    };
+
     for (entity, mut position, mut transform) in query_collision_entity.iter_mut() {
         // Get terrain height from heightmap
-        let terrain_height: f32 = current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
-        
+        let terrain_height: f32 =
+            current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
+
         // Cast ray downward to detect collision objects (bridges, platforms, etc.)
         let ray_origin = Vec3::new(
             position.x / 100.0,
@@ -64,17 +64,18 @@ pub fn collision_height_only_system(
         );
         let ray_direction = Vec3::new(0.0, -1.0, 0.0);
         let max_fall_distance = 100.0; // Reduced from 10000.0 since entities now spawn at terrain height
-        
-        let collision_height: Option<f32> = if let Some((_hit_entity, distance)) = rapier_context.cast_ray(
-            ray_origin,
-            ray_direction,
-            max_fall_distance,
-            false,
-            QueryFilter::new().groups(CollisionGroups::new(
-                COLLISION_FILTER_MOVEABLE,
-                !COLLISION_GROUP_PHYSICS_TOY,
-            )),
-        ) {
+
+        let collision_height: Option<f32> = if let Some((_hit_entity, distance)) = rapier_context
+            .cast_ray(
+                ray_origin,
+                ray_direction,
+                max_fall_distance,
+                false,
+                QueryFilter::new().groups(CollisionGroups::new(
+                    COLLISION_FILTER_MOVEABLE,
+                    !COLLISION_GROUP_PHYSICS_TOY,
+                )),
+            ) {
             let hit_y = (ray_origin + ray_direction * distance).y;
             Some(hit_y)
         } else {
@@ -91,11 +92,11 @@ pub fn collision_height_only_system(
         // Apply gravity-based falling
         let fall_distance = time.delta().as_secs_f32() * 9.81;
         let old_y = transform.translation.y;
-        
+
         // Update X/Z from position
         transform.translation.x = position.x / 100.0;
         transform.translation.z = -position.y / 100.0;
-        
+
         if old_y - target_y > fall_distance {
             // Falling
             transform.translation.y = old_y - fall_distance;
@@ -103,7 +104,7 @@ pub fn collision_height_only_system(
             // On ground
             transform.translation.y = target_y;
         }
-        
+
         // Update position height
         position.z = transform.translation.y * 100.0;
     }
@@ -111,10 +112,7 @@ pub fn collision_height_only_system(
 
 #[allow(clippy::too_many_arguments)]
 pub fn collision_player_system_join_zone(
-    mut query_collision_entity: Query<
-        (&mut Position, &mut Transform),
-        With<CollisionPlayer>,
-    >,
+    mut query_collision_entity: Query<(&mut Position, &mut Transform), With<CollisionPlayer>>,
     _rapier_context: ReadRapierContext,
     _current_zone: Option<Res<CurrentZone>>,
     _zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
@@ -123,7 +121,7 @@ pub fn collision_player_system_join_zone(
     // This system only syncs X/Z translation from Position component.
     // All Y positioning (including terrain following and gravity) is handled by collision_player_system.
     // This separation ensures proper terrain adherence when moving both up AND down slopes.
-    
+
     for (mut position, mut transform) in query_collision_entity.iter_mut() {
         // Only update X/Z translation - Y is handled by collision_player_system
         // This system just ensures the horizontal position is synced from Position component
@@ -135,10 +133,10 @@ pub fn collision_player_system_join_zone(
 }
 
 /// Server-authoritative player collision system.
-/// 
+///
 /// This system handles client-side collision detection for smooth local gameplay,
 /// but does NOT mutate the Position component. Position is server-authoritative.
-/// 
+///
 /// Key principles:
 /// - Position component is READ-ONLY (server authoritative)
 /// - Transform is updated from Position for rendering
@@ -149,7 +147,13 @@ pub fn collision_player_system_join_zone(
 pub fn collision_player_system(
     mut commands: Commands,
     mut query_collision_entity: Query<
-        (Entity, &Position, &mut Transform, Option<&FlightState>, Option<&BoatState>),
+        (
+            Entity,
+            &Position,
+            &mut Transform,
+            Option<&FlightState>,
+            Option<&BoatState>,
+        ),
         With<CollisionPlayer>,
     >,
     mut query_event_object: Query<&mut EventObject>,
@@ -180,20 +184,22 @@ pub fn collision_player_system(
         };
 
     let mut entity_count = 0;
-    for (entity, position, mut transform, flight_state, boat_state) in query_collision_entity.iter_mut() {
+    for (entity, position, mut transform, flight_state, boat_state) in
+        query_collision_entity.iter_mut()
+    {
         entity_count += 1;
         // Check if player is flying - if so, skip ground collision and use position directly
         let is_flying = flight_state.map_or(false, |fs| fs.is_flying);
         let is_sailing = boat_state.map_or(false, |bs| bs.active);
-        
+
         // Position is server-authoritative - we read from it but don't write
         // Position is in centimeters: x=right, y=forward, z=up
         // Transform is in meters: x=right, y=up, z=back
-        
-      if is_flying {
+
+        if is_flying {
             // When flying, sync transform directly from position (including Y/height)
             transform.translation.x = position.x / 100.0;
-            transform.translation.y = position.z / 100.0;  // Use position.z for height
+            transform.translation.y = position.z / 100.0; // Use position.z for height
             transform.translation.z = -position.y / 100.0;
             continue; // Skip ground collision when flying
         }
@@ -201,11 +207,8 @@ pub fn collision_player_system(
         if is_sailing {
             // Sailing still needs wall/object collision, but should remain on water surface
             // (no gravity/terrain-following Y adjustment).
-            let new_translation = Vec3::new(
-                position.x / 100.0,
-                position.z / 100.0,
-                -position.y / 100.0,
-            );
+            let new_translation =
+                Vec3::new(position.x / 100.0, position.z / 100.0, -position.y / 100.0);
             let collider_radius = 0.4;
             let translation_delta = new_translation - transform.translation;
 
@@ -257,7 +260,8 @@ pub fn collision_player_system(
 
             // Prevent sailing onto land by blocking horizontal movement if terrain rises above
             // the current water surface (with a small tolerance).
-            let terrain_height = current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
+            let terrain_height =
+                current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
             let water_height = position.z / 100.0;
             if terrain_height > water_height - 0.05 {
                 // Send current transform position to server (indicating we can't move forward)
@@ -285,7 +289,7 @@ pub fn collision_player_system(
             transform.translation.z = -position.y / 100.0;
             continue;
         }
-        
+
         // Cast ray forward to collide with walls
         let new_translation = Vec3::new(
             position.x / 100.0,
@@ -298,7 +302,7 @@ pub fn collision_player_system(
             let cast_origin = transform.translation + Vec3::new(0.0, 1.2, 0.0);
             let cast_direction = translation_delta.normalize();
             let ball_collider = Collider::ball(collider_radius);
- 
+
             if let Some((_, distance)) = rapier_context.cast_shape(
                 cast_origin + cast_direction * collider_radius,
                 Quat::default(),
@@ -342,7 +346,7 @@ pub fn collision_player_system(
 
         // === GROUND DETECTION RAYCAST ===
         let fall_distance = time.delta().as_secs_f32() * 9.81;
-        
+
         let ray_origin = Vec3::new(
             position.x / 100.0,
             transform.translation.y + 1.35,
@@ -350,17 +354,18 @@ pub fn collision_player_system(
         );
         let ray_direction = Vec3::new(0.0, -1.0, 0.0);
         let max_fall_distance = 10000.0;
-        
-        let collision_height: Option<f32> = if let Some((_hit_entity, distance)) = rapier_context.cast_ray(
-            ray_origin,
-            ray_direction,
-            max_fall_distance,
-            false,
-            QueryFilter::new().groups(CollisionGroups::new(
-                COLLISION_FILTER_MOVEABLE,
-                !COLLISION_GROUP_PHYSICS_TOY,
-            )),
-        ) {
+
+        let collision_height: Option<f32> = if let Some((_hit_entity, distance)) = rapier_context
+            .cast_ray(
+                ray_origin,
+                ray_direction,
+                max_fall_distance,
+                false,
+                QueryFilter::new().groups(CollisionGroups::new(
+                    COLLISION_FILTER_MOVEABLE,
+                    !COLLISION_GROUP_PHYSICS_TOY,
+                )),
+            ) {
             let hit_y = (ray_origin + ray_direction * distance).y;
             Some(hit_y)
         } else {
@@ -381,7 +386,7 @@ pub fn collision_player_system(
         let old_y = transform.translation.y;
         transform.translation.x = position.x / 100.0;
         transform.translation.z = -position.y / 100.0;
-        
+
         if old_y - target_y > fall_distance {
             let new_y = old_y - fall_distance;
             transform.translation.y = new_y;

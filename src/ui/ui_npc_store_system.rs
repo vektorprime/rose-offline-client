@@ -1,7 +1,8 @@
 use bevy::{
     math::Vec3Swizzles,
     prelude::{
-        Assets, Entity, Local, MessageReader, MessageWriter, Messages, Query, Res, ResMut, With, World,
+        Assets, Entity, Local, MessageReader, MessageWriter, Messages, Query, Res, ResMut, With,
+        World,
     },
 };
 use bevy_egui::{egui, EguiContexts};
@@ -486,7 +487,8 @@ pub fn ui_npc_store_system(
     let npc_data = npc_data.unwrap();
 
     let screen_size = egui_context
-        .ctx_mut().unwrap()
+        .ctx_mut()
+        .unwrap()
         .input(|input| input.screen_rect().size());
 
     let mut response_close = None;

@@ -98,9 +98,10 @@ pub fn initialize_blood_decal_atlas_system(
     }
 
     if atlas.wound_textures.is_empty() {
-        atlas
-            .wound_textures
-            .push(create_blood_texture_variant(&mut images, SPATTER_TEXTURE_VARIANTS + 1));
+        atlas.wound_textures.push(create_blood_texture_variant(
+            &mut images,
+            SPATTER_TEXTURE_VARIANTS + 1,
+        ));
     }
 }
 
@@ -163,7 +164,10 @@ pub fn blood_spatter_spawn_system(
     }
 
     // Check if we need to enforce spatter limit
-    let mut active_spatter_count = query_spatters.iter().filter(|(_, spatter, _)| spatter.active).count();
+    let mut active_spatter_count = query_spatters
+        .iter()
+        .filter(|(_, spatter, _)| spatter.active)
+        .count();
     let max_spatters = config.max_spatters;
     let mut frame_spawn_budget = config.effective_spatter_spawn_budget();
 
@@ -272,7 +276,7 @@ pub fn blood_spatter_spawn_system(
                     * config.intensity
                     * damage_alpha_scale
                     * profile_alpha_multiplier(*profile))
-                    .clamp(0.3, 1.0);
+                .clamp(0.3, 1.0);
 
                 let blood_texture = pick_spatter_texture(&atlas);
 
@@ -292,7 +296,8 @@ pub fn blood_spatter_spawn_system(
 
                 if let Some(reuse_entity) = runtime.spatter_pool.pop() {
                     if let Ok((_, _, material_handle)) = query_spatters.get(reuse_entity) {
-                        if let Some(existing_material) = decal_materials.get_mut(&material_handle.0) {
+                        if let Some(existing_material) = decal_materials.get_mut(&material_handle.0)
+                        {
                             *existing_material = material;
                         }
 

@@ -26,7 +26,10 @@ pub fn ui_character_select_name_tag_system(
 
                         egui::Tooltip::always_open(
                             ctx.clone(),
-                            egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("character_tooltip_layer")),
+                            egui::LayerId::new(
+                                egui::Order::Tooltip,
+                                egui::Id::new("character_tooltip_layer"),
+                            ),
                             egui::Id::new("selected_character_plate"),
                             egui::PopupAnchor::Position(egui::Pos2::new(
                                 screen_pos.x - 30.0,

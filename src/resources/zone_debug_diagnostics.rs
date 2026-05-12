@@ -1,12 +1,12 @@
 //! Zone Loading Debug Diagnostics
-//! 
+//!
 //! This module provides comprehensive diagnostics for the zone loading system
 //! to help diagnose black screen issues and memory leaks.
 
-use std::collections::HashMap;
-use bevy::prelude::*;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+use bevy::prelude::*;
 use bevy_mesh::Mesh3d;
+use std::collections::HashMap;
 
 /// Resource for tracking detailed zone loading diagnostics
 #[derive(Resource, Default, Debug)]
@@ -67,14 +67,25 @@ impl ZoneDebugDiagnostics {
     }
 
     /// Log entity spawn with type tracking
-    pub fn log_entity_spawn(&mut self, entity_type: &str, has_mesh: bool, has_material: bool, has_visibility: bool) {
+    pub fn log_entity_spawn(
+        &mut self,
+        entity_type: &str,
+        has_mesh: bool,
+        has_material: bool,
+        has_visibility: bool,
+    ) {
         self.total_entities_spawned += 1;
-        self.active_entity_count = self.total_entities_spawned.saturating_sub(self.total_entities_despawned);
+        self.active_entity_count = self
+            .total_entities_spawned
+            .saturating_sub(self.total_entities_despawned);
         self.entities_spawned_this_frame += 1;
         self.frames_since_last_spawn = 0;
-        
-        *self.entities_by_type.entry(entity_type.to_string()).or_insert(0) += 1;
-        
+
+        *self
+            .entities_by_type
+            .entry(entity_type.to_string())
+            .or_insert(0) += 1;
+
         log::info!(
             "[ZONE DEBUG] Entity spawned: type={}, has_mesh={}, has_material={}, has_visibility={}, total_active={}",
             entity_type, has_mesh, has_material, has_visibility, self.active_entity_count
@@ -84,31 +95,42 @@ impl ZoneDebugDiagnostics {
     /// Log entity despawn
     pub fn log_entity_despawn(&mut self, entity_type: &str) {
         self.total_entities_despawned += 1;
-        self.active_entity_count = self.total_entities_spawned.saturating_sub(self.total_entities_despawned);
-        
+        self.active_entity_count = self
+            .total_entities_spawned
+            .saturating_sub(self.total_entities_despawned);
+
         if let Some(count) = self.entities_by_type.get_mut(entity_type) {
             *count = count.saturating_sub(1);
         }
-        
+
         log::info!(
             "[ZONE DEBUG] Entity despawned: type={}, total_active={}",
-            entity_type, self.active_entity_count
+            entity_type,
+            self.active_entity_count
         );
     }
 
     /// Log system execution
     pub fn log_system_execution(&mut self, system_name: &str) {
-        *self.system_execution_counts.entry(system_name.to_string()).or_insert(0) += 1;
+        *self
+            .system_execution_counts
+            .entry(system_name.to_string())
+            .or_insert(0) += 1;
     }
 
     /// Add memory sample
-    pub fn add_memory_sample(&mut self, entity_count: usize, mesh_count: usize, material_count: usize, texture_count: usize) {
+    pub fn add_memory_sample(
+        &mut self,
+        entity_count: usize,
+        mesh_count: usize,
+        material_count: usize,
+        texture_count: usize,
+    ) {
         // Estimate memory usage (very rough approximation)
-        let estimated_memory_mb = 
-            (entity_count as f64 * 0.5) +  // ~0.5KB per entity
+        let estimated_memory_mb = (entity_count as f64 * 0.5) +  // ~0.5KB per entity
             (mesh_count as f64 * 2.0) +    // ~2MB per mesh (varies greatly)
             (material_count as f64 * 0.1) + // ~0.1MB per material
-            (texture_count as f64 * 5.0);   // ~5MB per texture (varies greatly)
+            (texture_count as f64 * 5.0); // ~5MB per texture (varies greatly)
 
         let sample = MemorySample {
             timestamp: std::time::Instant::now(),
@@ -120,7 +142,7 @@ impl ZoneDebugDiagnostics {
         };
 
         self.memory_samples.push(sample);
-        
+
         // Keep only recent samples
         if self.memory_samples.len() > self.max_memory_samples {
             self.memory_samples.remove(0);
@@ -137,7 +159,7 @@ impl ZoneDebugDiagnostics {
         let recent_samples = &self.memory_samples[self.memory_samples.len().saturating_sub(10)..];
         let first_count = recent_samples.first()?.entity_count;
         let last_count = recent_samples.last()?.entity_count;
-        
+
         // If entities grew by more than 50% in last 10 samples, likely a leak
         if last_count > first_count && (last_count - first_count) > (first_count / 2) {
             return Some(format!(
@@ -157,7 +179,7 @@ impl ZoneDebugDiagnostics {
 
         let first = self.memory_samples.first().unwrap();
         let last = self.memory_samples.last().unwrap();
-        
+
         let duration_secs = last.timestamp.duration_since(first.timestamp).as_secs_f64();
         if duration_secs <= 0.0 {
             return 0.0;
@@ -180,11 +202,17 @@ impl ZoneDebugDiagnostics {
         log::info!("ZONE DEBUG DIAGNOSTICS SUMMARY");
         log::info!("========================================");
         log::info!("Total entities spawned: {}", self.total_entities_spawned);
-        log::info!("Total entities despawned: {}", self.total_entities_despawned);
+        log::info!(
+            "Total entities despawned: {}",
+            self.total_entities_despawned
+        );
         log::info!("Active entities: {}", self.active_entity_count);
-        log::info!("Entities spawned this frame: {}", self.entities_spawned_this_frame);
+        log::info!(
+            "Entities spawned this frame: {}",
+            self.entities_spawned_this_frame
+        );
         log::info!("Frames since last spawn: {}", self.frames_since_last_spawn);
-        
+
         log::info!("\nEntities by type:");
         for (entity_type, count) in &self.entities_by_type {
             log::info!("  {}: {}", entity_type, count);
@@ -201,7 +229,10 @@ impl ZoneDebugDiagnostics {
 
         let growth_rate = self.get_entity_growth_rate();
         if growth_rate > 10.0 {
-            log::warn!("\n!!! High entity growth rate: {:.2} entities/second !!!", growth_rate);
+            log::warn!(
+                "\n!!! High entity growth rate: {:.2} entities/second !!!",
+                growth_rate
+            );
         }
 
         log::info!("========================================");
@@ -238,16 +269,28 @@ pub fn zone_debug_diagnostics_system(
 /// Diagnostic system to check child entity visibility components
 /// This helps identify why child entities (terrain, objects, water) are not visible
 pub fn zone_child_visibility_diagnostic_system(
-    zone_query: Query<(Entity, &Visibility, &InheritedVisibility, &ViewVisibility, Option<&GlobalTransform>), With<crate::components::Zone>>,
-    child_query: Query<(
-        Entity,
-        &Visibility,
-        &InheritedVisibility,
-        &ViewVisibility,
-        Option<&GlobalTransform>,
-        Option<&Mesh3d>,
-        Option<&ChildOf>
-    ), Without<crate::components::Zone>>,
+    zone_query: Query<
+        (
+            Entity,
+            &Visibility,
+            &InheritedVisibility,
+            &ViewVisibility,
+            Option<&GlobalTransform>,
+        ),
+        With<crate::components::Zone>,
+    >,
+    child_query: Query<
+        (
+            Entity,
+            &Visibility,
+            &InheritedVisibility,
+            &ViewVisibility,
+            Option<&GlobalTransform>,
+            Option<&Mesh3d>,
+            Option<&ChildOf>,
+        ),
+        Without<crate::components::Zone>,
+    >,
     meshes: Res<Assets<Mesh>>,
 ) {
     // ChildOf is now in bevy::prelude, already imported
@@ -264,7 +307,9 @@ pub fn zone_child_visibility_diagnostic_system(
     log::info!("========================================");
 
     // Check zone entity visibility
-    for (zone_entity, visibility, inherited_visibility, view_visibility, global_transform) in zone_query.iter() {
+    for (zone_entity, visibility, inherited_visibility, view_visibility, global_transform) in
+        zone_query.iter()
+    {
         log::info!("ZONE ENTITY: {:?}", zone_entity);
         log::info!("  Visibility: {:?}", visibility);
         log::info!("  InheritedVisibility: {:?}", inherited_visibility);
@@ -286,7 +331,16 @@ pub fn zone_child_visibility_diagnostic_system(
     let mut children_without_mesh = 0;
     let mut children_without_view_visibility = 0;
 
-    for (entity, visibility, inherited_visibility, view_visibility, global_transform, mesh_handle, parent) in child_query.iter() {
+    for (
+        entity,
+        visibility,
+        inherited_visibility,
+        view_visibility,
+        global_transform,
+        mesh_handle,
+        parent,
+    ) in child_query.iter()
+    {
         child_count += 1;
 
         // Check if entity has a mesh
@@ -321,13 +375,13 @@ pub fn zone_child_visibility_diagnostic_system(
             if let Some(parent) = parent {
                 log::info!("  Parent: {:?}", parent.parent());
             }
-                if let Some(mesh) = mesh_handle {
-                    log::info!("  Mesh Handle: {:?}", mesh);
-                    if let Some(mesh_asset) = meshes.get(mesh) {
-                        log::info!("  Mesh Vertices: {}", mesh_asset.count_vertices());
-                        log::info!("  Mesh Primitives: {:?}", mesh_asset.primitive_topology());
-                    }
+            if let Some(mesh) = mesh_handle {
+                log::info!("  Mesh Handle: {:?}", mesh);
+                if let Some(mesh_asset) = meshes.get(mesh) {
+                    log::info!("  Mesh Vertices: {}", mesh_asset.count_vertices());
+                    log::info!("  Mesh Primitives: {:?}", mesh_asset.primitive_topology());
                 }
+            }
             log::info!("");
         }
     }
@@ -336,17 +390,32 @@ pub fn zone_child_visibility_diagnostic_system(
     log::info!("SUMMARY:");
     log::info!("========================================");
     log::info!("Total child entities: {}", child_count);
-    log::info!("Visible children (ViewVisibility=true): {}", visible_children);
-    log::info!("Invisible children (ViewVisibility=false): {}", invisible_children);
+    log::info!(
+        "Visible children (ViewVisibility=true): {}",
+        visible_children
+    );
+    log::info!(
+        "Invisible children (ViewVisibility=false): {}",
+        invisible_children
+    );
     log::info!("Children without Mesh: {}", children_without_mesh);
-    log::info!("Children with ViewVisibility=false: {}", children_without_view_visibility);
+    log::info!(
+        "Children with ViewVisibility=false: {}",
+        children_without_view_visibility
+    );
 
     if invisible_children > 0 {
-        log::warn!("!!! WARNING: {} child entities are NOT VISIBLE !!!", invisible_children);
+        log::warn!(
+            "!!! WARNING: {} child entities are NOT VISIBLE !!!",
+            invisible_children
+        );
     }
 
     if children_without_mesh > 0 {
-        log::warn!("!!! WARNING: {} child entities have NO MESH component !!!", children_without_mesh);
+        log::warn!(
+            "!!! WARNING: {} child entities have NO MESH component !!!",
+            children_without_mesh
+        );
     }
 
     log::info!("========================================");
@@ -358,7 +427,7 @@ pub struct ZoneDebugDiagnosticsPlugin;
 impl Plugin for ZoneDebugDiagnosticsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ZoneDebugDiagnostics>()
-           .add_systems(Update, zone_debug_diagnostics_system)
-           .add_systems(Update, zone_child_visibility_diagnostic_system);
+            .add_systems(Update, zone_debug_diagnostics_system)
+            .add_systems(Update, zone_child_visibility_diagnostic_system);
     }
 }

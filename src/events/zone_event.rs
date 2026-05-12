@@ -1,4 +1,4 @@
-use bevy::prelude::{Message, Handle};
+use bevy::prelude::{Handle, Message};
 
 use rose_data::ZoneId;
 

@@ -1,5 +1,5 @@
 //! Properties Panel for the Map Editor
-//! 
+//!
 //! Displays properties of the selected entity including transform and components.
 //! Connects to actual entity data and sends property change events.
 
@@ -7,8 +7,8 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 
 use crate::components::{
-    EventObject, WarpObject, ZoneObject, ZoneObjectPart, ZoneObjectPartCollisionShape,
-    MapEditorTerrainBlock, MapEditorWaterPlane,
+    EventObject, MapEditorTerrainBlock, MapEditorWaterPlane, WarpObject, ZoneObject,
+    ZoneObjectPart, ZoneObjectPartCollisionShape,
 };
 use crate::map_editor::components::SelectedInEditor;
 use crate::map_editor::resources::{DuplicateSelectedEvent, EditorMode, MapEditorState};
@@ -54,13 +54,13 @@ pub fn editor_properties_panel_system(
     if !map_editor_state.enabled {
         return;
     }
-    
+
     // Get egui context from commands
     let ctx = match commands.get_egui_context() {
         Some(ctx) => ctx,
         None => return,
     };
-    
+
     egui::SidePanel::right("properties_panel")
         .default_width(300.0)
         .min_width(200.0)
@@ -68,10 +68,10 @@ pub fn editor_properties_panel_system(
         .show(&ctx, |ui| {
             ui.heading("Properties");
             ui.separator();
-            
+
             // Check if any entity is selected
             let selection_count = map_editor_state.selection_count();
-            
+
             if selection_count == 0 {
                 ui.label(egui::RichText::new("No object selected").italics());
                 ui.label("Click on an object in the viewport or hierarchy to select it.");
@@ -79,7 +79,7 @@ pub fn editor_properties_panel_system(
                 pending_edits.editing_entity = None;
                 return;
             }
-            
+
             // Show selection info
             if selection_count == 1 {
                 // Single selection - show full properties
@@ -132,10 +132,10 @@ pub fn editor_properties_panel(
         .show(ctx, |ui| {
             ui.heading("Properties");
             ui.separator();
-            
+
             // Check if any entity is selected
             let selection_count = map_editor_state.selection_count();
-            
+
             if selection_count == 0 {
                 ui.label(egui::RichText::new("No object selected").italics());
                 ui.label("Click on an object in the viewport or hierarchy to select it.");
@@ -143,7 +143,7 @@ pub fn editor_properties_panel(
                 pending_edits.editing_entity = None;
                 return;
             }
-            
+
             // Show selection info
             if selection_count == 1 {
                 // Single selection - show full properties
@@ -162,7 +162,12 @@ pub fn editor_properties_panel(
                 }
             } else {
                 // Multi-selection - show summary
-                multi_object_properties_standalone(ui, map_editor_state, event_writer, duplicate_event_writer);
+                multi_object_properties_standalone(
+                    ui,
+                    map_editor_state,
+                    event_writer,
+                    duplicate_event_writer,
+                );
             }
         });
 }
@@ -193,12 +198,14 @@ fn single_object_properties(
             pending_edits.editing_entity = Some(entity);
         }
     }
-    
+
     // Entity header
     ui.group(|ui| {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Entity:").strong());
-            let entity_name = name_query.get(entity).ok()
+            let entity_name = name_query
+                .get(entity)
+                .ok()
                 .map(|n| n.as_str())
                 .unwrap_or("Unnamed");
             ui.label(entity_name);
@@ -213,16 +220,16 @@ fn single_object_properties(
             ui.label(format!("{:?}", entity));
         });
     });
-    
+
     ui.separator();
-    
+
     // Transform section
     ui.collapsing("Transform", |ui| {
         transform_editor(ui, entity, pending_edits, commands, map_editor_state);
     });
-    
+
     ui.separator();
-    
+
     // Zone Object section (if applicable)
     if entity_data.zone_objects.get(entity).is_ok() {
         ui.collapsing("Zone Object", |ui| {
@@ -230,7 +237,7 @@ fn single_object_properties(
         });
         ui.separator();
     }
-    
+
     // Event Object section (if applicable)
     if entity_data.event_objects.get(entity).is_ok() {
         ui.collapsing("Event Object", |ui| {
@@ -238,7 +245,7 @@ fn single_object_properties(
         });
         ui.separator();
     }
-    
+
     // Warp Object section (if applicable)
     if entity_data.warp_objects.get(entity).is_ok() {
         ui.collapsing("Warp Object", |ui| {
@@ -246,7 +253,7 @@ fn single_object_properties(
         });
         ui.separator();
     }
-    
+
     // Collision section (if applicable)
     if has_collision(entity, entity_data) {
         ui.collapsing("Collision", |ui| {
@@ -254,7 +261,7 @@ fn single_object_properties(
         });
         ui.separator();
     }
-    
+
     // Additional components section
     ui.collapsing("Components", |ui| {
         list_components(ui, entity, entity_data);
@@ -288,12 +295,14 @@ fn single_object_properties_standalone(
             pending_edits.editing_entity = Some(entity);
         }
     }
-    
+
     // Entity header
     ui.group(|ui| {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Entity:").strong());
-            let entity_name = name_query.get(entity).ok()
+            let entity_name = name_query
+                .get(entity)
+                .ok()
                 .map(|n| n.as_str())
                 .unwrap_or("Unnamed");
             ui.label(entity_name);
@@ -308,29 +317,37 @@ fn single_object_properties_standalone(
             ui.label(format!("{:?}", entity));
         });
     });
-    
+
     ui.separator();
-    
+
     // Quick actions
     ui.horizontal(|ui| {
-        if ui.button("Duplicate").on_hover_text("Duplicate this object (Ctrl+D)").clicked() {
+        if ui
+            .button("Duplicate")
+            .on_hover_text("Duplicate this object (Ctrl+D)")
+            .clicked()
+        {
             duplicate_event_writer.write(DuplicateSelectedEvent::new());
             log::info!("[Properties] Duplicate clicked for entity {:?}", entity);
         }
-        if ui.button("Delete").on_hover_text("Delete this object (Delete key)").clicked() {
+        if ui
+            .button("Delete")
+            .on_hover_text("Delete this object (Delete key)")
+            .clicked()
+        {
             log::info!("[Properties] Delete clicked for entity {:?}", entity);
         }
     });
-    
+
     ui.separator();
-    
+
     // Transform section
     ui.collapsing("Transform", |ui| {
         transform_editor_standalone(ui, entity, pending_edits, event_writer, map_editor_state);
     });
-    
+
     ui.separator();
-    
+
     // Zone Object section (if applicable)
     if entity_data.zone_objects.get(entity).is_ok() {
         ui.collapsing("Zone Object", |ui| {
@@ -338,7 +355,7 @@ fn single_object_properties_standalone(
         });
         ui.separator();
     }
-    
+
     // Event Object section (if applicable)
     if entity_data.event_objects.get(entity).is_ok() {
         ui.collapsing("Event Object", |ui| {
@@ -346,7 +363,7 @@ fn single_object_properties_standalone(
         });
         ui.separator();
     }
-    
+
     // Warp Object section (if applicable)
     if entity_data.warp_objects.get(entity).is_ok() {
         ui.collapsing("Warp Object", |ui| {
@@ -354,7 +371,7 @@ fn single_object_properties_standalone(
         });
         ui.separator();
     }
-    
+
     // Collision section (if applicable)
     if has_collision(entity, entity_data) {
         ui.collapsing("Collision", |ui| {
@@ -362,7 +379,7 @@ fn single_object_properties_standalone(
         });
         ui.separator();
     }
-    
+
     // Additional components section
     ui.collapsing("Components", |ui| {
         list_components(ui, entity, entity_data);
@@ -376,18 +393,18 @@ fn multi_object_properties(
     _commands: &mut Commands,
 ) {
     let count = map_editor_state.selection_count();
-    
+
     ui.group(|ui| {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Selected:").strong());
             ui.label(format!("{} objects", count));
         });
     });
-    
+
     ui.separator();
-    
+
     ui.label("Multi-selection editing:");
-    
+
     // Shared transform operations
     ui.collapsing("Transform (Shared)", |ui| {
         ui.label("Position:");
@@ -397,24 +414,24 @@ fn multi_object_properties(
             ui.add(egui::DragValue::new(&mut pos).prefix("Y: ").speed(0.1));
             ui.add(egui::DragValue::new(&mut pos).prefix("Z: ").speed(0.1));
         });
-        
+
         if ui.button("Apply to All").clicked() {
             log::info!("[Properties] Apply position to all clicked");
         }
     });
-    
+
     ui.separator();
-    
+
     // Bulk actions
     ui.label("Actions:");
     if ui.button("Delete All Selected").clicked() {
         log::info!("[Properties] Delete all selected clicked");
     }
-    
+
     if ui.button("Duplicate All Selected").clicked() {
         log::info!("[Properties] Duplicate all selected clicked");
     }
-    
+
     if ui.button("Group Selected").clicked() {
         log::info!("[Properties] Group selected clicked");
     }
@@ -428,18 +445,18 @@ fn multi_object_properties_standalone(
     duplicate_event_writer: &mut MessageWriter<DuplicateSelectedEvent>,
 ) {
     let count = map_editor_state.selection_count();
-    
+
     ui.group(|ui| {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Selected:").strong());
             ui.label(format!("{} objects", count));
         });
     });
-    
+
     ui.separator();
-    
+
     ui.label("Multi-selection editing:");
-    
+
     // Shared transform operations
     ui.collapsing("Transform (Shared)", |ui| {
         ui.label("Position:");
@@ -449,25 +466,25 @@ fn multi_object_properties_standalone(
             ui.add(egui::DragValue::new(&mut pos).prefix("Y: ").speed(0.1));
             ui.add(egui::DragValue::new(&mut pos).prefix("Z: ").speed(0.1));
         });
-        
+
         if ui.button("Apply to All").clicked() {
             log::info!("[Properties] Apply position to all clicked");
         }
     });
-    
+
     ui.separator();
-    
+
     // Bulk actions
     ui.label("Actions:");
     if ui.button("Delete All Selected").clicked() {
         log::info!("[Properties] Delete all selected clicked");
     }
-    
+
     if ui.button("Duplicate All Selected").clicked() {
         duplicate_event_writer.write(DuplicateSelectedEvent::new());
         log::info!("[Properties] Duplicate all selected clicked");
     }
-    
+
     if ui.button("Group Selected").clicked() {
         log::info!("[Properties] Group selected clicked");
     }
@@ -485,34 +502,64 @@ fn transform_editor(
     ui.label(egui::RichText::new("Position:").strong());
     ui.horizontal(|ui| {
         let old_pos = pending_edits.position;
-        ui.add(egui::DragValue::new(&mut pending_edits.position.x).prefix("X: ").speed(0.1));
-        ui.add(egui::DragValue::new(&mut pending_edits.position.y).prefix("Y: ").speed(0.1));
-        ui.add(egui::DragValue::new(&mut pending_edits.position.z).prefix("Z: ").speed(0.1));
-        
+        ui.add(
+            egui::DragValue::new(&mut pending_edits.position.x)
+                .prefix("X: ")
+                .speed(0.1),
+        );
+        ui.add(
+            egui::DragValue::new(&mut pending_edits.position.y)
+                .prefix("Y: ")
+                .speed(0.1),
+        );
+        ui.add(
+            egui::DragValue::new(&mut pending_edits.position.z)
+                .prefix("Z: ")
+                .speed(0.1),
+        );
+
         // Check if position changed
         if old_pos != pending_edits.position {
-            log::info!("[Properties] Position changed: {:?}", pending_edits.position);
+            log::info!(
+                "[Properties] Position changed: {:?}",
+                pending_edits.position
+            );
             // In a full implementation, we would send a PropertyChangeEvent here
         }
     });
-    
+
     ui.add_space(4.0);
-    
+
     // Rotation (as Euler angles)
     ui.label(egui::RichText::new("Rotation (degrees):").strong());
     ui.horizontal(|ui| {
         let old_rot = pending_edits.rotation;
-        ui.add(egui::DragValue::new(&mut pending_edits.rotation.x).prefix("X: ").speed(1.0));
-        ui.add(egui::DragValue::new(&mut pending_edits.rotation.y).prefix("Y: ").speed(1.0));
-        ui.add(egui::DragValue::new(&mut pending_edits.rotation.z).prefix("Z: ").speed(1.0));
-        
+        ui.add(
+            egui::DragValue::new(&mut pending_edits.rotation.x)
+                .prefix("X: ")
+                .speed(1.0),
+        );
+        ui.add(
+            egui::DragValue::new(&mut pending_edits.rotation.y)
+                .prefix("Y: ")
+                .speed(1.0),
+        );
+        ui.add(
+            egui::DragValue::new(&mut pending_edits.rotation.z)
+                .prefix("Z: ")
+                .speed(1.0),
+        );
+
         if old_rot != pending_edits.rotation {
-            log::info!("[Properties] Rotation changed: {:?}", pending_edits.rotation);
+            log::info!(
+                "[Properties] Rotation changed: {:?}",
+                pending_edits.rotation
+            );
         }
     });
-    
+
     ui.add_space(4.0);
-    
+
     // Scale
     ui.label(egui::RichText::new("Scale:").strong());
     let mut uniform_scale = true;
@@ -523,28 +570,46 @@ fn transform_editor(
     });
     ui.horizontal(|ui| {
         let old_scale = pending_edits.scale;
-        ui.add(egui::DragValue::new(&mut pending_edits.scale.x).prefix("X: ").speed(0.01));
-        ui.add(egui::DragValue::new(&mut pending_edits.scale.y).prefix("Y: ").speed(0.01));
-        ui.add(egui::DragValue::new(&mut pending_edits.scale.z).prefix("Z: ").speed(0.01));
-        
+        ui.add(
+            egui::DragValue::new(&mut pending_edits.scale.x)
+                .prefix("X: ")
+                .speed(0.01),
+        );
+        ui.add(
+            egui::DragValue::new(&mut pending_edits.scale.y)
+                .prefix("Y: ")
+                .speed(0.01),
+        );
+        ui.add(
+            egui::DragValue::new(&mut pending_edits.scale.z)
+                .prefix("Z: ")
+                .speed(0.01),
+        );
+
         if old_scale != pending_edits.scale {
             log::info!("[Properties] Scale changed: {:?}", pending_edits.scale);
         }
     });
-    
+
     ui.add_space(4.0);
-    
+
     // Quick actions
     ui.horizontal(|ui| {
         if ui.button("Reset Transform").clicked() {
             pending_edits.position = Vec3::ZERO;
             pending_edits.rotation = Vec3::ZERO;
             pending_edits.scale = Vec3::ONE;
-            log::info!("[Properties] Reset transform clicked for entity {:?}", entity);
+            log::info!(
+                "[Properties] Reset transform clicked for entity {:?}",
+                entity
+            );
         }
         if ui.button("Center on Origin").clicked() {
             pending_edits.position = Vec3::ZERO;
-            log::info!("[Properties] Center on origin clicked for entity {:?}", entity);
+            log::info!(
+                "[Properties] Center on origin clicked for entity {:?}",
+                entity
+            );
         }
     });
 }
@@ -561,10 +626,28 @@ fn transform_editor_standalone(
     ui.label(egui::RichText::new("Position:").strong());
     ui.horizontal(|ui| {
         let old_pos = pending_edits.position;
-        let x_changed = ui.add(egui::DragValue::new(&mut pending_edits.position.x).prefix("X: ").speed(0.1)).changed();
-        let y_changed = ui.add(egui::DragValue::new(&mut pending_edits.position.y).prefix("Y: ").speed(0.1)).changed();
-        let z_changed = ui.add(egui::DragValue::new(&mut pending_edits.position.z).prefix("Z: ").speed(0.1)).changed();
-        
+        let x_changed = ui
+            .add(
+                egui::DragValue::new(&mut pending_edits.position.x)
+                    .prefix("X: ")
+                    .speed(0.1),
+            )
+            .changed();
+        let y_changed = ui
+            .add(
+                egui::DragValue::new(&mut pending_edits.position.y)
+                    .prefix("Y: ")
+                    .speed(0.1),
+            )
+            .changed();
+        let z_changed = ui
+            .add(
+                egui::DragValue::new(&mut pending_edits.position.z)
+                    .prefix("Z: ")
+                    .speed(0.1),
+            )
+            .changed();
+
         // Check if position changed
         if x_changed || y_changed || z_changed {
             event_writer.write(PropertyChangeEvent::PositionChanged {
@@ -574,17 +657,35 @@ fn transform_editor_standalone(
             });
         }
     });
-    
+
     ui.add_space(4.0);
-    
+
     // Rotation (as Euler angles)
     ui.label(egui::RichText::new("Rotation (degrees):").strong());
     ui.horizontal(|ui| {
         let old_rot = pending_edits.rotation;
-        let x_changed = ui.add(egui::DragValue::new(&mut pending_edits.rotation.x).prefix("X: ").speed(1.0)).changed();
-        let y_changed = ui.add(egui::DragValue::new(&mut pending_edits.rotation.y).prefix("Y: ").speed(1.0)).changed();
-        let z_changed = ui.add(egui::DragValue::new(&mut pending_edits.rotation.z).prefix("Z: ").speed(1.0)).changed();
-        
+        let x_changed = ui
+            .add(
+                egui::DragValue::new(&mut pending_edits.rotation.x)
+                    .prefix("X: ")
+                    .speed(1.0),
+            )
+            .changed();
+        let y_changed = ui
+            .add(
+                egui::DragValue::new(&mut pending_edits.rotation.y)
+                    .prefix("Y: ")
+                    .speed(1.0),
+            )
+            .changed();
+        let z_changed = ui
+            .add(
+                egui::DragValue::new(&mut pending_edits.rotation.z)
+                    .prefix("Z: ")
+                    .speed(1.0),
+            )
+            .changed();
+
         if x_changed || y_changed || z_changed {
             event_writer.write(PropertyChangeEvent::RotationChanged {
                 entity,
@@ -593,9 +694,9 @@ fn transform_editor_standalone(
             });
         }
     });
-    
+
     ui.add_space(4.0);
-    
+
     // Scale
     ui.label(egui::RichText::new("Scale:").strong());
     let mut uniform_scale = true;
@@ -606,10 +707,28 @@ fn transform_editor_standalone(
     });
     ui.horizontal(|ui| {
         let old_scale = pending_edits.scale;
-        let x_changed = ui.add(egui::DragValue::new(&mut pending_edits.scale.x).prefix("X: ").speed(0.01)).changed();
-        let y_changed = ui.add(egui::DragValue::new(&mut pending_edits.scale.y).prefix("Y: ").speed(0.01)).changed();
-        let z_changed = ui.add(egui::DragValue::new(&mut pending_edits.scale.z).prefix("Z: ").speed(0.01)).changed();
-        
+        let x_changed = ui
+            .add(
+                egui::DragValue::new(&mut pending_edits.scale.x)
+                    .prefix("X: ")
+                    .speed(0.01),
+            )
+            .changed();
+        let y_changed = ui
+            .add(
+                egui::DragValue::new(&mut pending_edits.scale.y)
+                    .prefix("Y: ")
+                    .speed(0.01),
+            )
+            .changed();
+        let z_changed = ui
+            .add(
+                egui::DragValue::new(&mut pending_edits.scale.z)
+                    .prefix("Z: ")
+                    .speed(0.01),
+            )
+            .changed();
+
         if x_changed || y_changed || z_changed {
             event_writer.write(PropertyChangeEvent::ScaleChanged {
                 entity,
@@ -618,42 +737,50 @@ fn transform_editor_standalone(
             });
         }
     });
-    
+
     ui.add_space(4.0);
-    
+
     // Quick actions
     ui.horizontal(|ui| {
         if ui.button("Reset Transform").clicked() {
             let old_pos = pending_edits.position;
             let old_rot = pending_edits.rotation;
             let old_scale = pending_edits.scale;
-            
+
             pending_edits.position = Vec3::ZERO;
             pending_edits.rotation = Vec3::ZERO;
             pending_edits.scale = Vec3::ONE;
-            
+
             event_writer.write(PropertyChangeEvent::TransformChanged {
                 entity,
                 old_transform: Transform::from_translation(old_pos)
-                    .with_rotation(Quat::from_euler(EulerRot::XYZ, 
-                        old_rot.x.to_radians(), 
-                        old_rot.y.to_radians(), 
-                        old_rot.z.to_radians()))
+                    .with_rotation(Quat::from_euler(
+                        EulerRot::XYZ,
+                        old_rot.x.to_radians(),
+                        old_rot.y.to_radians(),
+                        old_rot.z.to_radians(),
+                    ))
                     .with_scale(old_scale),
                 new_transform: Transform::IDENTITY,
             });
-            log::info!("[Properties] Reset transform clicked for entity {:?}", entity);
+            log::info!(
+                "[Properties] Reset transform clicked for entity {:?}",
+                entity
+            );
         }
         if ui.button("Center on Origin").clicked() {
             let old_pos = pending_edits.position;
             pending_edits.position = Vec3::ZERO;
-            
+
             event_writer.write(PropertyChangeEvent::PositionChanged {
                 entity,
                 old_position: old_pos,
                 new_position: Vec3::ZERO,
             });
-            log::info!("[Properties] Center on origin clicked for entity {:?}", entity);
+            log::info!(
+                "[Properties] Center on origin clicked for entity {:?}",
+                entity
+            );
         }
     });
 }
@@ -687,65 +814,110 @@ fn zone_object_editor_standalone(
 /// Inner zone object editor logic
 fn zone_object_editor_inner(ui: &mut egui::Ui, entity: Entity, zone_object: &ZoneObject) {
     ui.label(egui::RichText::new("Object Info:").strong());
-    
+
     // Get IDs based on zone object type
     let (ifo_id, zsc_id, part_id, mesh_path) = match zone_object {
         ZoneObject::DecoObject(id) => (id.ifo_object_id, id.zsc_object_id, None, None),
         ZoneObject::CnstObject(id) => (id.ifo_object_id, id.zsc_object_id, None, None),
         ZoneObject::WarpObject(id) => (id.ifo_object_id, id.zsc_object_id, None, None),
         ZoneObject::EventObject(id) => (id.ifo_object_id, id.zsc_object_id, None, None),
-        ZoneObject::DecoObjectPart(part) => (part.ifo_object_id, part.zsc_object_id, Some(part.zsc_part_id), Some(&part.mesh_path)),
-        ZoneObject::CnstObjectPart(part) => (part.ifo_object_id, part.zsc_object_id, Some(part.zsc_part_id), Some(&part.mesh_path)),
-        ZoneObject::WarpObjectPart(part) => (part.ifo_object_id, part.zsc_object_id, Some(part.zsc_part_id), Some(&part.mesh_path)),
-        ZoneObject::EventObjectPart(part) => (part.ifo_object_id, part.zsc_object_id, Some(part.zsc_part_id), Some(&part.mesh_path)),
+        ZoneObject::DecoObjectPart(part) => (
+            part.ifo_object_id,
+            part.zsc_object_id,
+            Some(part.zsc_part_id),
+            Some(&part.mesh_path),
+        ),
+        ZoneObject::CnstObjectPart(part) => (
+            part.ifo_object_id,
+            part.zsc_object_id,
+            Some(part.zsc_part_id),
+            Some(&part.mesh_path),
+        ),
+        ZoneObject::WarpObjectPart(part) => (
+            part.ifo_object_id,
+            part.zsc_object_id,
+            Some(part.zsc_part_id),
+            Some(&part.mesh_path),
+        ),
+        ZoneObject::EventObjectPart(part) => (
+            part.ifo_object_id,
+            part.zsc_object_id,
+            Some(part.zsc_part_id),
+            Some(&part.mesh_path),
+        ),
         ZoneObject::AnimatedObject(obj) => (0, 0, None, Some(&obj.mesh_path)),
-        ZoneObject::Terrain(terrain) => (terrain.block_x as usize, terrain.block_y as usize, None, None),
-        ZoneObject::EffectObject { ifo_object_id, effect_path } => (*ifo_object_id, 0, None, Some(effect_path)),
-        ZoneObject::SoundObject { ifo_object_id, sound_path } => (*ifo_object_id, 0, None, Some(sound_path)),
+        ZoneObject::Terrain(terrain) => (
+            terrain.block_x as usize,
+            terrain.block_y as usize,
+            None,
+            None,
+        ),
+        ZoneObject::EffectObject {
+            ifo_object_id,
+            effect_path,
+        } => (*ifo_object_id, 0, None, Some(effect_path)),
+        ZoneObject::SoundObject {
+            ifo_object_id,
+            sound_path,
+        } => (*ifo_object_id, 0, None, Some(sound_path)),
         ZoneObject::Water => (0, 0, None, None),
     };
-    
+
     ui.horizontal(|ui| {
         ui.label("IFO Object ID:");
         let mut ifo_id_mut = ifo_id;
-        if ui.add(egui::DragValue::new(&mut ifo_id_mut).speed(1.0)).changed() {
-            log::info!("[Properties] IFO Object ID changed: {} -> {}", ifo_id, ifo_id_mut);
+        if ui
+            .add(egui::DragValue::new(&mut ifo_id_mut).speed(1.0))
+            .changed()
+        {
+            log::info!(
+                "[Properties] IFO Object ID changed: {} -> {}",
+                ifo_id,
+                ifo_id_mut
+            );
         }
     });
-    
+
     ui.horizontal(|ui| {
         ui.label("ZSC Object ID:");
         let mut zsc_id_mut = zsc_id;
-        if ui.add(egui::DragValue::new(&mut zsc_id_mut).speed(1.0)).changed() {
-            log::info!("[Properties] ZSC Object ID changed: {} -> {}", zsc_id, zsc_id_mut);
+        if ui
+            .add(egui::DragValue::new(&mut zsc_id_mut).speed(1.0))
+            .changed()
+        {
+            log::info!(
+                "[Properties] ZSC Object ID changed: {} -> {}",
+                zsc_id,
+                zsc_id_mut
+            );
         }
     });
-    
+
     if let Some(pid) = part_id {
         ui.horizontal(|ui| {
             ui.label("Part ID:");
             ui.label(format!("{}", pid));
         });
     }
-    
+
     ui.add_space(4.0);
-    
+
     if let Some(path) = mesh_path {
         ui.label(egui::RichText::new("Model:").strong());
         ui.label(path);
     }
-    
+
     ui.add_space(4.0);
-    
+
     // Editable properties
     ui.label(egui::RichText::new("Properties:").strong());
-    
+
     ui.horizontal(|ui| {
         ui.label("Name:");
         let mut name = format!("Object_{}", ifo_id);
         ui.text_edit_singleline(&mut name);
     });
-    
+
     ui.horizontal(|ui| {
         ui.label("Tag:");
         let mut tag = String::new();
@@ -762,28 +934,62 @@ fn zone_object_editor_inner_with_events(
     event_writer: &mut MessageWriter<PropertyChangeEvent>,
 ) {
     ui.label(egui::RichText::new("Object Info:").strong());
-    
+
     // Get IDs based on zone object type
     let (ifo_id, zsc_id, part_id, mesh_path) = match zone_object {
         ZoneObject::DecoObject(id) => (id.ifo_object_id, id.zsc_object_id, None, None),
         ZoneObject::CnstObject(id) => (id.ifo_object_id, id.zsc_object_id, None, None),
         ZoneObject::WarpObject(id) => (id.ifo_object_id, id.zsc_object_id, None, None),
         ZoneObject::EventObject(id) => (id.ifo_object_id, id.zsc_object_id, None, None),
-        ZoneObject::DecoObjectPart(part) => (part.ifo_object_id, part.zsc_object_id, Some(part.zsc_part_id), Some(&part.mesh_path)),
-        ZoneObject::CnstObjectPart(part) => (part.ifo_object_id, part.zsc_object_id, Some(part.zsc_part_id), Some(&part.mesh_path)),
-        ZoneObject::WarpObjectPart(part) => (part.ifo_object_id, part.zsc_object_id, Some(part.zsc_part_id), Some(&part.mesh_path)),
-        ZoneObject::EventObjectPart(part) => (part.ifo_object_id, part.zsc_object_id, Some(part.zsc_part_id), Some(&part.mesh_path)),
+        ZoneObject::DecoObjectPart(part) => (
+            part.ifo_object_id,
+            part.zsc_object_id,
+            Some(part.zsc_part_id),
+            Some(&part.mesh_path),
+        ),
+        ZoneObject::CnstObjectPart(part) => (
+            part.ifo_object_id,
+            part.zsc_object_id,
+            Some(part.zsc_part_id),
+            Some(&part.mesh_path),
+        ),
+        ZoneObject::WarpObjectPart(part) => (
+            part.ifo_object_id,
+            part.zsc_object_id,
+            Some(part.zsc_part_id),
+            Some(&part.mesh_path),
+        ),
+        ZoneObject::EventObjectPart(part) => (
+            part.ifo_object_id,
+            part.zsc_object_id,
+            Some(part.zsc_part_id),
+            Some(&part.mesh_path),
+        ),
         ZoneObject::AnimatedObject(obj) => (0, 0, None, Some(&obj.mesh_path)),
-        ZoneObject::Terrain(terrain) => (terrain.block_x as usize, terrain.block_y as usize, None, None),
-        ZoneObject::EffectObject { ifo_object_id, effect_path } => (*ifo_object_id, 0, None, Some(effect_path)),
-        ZoneObject::SoundObject { ifo_object_id, sound_path } => (*ifo_object_id, 0, None, Some(sound_path)),
+        ZoneObject::Terrain(terrain) => (
+            terrain.block_x as usize,
+            terrain.block_y as usize,
+            None,
+            None,
+        ),
+        ZoneObject::EffectObject {
+            ifo_object_id,
+            effect_path,
+        } => (*ifo_object_id, 0, None, Some(effect_path)),
+        ZoneObject::SoundObject {
+            ifo_object_id,
+            sound_path,
+        } => (*ifo_object_id, 0, None, Some(sound_path)),
         ZoneObject::Water => (0, 0, None, None),
     };
-    
+
     ui.horizontal(|ui| {
         ui.label("IFO Object ID:");
         let mut ifo_id_mut = ifo_id;
-        if ui.add(egui::DragValue::new(&mut ifo_id_mut).speed(1.0)).changed() {
+        if ui
+            .add(egui::DragValue::new(&mut ifo_id_mut).speed(1.0))
+            .changed()
+        {
             event_writer.write(PropertyChangeEvent::ZoneObjectIdChanged {
                 entity,
                 old_ifo_id: ifo_id,
@@ -793,11 +999,14 @@ fn zone_object_editor_inner_with_events(
             });
         }
     });
-    
+
     ui.horizontal(|ui| {
         ui.label("ZSC Object ID:");
         let mut zsc_id_mut = zsc_id;
-        if ui.add(egui::DragValue::new(&mut zsc_id_mut).speed(1.0)).changed() {
+        if ui
+            .add(egui::DragValue::new(&mut zsc_id_mut).speed(1.0))
+            .changed()
+        {
             event_writer.write(PropertyChangeEvent::ZoneObjectIdChanged {
                 entity,
                 old_ifo_id: ifo_id,
@@ -807,32 +1016,32 @@ fn zone_object_editor_inner_with_events(
             });
         }
     });
-    
+
     if let Some(pid) = part_id {
         ui.horizontal(|ui| {
             ui.label("Part ID:");
             ui.label(format!("{}", pid));
         });
     }
-    
+
     ui.add_space(4.0);
-    
+
     if let Some(path) = mesh_path {
         ui.label(egui::RichText::new("Model:").strong());
         ui.label(path);
     }
-    
+
     ui.add_space(4.0);
-    
+
     // Editable properties
     ui.label(egui::RichText::new("Properties:").strong());
-    
+
     ui.horizontal(|ui| {
         ui.label("Name:");
         let mut name = format!("Object_{}", ifo_id);
         ui.text_edit_singleline(&mut name);
     });
-    
+
     ui.horizontal(|ui| {
         ui.label("Tag:");
         let mut tag = String::new();
@@ -917,7 +1126,10 @@ fn zone_object_editor_inner_with_events(
 
                 let mut fill_enabled = terrain.fill_tile_id.is_some();
                 let mut fill_value = terrain.fill_tile_id.unwrap_or(0);
-                if ui.checkbox(&mut fill_enabled, "Enable Fill Tile Override").changed() {
+                if ui
+                    .checkbox(&mut fill_enabled, "Enable Fill Tile Override")
+                    .changed()
+                {
                     let new_fill = if fill_enabled { Some(fill_value) } else { None };
                     event_writer.write(PropertyChangeEvent::TerrainBlockChanged {
                         entity,
@@ -980,7 +1192,7 @@ fn event_object_editor_standalone(
 /// Inner event object editor logic
 fn event_object_editor_inner(ui: &mut egui::Ui, entity: Entity, event_object: &EventObject) {
     ui.label(egui::RichText::new("Event Object Properties:").strong());
-    
+
     ui.horizontal(|ui| {
         ui.label("Quest Trigger:");
         let mut quest_trigger = event_object.quest_trigger_name.clone();
@@ -988,7 +1200,7 @@ fn event_object_editor_inner(ui: &mut egui::Ui, entity: Entity, event_object: &E
             log::info!("[Properties] Quest trigger changed: {}", quest_trigger);
         }
     });
-    
+
     ui.horizontal(|ui| {
         ui.label("Script Function:");
         let mut script_func = event_object.script_function_name.clone();
@@ -1006,7 +1218,7 @@ fn event_object_editor_inner_with_events(
     event_writer: &mut MessageWriter<PropertyChangeEvent>,
 ) {
     ui.label(egui::RichText::new("Event Object Properties:").strong());
-    
+
     ui.horizontal(|ui| {
         ui.label("Quest Trigger:");
         let mut quest_trigger = event_object.quest_trigger_name.clone();
@@ -1020,7 +1232,7 @@ fn event_object_editor_inner_with_events(
             });
         }
     });
-    
+
     ui.horizontal(|ui| {
         ui.label("Script Function:");
         let mut script_func = event_object.script_function_name.clone();
@@ -1065,15 +1277,15 @@ fn warp_object_editor_standalone(
 /// Inner warp object editor logic
 fn warp_object_editor_inner(ui: &mut egui::Ui, entity: Entity, warp_object: &WarpObject) {
     ui.label(egui::RichText::new("Warp Object Properties:").strong());
-    
+
     ui.horizontal(|ui| {
         ui.label("Warp ID:");
         // Display warp ID (WarpGateId is likely an enum or struct)
         ui.label(format!("{:?}", warp_object.warp_id));
     });
-    
+
     ui.add_space(4.0);
-    
+
     // Target zone/position would be editable here
     ui.label(egui::RichText::new("Target:").strong());
     ui.label("(Warp target information)");
@@ -1087,19 +1299,19 @@ fn warp_object_editor_inner_with_events(
     event_writer: &mut MessageWriter<PropertyChangeEvent>,
 ) {
     ui.label(egui::RichText::new("Warp Object Properties:").strong());
-    
+
     ui.horizontal(|ui| {
         ui.label("Warp ID:");
         // Display warp ID (WarpGateId is likely an enum or struct)
         let warp_id_str = format!("{:?}", warp_object.warp_id);
         ui.label(&warp_id_str);
     });
-    
+
     ui.add_space(4.0);
-    
+
     // Target zone/position would be editable here
     ui.label(egui::RichText::new("Target:").strong());
-    
+
     let mut target_zone = String::from("Unknown");
     ui.horizontal(|ui| {
         ui.label("Target Zone:");
@@ -1119,10 +1331,18 @@ fn warp_object_editor_inner_with_events(
 fn has_collision(entity: Entity, entity_data: &EntityDataQuery) -> bool {
     if let Ok(zone_object) = entity_data.zone_objects.get(entity) {
         match zone_object {
-            ZoneObject::DecoObjectPart(part) => part.collision_shape != ZoneObjectPartCollisionShape::None,
-            ZoneObject::CnstObjectPart(part) => part.collision_shape != ZoneObjectPartCollisionShape::None,
-            ZoneObject::WarpObjectPart(part) => part.collision_shape != ZoneObjectPartCollisionShape::None,
-            ZoneObject::EventObjectPart(part) => part.collision_shape != ZoneObjectPartCollisionShape::None,
+            ZoneObject::DecoObjectPart(part) => {
+                part.collision_shape != ZoneObjectPartCollisionShape::None
+            }
+            ZoneObject::CnstObjectPart(part) => {
+                part.collision_shape != ZoneObjectPartCollisionShape::None
+            }
+            ZoneObject::WarpObjectPart(part) => {
+                part.collision_shape != ZoneObjectPartCollisionShape::None
+            }
+            ZoneObject::EventObjectPart(part) => {
+                part.collision_shape != ZoneObjectPartCollisionShape::None
+            }
             _ => false,
         }
     } else {
@@ -1183,7 +1403,7 @@ fn get_collision_part_mut(zone_object: &mut ZoneObject) -> Option<&mut ZoneObjec
 fn collision_editor_inner(ui: &mut egui::Ui, entity: Entity, zone_object: &ZoneObject) {
     if let Some(part) = get_collision_part(zone_object) {
         ui.label(egui::RichText::new("Collision Shape:").strong());
-        
+
         let shape_text = match part.collision_shape {
             ZoneObjectPartCollisionShape::None => "None",
             ZoneObjectPartCollisionShape::Sphere => "Sphere",
@@ -1191,27 +1411,42 @@ fn collision_editor_inner(ui: &mut egui::Ui, entity: Entity, zone_object: &ZoneO
             ZoneObjectPartCollisionShape::ObjectOrientedBoundingBox => "Box (OBB)",
             ZoneObjectPartCollisionShape::Polygon => "Polygon",
         };
-        
+
         let mut selected_shape = shape_text.to_string();
         egui::ComboBox::from_id_salt(format!("collision_shape_{:?}", entity))
             .selected_text(&selected_shape)
             .show_ui(ui, |ui| {
-                ui.selectable_label(part.collision_shape == ZoneObjectPartCollisionShape::None, "None");
-                ui.selectable_label(part.collision_shape == ZoneObjectPartCollisionShape::Sphere, "Sphere");
-                ui.selectable_label(part.collision_shape == ZoneObjectPartCollisionShape::AxisAlignedBoundingBox, "Box (AABB)");
-                ui.selectable_label(part.collision_shape == ZoneObjectPartCollisionShape::ObjectOrientedBoundingBox, "Box (OBB)");
-                ui.selectable_label(part.collision_shape == ZoneObjectPartCollisionShape::Polygon, "Polygon");
+                ui.selectable_label(
+                    part.collision_shape == ZoneObjectPartCollisionShape::None,
+                    "None",
+                );
+                ui.selectable_label(
+                    part.collision_shape == ZoneObjectPartCollisionShape::Sphere,
+                    "Sphere",
+                );
+                ui.selectable_label(
+                    part.collision_shape == ZoneObjectPartCollisionShape::AxisAlignedBoundingBox,
+                    "Box (AABB)",
+                );
+                ui.selectable_label(
+                    part.collision_shape == ZoneObjectPartCollisionShape::ObjectOrientedBoundingBox,
+                    "Box (OBB)",
+                );
+                ui.selectable_label(
+                    part.collision_shape == ZoneObjectPartCollisionShape::Polygon,
+                    "Polygon",
+                );
             });
-        
+
         ui.add_space(4.0);
-        
+
         ui.label(egui::RichText::new("Collision Flags:").strong());
-        
+
         let mut not_moveable = part.collision_not_moveable;
         let mut not_pickable = part.collision_not_pickable;
         let mut height_only = part.collision_height_only;
         let mut no_camera = part.collision_no_camera;
-        
+
         if ui.checkbox(&mut not_moveable, "Not Moveable").changed() {
             log::info!("[Properties] Not moveable changed: {}", not_moveable);
         }
@@ -1236,7 +1471,7 @@ fn collision_editor_inner_with_events(
 ) {
     if let Some(part) = get_collision_part(zone_object) {
         ui.label(egui::RichText::new("Collision Shape:").strong());
-        
+
         let shape_text = match part.collision_shape {
             ZoneObjectPartCollisionShape::None => "None",
             ZoneObjectPartCollisionShape::Sphere => "Sphere",
@@ -1244,11 +1479,17 @@ fn collision_editor_inner_with_events(
             ZoneObjectPartCollisionShape::ObjectOrientedBoundingBox => "Box (OBB)",
             ZoneObjectPartCollisionShape::Polygon => "Polygon",
         };
-        
+
         egui::ComboBox::from_id_salt(format!("collision_shape_{:?}", entity))
             .selected_text(shape_text)
             .show_ui(ui, |ui| {
-                if ui.selectable_label(part.collision_shape == ZoneObjectPartCollisionShape::None, "None").clicked() {
+                if ui
+                    .selectable_label(
+                        part.collision_shape == ZoneObjectPartCollisionShape::None,
+                        "None",
+                    )
+                    .clicked()
+                {
                     event_writer.write(PropertyChangeEvent::CollisionChanged {
                         entity,
                         property_name: "collision_shape".to_string(),
@@ -1256,7 +1497,13 @@ fn collision_editor_inner_with_events(
                         new_value: "None".to_string(),
                     });
                 }
-                if ui.selectable_label(part.collision_shape == ZoneObjectPartCollisionShape::Sphere, "Sphere").clicked() {
+                if ui
+                    .selectable_label(
+                        part.collision_shape == ZoneObjectPartCollisionShape::Sphere,
+                        "Sphere",
+                    )
+                    .clicked()
+                {
                     event_writer.write(PropertyChangeEvent::CollisionChanged {
                         entity,
                         property_name: "collision_shape".to_string(),
@@ -1264,7 +1511,14 @@ fn collision_editor_inner_with_events(
                         new_value: "Sphere".to_string(),
                     });
                 }
-                if ui.selectable_label(part.collision_shape == ZoneObjectPartCollisionShape::AxisAlignedBoundingBox, "Box (AABB)").clicked() {
+                if ui
+                    .selectable_label(
+                        part.collision_shape
+                            == ZoneObjectPartCollisionShape::AxisAlignedBoundingBox,
+                        "Box (AABB)",
+                    )
+                    .clicked()
+                {
                     event_writer.write(PropertyChangeEvent::CollisionChanged {
                         entity,
                         property_name: "collision_shape".to_string(),
@@ -1272,7 +1526,14 @@ fn collision_editor_inner_with_events(
                         new_value: "AABB".to_string(),
                     });
                 }
-                if ui.selectable_label(part.collision_shape == ZoneObjectPartCollisionShape::ObjectOrientedBoundingBox, "Box (OBB)").clicked() {
+                if ui
+                    .selectable_label(
+                        part.collision_shape
+                            == ZoneObjectPartCollisionShape::ObjectOrientedBoundingBox,
+                        "Box (OBB)",
+                    )
+                    .clicked()
+                {
                     event_writer.write(PropertyChangeEvent::CollisionChanged {
                         entity,
                         property_name: "collision_shape".to_string(),
@@ -1280,7 +1541,13 @@ fn collision_editor_inner_with_events(
                         new_value: "OBB".to_string(),
                     });
                 }
-                if ui.selectable_label(part.collision_shape == ZoneObjectPartCollisionShape::Polygon, "Polygon").clicked() {
+                if ui
+                    .selectable_label(
+                        part.collision_shape == ZoneObjectPartCollisionShape::Polygon,
+                        "Polygon",
+                    )
+                    .clicked()
+                {
                     event_writer.write(PropertyChangeEvent::CollisionChanged {
                         entity,
                         property_name: "collision_shape".to_string(),
@@ -1289,16 +1556,16 @@ fn collision_editor_inner_with_events(
                     });
                 }
             });
-        
+
         ui.add_space(4.0);
-        
+
         ui.label(egui::RichText::new("Collision Flags:").strong());
-        
+
         let mut not_moveable = part.collision_not_moveable;
         let mut not_pickable = part.collision_not_pickable;
         let mut height_only = part.collision_height_only;
         let mut no_camera = part.collision_no_camera;
-        
+
         if ui.checkbox(&mut not_moveable, "Not Moveable").changed() {
             event_writer.write(PropertyChangeEvent::CollisionChanged {
                 entity,
@@ -1367,37 +1634,37 @@ fn get_entity_type_string(entity: Entity, entity_data: &EntityDataQuery) -> &'st
 /// List all components on an entity
 fn list_components(ui: &mut egui::Ui, entity: Entity, entity_data: &EntityDataQuery) {
     let mut component_count = 0;
-    
+
     if entity_data.transforms.get(entity).is_ok() {
         ui.label("• Transform");
         component_count += 1;
     }
-    
+
     if entity_data.zone_objects.get(entity).is_ok() {
         ui.label("• ZoneObject");
         component_count += 1;
     }
-    
+
     if entity_data.event_objects.get(entity).is_ok() {
         ui.label("• EventObject");
         component_count += 1;
     }
-    
+
     if entity_data.warp_objects.get(entity).is_ok() {
         ui.label("• WarpObject");
         component_count += 1;
     }
-    
+
     if entity_data.names.get(entity).is_ok() {
         ui.label("• Name");
         component_count += 1;
     }
-    
+
     if has_collision(entity, entity_data) {
         ui.label("• Collision");
         component_count += 1;
     }
-    
+
     if component_count == 0 {
         ui.label("No recognized components");
     } else {

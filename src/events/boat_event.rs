@@ -9,4 +9,3 @@ pub struct BoardBoatEvent {
 pub struct DisembarkBoatEvent {
     pub entity: Entity,
 }
-

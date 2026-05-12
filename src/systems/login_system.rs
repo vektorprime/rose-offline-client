@@ -1,6 +1,7 @@
 use bevy::{
     prelude::{
-        AssetServer, Camera3d, Commands, Entity, Handle, MessageReader, MessageWriter, Query, Res, ResMut, With,
+        AssetServer, Camera3d, Commands, Entity, Handle, MessageReader, MessageWriter, Query, Res,
+        ResMut, With,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
@@ -12,7 +13,9 @@ use rose_game_common::messages::client::ClientMessage;
 use crate::{
     animation::{CameraAnimation, ZmoAsset},
     events::{LoadZoneEvent, LoginEvent, NetworkEvent},
-    resources::{Account, LoginCameraAnimation, LoginConnection, LoginState, ServerConfiguration, ServerList},
+    resources::{
+        Account, LoginCameraAnimation, LoginConnection, LoginState, ServerConfiguration, ServerList,
+    },
     systems::{FreeCamera, OrbitCamera},
 };
 
@@ -25,7 +28,7 @@ pub fn login_state_enter_system(
     asset_server: Res<AssetServer>,
 ) {
     // log::info!("[LOGIN SYSTEM] login_state_enter_system running");
-    
+
     // Ensure cursor is not locked
     if let Ok(mut cursor_options) = query_cursor_options.single_mut() {
         cursor_options.grab_mode = CursorGrabMode::None;

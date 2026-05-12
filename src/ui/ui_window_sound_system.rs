@@ -1,5 +1,5 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, MessageWriter, Handle, Local, Res};
+use bevy::prelude::{Assets, Handle, Local, MessageWriter, Res};
 
 use crate::{
     resources::UiResources,

@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use std::future::Future;
+use std::sync::Arc;
 
-use bevy::asset::{AssetLoader, io::Reader, LoadContext};
+use bevy::asset::{io::Reader, AssetLoader, LoadContext};
 use bevy::prelude::TypePath;
 use bevy::tasks::futures_lite::AsyncReadExt;
 use hound::WavReader;
@@ -26,38 +26,38 @@ impl AssetLoader for WavLoader {
     ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
             let mut bytes = Vec::new();
-        reader.read_to_end(&mut bytes).await?;
+            reader.read_to_end(&mut bytes).await?;
 
-        let mut reader = WavReader::new(std::io::Cursor::new(bytes))?;
-        let hound::WavSpec {
-            bits_per_sample,
-            sample_format,
-            sample_rate,
-            channels,
-        } = reader.spec();
-
-        let samples: Result<Vec<f32>, _> = match sample_format {
-            hound::SampleFormat::Int => {
-                let max_value = 2_u32.pow(bits_per_sample as u32 - 1) - 1;
-                reader
-                    .samples::<i32>()
-                    .map(|sample| sample.map(|sample| sample as f32 / max_value as f32))
-                    .collect()
-            }
-            hound::SampleFormat::Float => reader.samples::<f32>().collect(),
-        };
-
-        let samples = samples?;
-
-        Ok(AudioSource {
-            bytes: Arc::new([]),
-            decoded: Some(Arc::new(AudioSourceDecoded {
-                samples,
-                channel_count: channels as u32,
+            let mut reader = WavReader::new(std::io::Cursor::new(bytes))?;
+            let hound::WavSpec {
+                bits_per_sample,
+                sample_format,
                 sample_rate,
-            })),
-            create_streaming_source_fn: |_| Err(anyhow::anyhow!("Unsupported")),
-        })
+                channels,
+            } = reader.spec();
+
+            let samples: Result<Vec<f32>, _> = match sample_format {
+                hound::SampleFormat::Int => {
+                    let max_value = 2_u32.pow(bits_per_sample as u32 - 1) - 1;
+                    reader
+                        .samples::<i32>()
+                        .map(|sample| sample.map(|sample| sample as f32 / max_value as f32))
+                        .collect()
+                }
+                hound::SampleFormat::Float => reader.samples::<f32>().collect(),
+            };
+
+            let samples = samples?;
+
+            Ok(AudioSource {
+                bytes: Arc::new([]),
+                decoded: Some(Arc::new(AudioSourceDecoded {
+                    samples,
+                    channel_count: channels as u32,
+                    sample_rate,
+                })),
+                create_streaming_source_fn: |_| Err(anyhow::anyhow!("Unsupported")),
+            })
         }
     }
 

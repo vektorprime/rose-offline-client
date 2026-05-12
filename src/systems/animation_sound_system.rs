@@ -2,7 +2,10 @@ use bevy::{
     asset::Assets,
     ecs::query::QueryData,
     math::Vec3,
-    prelude::{AssetServer, Commands, Entity, MessageReader, GlobalTransform, Query, Res, ResMut, Transform, With},
+    prelude::{
+        AssetServer, Commands, Entity, GlobalTransform, MessageReader, Query, Res, ResMut,
+        Transform, With,
+    },
 };
 use bevy_mesh::skinning::SkinnedMesh;
 
@@ -98,11 +101,12 @@ pub fn animation_sound_system(
         .unwrap_or(Vec3::ZERO);
 
     for event in animation_frame_events.read() {
-        let event_entity_full = if let Ok(event_entity_full) = query_event_entity_full.get(event.entity) {
-            event_entity_full
-        } else {
-            continue;
-        };
+        let event_entity_full =
+            if let Ok(event_entity_full) = query_event_entity_full.get(event.entity) {
+                event_entity_full
+            } else {
+                continue;
+            };
 
         let target_entity = event_entity_full
             .command
@@ -191,7 +195,9 @@ pub fn animation_sound_system(
                     if let Some(dummy_transform) = event_entity_full
                         .skinned_mesh
                         .and_then(|skinned_mesh| {
-                            skinned_mesh.joints.get(event_entity_full.dummy_bone_offset.map_or(0, |d| d.index) + 1)
+                            skinned_mesh
+                                .joints
+                                .get(event_entity_full.dummy_bone_offset.map_or(0, |d| d.index) + 1)
                         })
                         .and_then(|dummy_entity| query_global_transform.get(*dummy_entity).ok())
                     {
@@ -215,7 +221,9 @@ pub fn animation_sound_system(
                     if let Some(dummy_transform) = event_entity_full
                         .skinned_mesh
                         .and_then(|skinned_mesh| {
-                            skinned_mesh.joints.get(event_entity_full.dummy_bone_offset.map_or(0, |d| d.index) + 2)
+                            skinned_mesh
+                                .joints
+                                .get(event_entity_full.dummy_bone_offset.map_or(0, |d| d.index) + 2)
                         })
                         .and_then(|dummy_entity| query_global_transform.get(*dummy_entity).ok())
                     {
@@ -245,7 +253,10 @@ pub fn animation_sound_system(
             {
                 weapon_item_data.attack_start_sound_id
             } else if let Some(target_entity) = target_entity.as_ref() {
-                target_entity.npc.and_then(|npc| game_data.npcs.get_npc(npc.id)).and_then(|npc_data| npc_data.attack_sound_id)
+                target_entity
+                    .npc
+                    .and_then(|npc| game_data.npcs.get_npc(npc.id))
+                    .and_then(|npc_data| npc_data.attack_sound_id)
             } else {
                 game_data
                     .items
@@ -318,12 +329,11 @@ pub fn animation_sound_system(
                 };
 
                 if let Some(sound_data) = sound_data {
-                    let sound_category =
-                        if event_entity_is_player || target_entity_is_player {
-                            SoundCategory::PlayerCombat
-                        } else {
-                            SoundCategory::OtherCombat
-                        };
+                    let sound_category = if event_entity_is_player || target_entity_is_player {
+                        SoundCategory::PlayerCombat
+                    } else {
+                        SoundCategory::OtherCombat
+                    };
 
                     let is_player_sound = event_entity_is_player || target_entity_is_player;
 
@@ -397,12 +407,11 @@ pub fn animation_sound_system(
                 if let Some(sound_data) =
                     fire_sound_id.and_then(|id| game_data.sounds.get_sound(id))
                 {
-                    let sound_category =
-                        if event_entity_is_player || target_entity_is_player {
-                            SoundCategory::PlayerCombat
-                        } else {
-                            SoundCategory::OtherCombat
-                        };
+                    let sound_category = if event_entity_is_player || target_entity_is_player {
+                        SoundCategory::PlayerCombat
+                    } else {
+                        SoundCategory::OtherCombat
+                    };
 
                     let is_player_sound = event_entity_is_player || target_entity_is_player;
 
@@ -432,12 +441,11 @@ pub fn animation_sound_system(
                     .and_then(|skill_data| skill_data.bullet_fire_sound_id)
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
-                    let sound_category =
-                        if event_entity_is_player || target_entity_is_player {
-                            SoundCategory::PlayerCombat
-                        } else {
-                            SoundCategory::OtherCombat
-                        };
+                    let sound_category = if event_entity_is_player || target_entity_is_player {
+                        SoundCategory::PlayerCombat
+                    } else {
+                        SoundCategory::OtherCombat
+                    };
 
                     let is_player_sound = event_entity_is_player || target_entity_is_player;
 
@@ -464,12 +472,11 @@ pub fn animation_sound_system(
                     .and_then(|skill_data| skill_data.hit_sound_id)
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
-                    let sound_category =
-                        if event_entity_is_player || target_entity_is_player {
-                            SoundCategory::PlayerCombat
-                        } else {
-                            SoundCategory::OtherCombat
-                        };
+                    let sound_category = if event_entity_is_player || target_entity_is_player {
+                        SoundCategory::PlayerCombat
+                    } else {
+                        SoundCategory::OtherCombat
+                    };
 
                     let is_player_sound = event_entity_is_player || target_entity_is_player;
 
@@ -499,12 +506,11 @@ pub fn animation_sound_system(
                     .and_then(|skill_data| skill_data.hit_dummy_sound_id[0])
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
-                    let sound_category =
-                        if event_entity_is_player || target_entity_is_player {
-                            SoundCategory::PlayerCombat
-                        } else {
-                            SoundCategory::OtherCombat
-                        };
+                    let sound_category = if event_entity_is_player || target_entity_is_player {
+                        SoundCategory::PlayerCombat
+                    } else {
+                        SoundCategory::OtherCombat
+                    };
 
                     let is_player_sound = event_entity_is_player || target_entity_is_player;
 
@@ -534,12 +540,11 @@ pub fn animation_sound_system(
                     .and_then(|skill_data| skill_data.hit_dummy_sound_id[1])
                     .and_then(|id| game_data.sounds.get_sound(id))
                 {
-                    let sound_category =
-                        if event_entity_is_player || target_entity_is_player {
-                            SoundCategory::PlayerCombat
-                        } else {
-                            SoundCategory::OtherCombat
-                        };
+                    let sound_category = if event_entity_is_player || target_entity_is_player {
+                        SoundCategory::PlayerCombat
+                    } else {
+                        SoundCategory::OtherCombat
+                    };
 
                     let is_player_sound = event_entity_is_player || target_entity_is_player;
 

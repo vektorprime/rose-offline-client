@@ -74,9 +74,9 @@ impl Default for WaterSettings {
             water_surface_y: 0.0,
 
             // Depth settings
-            min_depth: 0.5,      // Shallow water at edges
-            max_depth: 10.0,     // Deep water in center
-            shallow_threshold: 2.0, // Bottom visible below 2m depth
+            min_depth: 0.5,                               // Shallow water at edges
+            max_depth: 10.0,                              // Deep water in center
+            shallow_threshold: 2.0,                       // Bottom visible below 2m depth
             deep_color: Vec4::new(0.0, 0.2, 0.4, 0.9),    // Deep blue
             shallow_color: Vec4::new(0.3, 0.6, 0.7, 0.5), // Light turquoise
             bottom_visibility: 0.6,

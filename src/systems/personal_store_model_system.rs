@@ -34,9 +34,7 @@ pub fn personal_store_model_system(
                 }
 
                 // Despawn previous model
-                commands
-                    .entity(personal_store_model.model)
-                    .despawn();
+                commands.entity(personal_store_model.model).despawn();
             }
 
             // Spawn new model
@@ -58,9 +56,7 @@ pub fn personal_store_model_system(
             commands.entity(entity).remove_and_despawn_collider();
         } else if let Some(personal_store_model) = personal_store_model {
             // Despawn and remove model
-            commands
-                .entity(personal_store_model.model)
-                .despawn();
+            commands.entity(personal_store_model.model).despawn();
             commands
                 .entity(entity)
                 .remove::<PersonalStoreModel>()

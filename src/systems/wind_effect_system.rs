@@ -1,6 +1,6 @@
 use bevy::{
-    prelude::*,
     pbr::{MeshMaterial3d, StandardMaterial},
+    prelude::*,
     render::alpha::AlphaMode,
 };
 use rand::Rng;
@@ -45,7 +45,7 @@ fn setup_wind_effect_assets(
     // Create semi-transparent white/light-blue material for wind streaks
     let material = materials.add(StandardMaterial {
         base_color: Color::srgba(0.85, 0.92, 1.0, 0.5), // Light blue, semi-transparent
-        emissive: LinearRgba::new(0.3, 0.5, 0.7, 1.0),   // Soft blue glow
+        emissive: LinearRgba::new(0.3, 0.5, 0.7, 1.0),  // Soft blue glow
         alpha_mode: AlphaMode::Blend,
         perceptual_roughness: 0.2,
         metallic: 0.1,
@@ -81,9 +81,7 @@ pub fn wind_emitter_spawn_system(
                 // Make emitter a child of the player entity so it follows them
                 commands.entity(entity).add_child(emitter_entity);
 
-                log::info!(
-                    "[WIND_EFFECT] Spawned wind emitter for flying player"
-                );
+                log::info!("[WIND_EFFECT] Spawned wind emitter for flying player");
             }
         } else {
             // Despawn emitter if present when not flying
@@ -93,9 +91,7 @@ pub fn wind_emitter_spawn_system(
                 }
                 flight_state.wind_emitter_entity = None;
 
-                log::info!(
-                    "[WIND_EFFECT] Despawned wind emitter - flight ended"
-                );
+                log::info!("[WIND_EFFECT] Despawned wind emitter - flight ended");
             }
         }
     }
@@ -186,7 +182,8 @@ pub fn wind_particle_spawn_system(
             let side_offset = rng.gen_range(-0.5..0.5); // Random side offset
             let front_back_offset = rng.gen_range(-0.3..0.3); // Random front/back offset
 
-            let spawn_position = player_pos + Vec3::new(side_offset, body_offset, front_back_offset);
+            let spawn_position =
+                player_pos + Vec3::new(side_offset, body_offset, front_back_offset);
 
             // Calculate backward direction based on facing direction
             // FacingDirection stores angle in radians
@@ -219,7 +216,7 @@ pub fn wind_particle_spawn_system(
             // We need to rotate it to align with the backward (velocity) direction
             let velocity_normalized = velocity.normalize();
             let up = Vec3::Y;
-            
+
             // Calculate rotation from Y-axis to velocity direction
             let rotation = if velocity_normalized.abs().dot(up) > 0.999 {
                 // Nearly parallel or anti-parallel to Y axis
@@ -277,7 +274,8 @@ pub fn wind_particle_update_system(
         transform.translation += particle.velocity * delta_time;
 
         // Calculate fade based on remaining lifetime
-        let remaining_ratio = particle.lifetime.remaining_secs() / particle.lifetime.duration().as_secs_f32();
+        let remaining_ratio =
+            particle.lifetime.remaining_secs() / particle.lifetime.duration().as_secs_f32();
 
         // Scale down the particle as it fades for a shrinking effect
         let scale_factor = 0.3 + 0.7 * remaining_ratio;

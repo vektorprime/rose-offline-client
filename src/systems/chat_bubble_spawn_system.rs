@@ -192,8 +192,7 @@ pub fn chat_bubble_spawn_system(
                         + CHAT_BUBBLE_PADDING as usize;
 
                     if dst_x + (uv_max[0] - uv_min[0]) as usize > target_texture_width as usize
-                        || dst_y + (uv_max[1] - uv_min[1]) as usize
-                            > target_texture_height as usize
+                        || dst_y + (uv_max[1] - uv_min[1]) as usize > target_texture_height as usize
                     {
                         continue;
                     }

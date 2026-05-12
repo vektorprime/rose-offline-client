@@ -1,5 +1,5 @@
 //! IFO File Data Structures
-//! 
+//!
 //! This module contains data structures for representing IFO file data
 //! for export purposes. These structures mirror the IFO file format
 //! used by Rose Online.
@@ -70,22 +70,13 @@ impl IfoObject {
             object_id,
             minimap_pos_x: 0,
             minimap_pos_y: 0,
-            rotation: [
-                rotation.x,
-                -rotation.z,
-                rotation.y,
-                rotation.w,
-            ],
+            rotation: [rotation.x, -rotation.z, rotation.y, rotation.w],
             position: [
                 translation.x * 100.0,
                 -translation.z * 100.0,
                 translation.y * 100.0,
             ],
-            scale: [
-                scale.x,
-                scale.z,
-                scale.y,
-            ],
+            scale: [scale.x, scale.z, scale.y],
         }
     }
 
@@ -102,11 +93,7 @@ impl IfoObject {
             -self.rotation[1],
             self.rotation[3],
         );
-        let scale = Vec3::new(
-            self.scale[0],
-            self.scale[2],
-            self.scale[1],
-        );
+        let scale = Vec3::new(self.scale[0], self.scale[2], self.scale[1]);
         (translation, rotation, scale)
     }
 
@@ -121,8 +108,17 @@ impl IfoObject {
             object_id: ifo_object.object_id,
             minimap_pos_x: ifo_object.minimap_position.x,
             minimap_pos_y: ifo_object.minimap_position.y,
-            rotation: [ifo_object.rotation.x, ifo_object.rotation.y, ifo_object.rotation.z, ifo_object.rotation.w],
-            position: [ifo_object.position.x, ifo_object.position.y, ifo_object.position.z],
+            rotation: [
+                ifo_object.rotation.x,
+                ifo_object.rotation.y,
+                ifo_object.rotation.z,
+                ifo_object.rotation.w,
+            ],
+            position: [
+                ifo_object.position.x,
+                ifo_object.position.y,
+                ifo_object.position.z,
+            ],
             scale: [ifo_object.scale.x, ifo_object.scale.y, ifo_object.scale.z],
         }
     }
@@ -544,33 +540,39 @@ impl ZoneExportData {
         base_path: String,
     ) -> Self {
         let mut export_data = Self::new(zone_id, base_path);
-        
+
         for (block_idx, block_opt) in blocks.iter().enumerate() {
             let Some(block) = block_opt else {
                 continue;
             };
-            
+
             let Some(ifo) = &block.ifo else {
                 continue;
             };
-            
+
             // Calculate block coordinates from index (64x64 grid)
             let block_x = (block_idx % 64) as u32;
             let block_y = (block_idx / 64) as u32;
-            
+
             // Get or create the export block
             let export_block = export_data.get_or_create_block(block_x, block_y);
-            
+
             // Convert deco objects from IFO
             for ifo_object in &ifo.deco_objects {
-                export_block.block.deco_objects.push(IfoObject::from_rose_ifo_object(ifo_object));
+                export_block
+                    .block
+                    .deco_objects
+                    .push(IfoObject::from_rose_ifo_object(ifo_object));
             }
-            
+
             // Convert cnst objects from IFO
             for ifo_object in &ifo.cnst_objects {
-                export_block.block.cnst_objects.push(IfoObject::from_rose_ifo_object(ifo_object));
+                export_block
+                    .block
+                    .cnst_objects
+                    .push(IfoObject::from_rose_ifo_object(ifo_object));
             }
-            
+
             // Convert event objects from IFO
             for ifo_event in &ifo.event_objects {
                 let mut event_obj = IfoEventObject::new(ifo_event.object.object_id);
@@ -579,7 +581,7 @@ impl ZoneExportData {
                 event_obj.script_function_name = ifo_event.script_function_name.clone();
                 export_block.block.event_objects.push(event_obj);
             }
-            
+
             // Convert warp objects from IFO
             // Note: In rose_file_readers, warps are IfoObject with warp_id as a direct field
             for ifo_warp in &ifo.warps {
@@ -587,7 +589,7 @@ impl ZoneExportData {
                 warp_obj.object = IfoObject::from_rose_ifo_object(ifo_warp);
                 export_block.block.warp_objects.push(warp_obj);
             }
-            
+
             // Convert sound objects from IFO
             for ifo_sound in &ifo.sound_objects {
                 let mut sound_obj = IfoSoundObject::new(0);
@@ -597,20 +599,24 @@ impl ZoneExportData {
                 sound_obj.interval = ifo_sound.interval.as_secs() as u32;
                 export_block.block.sound_objects.push(sound_obj);
             }
-            
+
             // Convert effect objects from IFO
             for ifo_effect in &ifo.effect_objects {
                 let mut effect_obj = IfoEffectObject::new(0);
                 effect_obj.object = IfoObject::from_rose_ifo_object(&ifo_effect.object);
-                effect_obj.effect_path = ifo_effect.effect_path.path().to_string_lossy().to_string();
+                effect_obj.effect_path =
+                    ifo_effect.effect_path.path().to_string_lossy().to_string();
                 export_block.block.effect_objects.push(effect_obj);
             }
-            
+
             // Convert animated objects from IFO
             for ifo_object in &ifo.animated_objects {
-                export_block.block.animated_objects.push(IfoObject::from_rose_ifo_object(ifo_object));
+                export_block
+                    .block
+                    .animated_objects
+                    .push(IfoObject::from_rose_ifo_object(ifo_object));
             }
-            
+
             // Convert water planes from IFO
             for (start, end) in &ifo.water_planes {
                 export_block.block.water_planes.push(IfoWaterPlane {
@@ -618,10 +624,10 @@ impl ZoneExportData {
                     end: [end.x, end.y, end.z],
                 });
             }
-            
+
             // Set water size
             export_block.block.water_size = ifo.water_size;
-            
+
             // Convert NPCs from IFO
             for ifo_npc in &ifo.npcs {
                 let mut npc = IfoNpc::new(ifo_npc.object.object_id);
@@ -630,21 +636,28 @@ impl ZoneExportData {
                 npc.quest_file_name = ifo_npc.quest_file_name.clone();
                 export_block.block.npcs.push(npc);
             }
-            
+
             // Convert collision objects from IFO
             for ifo_object in &ifo.collision_objects {
-                export_block.block.collision_objects.push(IfoObject::from_rose_ifo_object(ifo_object));
+                export_block
+                    .block
+                    .collision_objects
+                    .push(IfoObject::from_rose_ifo_object(ifo_object));
             }
-            
+
             // Convert monster spawns from IFO
             for ifo_spawn in &ifo.monster_spawns {
                 let mut spawn_point = IfoMonsterSpawnPoint::new(ifo_spawn.object.object_id);
                 spawn_point.object = IfoObject::from_rose_ifo_object(&ifo_spawn.object);
                 spawn_point.spawn_name = String::new(); // spawn_name is not stored in rose_file_readers
-                spawn_point.basic_spawns = ifo_spawn.basic_spawns.iter()
+                spawn_point.basic_spawns = ifo_spawn
+                    .basic_spawns
+                    .iter()
                     .map(|s| IfoMonsterSpawn::new(s.id, s.count))
                     .collect();
-                spawn_point.tactic_spawns = ifo_spawn.tactic_spawns.iter()
+                spawn_point.tactic_spawns = ifo_spawn
+                    .tactic_spawns
+                    .iter()
                     .map(|s| IfoMonsterSpawn::new(s.id, s.count))
                     .collect();
                 spawn_point.interval = ifo_spawn.interval;
@@ -654,7 +667,7 @@ impl ZoneExportData {
                 export_block.block.monster_spawns.push(spawn_point);
             }
         }
-        
+
         export_data
     }
 }

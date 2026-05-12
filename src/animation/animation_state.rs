@@ -1,5 +1,5 @@
 use bevy::{
-    prelude::{Component, Entity, Message, Handle},
+    prelude::{Component, Entity, Handle, Message},
     reflect::Reflect,
     time::Time,
 };

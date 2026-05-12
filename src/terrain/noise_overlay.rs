@@ -15,7 +15,7 @@
 //! The blending uses exponential falloff for natural-looking transitions.
 
 use bevy::prelude::*;
-use noise::{Perlin, NoiseFn, Seedable};
+use noise::{NoiseFn, Perlin, Seedable};
 use std::cell::RefCell;
 
 /// Resource for configuring terrain enhancement settings.
@@ -34,7 +34,7 @@ pub struct TerrainEnhancementSettings {
     pub noise_persistence: f32,
     /// Random seed for noise generation
     pub noise_seed: u32,
-    
+
     // Blend Zone Settings
     /// Whether to reduce noise near important game objects
     pub blend_near_objects: bool,
@@ -43,7 +43,7 @@ pub struct TerrainEnhancementSettings {
     /// Power for the blend falloff curve (higher = sharper transition)
     /// 1.0 = linear, 2.0 = quadratic (exponential), 3.0 = cubic
     pub blend_curve_power: f32,
-    
+
     // Elevation-based zones
     /// Elevation threshold below which terrain is considered "valley" (world units)
     /// Below this height, noise is reduced for smoother terrain
@@ -66,22 +66,22 @@ impl Default for TerrainEnhancementSettings {
     fn default() -> Self {
         Self {
             noise_enabled: false,
-            noise_scale: 0.008,       // Low frequency for large rolling hills
-            noise_amplitude: 2.0,     // Subtle height variation
-            noise_octaves: 4,         // Multiple detail layers
-            noise_persistence: 0.5,   // Standard roughness
-            noise_seed: 42,           // Consistent seed for reproducibility
-            
+            noise_scale: 0.008,     // Low frequency for large rolling hills
+            noise_amplitude: 2.0,   // Subtle height variation
+            noise_octaves: 4,       // Multiple detail layers
+            noise_persistence: 0.5, // Standard roughness
+            noise_seed: 42,         // Consistent seed for reproducibility
+
             // Blend zone defaults
             blend_near_objects: true,
-            blend_distance: 20.0,     // 20 world units radius for flat zones
-            blend_curve_power: 2.0,   // Quadratic falloff (smooth)
-            
+            blend_distance: 20.0,   // 20 world units radius for flat zones
+            blend_curve_power: 2.0, // Quadratic falloff (smooth)
+
             // Elevation-based zone defaults
-            elevation_zone_low: 5.0,  // Below 5 units = valley
-            elevation_zone_high: 30.0, // Above 30 units = mountain
-            valley_noise_multiplier: 0.3,  // Less noise in valleys (smoother)
-            mountain_noise_multiplier: 1.5, // More noise at elevation (rougher)
+            elevation_zone_low: 5.0,              // Below 5 units = valley
+            elevation_zone_high: 30.0,            // Above 30 units = mountain
+            valley_noise_multiplier: 0.3,         // Less noise in valleys (smoother)
+            mountain_noise_multiplier: 1.5,       // More noise at elevation (rougher)
             elevation_transition_smoothness: 0.5, // Smooth transition between zones
         }
     }
@@ -113,7 +113,7 @@ impl TerrainNoiseGenerator {
 
         let scale = self.settings.noise_scale as f64;
         let persistence = self.settings.noise_persistence as f64;
-        
+
         // Sample noise at multiple octaves
         let mut total = 0.0f64;
         let mut amplitude = 1.0f64;
@@ -122,10 +122,12 @@ impl TerrainNoiseGenerator {
 
         for _ in 0..self.settings.noise_octaves {
             // Use 2D noise with x and z coordinates
-            let noise_value = self.noise.get([world_x as f64 * frequency, world_z as f64 * frequency]);
+            let noise_value = self
+                .noise
+                .get([world_x as f64 * frequency, world_z as f64 * frequency]);
             total += noise_value * amplitude;
             max_value += amplitude;
-            
+
             amplitude *= persistence;
             frequency *= 2.0;
         }
@@ -179,7 +181,7 @@ impl GlobalTerrainNoise {
     pub fn new(settings: &TerrainEnhancementSettings) -> Self {
         // Also initialize the thread-local version
         init_thread_local_noise(settings);
-        
+
         Self {
             generator: TerrainNoiseGenerator::new(settings),
         }
@@ -237,7 +239,7 @@ pub fn apply_noise_to_height_with_elevation(
     settings: &TerrainEnhancementSettings,
 ) -> f32 {
     let noise_offset = noise_generator.get_noise(world_x, world_z);
-    
+
     // Calculate elevation-based multiplier
     let elevation_multiplier = calculate_elevation_multiplier(
         base_height,
@@ -247,7 +249,7 @@ pub fn apply_noise_to_height_with_elevation(
         settings.mountain_noise_multiplier,
         settings.elevation_transition_smoothness,
     );
-    
+
     // Apply noise with elevation multiplier
     base_height + (noise_offset * elevation_multiplier)
 }
@@ -273,7 +275,7 @@ pub fn apply_noise_to_height_with_blend(
     settings: &TerrainEnhancementSettings,
 ) -> f32 {
     let noise_offset = noise_generator.get_noise(world_x, world_z);
-    
+
     // Calculate blend factor (0.0 near objects = flat, 1.0 far from objects = full noise)
     let blend_factor = if settings.blend_near_objects {
         calculate_blend_factor(
@@ -286,7 +288,7 @@ pub fn apply_noise_to_height_with_blend(
     } else {
         1.0 // No blending - full noise everywhere
     };
-    
+
     // Calculate elevation-based multiplier for varied terrain
     // Uses BASE height (before noise) to determine zone
     let elevation_multiplier = calculate_elevation_multiplier(
@@ -297,7 +299,7 @@ pub fn apply_noise_to_height_with_blend(
         settings.mountain_noise_multiplier,
         settings.elevation_transition_smoothness,
     );
-    
+
     // Apply noise with blend factor and elevation multiplier
     // Final noise = base_noise * blend_factor * elevation_multiplier
     base_height + (noise_offset * blend_factor * elevation_multiplier)
@@ -305,11 +307,7 @@ pub fn apply_noise_to_height_with_blend(
 
 /// Get just the noise offset for a world position.
 /// Useful when you need to know how much noise contributes without the base height.
-pub fn get_terrain_noise(
-    world_x: f32,
-    world_z: f32,
-    noise_generator: &GlobalTerrainNoise,
-) -> f32 {
+pub fn get_terrain_noise(world_x: f32, world_z: f32, noise_generator: &GlobalTerrainNoise) -> f32 {
     noise_generator.get_noise(world_x, world_z)
 }
 
@@ -605,20 +603,20 @@ pub fn calculate_elevation_multiplier(
         // Use average of multipliers if thresholds are invalid
         return (valley_multiplier + mountain_multiplier) * 0.5;
     }
-    
+
     // Below low threshold: valley
     if base_height <= low_threshold {
         return valley_multiplier;
     }
-    
+
     // Above high threshold: mountain
     if base_height >= high_threshold {
         return mountain_multiplier;
     }
-    
+
     // In transition zone: interpolate between valley and mountain
     let normalized = (base_height - low_threshold) / (high_threshold - low_threshold);
-    
+
     // Apply smoothness factor to control transition width
     // smoothness of 0.0 = linear interpolation
     // smoothness of 1.0 = very smooth (smootherstep) interpolation
@@ -632,7 +630,7 @@ pub fn calculate_elevation_multiplier(
         let smooth_t = normalized * normalized * (3.0 - 2.0 * normalized);
         normalized * (1.0 - smoothness) + smooth_t * smoothness
     };
-    
+
     // Interpolate between valley and mountain multipliers
     valley_multiplier + (mountain_multiplier - valley_multiplier) * t
 }
@@ -694,7 +692,13 @@ impl FlatZone {
     }
 
     /// Create a flat zone from center and size
-    pub fn from_center(center_x: f32, center_z: f32, width: f32, depth: f32, blend_distance: f32) -> Self {
+    pub fn from_center(
+        center_x: f32,
+        center_z: f32,
+        width: f32,
+        depth: f32,
+        blend_distance: f32,
+    ) -> Self {
         Self {
             min: Vec2::new(center_x - width / 2.0, center_z - depth / 2.0),
             max: Vec2::new(center_x + width / 2.0, center_z + depth / 2.0),
@@ -704,8 +708,10 @@ impl FlatZone {
 
     /// Check if a point is inside the flat zone (ignoring blend distance)
     pub fn contains(&self, world_x: f32, world_z: f32) -> bool {
-        world_x >= self.min.x && world_x <= self.max.x &&
-        world_z >= self.min.y && world_z <= self.max.y
+        world_x >= self.min.x
+            && world_x <= self.max.x
+            && world_z >= self.min.y
+            && world_z <= self.max.y
     }
 
     /// Calculate the blend factor for a position relative to this flat zone
@@ -807,7 +813,7 @@ impl Plugin for TerrainEnhancementPlugin {
         let settings = TerrainEnhancementSettings::default();
         let noise = GlobalTerrainNoise::new(&settings);
         let important_positions = ImportantPositions::new();
-        
+
         app.insert_resource(settings)
             .insert_resource(noise)
             .insert_resource(important_positions);

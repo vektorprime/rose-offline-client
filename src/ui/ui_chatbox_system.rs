@@ -373,7 +373,7 @@ pub fn ui_chatbox_system(
                                     ui.end_row();
                                     ui.label("  /boat - Toggle sailing mode");
                                     ui.end_row();
-                                    
+
                                     // Server-side commands - Character
                                     ui.label(egui::RichText::new("Server-side - Character:").strong().color(egui::Color32::from_rgb(150, 255, 150)));
                                     ui.end_row();
@@ -399,7 +399,7 @@ pub fn ui_chatbox_system(
                                     ui.end_row();
                                     ui.label("  /money <amount> - Set money (e.g., /money 1000000)");
                                     ui.end_row();
-                                    
+
                                     // Server-side commands - Teleportation
                                     ui.label(egui::RichText::new("Server-side - Teleportation:").strong().color(egui::Color32::from_rgb(200, 150, 255)));
                                     ui.end_row();
@@ -409,7 +409,7 @@ pub fn ui_chatbox_system(
                                     ui.end_row();
                                     ui.label("  /zonelist - List all zones with IDs");
                                     ui.end_row();
-                                    
+
                                     // Server-side commands - Server
                                     ui.label(egui::RichText::new("Server-side - Server:").strong().color(egui::Color32::from_rgb(255, 200, 150)));
                                     ui.end_row();
@@ -423,7 +423,7 @@ pub fn ui_chatbox_system(
                                     ui.end_row();
                                     ui.label("  /info - Debug entity info under cursor");
                                     ui.end_row();
-                                    
+
                                     // Server-side commands - Spawning
                                     ui.label(egui::RichText::new("Server-side - Spawning:").strong().color(egui::Color32::from_rgb(255, 150, 200)));
                                     ui.end_row();
@@ -433,7 +433,7 @@ pub fn ui_chatbox_system(
                                     ui.end_row();
                                     ui.label("  /bot <n> - Spawn bot characters");
                                     ui.end_row();
-                                    
+
                                     // Server-side commands - Skills/Stats
                                     ui.label(egui::RichText::new("Server-side - Skills/Stats:").strong().color(egui::Color32::from_rgb(150, 255, 200)));
                                     ui.end_row();
@@ -445,7 +445,7 @@ pub fn ui_chatbox_system(
                                     ui.end_row();
                                     ui.label("  /rate <type> <value> - Set rates");
                                     ui.end_row();
-                                    
+
                                     // Chat prefixes
                                     ui.label(egui::RichText::new("Chat prefixes:").strong().color(egui::Color32::from_rgb(255, 180, 100)));
                                     ui.end_row();
@@ -489,7 +489,9 @@ pub fn ui_chatbox_system(
                         ui_state_chatbox.textbox_text.clear();
                     } else if is_boat_command(&ui_state_chatbox.textbox_text) {
                         if let Ok(player_entity) = player_query.single() {
-                            board_boat_events.write(BoardBoatEvent { entity: player_entity });
+                            board_boat_events.write(BoardBoatEvent {
+                                entity: player_entity,
+                            });
                         }
                         ui_state_chatbox.textbox_text.clear();
                     } else if is_ping_command(&ui_state_chatbox.textbox_text) {

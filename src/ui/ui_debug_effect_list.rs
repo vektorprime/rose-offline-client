@@ -1,11 +1,10 @@
 use bevy::{
     ecs::message::MessageWriter,
     prelude::{
-        Commands, Entity, GlobalTransform, Local,
-        Query, Res, ResMut, Transform, Visibility, With,
+        Commands, Entity, GlobalTransform, Local, Query, Res, ResMut, Transform, Visibility, With,
     },
 };
-use bevy_camera::visibility::{ViewVisibility, InheritedVisibility};
+use bevy_camera::visibility::{InheritedVisibility, ViewVisibility};
 use bevy_egui::{egui, EguiContexts};
 use regex::Regex;
 
@@ -130,55 +129,53 @@ pub fn ui_debug_effect_list_system(
                             .get_effect_file(effect_file_id)
                             .unwrap();
 
-                            row.col(|ui| {
-                                ui.label(format!("{}", effect_file_id.get()));
-                            });
+                        row.col(|ui| {
+                            ui.label(format!("{}", effect_file_id.get()));
+                        });
 
-                            row.col(|ui| {
-                                ui.label(effect_file_path.path().to_string_lossy().as_ref());
-                            });
-                            row_index += 1;
+                        row.col(|ui| {
+                            ui.label(effect_file_path.path().to_string_lossy().as_ref());
+                        });
+                        row_index += 1;
 
-                            row.col(|ui| {
-                                if ui.button("View").clicked() {
-                                    if let Some(last_effect_entity) =
-                                        ui_state.last_effect_entity.take()
-                                    {
-                                        if query_effects.get(last_effect_entity).is_ok() {
-                                            commands.entity(last_effect_entity).despawn();
-                                        }
+                        row.col(|ui| {
+                            if ui.button("View").clicked() {
+                                if let Some(last_effect_entity) = ui_state.last_effect_entity.take()
+                                {
+                                    if query_effects.get(last_effect_entity).is_ok() {
+                                        commands.entity(last_effect_entity).despawn();
                                     }
-
-                                    let transform = Transform::from(
-                                        selected_target
-                                            .selected
-                                            .or_else(|| query_player.single().ok())
-                                            .and_then(|target_entity| {
-                                                query_global_transform.get(target_entity).ok()
-                                            })
-                                            .cloned()
-                                            .unwrap_or_default(),
-                                    );
-
-                                    let effect_entity = commands
-                                        .spawn((
-                                            transform,
-                                            GlobalTransform::default(),
-                                            Visibility::default(),
-                                            InheritedVisibility::default(),
-                                        ))
-                                        .id();
-
-                                    spawn_effect_events.write(SpawnEffectEvent::InEntity(
-                                        effect_entity,
-                                        SpawnEffectData::with_path(effect_file_path.clone()),
-                                    ));
-
-                                    ui_state.last_effect_entity = Some(effect_entity);
                                 }
-                            });
-                        },
-                    );
+
+                                let transform = Transform::from(
+                                    selected_target
+                                        .selected
+                                        .or_else(|| query_player.single().ok())
+                                        .and_then(|target_entity| {
+                                            query_global_transform.get(target_entity).ok()
+                                        })
+                                        .cloned()
+                                        .unwrap_or_default(),
+                                );
+
+                                let effect_entity = commands
+                                    .spawn((
+                                        transform,
+                                        GlobalTransform::default(),
+                                        Visibility::default(),
+                                        InheritedVisibility::default(),
+                                    ))
+                                    .id();
+
+                                spawn_effect_events.write(SpawnEffectEvent::InEntity(
+                                    effect_entity,
+                                    SpawnEffectData::with_path(effect_file_path.clone()),
+                                ));
+
+                                ui_state.last_effect_entity = Some(effect_entity);
+                            }
+                        });
+                    });
                 });
         });
 }

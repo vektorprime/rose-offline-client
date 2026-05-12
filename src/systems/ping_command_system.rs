@@ -23,11 +23,9 @@ pub fn ping_command_system(
     for _event in ping_request_events.read() {
         // Record the timestamp when we sent the ping
         ping_state.pending_ping_timestamp = Some(Instant::now());
-        
+
         // Send a system message to let the user know we're pinging
-        chatbox_events.write(ChatboxEvent::System(
-            "Pinging server...".to_string()
-        ));
+        chatbox_events.write(ChatboxEvent::System("Pinging server...".to_string()));
     }
 }
 
@@ -41,7 +39,7 @@ pub fn ping_response_system(
 ) {
     for event in ping_response_events.read() {
         ping_state.last_ping_ms = Some(event.ping_ms);
-        
+
         // Display the ping result
         let ping_message = format!("Ping: {} ms", event.ping_ms);
         chatbox_events.write(ChatboxEvent::System(ping_message));
@@ -63,10 +61,10 @@ pub fn ping_measurement_system(
             if game_connection.server_message_rx.try_recv().is_ok() {
                 let elapsed = timestamp.elapsed();
                 let ping_ms = elapsed.as_millis() as u64;
-                
+
                 // Clear the pending ping
                 ping_state.pending_ping_timestamp = None;
-                
+
                 // Send the response event
                 ping_response_events.write(PingResponseEvent { ping_ms });
             }

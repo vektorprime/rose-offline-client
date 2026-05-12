@@ -152,7 +152,9 @@ pub fn pending_damage_system(
                     let impact_direction = pending_damage
                         .attacker
                         .and_then(|attacker| query_transform.get(attacker).ok())
-                        .map(|transform| normalize_or(defender_pos - transform.translation(), Vec3::Y))
+                        .map(|transform| {
+                            normalize_or(defender_pos - transform.translation(), Vec3::Y)
+                        })
                         .unwrap_or(Vec3::Y);
 
                     if pending_damage.is_kill {

@@ -1,13 +1,13 @@
 //! Property Update System for the Map Editor
-//! 
+//!
 //! Listens for property changes from the UI and applies them to selected entities.
 //! Tracks modifications in MapEditorState for undo/redo support.
 
 use bevy::prelude::*;
 
 use crate::components::{
-    EventObject, WarpObject, ZoneObject, ZoneObjectPart, ZoneObjectPartCollisionShape,
-    MapEditorTerrainBlock, MapEditorWaterPlane,
+    EventObject, MapEditorTerrainBlock, MapEditorWaterPlane, WarpObject, ZoneObject,
+    ZoneObjectPart, ZoneObjectPartCollisionShape,
 };
 use crate::map_editor::components::SelectedInEditor;
 use crate::map_editor::resources::{EditorAction, MapEditorState};
@@ -96,17 +96,19 @@ pub struct PendingPropertyChanges {
 
 impl PendingPropertyChanges {
     pub fn new() -> Self {
-        Self { changes: Vec::new() }
+        Self {
+            changes: Vec::new(),
+        }
     }
-    
+
     pub fn push(&mut self, change: PropertyChangeEvent) {
         self.changes.push(change);
     }
-    
+
     pub fn clear(&mut self) {
         self.changes.clear();
     }
-    
+
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
     }
@@ -134,13 +136,13 @@ pub fn property_update_system(
                 if let Ok(mut transform) = transforms.get_mut(*entity) {
                     let old_transform = *transform;
                     transform.translation = *new_position;
-                    
+
                     map_editor_state.push_action(EditorAction::TransformEntity {
                         entity: *entity,
                         old_transform,
                         new_transform: *transform,
                     });
-                    
+
                     log::info!(
                         "[PropertyUpdate] Position changed for entity {:?}: {:?} -> {:?}",
                         entity,
@@ -149,7 +151,7 @@ pub fn property_update_system(
                     );
                 }
             }
-            
+
             PropertyChangeEvent::RotationChanged {
                 entity,
                 old_rotation,
@@ -157,21 +159,22 @@ pub fn property_update_system(
             } => {
                 if let Ok(mut transform) = transforms.get_mut(*entity) {
                     let old_transform = *transform;
-                    
+
                     // Convert Euler angles (degrees) to quaternion
                     let euler_rad = Vec3::new(
                         new_rotation.x.to_radians(),
                         new_rotation.y.to_radians(),
                         new_rotation.z.to_radians(),
                     );
-                    transform.rotation = Quat::from_euler(EulerRot::XYZ, euler_rad.x, euler_rad.y, euler_rad.z);
-                    
+                    transform.rotation =
+                        Quat::from_euler(EulerRot::XYZ, euler_rad.x, euler_rad.y, euler_rad.z);
+
                     map_editor_state.push_action(EditorAction::TransformEntity {
                         entity: *entity,
                         old_transform,
                         new_transform: *transform,
                     });
-                    
+
                     log::info!(
                         "[PropertyUpdate] Rotation changed for entity {:?}: {:?} -> {:?}",
                         entity,
@@ -180,7 +183,7 @@ pub fn property_update_system(
                     );
                 }
             }
-            
+
             PropertyChangeEvent::ScaleChanged {
                 entity,
                 old_scale,
@@ -189,13 +192,13 @@ pub fn property_update_system(
                 if let Ok(mut transform) = transforms.get_mut(*entity) {
                     let old_transform = *transform;
                     transform.scale = *new_scale;
-                    
+
                     map_editor_state.push_action(EditorAction::TransformEntity {
                         entity: *entity,
                         old_transform,
                         new_transform: *transform,
                     });
-                    
+
                     log::info!(
                         "[PropertyUpdate] Scale changed for entity {:?}: {:?} -> {:?}",
                         entity,
@@ -204,7 +207,7 @@ pub fn property_update_system(
                     );
                 }
             }
-            
+
             PropertyChangeEvent::TransformChanged {
                 entity,
                 old_transform,
@@ -212,20 +215,20 @@ pub fn property_update_system(
             } => {
                 if let Ok(mut transform) = transforms.get_mut(*entity) {
                     *transform = *new_transform;
-                    
+
                     map_editor_state.push_action(EditorAction::TransformEntity {
                         entity: *entity,
                         old_transform: *old_transform,
                         new_transform: *new_transform,
                     });
-                    
+
                     log::info!(
                         "[PropertyUpdate] Full transform changed for entity {:?}",
                         entity
                     );
                 }
             }
-            
+
             PropertyChangeEvent::ZoneObjectIdChanged {
                 entity,
                 old_ifo_id,
@@ -236,16 +239,16 @@ pub fn property_update_system(
                 if let Ok(mut zone_object) = zone_objects.get_mut(*entity) {
                     // Update the zone object IDs based on the variant
                     match zone_object.as_mut() {
-                        ZoneObject::DecoObject(id) |
-                        ZoneObject::CnstObject(id) |
-                        ZoneObject::WarpObject(id) |
-                        ZoneObject::EventObject(id) => {
+                        ZoneObject::DecoObject(id)
+                        | ZoneObject::CnstObject(id)
+                        | ZoneObject::WarpObject(id)
+                        | ZoneObject::EventObject(id) => {
                             let old_ifo = id.ifo_object_id;
                             let old_zsc = id.zsc_object_id;
-                            
+
                             id.ifo_object_id = *new_ifo_id;
                             id.zsc_object_id = *new_zsc_id;
-                            
+
                             map_editor_state.push_action(EditorAction::ModifyComponent {
                                 entity: *entity,
                                 component_type: "ZoneObjectId".to_string(),
@@ -253,16 +256,16 @@ pub fn property_update_system(
                                 new_value: format!("ifo:{}, zsc:{}", new_ifo_id, new_zsc_id),
                             });
                         }
-                        ZoneObject::DecoObjectPart(part) |
-                        ZoneObject::CnstObjectPart(part) |
-                        ZoneObject::WarpObjectPart(part) |
-                        ZoneObject::EventObjectPart(part) => {
+                        ZoneObject::DecoObjectPart(part)
+                        | ZoneObject::CnstObjectPart(part)
+                        | ZoneObject::WarpObjectPart(part)
+                        | ZoneObject::EventObjectPart(part) => {
                             let old_ifo = part.ifo_object_id;
                             let old_zsc = part.zsc_object_id;
-                            
+
                             part.ifo_object_id = *new_ifo_id;
                             part.zsc_object_id = *new_zsc_id;
-                            
+
                             map_editor_state.push_action(EditorAction::ModifyComponent {
                                 entity: *entity,
                                 component_type: "ZoneObjectPart".to_string(),
@@ -272,14 +275,14 @@ pub fn property_update_system(
                         }
                         _ => {}
                     }
-                    
+
                     log::info!(
                         "[PropertyUpdate] ZoneObject ID changed for entity {:?}: ifo {} -> {}, zsc {} -> {}",
                         entity, old_ifo_id, new_ifo_id, old_zsc_id, new_zsc_id
                     );
                 }
             }
-            
+
             PropertyChangeEvent::EventObjectChanged {
                 entity,
                 property_name,
@@ -296,14 +299,14 @@ pub fn property_update_system(
                         }
                         _ => {}
                     }
-                    
+
                     map_editor_state.push_action(EditorAction::ModifyComponent {
                         entity: *entity,
                         component_type: "EventObject".to_string(),
                         old_value: old_value.clone(),
                         new_value: new_value.clone(),
                     });
-                    
+
                     log::info!(
                         "[PropertyUpdate] EventObject {} changed for entity {:?}: {} -> {}",
                         property_name,
@@ -313,7 +316,7 @@ pub fn property_update_system(
                     );
                 }
             }
-            
+
             PropertyChangeEvent::WarpObjectChanged {
                 entity,
                 property_name,
@@ -329,7 +332,7 @@ pub fn property_update_system(
                         old_value: old_value.clone(),
                         new_value: new_value.clone(),
                     });
-                    
+
                     log::info!(
                         "[PropertyUpdate] WarpObject {} changed for entity {:?}: {} -> {}",
                         property_name,
@@ -339,7 +342,7 @@ pub fn property_update_system(
                     );
                 }
             }
-            
+
             PropertyChangeEvent::CollisionChanged {
                 entity,
                 property_name,
@@ -348,51 +351,50 @@ pub fn property_update_system(
             } => {
                 // Collision changes require updating the ZoneObjectPart collision fields
                 if let Ok(mut zone_object) = zone_objects.get_mut(*entity) {
-                    let collision_update = |part: &mut ZoneObjectPart| {
-                        match property_name.as_str() {
-                            "collision_shape" => {
-                                part.collision_shape = match new_value.as_str() {
-                                    "None" => ZoneObjectPartCollisionShape::None,
-                                    "Sphere" => ZoneObjectPartCollisionShape::Sphere,
-                                    "AABB" => ZoneObjectPartCollisionShape::AxisAlignedBoundingBox,
-                                    "OBB" => ZoneObjectPartCollisionShape::ObjectOrientedBoundingBox,
-                                    "Polygon" => ZoneObjectPartCollisionShape::Polygon,
-                                    _ => ZoneObjectPartCollisionShape::default(),
-                                };
-                            }
-                            "not_moveable" => {
-                                part.collision_not_moveable = new_value == "true";
-                            }
-                            "not_pickable" => {
-                                part.collision_not_pickable = new_value == "true";
-                            }
-                            "height_only" => {
-                                part.collision_height_only = new_value == "true";
-                            }
-                            "no_camera" => {
-                                part.collision_no_camera = new_value == "true";
-                            }
-                            _ => {}
+                    let collision_update = |part: &mut ZoneObjectPart| match property_name.as_str()
+                    {
+                        "collision_shape" => {
+                            part.collision_shape = match new_value.as_str() {
+                                "None" => ZoneObjectPartCollisionShape::None,
+                                "Sphere" => ZoneObjectPartCollisionShape::Sphere,
+                                "AABB" => ZoneObjectPartCollisionShape::AxisAlignedBoundingBox,
+                                "OBB" => ZoneObjectPartCollisionShape::ObjectOrientedBoundingBox,
+                                "Polygon" => ZoneObjectPartCollisionShape::Polygon,
+                                _ => ZoneObjectPartCollisionShape::default(),
+                            };
                         }
+                        "not_moveable" => {
+                            part.collision_not_moveable = new_value == "true";
+                        }
+                        "not_pickable" => {
+                            part.collision_not_pickable = new_value == "true";
+                        }
+                        "height_only" => {
+                            part.collision_height_only = new_value == "true";
+                        }
+                        "no_camera" => {
+                            part.collision_no_camera = new_value == "true";
+                        }
+                        _ => {}
                     };
-                    
+
                     match zone_object.as_mut() {
-                        ZoneObject::DecoObjectPart(part) |
-                        ZoneObject::CnstObjectPart(part) |
-                        ZoneObject::WarpObjectPart(part) |
-                        ZoneObject::EventObjectPart(part) => {
+                        ZoneObject::DecoObjectPart(part)
+                        | ZoneObject::CnstObjectPart(part)
+                        | ZoneObject::WarpObjectPart(part)
+                        | ZoneObject::EventObjectPart(part) => {
                             collision_update(part);
                         }
                         _ => {}
                     }
-                    
+
                     map_editor_state.push_action(EditorAction::ModifyComponent {
                         entity: *entity,
                         component_type: "Collision".to_string(),
                         old_value: old_value.clone(),
                         new_value: new_value.clone(),
                     });
-                    
+
                     log::info!(
                         "[PropertyUpdate] Collision {} changed for entity {:?}: {} -> {}",
                         property_name,
@@ -490,29 +492,49 @@ pub fn apply_undo_system(
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
     // Check for Ctrl+Z (undo)
-    if keyboard.just_pressed(KeyCode::KeyZ) && (keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight)) {
+    if keyboard.just_pressed(KeyCode::KeyZ)
+        && (keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight))
+    {
         if !keyboard.pressed(KeyCode::ShiftLeft) && !keyboard.pressed(KeyCode::ShiftRight) {
             if let Some(action) = map_editor_state.pop_undo() {
-                apply_undo_action(action, &mut transforms, &mut commands, &mut map_editor_state);
+                apply_undo_action(
+                    action,
+                    &mut transforms,
+                    &mut commands,
+                    &mut map_editor_state,
+                );
                 log::info!("[PropertyUpdate] Undo applied");
             }
         }
     }
-    
+
     // Check for Ctrl+Y or Ctrl+Shift+Z (redo)
-    if keyboard.just_pressed(KeyCode::KeyY) && (keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight)) {
+    if keyboard.just_pressed(KeyCode::KeyY)
+        && (keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight))
+    {
         if let Some(action) = map_editor_state.pop_redo() {
-            apply_redo_action(action, &mut transforms, &mut commands, &mut map_editor_state);
+            apply_redo_action(
+                action,
+                &mut transforms,
+                &mut commands,
+                &mut map_editor_state,
+            );
             log::info!("[PropertyUpdate] Redo applied");
         }
     }
-    
+
     // Also handle Ctrl+Shift+Z for redo
-    if keyboard.just_pressed(KeyCode::KeyZ) && 
-       (keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight)) &&
-       (keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight)) {
+    if keyboard.just_pressed(KeyCode::KeyZ)
+        && (keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight))
+        && (keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight))
+    {
         if let Some(action) = map_editor_state.pop_redo() {
-            apply_redo_action(action, &mut transforms, &mut commands, &mut map_editor_state);
+            apply_redo_action(
+                action,
+                &mut transforms,
+                &mut commands,
+                &mut map_editor_state,
+            );
             log::info!("[PropertyUpdate] Redo applied (Ctrl+Shift+Z)");
         }
     }
@@ -533,7 +555,7 @@ fn apply_undo_action(
         } => {
             if let Ok(mut transform) = transforms.get_mut(entity) {
                 *transform = old_transform;
-                
+
                 // Push to redo stack
                 map_editor_state.push_redo(EditorAction::TransformEntity {
                     entity,
@@ -542,7 +564,7 @@ fn apply_undo_action(
                 });
             }
         }
-        
+
         EditorAction::TransformEntities { entities } => {
             let mut redo_entities = Vec::new();
             for (entity, old_transform, new_transform) in entities {
@@ -555,20 +577,20 @@ fn apply_undo_action(
                 entities: redo_entities,
             });
         }
-        
+
         EditorAction::AddEntity { entity } => {
             // Undo add = delete
             commands.entity(entity).despawn();
             map_editor_state.push_redo(EditorAction::AddEntity { entity });
         }
-        
+
         EditorAction::AddEntities { entities } => {
             for entity in &entities {
                 commands.entity(*entity).despawn();
             }
             map_editor_state.push_redo(EditorAction::AddEntities { entities });
         }
-        
+
         EditorAction::DeleteEntity {
             entity,
             transform,
@@ -589,7 +611,7 @@ fn apply_undo_action(
                 serialized_data,
             });
         }
-        
+
         EditorAction::DeleteEntities { entities } => {
             for (entity, transform, entity_type, serialized_data) in entities {
                 log::info!(
@@ -599,7 +621,7 @@ fn apply_undo_action(
                 );
             }
         }
-        
+
         EditorAction::ModifyComponent {
             entity,
             component_type,
@@ -639,7 +661,7 @@ fn apply_redo_action(
         } => {
             if let Ok(mut transform) = transforms.get_mut(entity) {
                 *transform = new_transform;
-                
+
                 // Push back to undo stack
                 map_editor_state.push_action(EditorAction::TransformEntity {
                     entity,
@@ -648,7 +670,7 @@ fn apply_redo_action(
                 });
             }
         }
-        
+
         EditorAction::TransformEntities { entities } => {
             let mut undo_entities = Vec::new();
             for (entity, old_transform, new_transform) in entities {
@@ -660,26 +682,29 @@ fn apply_redo_action(
             // Don't push to undo stack here to avoid infinite loop
             // The push_action would clear redo stack
         }
-        
+
         EditorAction::AddEntity { entity } => {
             // Redo add = the entity should already exist
             log::info!("[PropertyUpdate] Redo AddEntity for {:?}", entity);
         }
-        
+
         EditorAction::AddEntities { entities } => {
-            log::info!("[PropertyUpdate] Redo AddEntities for {} entities", entities.len());
+            log::info!(
+                "[PropertyUpdate] Redo AddEntities for {} entities",
+                entities.len()
+            );
         }
-        
+
         EditorAction::DeleteEntity { entity, .. } => {
             commands.entity(entity).despawn();
         }
-        
+
         EditorAction::DeleteEntities { entities } => {
             for (entity, ..) in entities {
                 commands.entity(entity).despawn();
             }
         }
-        
+
         EditorAction::ModifyComponent {
             entity,
             component_type,
@@ -704,9 +729,6 @@ impl Plugin for PropertyUpdatePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PendingPropertyChanges>()
             .add_message::<PropertyChangeEvent>()
-            .add_systems(Update, (
-                property_update_system,
-                apply_undo_system,
-            ).chain());
+            .add_systems(Update, (property_update_system, apply_undo_system).chain());
     }
 }

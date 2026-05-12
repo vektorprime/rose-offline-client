@@ -1,15 +1,18 @@
 use bevy::{
-    ecs::query::QueryItem, 
-    prelude::*, 
-    reflect::Reflect, 
-    render::{extract_component::{ExtractComponent, ExtractComponentPlugin}, render_resource::ShaderType},
+    ecs::query::QueryItem,
+    prelude::*,
+    reflect::Reflect,
+    render::{
+        extract_component::{ExtractComponent, ExtractComponentPlugin},
+        render_resource::ShaderType,
+    },
 };
 
 /// Controls whether character face eyes are rendered or clipped for blinking
 #[derive(Component, Reflect, Default, Clone, Copy, Debug)]
 pub enum BlinkClip {
     #[default]
-    EyesOpen,   // Render full face including eye mesh
+    EyesOpen, // Render full face including eye mesh
     EyesClosed, // Clip eye vertices to hide eyes (blink)
 }
 

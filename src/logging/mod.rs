@@ -166,8 +166,8 @@ pub fn init_session_logging(
     let (non_blocking, file_guard) = tracing_appender::non_blocking(file);
 
     // Build the subscriber with layers
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&config.level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.level));
 
     // JSON Lines layer for file output with tag extraction
     let json_layer = fmt::layer()
@@ -190,9 +190,7 @@ pub fn init_session_logging(
             .with(console_layer)
             .init();
     } else {
-        tracing_subscriber::registry()
-            .with(json_layer)
-            .init();
+        tracing_subscriber::registry().with(json_layer).init();
     }
 
     log::info!(
@@ -244,8 +242,11 @@ mod tests {
     #[test]
     fn test_tag_extraction() {
         use crate::logging::json_format::extract_tag;
-        
-        assert_eq!(extract_tag("[ZONE LOADER] Loading zone 1"), Some("ZONE LOADER"));
+
+        assert_eq!(
+            extract_tag("[ZONE LOADER] Loading zone 1"),
+            Some("ZONE LOADER")
+        );
         assert_eq!(extract_tag("[VFS] File not found"), Some("VFS"));
         assert_eq!(extract_tag("No tag here"), None);
         assert_eq!(extract_tag(""), None);

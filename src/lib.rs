@@ -1,49 +1,54 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 #![allow(warnings)]
-use log::{info, warn, error};
 use animation::RoseAnimationPlugin;
+use bevy::ecs::schedule::ApplyDeferred;
 use bevy::{
-        asset::AssetApp,
-        core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
-        post_process::{
-            bloom::Bloom,
-            dof::{DepthOfField, DepthOfFieldMode},
-            motion_blur::MotionBlur,
-            auto_exposure::AutoExposure,
-        },
-        anti_alias::contrast_adaptive_sharpening::ContrastAdaptiveSharpening,
-        anti_alias::smaa::Smaa,
-        pbr::{
-            Atmosphere, AtmosphereSettings, ExtendedMaterial, MaterialPlugin, StandardMaterial,
-            MeshMaterial3d, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
-            DefaultOpaqueRendererMethod, OpaqueRendererMethod, ScreenSpaceReflections,
-        },
-        light::{VolumetricFog, VolumetricLight, FogVolume, DirectionalLightShadowMap, EnvironmentMapLight},
-        render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
-        render::experimental::occlusion_culling::OcclusionCulling,
-        prelude::{
-            default, in_state, not, resource_exists, App, AppExtStates, AssetServer, Assets, Camera, Camera3d,
-            ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image, IntoScheduleConfigs,
-            Local, Msaa, OnEnter, OnExit, PerspectiveProjection,
-            PluginGroup, PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
-            SystemSet, Time, Transform, Update, Vec3, With, Without, World,
-        },
-        camera::{Camera as CameraComponent, Exposure},
-        camera::visibility::{InheritedVisibility, ViewVisibility, Visibility, VisibilitySystems},
-        mesh::{Mesh3d, Mesh2d},
+    anti_alias::contrast_adaptive_sharpening::ContrastAdaptiveSharpening,
+    anti_alias::smaa::Smaa,
+    asset::AssetApp,
+    camera::visibility::{InheritedVisibility, ViewVisibility, Visibility, VisibilitySystems},
+    camera::{Camera as CameraComponent, Exposure},
+    core_pipeline::prepass::{DepthPrepass, MotionVectorPrepass},
+    light::{
+        DirectionalLightShadowMap, EnvironmentMapLight, FogVolume, VolumetricFog, VolumetricLight,
+    },
+    mesh::{Mesh2d, Mesh3d},
+    pbr::{
+        Atmosphere, AtmosphereSettings, DefaultOpaqueRendererMethod, ExtendedMaterial,
+        MaterialPlugin, MeshMaterial3d, OpaqueRendererMethod, ScreenSpaceAmbientOcclusion,
+        ScreenSpaceAmbientOcclusionQualityLevel, ScreenSpaceReflections, StandardMaterial,
+    },
+    post_process::{
+        auto_exposure::AutoExposure,
+        bloom::Bloom,
+        dof::{DepthOfField, DepthOfFieldMode},
+        motion_blur::MotionBlur,
+    },
+    prelude::{
+        default, in_state, not, resource_exists, App, AppExtStates, AssetServer, Assets, Camera,
+        Camera3d, ClearColorConfig, Color, Commands, Cuboid, Entity, Handle, Image,
+        IntoScheduleConfigs, Local, Msaa, OnEnter, OnExit, PerspectiveProjection, PluginGroup,
+        PostStartup, PostUpdate, PreUpdate, Projection, Quat, Query, Res, ResMut, Startup, State,
+        SystemSet, Time, Transform, Update, Vec3, With, Without, World,
+    },
+    render::experimental::occlusion_culling::OcclusionCulling,
+    render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection},
     render::{
-        settings::{Backends, RenderCreation, WgpuFeatures, WgpuSettings},
         render_asset::RenderAssets,
+        settings::{Backends, RenderCreation, WgpuFeatures, WgpuSettings},
         ExtractSchedule, Render, RenderApp,
     },
-        transform::{TransformSystems, components::GlobalTransform},
-        window::{Window, WindowMode},
-    };
-use bevy_mesh::{Mesh, Indices, VertexAttributeValues};
+    transform::{components::GlobalTransform, TransformSystems},
+    window::{Window, WindowMode},
+};
+use bevy_egui::{
+    egui, input::egui_wants_any_pointer_input, EguiContext, EguiContexts, EguiRenderOutput,
+    PrimaryEguiContext,
+};
 use bevy_light::ShadowFilteringMethod;
-use bevy::ecs::schedule::ApplyDeferred;
-use bevy_egui::{egui, input::egui_wants_any_pointer_input, EguiContext, EguiContexts, EguiRenderOutput, PrimaryEguiContext};
+use bevy_mesh::{Indices, Mesh, VertexAttributeValues};
+use log::{error, info, warn};
 // DISABLED: bevy_procedural_grass is not compatible with Bevy 0.18
 // use bevy_procedural_grass::prelude::*;
 use bevy_rapier3d::plugin::PhysicsSet;
@@ -52,7 +57,7 @@ use exe_resource_loader::{ExeResourceCursor, ExeResourceLoader};
 use serde::Deserialize;
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, mpsc},
+    sync::{mpsc, Arc},
 };
 
 use rose_data::{CharacterMotionDatabaseOptions, NpcDatabaseOptions, ZoneId};
@@ -78,134 +83,219 @@ pub mod model_loader;
 pub mod protocol;
 pub mod render;
 pub use render::DamageDigitMaterial;
+pub mod blood_effect_plugin;
+pub mod dds_image_loader;
 pub mod resources;
 pub mod scripting;
 pub mod systems;
 pub mod terrain;
 pub mod ui;
-pub mod dds_image_loader;
 pub mod vfs_asset_io;
 pub mod zms_asset_loader;
 pub mod zone_loader;
-pub mod blood_effect_plugin;
 
 use audio::OddioPlugin;
+use dds_image_loader::DdsImageLoader;
 use diagnostics::RenderDiagnosticsPlugin;
 use events::{
-     BankEvent, BoardBoatEvent, CharacterSelectEvent, ChatBubbleEvent, ChatboxEvent, ClanDialogEvent, ClientEntityEvent,
-     ConversationDialogEvent, FlightToggleEvent, GameConnectionEvent, HitEvent, LoadZoneEvent, LoginEvent,
-     MessageBoxEvent, MoveDestinationEffectEvent, MoveSpeedSetEvent, NetworkEvent, NpcStoreEvent,
-     NumberInputDialogEvent, PartyEvent, PingRequestEvent, PingResponseEvent, PingState, PersonalStoreEvent,
-     PlayerCommandEvent, QuestScrollEvent, QuestTriggerEvent, SpawnEffectEvent, SpawnProjectileEvent, SystemFuncEvent,
-     DisembarkBoatEvent, UseItemEvent, WorldConnectionEvent, ZoneEvent, ZoneLoadedFromVfsEvent,
-     };
+    BankEvent, BoardBoatEvent, CharacterSelectEvent, ChatBubbleEvent, ChatboxEvent,
+    ClanDialogEvent, ClientEntityEvent, ConversationDialogEvent, DisembarkBoatEvent,
+    FlightToggleEvent, GameConnectionEvent, HitEvent, LoadZoneEvent, LoginEvent, MessageBoxEvent,
+    MoveDestinationEffectEvent, MoveSpeedSetEvent, NetworkEvent, NpcStoreEvent,
+    NumberInputDialogEvent, PartyEvent, PersonalStoreEvent, PingRequestEvent, PingResponseEvent,
+    PingState, PlayerCommandEvent, QuestScrollEvent, QuestTriggerEvent, SpawnEffectEvent,
+    SpawnProjectileEvent, SystemFuncEvent, UseItemEvent, WorldConnectionEvent, ZoneEvent,
+    ZoneLoadedFromVfsEvent,
+};
 use model_loader::ModelLoader;
 use render::{
-    RoseRenderPlugin,
-    DamageDigitMaterialPlugin,
-    ParticleMaterialPlugin,
-    RoseObjectExtension,
-    RoseTerrainExtension,
-    RoseWaterExtension,
-    RoseEffectExtension,
-    TrailEffectRenderPlugin,
-    WorldUiRenderPlugin,
-    ZoneLightingPlugin,
-    ExtensionMaterialPlugin,
-    RoseObjectMaterialPlugin,
-    WaterMaterial,
+    create_starry_sky_mesh,
     debug_particle_rendering,
     particle_performance_monitor,
-    UnderwaterEffectPlugin,
-    UnderwaterSettings,
+    sky_sphere_follow_camera_system,
+    spawn_volumetric_clouds,
+    toggle_atmosphere_based_on_time,
+    update_starry_sky_night_factor,
+    update_starry_sky_system,
+    AtmosphereState,
     CameraUnderwaterState,
+    DamageDigitMaterialPlugin,
+    ExtensionMaterialPlugin,
+    MoonLight,
+    ParticleMaterialPlugin,
+    RoseEffectExtension,
+    RoseObjectExtension,
+    RoseObjectMaterialPlugin,
+    RoseRenderPlugin,
+    RoseTerrainExtension,
+    RoseWaterExtension,
+    StarrySky,
+    StarrySkyMaterial,
     StarrySkyMaterialPlugin,
     StarrySkySettings,
-    StarrySky,
-    MoonLight,
-    StarrySkyMaterial,
-    create_starry_sky_mesh,
-    update_starry_sky_system,
-    update_starry_sky_night_factor,
-    toggle_atmosphere_based_on_time,
-    sky_sphere_follow_camera_system,
-    AtmosphereState,
+    TrailEffectRenderPlugin,
+    UnderwaterEffectPlugin,
+    UnderwaterSettings,
     // Old 2D cloud system (DISABLED):
     // CloudMaterialPlugin,
     // spawn_cloud_layer,
     // New 3D volumetric cloud system:
     VolumetricCloudPlugin,
-    spawn_volumetric_clouds,
+    WaterMaterial,
+    WorldUiRenderPlugin,
+    ZoneLightingPlugin,
 };
 use resources::{
     load_ui_resources, run_network_thread, ui_requested_cursor_apply_system, update_ui_resources,
-    AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig, FlightSettings, GameData, LoginCameraAnimation, MonsterChatterPhrases, NameTagSettings,
-    NetworkThread, NetworkThreadMessage, RenderConfiguration, RenderExtractionDiagnostics, SelectedTarget, ServerConfiguration,
-    SoundCache, SoundSettings, SpecularTexture, VfsResource, WaterSettings, WindSettings, WindState, WorldTime, ZoneTime,
+    AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig,
+    FlightSettings, GameData, LoginCameraAnimation, MonsterChatterPhrases, NameTagSettings,
+    NetworkThread, NetworkThreadMessage, RenderConfiguration, RenderExtractionDiagnostics,
+    SelectedTarget, ServerConfiguration, SoundCache, SoundSettings, SpecularTexture, VfsResource,
+    WaterSettings, WindSettings, WindState, WorldTime, ZoneTime,
 };
 use scripting::RoseScriptingPlugin;
 use systems::{
-    ability_values_system, animation_effect_system, animation_sound_system, auto_login_system,
-    background_music_system, character_model_add_collider_system, character_model_blink_system,
-    character_model_update_system, character_select_enter_system, character_select_event_system,
-    character_select_exit_system, character_select_input_system,
-    character_select_models_system, character_select_system, CharacterSelectInputState,
-    chat_bubble_spawn_system, chat_bubble_update_system, chat_bubble_cleanup_system, chat_bubble_orphan_cleanup_system,
-    add_monster_chatter_system, monster_chatter_system,
-    clan_system, client_entity_event_system, collision_height_only_system,
-    collision_player_system, collision_player_system_join_zone, command_system,
-    conversation_dialog_system, cooldown_system, damage_digit_render_system,
-    create_damage_digit_material_system,
-    directional_light_system, effect_system, facing_direction_system,
-    flight_movement_system, flight_pose_system, flight_pose_blend_update_system, flight_toggle_system, ensure_flight_state_system,
-    free_camera_system, game_connection_system, game_keyboard_input_system, game_mouse_input_system, game_state_enter_system,
-    game_zone_change_system, hit_event_system, item_drop_model_add_collider_system,
-    item_drop_model_system, login_connection_system, login_event_system, login_state_enter_system,
-    login_state_exit_system, login_system, model_viewer_enter_system, model_viewer_exit_system,
-    model_viewer_system, move_destination_effect_system, move_speed_set_system, name_tag_system,
-    name_tag_update_color_system, name_tag_update_healthbar_system, name_tag_visibility_system,
-    network_thread_system, npc_idle_sound_system, npc_model_add_collider_system,
-    npc_model_update_system, orbit_camera_system, particle_sequence_system,
-    particle_storage_buffer_update_system, create_default_particle_texture,
-    passive_recovery_system, pending_damage_system, pending_skill_effect_system,
-    personal_store_model_add_collider_system, personal_store_model_system, player_command_system,
-    projectile_system, quest_trigger_system, spawn_effect_system, spawn_projectile_system,
-    sail_camera_system, sail_animation_system, sailing_movement_system, ensure_boat_wake_emitter_system,
-    boat_wake_spawn_system, boat_wake_update_system, setup_boat_wake_assets,
-    status_effect_system, system_func_event_system,
-    monster_separation_system, update_position_system, use_item_event_system,
-    vehicle_model_system, vehicle_sound_system, visible_status_effects_system,
-    world_connection_system, world_time_system, zone_time_system, zone_viewer_enter_system,
-    wind_update_system, sync_vegetation_wind_system, ensure_boat_state_system, boat_toggle_system,
+    ability_values_system,
+    add_monster_chatter_system,
+    animation_effect_system,
+    animation_sound_system,
+    auto_login_system,
+    background_music_system,
     boat_buoyancy_system,
+    boat_toggle_system,
+    boat_wake_spawn_system,
+    boat_wake_update_system,
+    character_model_add_collider_system,
+    character_model_blink_system,
+    character_model_update_system,
+    character_select_enter_system,
+    character_select_event_system,
+    character_select_exit_system,
+    character_select_input_system,
+    character_select_models_system,
+    character_select_system,
+    chat_bubble_cleanup_system,
+    chat_bubble_orphan_cleanup_system,
+    chat_bubble_spawn_system,
+    chat_bubble_update_system,
+    clan_system,
+    client_entity_event_system,
+    collision_height_only_system,
+    collision_player_system,
+    collision_player_system_join_zone,
+    command_system,
+    conversation_dialog_system,
+    cooldown_system,
+    create_damage_digit_material_system,
+    create_default_particle_texture,
+    damage_digit_render_system,
+    directional_light_system,
+    effect_system,
+    ensure_boat_state_system,
+    ensure_boat_wake_emitter_system,
+    ensure_flight_state_system,
+    facing_direction_system,
+    flight_movement_system,
+    flight_pose_blend_update_system,
+    flight_pose_system,
+    flight_toggle_system,
+    free_camera_system,
+    game_connection_system,
+    game_keyboard_input_system,
+    game_mouse_input_system,
+    game_state_enter_system,
+    game_zone_change_system,
+    hit_event_system,
+    item_drop_model_add_collider_system,
+    item_drop_model_system,
+    login_connection_system,
+    login_event_system,
+    login_state_enter_system,
+    login_state_exit_system,
+    login_system,
+    model_viewer_enter_system,
+    model_viewer_exit_system,
+    model_viewer_system,
+    monster_chatter_system,
+    monster_separation_system,
+    move_destination_effect_system,
+    move_speed_set_system,
+    name_tag_system,
+    name_tag_update_color_system,
+    name_tag_update_healthbar_system,
+    name_tag_visibility_system,
+    network_thread_system,
+    npc_idle_sound_system,
+    npc_model_add_collider_system,
+    npc_model_update_system,
+    orbit_camera_system,
+    particle_sequence_system,
+    particle_storage_buffer_update_system,
+    passive_recovery_system,
+    pending_damage_system,
+    pending_skill_effect_system,
+    personal_store_model_add_collider_system,
+    personal_store_model_system,
+    player_command_system,
+    projectile_system,
+    quest_trigger_system,
+    sail_animation_system,
+    sail_camera_system,
+    sailing_movement_system,
+    setup_boat_wake_assets,
+    spawn_effect_system,
+    spawn_projectile_system,
+    status_effect_system,
+    sync_vegetation_wind_system,
+    system_func_event_system,
+    update_position_system,
+    use_item_event_system,
+    vehicle_model_system,
+    vehicle_sound_system,
+    visible_status_effects_system,
+    wind_update_system,
+    world_connection_system,
+    world_time_system,
+    zone_time_system,
+    zone_viewer_enter_system,
+    BirdPlugin,
+    CharacterSelectInputState,
     // DISABLED: color_grading_time_of_day_system conflicts with Bevy 0.16 Atmosphere
     // color_grading_time_of_day_system,
-    DebugInspectorPlugin, FishPlugin, BirdPlugin, DirtDashPlugin, WingSpawnPlugin, WindEffectPlugin,
+    DebugInspectorPlugin,
+    DirtDashPlugin,
+    FishPlugin,
+    WindEffectPlugin,
+    WingSpawnPlugin,
 };
 use ui::{
     admin_menu_keyboard_system, load_dialog_sprites_system, ui_admin_menu_system, ui_bank_system,
     ui_character_create_system, ui_character_info_system, ui_character_select_name_tag_system,
     ui_character_select_system, ui_chatbox_system, ui_clan_system, ui_create_clan_system,
-    ui_debug_camera_info_system, ui_debug_client_entity_list_system, ui_debug_command_viewer_system,
-    ui_debug_diagnostics_system, ui_debug_dialog_list_system, ui_debug_effect_list_system,
-    ui_debug_entity_inspector_system, ui_debug_item_list_system, ui_debug_menu_system,
-    ui_debug_npc_list_system, ui_debug_physics_system, ui_debug_render_system,
-    ui_debug_skill_list_system, ui_debug_zone_lighting_system, ui_debug_zone_list_system,
-    ui_debug_zone_time_system, ui_drag_and_drop_system, ui_game_menu_system, ui_hotbar_system,
-    ui_inventory_system, ui_item_drop_name_system, ui_login_system, ui_message_box_system,
-    ui_minimap_system, ui_npc_store_system, ui_number_input_dialog_system, ui_party_option_system,
-    ui_party_system, ui_personal_store_system, ui_player_info_system, ui_quest_list_system,
-    ui_respawn_system, ui_sailing_hud_system, ui_selected_target_system, ui_server_select_system, ui_settings_system,
+    ui_debug_camera_info_system, ui_debug_client_entity_list_system,
+    ui_debug_command_viewer_system, ui_debug_diagnostics_system, ui_debug_dialog_list_system,
+    ui_debug_effect_list_system, ui_debug_entity_inspector_system, ui_debug_item_list_system,
+    ui_debug_menu_system, ui_debug_npc_list_system, ui_debug_physics_system,
+    ui_debug_render_system, ui_debug_skill_list_system, ui_debug_zone_lighting_system,
+    ui_debug_zone_list_system, ui_debug_zone_time_system, ui_drag_and_drop_system,
+    ui_game_menu_system, ui_hotbar_system, ui_inventory_system, ui_item_drop_name_system,
+    ui_login_system, ui_message_box_system, ui_minimap_system, ui_npc_store_system,
+    ui_number_input_dialog_system, ui_party_option_system, ui_party_system,
+    ui_personal_store_system, ui_player_info_system, ui_quest_list_system, ui_respawn_system,
+    ui_sailing_hud_system, ui_selected_target_system, ui_server_select_system, ui_settings_system,
     ui_skill_list_system, ui_skill_tree_system, ui_sound_event_system, ui_status_effects_system,
     ui_window_sound_system, widgets::Dialog, DepthOfFieldSettings, DialogLoader, UiSoundEvent,
     UiStateAdminMenu, UiStateDebugWindows, UiStateDragAndDrop, UiStateWindows,
 };
-use dds_image_loader::DdsImageLoader;
 use vfs_asset_io::{VfsAssetIo, VfsAssetReaderPlugin};
 use zms_asset_loader::{ZmsAssetLoader, ZmsMaterialNumFaces, ZmsNoSkinAssetLoader};
-use zone_loader::{zone_loader_system, zone_loaded_from_vfs_system, force_zone_visibility_system, ZoneLoader, ZoneLoaderAsset, ZoneLoadChannelReceiver, ZoneLoadChannelSender, MemoryTrackingResource};
+use zone_loader::{
+    force_zone_visibility_system, zone_loaded_from_vfs_system, zone_loader_system,
+    MemoryTrackingResource, ZoneLoadChannelReceiver, ZoneLoadChannelSender, ZoneLoader,
+    ZoneLoaderAsset,
+};
 
-use crate::components::{CollisionPlayer, SoundCategory, Zone, VegetationSwayPlugin};
+use crate::components::{CollisionPlayer, SoundCategory, VegetationSwayPlugin, Zone};
 
 #[derive(Default, Deserialize)]
 #[serde(default)]
@@ -251,7 +341,7 @@ impl FilesystemConfig {
     pub fn create_virtual_filesystem(&self) -> Option<(Arc<VirtualFilesystem>, PathBuf)> {
         let mut vfs_devices: Vec<Box<dyn VirtualFilesystemDevice + Send + Sync>> = Vec::new();
         let mut base_path: Option<PathBuf> = None;
-        
+
         for device_config in self.devices.iter() {
             match device_config {
                 FilesystemDeviceConfig::Directory(path) => {
@@ -269,10 +359,12 @@ impl FilesystemConfig {
                     // In that case, use the current directory
                     let index_root_path = Path::new(path)
                         .parent()
-                        .map(|p| if p.as_os_str().is_empty() {
-                            std::env::current_dir().unwrap_or_default()
-                        } else {
-                            p.to_path_buf()
+                        .map(|p| {
+                            if p.as_os_str().is_empty() {
+                                std::env::current_dir().unwrap_or_default()
+                            } else {
+                                p.to_path_buf()
+                            }
                         })
                         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
@@ -298,10 +390,12 @@ impl FilesystemConfig {
                     // In that case, use the current directory
                     let index_root_path = Path::new(path)
                         .parent()
-                        .map(|p| if p.as_os_str().is_empty() {
-                            std::env::current_dir().unwrap_or_default()
-                        } else {
-                            p.to_path_buf()
+                        .map(|p| {
+                            if p.as_os_str().is_empty() {
+                                std::env::current_dir().unwrap_or_default()
+                            } else {
+                                p.to_path_buf()
+                            }
                         })
                         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
@@ -311,7 +405,10 @@ impl FilesystemConfig {
                             .unwrap_or_else(|_| panic!("Failed to load TitanVfs at {}", path)),
                     ));
 
-                    log::info!("Loading game data from TitanVfs root path {}", index_root_path.to_string_lossy());
+                    log::info!(
+                        "Loading game data from TitanVfs root path {}",
+                        index_root_path.to_string_lossy()
+                    );
                     vfs_devices.push(Box::new(HostFilesystemDevice::new(index_root_path.clone())));
                     // Use the VFS root path as base path for saving
                     if base_path.is_none() {
@@ -330,14 +427,19 @@ impl FilesystemConfig {
                     // In that case, use the current directory
                     let index_root_path = Path::new(path)
                         .parent()
-                        .map(|p| if p.as_os_str().is_empty() {
-                            std::env::current_dir().unwrap_or_default()
-                        } else {
-                            p.to_path_buf()
+                        .map(|p| {
+                            if p.as_os_str().is_empty() {
+                                std::env::current_dir().unwrap_or_default()
+                            } else {
+                                p.to_path_buf()
+                            }
                         })
                         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-                    
-                    log::info!("Loading game data from Vfs root path {}", index_root_path.to_string_lossy());
+
+                    log::info!(
+                        "Loading game data from Vfs root path {}",
+                        index_root_path.to_string_lossy()
+                    );
                     vfs_devices.push(Box::new(HostFilesystemDevice::new(index_root_path.clone())));
                     // Use the VFS root path as base path for saving
                     if base_path.is_none() {
@@ -350,10 +452,12 @@ impl FilesystemConfig {
                     // In that case, use the current directory
                     let index_root_path = Path::new(path)
                         .parent()
-                        .map(|p| if p.as_os_str().is_empty() {
-                            std::env::current_dir().unwrap_or_default()
-                        } else {
-                            p.to_path_buf()
+                        .map(|p| {
+                            if p.as_os_str().is_empty() {
+                                std::env::current_dir().unwrap_or_default()
+                            } else {
+                                p.to_path_buf()
+                            }
                         })
                         .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
@@ -572,10 +676,9 @@ pub fn run_zone_viewer(config: &Config, zone_id: Option<ZoneId>) {
         AppState::ZoneViewer,
         SystemsConfig {
             add_custom_systems: Some(Box::new(move |app| {
-                app.world_mut()
-                    .write_message(LoadZoneEvent::new(
-                        zone_id.unwrap_or_else(|| ZoneId::new(1).unwrap()),
-                    ));
+                app.world_mut().write_message(LoadZoneEvent::new(
+                    zone_id.unwrap_or_else(|| ZoneId::new(1).unwrap()),
+                ));
             })),
             ..Default::default()
         },
@@ -592,10 +695,9 @@ pub fn run_map_editor(config: &Config, zone_id: Option<ZoneId>) {
         AppState::MapEditor,
         SystemsConfig {
             add_custom_systems: Some(Box::new(move |app| {
-                app.world_mut()
-                    .write_message(LoadZoneEvent::new(
-                        zone_id.unwrap_or_else(|| ZoneId::new(1).unwrap()),
-                    ));
+                app.world_mut().write_message(LoadZoneEvent::new(
+                    zone_id.unwrap_or_else(|| ZoneId::new(1).unwrap()),
+                ));
             })),
             ..Default::default()
         },
@@ -705,8 +807,11 @@ enum CharacterSelectSystemOrdering {
 fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsConfig) {
     println!("run_client() function entered");
     log::info!("[VFS INIT] Starting VFS initialization...");
-    log::info!("[VFS INIT] Config has {} filesystem devices", config.filesystem.devices.len());
-    
+    log::info!(
+        "[VFS INIT] Config has {} filesystem devices",
+        config.filesystem.devices.len()
+    );
+
     let (virtual_filesystem, base_path) =
         if let Some((vfs, base)) = config.filesystem.create_virtual_filesystem() {
             log::info!("[VFS INIT] VFS created successfully!");
@@ -763,34 +868,43 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     });
 
     // DIAGNOSTIC: Log asset server configuration
-    app.add_systems(bevy::app::Startup, |asset_server: Res<bevy::asset::AssetServer>| {
-        log::info!("[ASSET SERVER DIAGNOSTIC] Asset server initialized");
+    app.add_systems(
+        bevy::app::Startup,
+        |asset_server: Res<bevy::asset::AssetServer>| {
+            log::info!("[ASSET SERVER DIAGNOSTIC] Asset server initialized");
 
-        // Try to get the default asset source to see what reader is being used
-        match asset_server.get_source(bevy::asset::io::AssetSourceId::Default) {
-            Ok(source) => {
-                log::info!("[ASSET SERVER DIAGNOSTIC] Default asset source found");
-                // Log the type of reader being used
-                let reader = source.reader();
-                let reader_type = std::any::type_name_of_val(reader);
-                log::info!("[ASSET SERVER DIAGNOSTIC] Default asset reader type: {}", reader_type);
+            // Try to get the default asset source to see what reader is being used
+            match asset_server.get_source(bevy::asset::io::AssetSourceId::Default) {
+                Ok(source) => {
+                    log::info!("[ASSET SERVER DIAGNOSTIC] Default asset source found");
+                    // Log the type of reader being used
+                    let reader = source.reader();
+                    let reader_type = std::any::type_name_of_val(reader);
+                    log::info!(
+                        "[ASSET SERVER DIAGNOSTIC] Default asset reader type: {}",
+                        reader_type
+                    );
+                }
+                Err(e) => {
+                    log::error!(
+                        "[ASSET SERVER DIAGNOSTIC] Failed to get default asset source: {:?}",
+                        e
+                    );
+                }
             }
-            Err(e) => {
-                log::error!("[ASSET SERVER DIAGNOSTIC] Failed to get default asset source: {:?}", e);
-            }
-        }
 
-        // DIAGNOSTIC: Log registered asset loaders
-        log::info!("[ASSET SERVER DIAGNOSTIC] Checking registered asset loaders...");
-        // Note: Bevy doesn't provide a direct way to list all registered loaders,
-        // but we can infer from the extensions we know about
-        log::info!("[ASSET SERVER DIAGNOSTIC] Known asset extensions:");
-        log::info!("[ASSET SERVER DIAGNOSTIC]   - .zone_loader (ZoneLoader)");
-        log::info!("[ASSET SERVER DIAGNOSTIC]   - .zms (ZmsAssetLoader)");
-        log::info!("[ASSET SERVER DIAGNOSTIC]   - .zmo (ZmoAssetLoader)");
-        log::info!("[ASSET SERVER DIAGNOSTIC]   - .exe (ExeResourceLoader)");
-        log::info!("[ASSET SERVER DIAGNOSTIC]   - .dialog (DialogLoader)");
-    });
+            // DIAGNOSTIC: Log registered asset loaders
+            log::info!("[ASSET SERVER DIAGNOSTIC] Checking registered asset loaders...");
+            // Note: Bevy doesn't provide a direct way to list all registered loaders,
+            // but we can infer from the extensions we know about
+            log::info!("[ASSET SERVER DIAGNOSTIC] Known asset extensions:");
+            log::info!("[ASSET SERVER DIAGNOSTIC]   - .zone_loader (ZoneLoader)");
+            log::info!("[ASSET SERVER DIAGNOSTIC]   - .zms (ZmsAssetLoader)");
+            log::info!("[ASSET SERVER DIAGNOSTIC]   - .zmo (ZmoAssetLoader)");
+            log::info!("[ASSET SERVER DIAGNOSTIC]   - .exe (ExeResourceLoader)");
+            log::info!("[ASSET SERVER DIAGNOSTIC]   - .dialog (DialogLoader)");
+        },
+    );
 
     // Initialise bevy engine
     app.add_plugins((
@@ -853,7 +967,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         bindless_mode_array_size: None,
         ..Default::default()
     });
-    app.add_plugins(bevy_rapier3d::prelude::RapierPhysicsPlugin::<bevy_rapier3d::prelude::NoUserData>::default());
+    app.add_plugins(bevy_rapier3d::prelude::RapierPhysicsPlugin::<
+        bevy_rapier3d::prelude::NoUserData,
+    >::default());
     // Disabled: RapierDebugRenderPlugin (debug plugin)
     // Disabled: RenderDocPlugin (debug plugin)
     app.add_plugins(OddioPlugin);
@@ -929,28 +1045,27 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_plugins((
             RoseAnimationPlugin,
             // CRITICAL: Add these to fix the panic and enable rendering
-            DamageDigitMaterialPlugin,        // ← Fixes the immediate panic
+            DamageDigitMaterialPlugin, // ← Fixes the immediate panic
             ParticleMaterialPlugin,
-
             // ExtendedMaterial plugins for object, terrain, water, and effect mesh
             // Use custom RoseObjectMaterialPlugin which includes zone lighting support
             RoseObjectMaterialPlugin::default(),
         ));
     log::info!("[MATERIAL PLUGIN] RoseObjectExtension plugin registered successfully");
 
-    app.add_plugins((
-            MaterialPlugin::<ExtendedMaterial<StandardMaterial, RoseTerrainExtension>>::default(),
-        ));
+    app.add_plugins((MaterialPlugin::<
+        ExtendedMaterial<StandardMaterial, RoseTerrainExtension>,
+    >::default(),));
     log::info!("[MATERIAL PLUGIN] RoseTerrainExtension plugin registered successfully");
 
-    app.add_plugins((
-            MaterialPlugin::<ExtendedMaterial<StandardMaterial, RoseWaterExtension>>::default(),
-        ));
+    app.add_plugins((MaterialPlugin::<
+        ExtendedMaterial<StandardMaterial, RoseWaterExtension>,
+    >::default(),));
     log::info!("[MATERIAL PLUGIN] RoseWaterExtension plugin registered successfully");
 
-    app.add_plugins((
-            MaterialPlugin::<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>::default(),
-        ));
+    app.add_plugins((MaterialPlugin::<
+        ExtendedMaterial<StandardMaterial, RoseEffectExtension>,
+    >::default(),));
     log::info!("[MATERIAL PLUGIN] RoseEffectExtension plugin registered successfully");
 
     // Register extension material shaders
@@ -959,76 +1074,74 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // Optional: Add these for full rendering support
     app.add_plugins((
-            TrailEffectRenderPlugin,
-            ZoneLightingPlugin,
-            WorldUiRenderPlugin,
-            RoseRenderPlugin,
-            RoseScriptingPlugin,
-            DebugInspectorPlugin,
-        ));
+        TrailEffectRenderPlugin,
+        ZoneLightingPlugin,
+        WorldUiRenderPlugin,
+        RoseRenderPlugin,
+        RoseScriptingPlugin,
+        DebugInspectorPlugin,
+    ));
 
     app.add_plugins((
-            // REQUIRED: SkinnedMeshFixPlugin deferred-inserts SkinnedMesh components after mesh loading.
-            // Without this, skinned meshes won't render correctly (bind group layout mismatch).
-            render::SkinnedMeshFixPlugin,
-            
-            // OPTIONAL: RenderDiagnosticsPlugin is for debugging rendering issues - keep disabled to reduce log noise
-            // RenderDiagnosticsPlugin,
+        // REQUIRED: SkinnedMeshFixPlugin deferred-inserts SkinnedMesh components after mesh loading.
+        // Without this, skinned meshes won't render correctly (bind group layout mismatch).
+        render::SkinnedMeshFixPlugin,
+        // OPTIONAL: RenderDiagnosticsPlugin is for debugging rendering issues - keep disabled to reduce log noise
+        // RenderDiagnosticsPlugin,
 
-            // Fish in water feature
-            FishPlugin,
-
-            // Birds in sky feature
-            BirdPlugin,
-        ));
+        // Fish in water feature
+        FishPlugin,
+        // Birds in sky feature
+        BirdPlugin,
+    ));
 
     app.add_plugins((
-            // Weather season system
-            systems::season::SeasonPlugin,
+        // Weather season system
+        systems::season::SeasonPlugin,
+        // Dirt/dash effect when characters run
+        DirtDashPlugin,
+        // Angelic wing spawning for flight system
+        WingSpawnPlugin,
+        // Wind particle effect for flying
+        WindEffectPlugin,
+        // Vegetation wind sway effect (grass, trees, leaves)
+        VegetationSwayPlugin,
+        // DISABLED: bevy_procedural_grass not compatible with Bevy 0.18
+        // ProceduralGrassPlugin::default(),
 
-            // Dirt/dash effect when characters run
-            DirtDashPlugin,
-
-            // Angelic wing spawning for flight system
-            WingSpawnPlugin,
-
-            // Wind particle effect for flying
-            WindEffectPlugin,
-
-            // Vegetation wind sway effect (grass, trees, leaves)
-            VegetationSwayPlugin,
-
-            // DISABLED: bevy_procedural_grass not compatible with Bevy 0.18
-            // ProceduralGrassPlugin::default(),
-
-            // Underwater rendering effect
-            UnderwaterEffectPlugin,
-
-            // Procedural starry sky with moon lighting
-            StarrySkyMaterialPlugin,
-
-            // Blood effect system (spatter decals, gash wounds)
-            blood_effect_plugin::BloodEffectPlugin,
-        ));
+        // Underwater rendering effect
+        UnderwaterEffectPlugin,
+        // Procedural starry sky with moon lighting
+        StarrySkyMaterialPlugin,
+        // Blood effect system (spatter decals, gash wounds)
+        blood_effect_plugin::BloodEffectPlugin,
+    ));
 
     app.add_plugins((
-            // Map editor system
-            map_editor::MapEditorPlugin,
-
-            // Old 2D procedural cloud material (DISABLED):
-            // CloudMaterialPlugin,
-            // New 3D volumetric cloud system:
-            VolumetricCloudPlugin,
-        ));
+        // Map editor system
+        map_editor::MapEditorPlugin,
+        // Old 2D procedural cloud material (DISABLED):
+        // CloudMaterialPlugin,
+        // New 3D volumetric cloud system:
+        VolumetricCloudPlugin,
+    ));
     log::info!("[ASSET LOADER DIAGNOSTIC] Asset loaders registered successfully");
 
     // Material Plugin Diagnostic Logging
     log::info!("[MATERIAL PLUGIN] DamageDigitMaterialPlugin registered");
     log::info!("[MATERIAL PLUGIN] ParticleMaterialPlugin registered");
-    log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseObjectExtension> registered");
-    log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseTerrainExtension> registered");
-    log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseWaterExtension> registered");
-    log::info!("[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseEffectExtension> registered");
+    log::info!(
+        "[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseObjectExtension> registered"
+    );
+    log::info!(
+        "[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseTerrainExtension> registered"
+    );
+    log::info!(
+        "[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseWaterExtension> registered"
+    );
+    log::info!(
+        "[MATERIAL PLUGIN] ExtendedMaterial<StandardMaterial, RoseEffectExtension> registered"
+    );
 
     // Setup state
     app.insert_state(app_state);
@@ -1069,10 +1182,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_message::<ZoneLoadedFromVfsEvent>()
         .add_message::<UiSoundEvent>();
 
-    app.add_systems(
-        PostUpdate,
-        ApplyDeferred,
-    );
+    app.add_systems(PostUpdate, ApplyDeferred);
 
     app.add_systems(
         PostUpdate,
@@ -1094,7 +1204,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             ModelSystemSets::CharacterModelUpdate,
             ModelSystemSets::CharacterModelAddCollider.after(ModelSystemSets::CharacterModelUpdate),
             ModelSystemSets::PersonalStoreModel.after(ModelSystemSets::CharacterModelAddCollider),
-            ModelSystemSets::PersonalStoreModelAddCollider.after(ModelSystemSets::PersonalStoreModel),
+            ModelSystemSets::PersonalStoreModelAddCollider
+                .after(ModelSystemSets::PersonalStoreModel),
             ModelSystemSets::NpcModelUpdate.after(ModelSystemSets::PersonalStoreModelAddCollider),
             ModelSystemSets::NpcModelAddCollider.after(ModelSystemSets::NpcModelUpdate),
             ModelSystemSets::ItemDropModel.after(ModelSystemSets::NpcModelAddCollider),
@@ -1109,10 +1220,19 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             EffectSystemSets::AnimationEffect,
             EffectSystemSets::Projectile.after(EffectSystemSets::AnimationEffect),
             EffectSystemSets::SpawnProjectile.after(EffectSystemSets::AnimationEffect),
-            EffectSystemSets::PendingDamage.after(EffectSystemSets::AnimationEffect).after(EffectSystemSets::Projectile),
-            EffectSystemSets::PendingSkillEffect.after(EffectSystemSets::AnimationEffect).after(EffectSystemSets::Projectile),
-            EffectSystemSets::HitEvent.after(EffectSystemSets::AnimationEffect).after(EffectSystemSets::PendingSkillEffect).after(EffectSystemSets::Projectile),
-            EffectSystemSets::SpawnEffect.after(EffectSystemSets::AnimationEffect).after(EffectSystemSets::HitEvent),
+            EffectSystemSets::PendingDamage
+                .after(EffectSystemSets::AnimationEffect)
+                .after(EffectSystemSets::Projectile),
+            EffectSystemSets::PendingSkillEffect
+                .after(EffectSystemSets::AnimationEffect)
+                .after(EffectSystemSets::Projectile),
+            EffectSystemSets::HitEvent
+                .after(EffectSystemSets::AnimationEffect)
+                .after(EffectSystemSets::PendingSkillEffect)
+                .after(EffectSystemSets::Projectile),
+            EffectSystemSets::SpawnEffect
+                .after(EffectSystemSets::AnimationEffect)
+                .after(EffectSystemSets::HitEvent),
         ),
     );
 
@@ -1143,15 +1263,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         ),
     );
     // name_tag_system uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
-    app.add_systems(
-        bevy_egui::EguiPrimaryContextPass,
-        name_tag_system,
-    );
+    app.add_systems(bevy_egui::EguiPrimaryContextPass, name_tag_system);
     // chat_bubble_spawn_system uses EguiContexts for text rendering - must run in EguiPrimaryContextPass for bevy_egui 0.39
-    app.add_systems(
-        bevy_egui::EguiPrimaryContextPass,
-        chat_bubble_spawn_system,
-    );
+    app.add_systems(bevy_egui::EguiPrimaryContextPass, chat_bubble_spawn_system);
     // chat bubble update and cleanup systems
     app.add_systems(
         Update,
@@ -1162,13 +1276,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         ),
     );
     // monster chatter system for random NPC phrases
-    app.add_systems(
-        Update,
-        (
-            add_monster_chatter_system,
-            monster_chatter_system,
-        ),
-    );
+    app.add_systems(Update, (add_monster_chatter_system, monster_chatter_system));
     app.add_systems(
         Update,
         (
@@ -1190,7 +1298,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             pending_damage_system,
             pending_skill_effect_system,
             hit_event_system,
-            spawn_effect_system.after(visible_status_effects_system).after(ui_debug_effect_list_system),
+            spawn_effect_system
+                .after(visible_status_effects_system)
+                .after(ui_debug_effect_list_system),
             visible_status_effects_system,
             move_destination_effect_system,
             create_damage_digit_material_system.before(damage_digit_render_system),
@@ -1225,7 +1335,10 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(bevy_egui::EguiPrimaryContextPass, update_ui_resources);
 
     // ui_requested_cursor_apply_system uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_requested_cursor_apply_system);
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_requested_cursor_apply_system,
+    );
 
     // ui_item_drop_name_system uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
     app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_item_drop_name_system);
@@ -1238,10 +1351,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // ui_window_sound_system and ui_sound_event_system use EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
     app.add_systems(
         bevy_egui::EguiPrimaryContextPass,
-        (
-            ui_window_sound_system,
-            ui_sound_event_system,
-        ),
+        (ui_window_sound_system, ui_sound_event_system),
     );
 
     // ui_debug_menu_system uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
@@ -1265,8 +1375,14 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // DISABLED: app.add_systems(Update, ui_debug_physics_system); // Too many parameters for Bevy 0.15
     // More debug UI systems - must run in EguiPrimaryContextPass for bevy_egui 0.39
     app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_debug_render_system);
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_debug_skill_list_system);
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_debug_zone_lighting_system);
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_debug_skill_list_system,
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_debug_zone_lighting_system,
+    );
     app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_debug_zone_list_system);
     app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_debug_zone_time_system);
     // DISABLED: app.add_systems(Update, ui_debug_diagnostics_system);
@@ -1276,27 +1392,18 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(PostUpdate, character_model_blink_system);
 
     // Sky sphere follows camera in PostUpdate to ensure camera transform is up to date
-    app.add_systems(PostUpdate, sky_sphere_follow_camera_system.after(TransformSystems::Propagate));
+    app.add_systems(
+        PostUpdate,
+        sky_sphere_follow_camera_system.after(TransformSystems::Propagate),
+    );
 
     // vehicle_model_system in after ::Update but before ::PostUpdate to avoid any conflicts,
     // with model destruction but to also be before global transform is calculated.
-    app.add_systems(
-        PostUpdate,
-        (
-            vehicle_model_system,
-            vehicle_sound_system,
-        ),
-    );
+    app.add_systems(PostUpdate, (vehicle_model_system, vehicle_sound_system));
 
     // Configure vehicle system ordering
-    app.configure_sets(
-        PostUpdate,
-        GameStages::AfterUpdate,
-    );
-    app.add_systems(
-        PostUpdate,
-        vehicle_sound_system,
-    );
+    app.configure_sets(PostUpdate, GameStages::AfterUpdate);
+    app.add_systems(PostUpdate, vehicle_sound_system);
 
     // Run zone change system just before physics sync which is after Update
     // DIAGNOSTIC: Added explicit system ordering to ensure proper event flow:
@@ -1309,7 +1416,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             zone_loader_system,
             // zone_loaded_from_vfs_system runs after zone_loader_system to process the events it sends
             zone_loaded_from_vfs_system.after(zone_loader_system),
-        )
+        ),
     );
 
     app.add_systems(
@@ -1327,60 +1434,62 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             game_zone_change_system
                 .after(zone_loader_system)
                 .after(zone_loaded_from_vfs_system),
-        )
+        ),
     );
 
     // Zone Viewer
     app.add_systems(OnEnter(AppState::ZoneViewer), zone_viewer_enter_system);
 
     // Map Editor
-    app.add_systems(OnEnter(AppState::MapEditor), map_editor::map_editor_enter_system);
-    app.add_systems(OnExit(AppState::MapEditor), map_editor::map_editor_exit_system);
+    app.add_systems(
+        OnEnter(AppState::MapEditor),
+        map_editor::map_editor_enter_system,
+    );
+    app.add_systems(
+        OnExit(AppState::MapEditor),
+        map_editor::map_editor_exit_system,
+    );
 
     // CRITICAL DIAGNOSTIC: Check if transform and visibility propagation sets are running
     app.add_systems(
         PostUpdate,
-        (
-            |mut frame_count: Local<u32>| {
-                *frame_count += 1;
-                if *frame_count % 60 == 0 {
-                    // info!("[SCHEDULE CHECK] TransformPropagate set is running");
-                }
+        (|mut frame_count: Local<u32>| {
+            *frame_count += 1;
+            if *frame_count % 60 == 0 {
+                // info!("[SCHEDULE CHECK] TransformPropagate set is running");
             }
-        ).in_set(TransformSystems::Propagate)
+        })
+        .in_set(TransformSystems::Propagate),
     );
     app.add_systems(
         PostUpdate,
-        (
-            |mut frame_count: Local<u32>| {
-                *frame_count += 1;
-                if *frame_count % 60 == 0 {
-                    // info!("[SCHEDULE CHECK] VisibilityPropagate set is running");
-                }
+        (|mut frame_count: Local<u32>| {
+            *frame_count += 1;
+            if *frame_count % 60 == 0 {
+                // info!("[SCHEDULE CHECK] VisibilityPropagate set is running");
             }
-        ).in_set(VisibilitySystems::VisibilityPropagate)
+        })
+        .in_set(VisibilitySystems::VisibilityPropagate),
     );
     app.add_systems(
         PostUpdate,
-        (
-            |mut frame_count: Local<u32>| {
-                *frame_count += 1;
-                if *frame_count % 60 == 0 {
-                    // info!("[SCHEDULE CHECK] CheckVisibility set is running");
-                }
+        (|mut frame_count: Local<u32>| {
+            *frame_count += 1;
+            if *frame_count % 60 == 0 {
+                // info!("[SCHEDULE CHECK] CheckVisibility set is running");
             }
-        ).in_set(VisibilitySystems::CheckVisibility)
+        })
+        .in_set(VisibilitySystems::CheckVisibility),
     );
     app.add_systems(
         PostUpdate,
-        (
-            |mut frame_count: Local<u32>| {
-                *frame_count += 1;
-                if *frame_count % 60 == 0 {
-                    // info!("[SCHEDULE CHECK] CalculateBounds set is running");
-                }
+        (|mut frame_count: Local<u32>| {
+            *frame_count += 1;
+            if *frame_count % 60 == 0 {
+                // info!("[SCHEDULE CHECK] CalculateBounds set is running");
             }
-        ).in_set(VisibilitySystems::CalculateBounds)
+        })
+        .in_set(VisibilitySystems::CalculateBounds),
     );
 
     // Model Viewer, we avoid deleting any entities during CoreStage::Update by using a custom
@@ -1401,11 +1510,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // (not Update) to ensure the egui pass has been started before using ctx
     app.add_systems(
         bevy_egui::EguiPrimaryContextPass,
-        (
-            login_system.before(login_event_system),
-            login_event_system,
-        )
-        .run_if(in_state(AppState::GameLogin)),
+        (login_system.before(login_event_system), login_event_system)
+            .run_if(in_state(AppState::GameLogin)),
     );
 
     app.add_systems(
@@ -1431,8 +1537,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // character_select_system uses EguiContexts for UI dialogs - must run in EguiPrimaryContextPass for bevy_egui 0.39
     app.add_systems(
         bevy_egui::EguiPrimaryContextPass,
-        character_select_system
-            .run_if(in_state(AppState::GameCharacterSelect)),
+        character_select_system.run_if(in_state(AppState::GameCharacterSelect)),
     );
     // character_select_models_system and character_select_event_system don't use EguiContexts
     app.add_systems(
@@ -1490,37 +1595,60 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // Spawn sky systems on startup
     // app.add_systems(PostStartup, (spawn_starry_sky_and_moon, spawn_cloud_layer));
-    app.add_systems(PostStartup, (spawn_starry_sky_and_moon, spawn_volumetric_clouds));
+    app.add_systems(
+        PostStartup,
+        (spawn_starry_sky_and_moon, spawn_volumetric_clouds),
+    );
 
     // System to apply depth of field settings from the resource to the camera
     app.add_systems(Update, apply_depth_of_field_settings);
-    
+
     // System to apply post-processing settings from the resource to the camera
     app.add_systems(Update, apply_post_processing_settings);
-    
+
     // System to apply water settings from the resource to water materials
     app.add_systems(Update, apply_water_settings);
-    
+
     // Graphics settings apply systems
-    app.add_systems(PostUpdate, (
-        graphics::apply_color_grading_system,
-        graphics::apply_shadow_quality_system,
-        graphics::apply_tonemapping_system,
-        graphics::apply_bloom_system,
-        graphics::apply_shadow_filtering_system,
-        graphics::apply_msaa_system,
-        graphics::apply_ambient_light_system,
-    ));
+    app.add_systems(
+        PostUpdate,
+        (
+            graphics::apply_color_grading_system,
+            graphics::apply_shadow_quality_system,
+            graphics::apply_tonemapping_system,
+            graphics::apply_bloom_system,
+            graphics::apply_shadow_filtering_system,
+            graphics::apply_msaa_system,
+            graphics::apply_ambient_light_system,
+        ),
+    );
 
     // Register systems individually to avoid Bevy 0.13's IntoSystemConfigs trait bound issues
     // Game systems - part 1
-    app.add_systems(Update, ability_values_system.run_if(in_state(AppState::Game)));
+    app.add_systems(
+        Update,
+        ability_values_system.run_if(in_state(AppState::Game)),
+    );
     app.add_systems(Update, clan_system.run_if(in_state(AppState::Game)));
     app.add_systems(Update, command_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, facing_direction_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, update_position_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, monster_separation_system.run_if(in_state(AppState::Game)).after(update_position_system));
-    app.add_systems(Update, collision_height_only_system.run_if(in_state(AppState::Game)));
+    app.add_systems(
+        Update,
+        facing_direction_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        Update,
+        update_position_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        Update,
+        monster_separation_system
+            .run_if(in_state(AppState::Game))
+            .after(update_position_system),
+    );
+    app.add_systems(
+        Update,
+        collision_height_only_system.run_if(in_state(AppState::Game)),
+    );
     // CRITICAL: collision_player_system_join_zone must run BEFORE collision_player_system
     // - join_zone uses a long raycast (Y=100000) to find initial ground height on spawn
     // - collision_player_system uses short raycast for continuous terrain following
@@ -1531,32 +1659,90 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             .run_if(in_state(AppState::Game))
             .before(collision_player_system),
     );
-    app.add_systems(Update, collision_player_system.run_if(in_state(AppState::Game)));
+    app.add_systems(
+        Update,
+        collision_player_system.run_if(in_state(AppState::Game)),
+    );
     app.add_systems(Update, cooldown_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, client_entity_event_system.run_if(in_state(AppState::Game)));
+    app.add_systems(
+        Update,
+        client_entity_event_system.run_if(in_state(AppState::Game)),
+    );
 
     // Global wind simulation and vegetation synchronization
     app.add_systems(Update, wind_update_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, sync_vegetation_wind_system.run_if(in_state(AppState::Game)).after(wind_update_system));
-    
+    app.add_systems(
+        Update,
+        sync_vegetation_wind_system
+            .run_if(in_state(AppState::Game))
+            .after(wind_update_system),
+    );
+
     // Flight systems - ensure_flight_state_system runs before flight_toggle_system
-    app.add_systems(Update, ensure_flight_state_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, flight_toggle_system.run_if(in_state(AppState::Game)).after(ensure_flight_state_system));
-    app.add_systems(Update, flight_movement_system.run_if(in_state(AppState::Game)).after(flight_toggle_system));
+    app.add_systems(
+        Update,
+        ensure_flight_state_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        Update,
+        flight_toggle_system
+            .run_if(in_state(AppState::Game))
+            .after(ensure_flight_state_system),
+    );
+    app.add_systems(
+        Update,
+        flight_movement_system
+            .run_if(in_state(AppState::Game))
+            .after(flight_toggle_system),
+    );
     // Flight pose blend update system - updates pose_blend value on FlightState
-    app.add_systems(Update, flight_pose_blend_update_system.run_if(in_state(AppState::Game)).after(flight_toggle_system));
+    app.add_systems(
+        Update,
+        flight_pose_blend_update_system
+            .run_if(in_state(AppState::Game))
+            .after(flight_toggle_system),
+    );
     // Flight pose system applies visual-only rotations to character model parts
     // Runs after facing_direction_system and character_model_update_system
-    app.add_systems(Update, flight_pose_system.run_if(in_state(AppState::Game)).after(facing_direction_system).after(flight_toggle_system).after(character_model_update_system));
-    
+    app.add_systems(
+        Update,
+        flight_pose_system
+            .run_if(in_state(AppState::Game))
+            .after(facing_direction_system)
+            .after(flight_toggle_system)
+            .after(character_model_update_system),
+    );
+
     // Move speed command system
-    app.add_systems(Update, move_speed_set_system.run_if(in_state(AppState::Game)));
+    app.add_systems(
+        Update,
+        move_speed_set_system.run_if(in_state(AppState::Game)),
+    );
 
     // Sailing systems
-    app.add_systems(Update, ensure_boat_state_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, boat_toggle_system.run_if(in_state(AppState::Game)).after(ensure_boat_state_system));
-    app.add_systems(Update, ensure_boat_wake_emitter_system.run_if(in_state(AppState::Game)).after(boat_toggle_system));
-    app.add_systems(Update, sailing_movement_system.run_if(in_state(AppState::Game)).after(boat_toggle_system).after(wind_update_system));
+    app.add_systems(
+        Update,
+        ensure_boat_state_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        Update,
+        boat_toggle_system
+            .run_if(in_state(AppState::Game))
+            .after(ensure_boat_state_system),
+    );
+    app.add_systems(
+        Update,
+        ensure_boat_wake_emitter_system
+            .run_if(in_state(AppState::Game))
+            .after(boat_toggle_system),
+    );
+    app.add_systems(
+        Update,
+        sailing_movement_system
+            .run_if(in_state(AppState::Game))
+            .after(boat_toggle_system)
+            .after(wind_update_system),
+    );
     app.add_systems(
         Update,
         sail_animation_system
@@ -1570,49 +1756,157 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             .after(sailing_movement_system)
             .after(facing_direction_system),
     );
-    app.add_systems(Update, sail_camera_system.run_if(in_state(AppState::Game)).after(boat_toggle_system));
-    app.add_systems(Update, boat_wake_spawn_system.run_if(in_state(AppState::Game)).after(sailing_movement_system));
-    app.add_systems(Update, boat_wake_update_system.run_if(in_state(AppState::Game)).after(boat_wake_spawn_system));
+    app.add_systems(
+        Update,
+        sail_camera_system
+            .run_if(in_state(AppState::Game))
+            .after(boat_toggle_system),
+    );
+    app.add_systems(
+        Update,
+        boat_wake_spawn_system
+            .run_if(in_state(AppState::Game))
+            .after(sailing_movement_system),
+    );
+    app.add_systems(
+        Update,
+        boat_wake_update_system
+            .run_if(in_state(AppState::Game))
+            .after(boat_wake_spawn_system),
+    );
 
     // Game systems - part 2
-    app.add_systems(Update, (use_item_event_system.run_if(in_state(AppState::Game)),));
-    app.add_systems(Update, (status_effect_system.run_if(in_state(AppState::Game)),));
-    app.add_systems(Update, (passive_recovery_system.run_if(in_state(AppState::Game)),));
-    app.add_systems(Update, (quest_trigger_system.run_if(in_state(AppState::Game)),));
+    app.add_systems(
+        Update,
+        (use_item_event_system.run_if(in_state(AppState::Game)),),
+    );
+    app.add_systems(
+        Update,
+        (status_effect_system.run_if(in_state(AppState::Game)),),
+    );
+    app.add_systems(
+        Update,
+        (passive_recovery_system.run_if(in_state(AppState::Game)),),
+    );
+    app.add_systems(
+        Update,
+        (quest_trigger_system.run_if(in_state(AppState::Game)),),
+    );
     // game_mouse_input_system uses EguiContexts to check if egui wants pointer input
     // This can stay in Update since it only queries egui state, doesn't render
-    app.add_systems(Update, game_mouse_input_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
+    app.add_systems(
+        Update,
+        game_mouse_input_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+    );
     // game_keyboard_input_system uses EguiContexts to skip input while typing in UI.
-    app.add_systems(Update, game_keyboard_input_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
-    
+    app.add_systems(
+        Update,
+        game_keyboard_input_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+    );
+
     // UI systems - part 1 (must run in EguiPrimaryContextPass for bevy_egui 0.39)
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_admin_menu_system.run_if(in_state(AppState::Game)));
-    app.add_systems(Update, admin_menu_keyboard_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_bank_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_chatbox_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_character_info_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_clan_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_create_clan_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_inventory_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_game_menu_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_hotbar_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_minimap_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_npc_store_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_party_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_party_option_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_personal_store_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_player_info_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_quest_list_system.run_if(in_state(AppState::Game)));
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_admin_menu_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        Update,
+        admin_menu_keyboard_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_bank_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_chatbox_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_character_info_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_clan_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_create_clan_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_inventory_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_game_menu_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_hotbar_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_minimap_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_npc_store_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_party_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_party_option_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_personal_store_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_player_info_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_quest_list_system.run_if(in_state(AppState::Game)),
+    );
 
     // UI systems - part 2 (must run in EguiPrimaryContextPass for bevy_egui 0.39)
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_respawn_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_sailing_hud_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_selected_target_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_skill_list_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_skill_tree_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_settings_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_status_effects_system.run_if(in_state(AppState::Game)));
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, conversation_dialog_system.run_if(in_state(AppState::Game)));
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_respawn_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_sailing_hud_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_selected_target_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_skill_list_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_skill_tree_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_settings_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_status_effects_system.run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        conversation_dialog_system.run_if(in_state(AppState::Game)),
+    );
 
     if !systems_config.disable_player_command_system {
         app.add_systems(
@@ -1624,10 +1918,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // ui_drag_and_drop_system uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
     // Must run AFTER all UI systems that handle drop targets, otherwise it takes dragged_item
     // before those systems can detect and process the drop
-    app.add_systems(
-        bevy_egui::EguiPrimaryContextPass,
-        ui_drag_and_drop_system,
-    );
+    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_drag_and_drop_system);
 
     // Setup network
     let (network_thread_tx, network_thread_rx) =
@@ -1645,19 +1936,21 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         ),
     );
 
-    app.add_systems(PostStartup, load_common_game_data
-        .after(bevy_egui::EguiStartupSet::InitContexts));
-    
+    app.add_systems(
+        PostStartup,
+        load_common_game_data.after(bevy_egui::EguiStartupSet::InitContexts),
+    );
+
     // Setup egui fonts after camera with PrimaryEguiContext is spawned
     app.add_systems(PostStartup, setup_egui_fonts.after(load_common_game_data));
-    
+
     // Create default particle texture before particle systems run
     app.add_systems(PostStartup, create_default_particle_texture);
     app.add_systems(PostStartup, setup_boat_wake_assets);
-    
+
     // TEST: Add StandardMaterial cube for rendering isolation test
     app.add_systems(PostStartup, spawn_test_cube);
-    
+
     // DIAGNOSTIC: Print diagnostic summary on startup
     app.add_systems(PostStartup, print_diagnostic_summary.after(spawn_test_cube));
 
@@ -1676,8 +1969,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     match config.game.ui_version.as_str() {
         "irose" => {
             // Run after load_common_game_data spawns the camera with PrimaryEguiContext
-            app.add_systems(PostStartup, load_ui_resources
-                .after(load_common_game_data));
+            app.add_systems(PostStartup, load_ui_resources.after(load_common_game_data));
         }
         "custom" => {}
         unknown => panic!("Unknown game ui version {}", unknown),
@@ -1698,14 +1990,17 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     app.configure_sets(
         PostUpdate,
-        (GameStages::ZoneChange, GameStages::ZoneChangeFlush, GameStages::AfterUpdate)
+        (
+            GameStages::ZoneChange,
+            GameStages::ZoneChangeFlush,
+            GameStages::AfterUpdate,
+        )
             .before(PhysicsSet::SyncBackend),
     );
 
     app.configure_sets(
         PostUpdate,
-        (GameStages::DebugRenderPreFlush, GameStages::DebugRender)
-            .chain(),
+        (GameStages::DebugRenderPreFlush, GameStages::DebugRender).chain(),
     );
 
     // CRITICAL FIX: Use Bevy's default ordering for internal systems
@@ -1730,34 +2025,43 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     app.configure_sets(
         Update,
-        (UiSystemSets::UiDebugMenu, UiSystemSets::UiFirst, UiSystemSets::Ui, UiSystemSets::UiLast, UiSystemSets::UiDebug)
+        (
+            UiSystemSets::UiDebugMenu,
+            UiSystemSets::UiFirst,
+            UiSystemSets::Ui,
+            UiSystemSets::UiLast,
+            UiSystemSets::UiDebug,
+        )
             .in_set(GameSystemSets::Ui),
     );
 
-    app.configure_sets(
-        Update,
-        (GameSystemSets::UpdateCamera, GameSystemSets::Ui),
-    );
+    app.configure_sets(Update, (GameSystemSets::UpdateCamera, GameSystemSets::Ui));
 
     // DIAGNOSTIC: Check if EguiContext exists on camera entity with PrimaryEguiContext
     // In bevy_egui 0.39+, EguiContext is placed on Camera entities, not Window entities
-    app.add_systems(Update, |cameras: Query<&EguiContext, With<PrimaryEguiContext>>| {
-        if let Ok(_context) = cameras.single() {
-            //log::info!("[EGUI DIAGNOSTIC] EguiContext found on camera entity with PrimaryEguiContext");
-        } else {
-            //log::warn!("[EGUI DIAGNOSTIC] EguiContext NOT found on camera entity with PrimaryEguiContext");
-        }
-    });
+    app.add_systems(
+        Update,
+        |cameras: Query<&EguiContext, With<PrimaryEguiContext>>| {
+            if let Ok(_context) = cameras.single() {
+                //log::info!("[EGUI DIAGNOSTIC] EguiContext found on camera entity with PrimaryEguiContext");
+            } else {
+                //log::warn!("[EGUI DIAGNOSTIC] EguiContext NOT found on camera entity with PrimaryEguiContext");
+            }
+        },
+    );
 
     // DIAGNOSTIC: Check if EguiRenderOutput exists on camera entity with PrimaryEguiContext
     // EguiRenderOutput is auto-inserted via #[require] on EguiContext
-    app.add_systems(Update, |cameras: Query<(&EguiContext, &EguiRenderOutput), With<PrimaryEguiContext>>| {
-        if let Ok((_context, render_output)) = cameras.single() {
-            //log::info!("[EGUI DIAGNOSTIC] EguiRenderOutput found, paint_jobs count: {}", render_output.paint_jobs.len());
-        } else {
-            //log::warn!("[EGUI DIAGNOSTIC] EguiRenderOutput NOT found on camera entity with PrimaryEguiContext");
-        }
-    });
+    app.add_systems(
+        Update,
+        |cameras: Query<(&EguiContext, &EguiRenderOutput), With<PrimaryEguiContext>>| {
+            if let Ok((_context, render_output)) = cameras.single() {
+                //log::info!("[EGUI DIAGNOSTIC] EguiRenderOutput found, paint_jobs count: {}", render_output.paint_jobs.len());
+            } else {
+                //log::warn!("[EGUI DIAGNOSTIC] EguiRenderOutput NOT found on camera entity with PrimaryEguiContext");
+            }
+        },
+    );
 
     app.run();
 
@@ -1937,42 +2241,44 @@ fn load_common_game_data(
     );
 
     //info!("[load_common_game_data] Spawning camera entity");
-    let camera_entity = commands.spawn((
-        Camera3d::default(),
-        Msaa::Off,  // Required for SSAO and TAA compatibility
-        Camera {
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.0, 0.0, 0.02)),  // Near-black for star visibility
-            ..default()
-        },
-        Projection::Perspective(PerspectiveProjection {
-            fov: std::f32::consts::PI / 4.0,
-            near: 0.1,
-            far: 100000.0,  // Increased to contain sky sphere (radius 50000 + camera distance)
-            aspect_ratio: 16.0 / 9.0,
-            ..default()
-        }),
-        Transform::from_translation(Vec3::new(5200.0, 30.0, -5180.0))
-            .looking_at(Vec3::new(5200.0, 10.0, -5230.0), Vec3::Y),
-        GlobalTransform::default(),
-        bevy::ui::IsDefaultUiCamera,
-        // Primary Egui Context - required for bevy_egui 0.32+
-        PrimaryEguiContext,
-        // Add Tonemapping - REQUIRED for HDR to work properly with depth of field
-        bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
-        // Add Bloom - enhances the depth of field effect visibility
-        Bloom::NATURAL,
-        // Shadow filtering - Gaussian for high-quality soft shadows
-        ShadowFilteringMethod::Gaussian,
-        // SMAA for high-quality anti-aliasing
-        Smaa::default(),
-        // Prepasses for depth (required for some effects and GPU occlusion culling)
-        DepthPrepass,
-        // GPU Occlusion Culling - Bevy 0.16 experimental feature
-        // Culls objects hidden behind other objects to improve performance
-        OcclusionCulling,
-        // Underwater state tracking for underwater rendering effect
-        CameraUnderwaterState::default(),
-    )).id();
+    let camera_entity = commands
+        .spawn((
+            Camera3d::default(),
+            Msaa::Off, // Required for SSAO and TAA compatibility
+            Camera {
+                clear_color: ClearColorConfig::Custom(Color::srgb(0.0, 0.0, 0.02)), // Near-black for star visibility
+                ..default()
+            },
+            Projection::Perspective(PerspectiveProjection {
+                fov: std::f32::consts::PI / 4.0,
+                near: 0.1,
+                far: 100000.0, // Increased to contain sky sphere (radius 50000 + camera distance)
+                aspect_ratio: 16.0 / 9.0,
+                ..default()
+            }),
+            Transform::from_translation(Vec3::new(5200.0, 30.0, -5180.0))
+                .looking_at(Vec3::new(5200.0, 10.0, -5230.0), Vec3::Y),
+            GlobalTransform::default(),
+            bevy::ui::IsDefaultUiCamera,
+            // Primary Egui Context - required for bevy_egui 0.32+
+            PrimaryEguiContext,
+            // Add Tonemapping - REQUIRED for HDR to work properly with depth of field
+            bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
+            // Add Bloom - enhances the depth of field effect visibility
+            Bloom::NATURAL,
+            // Shadow filtering - Gaussian for high-quality soft shadows
+            ShadowFilteringMethod::Gaussian,
+            // SMAA for high-quality anti-aliasing
+            Smaa::default(),
+            // Prepasses for depth (required for some effects and GPU occlusion culling)
+            DepthPrepass,
+            // GPU Occlusion Culling - Bevy 0.16 experimental feature
+            // Culls objects hidden behind other objects to improve performance
+            OcclusionCulling,
+            // Underwater state tracking for underwater rendering effect
+            CameraUnderwaterState::default(),
+        ))
+        .id();
 
     commands.entity(camera_entity).insert((
         // Environment Map Light for richer PBR reflections and lighting
@@ -2002,32 +2308,35 @@ fn load_common_game_data(
             // Bevy 0.18 built-in atmospheric scattering for realistic sky
             Atmosphere::earthlike(scattering_mediums.add(bevy::pbr::ScatteringMedium::default())),
             AtmosphereSettings::default(),
-        // Add Depth of Field effect
-        DepthOfField {
-            mode: DepthOfFieldMode::Bokeh,
-            focal_distance: 10.0,      // Focus 10 meters away
-            aperture_f_stops: 3.3,     // f/3.3 aperture
-            sensor_height: 0.01866,    // Super 35 format (default)
-            max_circle_of_confusion_diameter: 64.0,
-            max_depth: 2000.0,         // Max depth range
-        },
-        // Add VolumetricFog for light shafts/god rays effect
-        // Configured for 60fps target with balanced quality
-        VolumetricFog {
-            ambient_intensity: 0.1,
-            jitter: 0.0,
-            step_count: 128,
-            ..default()
-        },
-        // SSAO for contact shadows - adds darkening in crevices and where objects meet ground
-        // Requires Msaa::Off (which is the default in Bevy 0.15)
-        ScreenSpaceAmbientOcclusion {
-            quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
-            constant_object_thickness: 0.25,  // Adjust if AO is too strong/weak
-        },
-    ));
+            // Add Depth of Field effect
+            DepthOfField {
+                mode: DepthOfFieldMode::Bokeh,
+                focal_distance: 10.0,   // Focus 10 meters away
+                aperture_f_stops: 3.3,  // f/3.3 aperture
+                sensor_height: 0.01866, // Super 35 format (default)
+                max_circle_of_confusion_diameter: 64.0,
+                max_depth: 2000.0, // Max depth range
+            },
+            // Add VolumetricFog for light shafts/god rays effect
+            // Configured for 60fps target with balanced quality
+            VolumetricFog {
+                ambient_intensity: 0.1,
+                jitter: 0.0,
+                step_count: 128,
+                ..default()
+            },
+            // SSAO for contact shadows - adds darkening in crevices and where objects meet ground
+            // Requires Msaa::Off (which is the default in Bevy 0.15)
+            ScreenSpaceAmbientOcclusion {
+                quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
+                constant_object_thickness: 0.25, // Adjust if AO is too strong/weak
+            },
+        ));
     }
-    info!("[CAMERA] Camera entity spawned with id: {:?}", camera_entity);
+    info!(
+        "[CAMERA] Camera entity spawned with id: {:?}",
+        camera_entity
+    );
     info!("[CAMERA] VolumetricFog settings: ambient_intensity=0.1, step_count=64");
     info!("[CAMERA] Shadow filtering: Gaussian (non-temporal)");
     info!("[CAMERA] SMAA enabled for anti-aliasing (no ghosting)");
@@ -2036,10 +2345,7 @@ fn load_common_game_data(
     info!("[CAMERA] GPU Occlusion Culling enabled (Bevy 0.16 experimental)");
     info!("[CAMERA] Camera position: ~5120.0, 100.0, -5120.0 (game world center)");
 
-    commands.insert_resource(DamageDigitsSpawner::load(
-        &asset_server,
-        &mut meshes,
-    ));
+    commands.insert_resource(DamageDigitsSpawner::load(&asset_server, &mut meshes));
 }
 
 /// Setup egui fonts - runs after camera with PrimaryEguiContext is spawned
@@ -2047,7 +2353,9 @@ fn setup_egui_fonts(mut egui_context: EguiContexts) {
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
         "Ubuntu-M".to_owned(),
-        Arc::new(egui::FontData::from_static(include_bytes!("fonts/Ubuntu-M.ttf"))),
+        Arc::new(egui::FontData::from_static(include_bytes!(
+            "fonts/Ubuntu-M.ttf"
+        ))),
     );
 
     fonts
@@ -2087,21 +2395,21 @@ fn diagnose_camera_extraction_state(
     if *frame_count % 60 != 0 {
         return;
     }
-    
+
     let camera_count = query.iter().count();
     if camera_count == 0 {
         log::info!("[NAME_TAG_DEBUG] No Camera3d entities found for extraction diagnosis");
         return;
     }
-    
+
     for (entity, camera, global_transform, camera3d) in query.iter() {
         let physical_viewport = camera.physical_viewport_rect();
         let physical_viewport_size = camera.physical_viewport_size();
         let physical_target_size = camera.physical_target_size();
-        
+
         let has_valid_transform = global_transform.affine().translation.length() > 0.0
             || global_transform.affine().matrix3 != bevy::math::Mat3A::IDENTITY;
-        
+
         // log::info!(
         //     "[NAME_TAG_DEBUG] Camera entity {:?}: is_active={}, viewport={:?}, viewport_size={:?}, target_size={:?}, has_global_transform={}, has_camera3d={}",
         //     entity,
@@ -2112,20 +2420,22 @@ fn diagnose_camera_extraction_state(
         //     has_valid_transform,
         //     camera3d.is_some()
         // );
-        
+
         // // Log target info
         // log::info!(
         //     "[NAME_TAG_DEBUG] Camera {:?} target: {:?}",
         //     entity,
         //     camera.target
         // );
-        
+
         // Check extraction conditions
         let viewport_ok = physical_viewport.is_some();
         let viewport_size_ok = physical_viewport_size.is_some();
         let target_size_ok = physical_target_size.is_some();
-        let target_size_nonzero = physical_target_size.map(|s| s.x > 0 && s.y > 0).unwrap_or(false);
-        
+        let target_size_nonzero = physical_target_size
+            .map(|s| s.x > 0 && s.y > 0)
+            .unwrap_or(false);
+
         log::info!(
             "[NAME_TAG_DEBUG] Camera {:?} extraction conditions: viewport_ok={}, viewport_size_ok={}, target_size_ok={}, target_size_nonzero={}",
             entity,
@@ -2134,11 +2444,22 @@ fn diagnose_camera_extraction_state(
             target_size_ok,
             target_size_nonzero
         );
-        
-        if camera.is_active && viewport_ok && viewport_size_ok && target_size_ok && target_size_nonzero {
-            log::info!("[NAME_TAG_DEBUG] Camera {:?} SHOULD be extracted successfully", entity);
+
+        if camera.is_active
+            && viewport_ok
+            && viewport_size_ok
+            && target_size_ok
+            && target_size_nonzero
+        {
+            log::info!(
+                "[NAME_TAG_DEBUG] Camera {:?} SHOULD be extracted successfully",
+                entity
+            );
         } else {
-            log::warn!("[NAME_TAG_DEBUG] Camera {:?} may FAIL extraction - check conditions above", entity);
+            log::warn!(
+                "[NAME_TAG_DEBUG] Camera {:?} may FAIL extraction - check conditions above",
+                entity
+            );
         }
     }
 }
@@ -2151,9 +2472,15 @@ fn print_diagnostic_summary(
     render_diagnostics: Res<RenderExtractionDiagnostics>,
 ) {
     info!("=== BEVY 0.14.2 DIAGNOSTIC SUMMARY ===");
-    info!("Active cameras: {}", cameras.iter().filter(|c| c.is_active).count());
+    info!(
+        "Active cameras: {}",
+        cameras.iter().filter(|c| c.is_active).count()
+    );
     info!("Total mesh entities: {}", meshes.iter().count());
-    info!("Main world meshes tracked: {}", render_diagnostics.main_world_mesh_count);
+    info!(
+        "Main world meshes tracked: {}",
+        render_diagnostics.main_world_mesh_count
+    );
     info!("=======================================");
     info!("See docs/diagnostic-summary.md for interpretation guide");
 }
@@ -2165,7 +2492,7 @@ fn apply_depth_of_field_settings(
     mut query: Query<&mut DepthOfField>,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
-    
+
     // Only update if settings have changed
     if dof_settings.is_changed() {
         for mut dof in query.iter_mut() {
@@ -2174,7 +2501,8 @@ fn apply_depth_of_field_settings(
                 dof.focal_distance = dof_settings.focal_distance;
                 dof.aperture_f_stops = dof_settings.aperture_f_stops;
                 dof.sensor_height = dof_settings.sensor_height;
-                dof.max_circle_of_confusion_diameter = dof_settings.max_circle_of_confusion_diameter;
+                dof.max_circle_of_confusion_diameter =
+                    dof_settings.max_circle_of_confusion_diameter;
                 dof.max_depth = dof_settings.max_depth;
             } else {
                 // When disabled, use Gaussian mode with minimal effect (effectively off)
@@ -2198,12 +2526,12 @@ fn apply_post_processing_settings(
     mut commands: Commands,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
-    
+
     // Only update if settings have changed
     if !post_process_settings.is_changed() {
         return;
     }
-    
+
     for (entity, bloom, ssao, volumetric_fog, color_grading) in camera_query.iter_mut() {
         // Handle Bloom
         if post_process_settings.bloom_enabled {
@@ -2219,7 +2547,7 @@ fn apply_post_processing_settings(
                 info!("[PostProcess] Bloom disabled on camera");
             }
         }
-        
+
         // Handle SSAO
         if let Some(mut ssao_comp) = ssao {
             if !post_process_settings.ssao_enabled {
@@ -2229,7 +2557,7 @@ fn apply_post_processing_settings(
                 ssao_comp.quality_level = ScreenSpaceAmbientOcclusionQualityLevel::Medium;
             }
         }
-        
+
         // Handle Volumetric Fog
         if let Some(mut fog) = volumetric_fog {
             if post_process_settings.volumetric_fog_enabled {
@@ -2239,7 +2567,6 @@ fn apply_post_processing_settings(
                 fog.step_count = 1;
             }
         }
-        
     }
 }
 
@@ -2252,7 +2579,7 @@ fn apply_water_settings(
     mut water_materials: ResMut<Assets<WaterMaterial>>,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
-    
+
     // Update if water settings or zone lighting have changed
     if water_settings.is_changed() || zone_lighting.is_changed() {
         for (_, material) in water_materials.iter_mut() {
@@ -2276,33 +2603,37 @@ fn spawn_starry_sky_and_moon(
 ) {
     use bevy::math::primitives::Sphere;
     use bevy_light::DirectionalLight as DirectionalLightComponent;
-    
+
     log::info!("[STARRY SKY] ========== SPAWN SYSTEM CALLED ==========");
     log::info!("[STARRY SKY] spawn_starry_sky_and_moon function executing");
-    
+
     // CRITICAL: The sky sphere must be LARGE enough to contain the entire game world.
     // Camera is at ~5120, 100, -5120 which is ~7242 units from world origin.
     // Using 50000 units radius ensures camera is always inside the sphere.
     // The sphere is centered at world origin (0,0,0).
     let sky_sphere_radius = 50000.0;
-    
+
     log::info!("[STARRY SKY] Sky sphere radius: {}", sky_sphere_radius);
     log::info!("[STARRY SKY] Camera expected at ~5120, 100, -5120 (inside sphere)");
-    log::info!("[STARRY SKY] StarrySkySettings - star_density: {}, star_brightness: {}, night_factor: {}",
+    log::info!(
+        "[STARRY SKY] StarrySkySettings - star_density: {}, star_brightness: {}, night_factor: {}",
         starry_sky_settings.star_density,
         starry_sky_settings.star_brightness,
         starry_sky_settings.night_factor
     );
-    
+
     // Create starry sky sphere mesh (large sphere centered at world origin)
     let sphere = Sphere::new(sky_sphere_radius);
     let mut sky_mesh = Mesh::from(sphere);
     log::info!("[STARRY SKY] Created sphere mesh primitive");
-    
+
     // Flip normals for inside rendering (we're inside the sphere looking out)
     if let Some(normals) = sky_mesh.attribute_mut(Mesh::ATTRIBUTE_NORMAL) {
         if let VertexAttributeValues::Float32x3(normals) = normals {
-            log::info!("[STARRY SKY] Flipping {} normals for inside rendering", normals.len());
+            log::info!(
+                "[STARRY SKY] Flipping {} normals for inside rendering",
+                normals.len()
+            );
             for normal in normals.iter_mut() {
                 normal[0] = -normal[0];
                 normal[1] = -normal[1];
@@ -2314,7 +2645,7 @@ fn spawn_starry_sky_and_moon(
     } else {
         log::warn!("[STARRY SKY] No normals attribute found in mesh!");
     }
-    
+
     // CRITICAL FIX: Reverse the winding order of triangles for inside rendering
     // When viewing a sphere from inside, the triangles are front-facing if we reverse the indices
     // Without this, backface culling removes all triangles and the sky is invisible
@@ -2322,7 +2653,10 @@ fn spawn_starry_sky_and_moon(
         match indices {
             Indices::U32(indices) => {
                 let count = indices.len() / 3;
-                log::info!("[STARRY SKY] Reversing winding order for {} triangles", count);
+                log::info!(
+                    "[STARRY SKY] Reversing winding order for {} triangles",
+                    count
+                );
                 // Reverse each triangle (swap v1 and v2 of each triangle)
                 for chunk in indices.chunks_mut(3) {
                     chunk.swap(1, 2);
@@ -2330,7 +2664,10 @@ fn spawn_starry_sky_and_moon(
             }
             Indices::U16(indices) => {
                 let count = indices.len() / 3;
-                log::info!("[STARRY SKY] Reversing winding order for {} triangles (U16)", count);
+                log::info!(
+                    "[STARRY SKY] Reversing winding order for {} triangles (U16)",
+                    count
+                );
                 for chunk in indices.chunks_mut(3) {
                     chunk.swap(1, 2);
                 }
@@ -2342,7 +2679,7 @@ fn spawn_starry_sky_and_moon(
     } else {
         log::warn!("[STARRY SKY] No indices in mesh - mesh may use non-indexed rendering");
     }
-    
+
     // Create material with current settings
     let sky_material = StarrySkyMaterial {
         time: 0.0,
@@ -2352,43 +2689,58 @@ fn spawn_starry_sky_and_moon(
         moon_phase: starry_sky_settings.moon_phase,
         moon_direction: starry_sky_settings.moon_direction,
     };
-    log::info!("[STARRY SKY] Created StarrySkyMaterial with time=0.0, night_factor={}", sky_material.night_factor);
-    
+    log::info!(
+        "[STARRY SKY] Created StarrySkyMaterial with time=0.0, night_factor={}",
+        sky_material.night_factor
+    );
+
     // Spawn starry sky entity
     let sky_mesh_handle = meshes.add(sky_mesh);
     let sky_material_handle = materials.add(sky_material);
     log::info!("[STARRY SKY] Mesh handle created: {:?}", sky_mesh_handle);
-    log::info!("[STARRY SKY] Material handle created: {:?}", sky_material_handle);
-    
-    let sky_entity = commands.spawn((
-        StarrySky,
-        Mesh3d(sky_mesh_handle),
-        MeshMaterial3d(sky_material_handle),
-        Transform::from_xyz(0.0, 0.0, 0.0),  // Center of world - sphere is large enough to contain camera
-        Visibility::Visible,
-        bevy::camera::visibility::NoFrustumCulling,  // CRITICAL: Prevent frustum culling of sky sphere
-    )).id();
-    
-    log::info!("[STARRY SKY] StarrySky entity spawned with id: {:?}", sky_entity);
+    log::info!(
+        "[STARRY SKY] Material handle created: {:?}",
+        sky_material_handle
+    );
+
+    let sky_entity = commands
+        .spawn((
+            StarrySky,
+            Mesh3d(sky_mesh_handle),
+            MeshMaterial3d(sky_material_handle),
+            Transform::from_xyz(0.0, 0.0, 0.0), // Center of world - sphere is large enough to contain camera
+            Visibility::Visible,
+            bevy::camera::visibility::NoFrustumCulling, // CRITICAL: Prevent frustum culling of sky sphere
+        ))
+        .id();
+
+    log::info!(
+        "[STARRY SKY] StarrySky entity spawned with id: {:?}",
+        sky_entity
+    );
     log::info!("[STARRY SKY] Entity components: StarrySky, Mesh3d, MeshMaterial3d<StarrySkyMaterial>, Transform(0,0,0), Visibility::Visible");
-    
+
     // Spawn moon directional light (separate from sun)
     // This provides illumination at night
-    let moon_entity = commands.spawn((
-        MoonLight,
-        DirectionalLightComponent {
-            illuminance: 5000.0,  // Moonlight intensity (much dimmer than sun)
-            color: Color::srgb(0.8, 0.85, 0.95),  // Slightly blue-white moonlight
-            shadows_enabled: true,
-            shadow_depth_bias: 0.0,
-            shadow_normal_bias: 0.0,
-            affects_lightmapped_mesh_diffuse: true,
-        },
-        Transform::from_xyz(0.0, 100.0, 0.0)
-            .looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
-        Visibility::Visible,
-    )).id();
-    
-    log::info!("[STARRY SKY] MoonLight entity spawned with id: {:?}", moon_entity);
+    let moon_entity = commands
+        .spawn((
+            MoonLight,
+            DirectionalLightComponent {
+                illuminance: 5000.0,                 // Moonlight intensity (much dimmer than sun)
+                color: Color::srgb(0.8, 0.85, 0.95), // Slightly blue-white moonlight
+                shadows_enabled: true,
+                shadow_depth_bias: 0.0,
+                shadow_normal_bias: 0.0,
+                affects_lightmapped_mesh_diffuse: true,
+            },
+            Transform::from_xyz(0.0, 100.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
+            Visibility::Visible,
+        ))
+        .id();
+
+    log::info!(
+        "[STARRY SKY] MoonLight entity spawned with id: {:?}",
+        moon_entity
+    );
     log::info!("[STARRY SKY] ========== SPAWN COMPLETE ==========");
 }

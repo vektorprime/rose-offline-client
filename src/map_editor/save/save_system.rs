@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use bevy::prelude::*;
 
 use crate::components::{
-    EventObject, WarpObject, ZoneObject, MapEditorWaterPlane, MapEditorTerrainBlock,
+    EventObject, MapEditorTerrainBlock, MapEditorWaterPlane, WarpObject, ZoneObject,
 };
 use crate::map_editor::resources::{DeletedZoneObjects, ZoneObjectType};
 use crate::map_editor::systems::model_placement_system::EditorPlacedObject;
@@ -36,7 +36,12 @@ fn world_to_block_coords(world_translation: Vec3) -> (u32, u32) {
     )
 }
 
-fn write_him_file(path: &std::path::Path, width: u32, height: u32, heights_cm: &[f32]) -> std::io::Result<()> {
+fn write_him_file(
+    path: &std::path::Path,
+    width: u32,
+    height: u32,
+    heights_cm: &[f32],
+) -> std::io::Result<()> {
     use std::io::Write;
     let mut data = Vec::with_capacity(16 + heights_cm.len() * 4);
     data.extend_from_slice(&width.to_le_bytes());
@@ -51,7 +56,12 @@ fn write_him_file(path: &std::path::Path, width: u32, height: u32, heights_cm: &
     Ok(())
 }
 
-fn write_til_file(path: &std::path::Path, width: u32, height: u32, tiles: &[u32]) -> std::io::Result<()> {
+fn write_til_file(
+    path: &std::path::Path,
+    width: u32,
+    height: u32,
+    tiles: &[u32],
+) -> std::io::Result<()> {
     use std::io::Write;
     let mut data = Vec::with_capacity(8 + tiles.len() * 7);
     data.extend_from_slice(&width.to_le_bytes());
@@ -175,7 +185,10 @@ impl SaveResult {
                 self.blocks_saved, self.objects_saved
             )
         } else {
-            format!("Save failed: {}", self.error.as_deref().unwrap_or("Unknown error"))
+            format!(
+                "Save failed: {}",
+                self.error.as_deref().unwrap_or("Unknown error")
+            )
         }
     }
 }
@@ -188,7 +201,7 @@ impl Plugin for SavePlugin {
         app.init_resource::<SaveStatus>()
             .add_message::<SaveZoneEvent>()
             .add_systems(Update, save_zone_system);
-        
+
         log::info!("[SavePlugin] Save system initialized");
     }
 }
@@ -217,13 +230,19 @@ pub fn save_zone_system(
     // Process all save events
     for event in events.read() {
         log::info!("[SaveSystem] ====== SAVE ZONE SYSTEM TRIGGERED ======");
-        log::info!("[SaveSystem] Processing SaveZoneEvent for zone {}", event.zone_id);
-        
+        log::info!(
+            "[SaveSystem] Processing SaveZoneEvent for zone {}",
+            event.zone_id
+        );
+
         save_status.set_saving("Saving zone...");
 
         // Get the zone data
         let zone_data = if let Some(ref current_zone) = current_zone {
-            log::info!("[SaveSystem] CurrentZone resource exists, zone_id: {}", current_zone.id.get());
+            log::info!(
+                "[SaveSystem] CurrentZone resource exists, zone_id: {}",
+                current_zone.id.get()
+            );
             zone_loader_assets.get(&current_zone.handle)
         } else {
             log::error!("[SaveSystem] CurrentZone resource does NOT exist!");
@@ -247,7 +266,10 @@ pub fn save_zone_system(
         } else if let Some(ref custom_path_res) = custom_zone_path {
             // New zone - use the custom zone path if set
             if let Some(ref path) = custom_path_res.path {
-                log::info!("[SaveSystem] Using custom zone path from resource: {:?}", path);
+                log::info!(
+                    "[SaveSystem] Using custom zone path from resource: {:?}",
+                    path
+                );
                 path.clone()
             } else {
                 // No custom path set, use original zone path
@@ -259,20 +281,29 @@ pub fn save_zone_system(
         };
 
         if let Err(err) = std::fs::create_dir_all(&output_path) {
-            let error = format!("Failed to create output directory {:?}: {}", output_path, err);
+            let error = format!(
+                "Failed to create output directory {:?}: {}",
+                output_path, err
+            );
             log::error!("[SaveSystem] {}", error);
             save_status.set_complete(SaveResult::failure(error));
             continue;
         }
 
         log::info!("[SaveSystem] VFS base_path: {:?}", vfs_resource.base_path);
-        log::info!("[SaveSystem] Zone path from zone_data: {:?}", zone_data.zone_path);
+        log::info!(
+            "[SaveSystem] Zone path from zone_data: {:?}",
+            zone_data.zone_path
+        );
         log::info!("[SaveSystem] Output path for save: {:?}", output_path);
         log::info!("[SaveSystem] Zone ID: {}", zone_data.zone_id.get());
 
         // Count zone objects for logging
         let zone_object_count = zone_objects_query.iter().count();
-        log::info!("[SaveSystem] Found {} zone objects in query", zone_object_count);
+        log::info!(
+            "[SaveSystem] Found {} zone objects in query",
+            zone_object_count
+        );
 
         // STEP 1: Pre-populate with existing IFO data to preserve objects that weren't modified
         // This is crucial - without this, any objects not spawned as entities would be lost
@@ -282,16 +313,22 @@ pub fn save_zone_system(
             output_path.to_string_lossy().to_string(),
         );
         let existing_object_count = export_data.total_objects();
-        log::info!("[SaveSystem] Pre-populated export_data with {} existing objects from IFO files", existing_object_count);
+        log::info!(
+            "[SaveSystem] Pre-populated export_data with {} existing objects from IFO files",
+            existing_object_count
+        );
 
         // STEP 1.5: Process tracked deletions - remove deleted objects from export_data
         // This must happen BEFORE processing spawned objects so deleted objects don't get re-added
         let mut deleted_count = 0usize;
         let mut deletion_modified_blocks: HashSet<(u32, u32)> = HashSet::new();
-        
+
         log::info!("[SaveSystem] ====== PROCESSING DELETIONS ======");
-        log::info!("[SaveSystem] Tracking {} deleted objects", deleted_zone_objects.len());
-        
+        log::info!(
+            "[SaveSystem] Tracking {} deleted objects",
+            deleted_zone_objects.len()
+        );
+
         for (block_x, block_y, ifo_object_id, object_type) in deleted_zone_objects.objects.iter() {
             // Get the block data
             let index = (block_x + block_y * 64) as usize;
@@ -306,8 +343,11 @@ pub fn save_zone_system(
                             block_ref.block.deco_objects.swap_remove(*ifo_object_id);
                             true
                         } else {
-                            log::warn!("[SaveSystem] Deco deletion index {} out of bounds (len={})", 
-                                ifo_object_id, block_ref.block.deco_objects.len());
+                            log::warn!(
+                                "[SaveSystem] Deco deletion index {} out of bounds (len={})",
+                                ifo_object_id,
+                                block_ref.block.deco_objects.len()
+                            );
                             false
                         }
                     }
@@ -316,8 +356,11 @@ pub fn save_zone_system(
                             block_ref.block.cnst_objects.swap_remove(*ifo_object_id);
                             true
                         } else {
-                            log::warn!("[SaveSystem] Cnst deletion index {} out of bounds (len={})", 
-                                ifo_object_id, block_ref.block.cnst_objects.len());
+                            log::warn!(
+                                "[SaveSystem] Cnst deletion index {} out of bounds (len={})",
+                                ifo_object_id,
+                                block_ref.block.cnst_objects.len()
+                            );
                             false
                         }
                     }
@@ -326,8 +369,11 @@ pub fn save_zone_system(
                             block_ref.block.event_objects.swap_remove(*ifo_object_id);
                             true
                         } else {
-                            log::warn!("[SaveSystem] Event deletion index {} out of bounds (len={})", 
-                                ifo_object_id, block_ref.block.event_objects.len());
+                            log::warn!(
+                                "[SaveSystem] Event deletion index {} out of bounds (len={})",
+                                ifo_object_id,
+                                block_ref.block.event_objects.len()
+                            );
                             false
                         }
                     }
@@ -336,8 +382,11 @@ pub fn save_zone_system(
                             block_ref.block.warp_objects.swap_remove(*ifo_object_id);
                             true
                         } else {
-                            log::warn!("[SaveSystem] Warp deletion index {} out of bounds (len={})", 
-                                ifo_object_id, block_ref.block.warp_objects.len());
+                            log::warn!(
+                                "[SaveSystem] Warp deletion index {} out of bounds (len={})",
+                                ifo_object_id,
+                                block_ref.block.warp_objects.len()
+                            );
                             false
                         }
                     }
@@ -346,8 +395,11 @@ pub fn save_zone_system(
                             block_ref.block.sound_objects.swap_remove(*ifo_object_id);
                             true
                         } else {
-                            log::warn!("[SaveSystem] Sound deletion index {} out of bounds (len={})", 
-                                ifo_object_id, block_ref.block.sound_objects.len());
+                            log::warn!(
+                                "[SaveSystem] Sound deletion index {} out of bounds (len={})",
+                                ifo_object_id,
+                                block_ref.block.sound_objects.len()
+                            );
                             false
                         }
                     }
@@ -356,8 +408,11 @@ pub fn save_zone_system(
                             block_ref.block.effect_objects.swap_remove(*ifo_object_id);
                             true
                         } else {
-                            log::warn!("[SaveSystem] Effect deletion index {} out of bounds (len={})", 
-                                ifo_object_id, block_ref.block.effect_objects.len());
+                            log::warn!(
+                                "[SaveSystem] Effect deletion index {} out of bounds (len={})",
+                                ifo_object_id,
+                                block_ref.block.effect_objects.len()
+                            );
                             false
                         }
                     }
@@ -366,29 +421,47 @@ pub fn save_zone_system(
                             block_ref.block.animated_objects.swap_remove(*ifo_object_id);
                             true
                         } else {
-                            log::warn!("[SaveSystem] Animated deletion index {} out of bounds (len={})", 
-                                ifo_object_id, block_ref.block.animated_objects.len());
+                            log::warn!(
+                                "[SaveSystem] Animated deletion index {} out of bounds (len={})",
+                                ifo_object_id,
+                                block_ref.block.animated_objects.len()
+                            );
                             false
                         }
                     }
                 };
-                
+
                 if removed {
                     deleted_count += 1;
                     deletion_modified_blocks.insert((*block_x, *block_y));
                     block_ref.modified = true;
-                    log::debug!("[SaveSystem] Removed {:?} with ifo_object_id={} from block ({}, {})", 
-                        object_type, ifo_object_id, block_x, block_y);
+                    log::debug!(
+                        "[SaveSystem] Removed {:?} with ifo_object_id={} from block ({}, {})",
+                        object_type,
+                        ifo_object_id,
+                        block_x,
+                        block_y
+                    );
                 }
             } else {
-                log::warn!("[SaveSystem] Block ({}, {}) not found in export_data for deletion", block_x, block_y);
+                log::warn!(
+                    "[SaveSystem] Block ({}, {}) not found in export_data for deletion",
+                    block_x,
+                    block_y
+                );
             }
         }
-        
+
         log::info!("[SaveSystem] ====== FINISHED PROCESSING DELETIONS ======");
-        log::info!("[SaveSystem] Removed {} objects from export_data", deleted_count);
-        log::info!("[SaveSystem] Blocks modified by deletions: {:?}", deletion_modified_blocks);
-        
+        log::info!(
+            "[SaveSystem] Removed {} objects from export_data",
+            deleted_count
+        );
+        log::info!(
+            "[SaveSystem] Blocks modified by deletions: {:?}",
+            deletion_modified_blocks
+        );
+
         // Clear the tracked deletions after processing
         deleted_zone_objects.clear();
 
@@ -407,19 +480,34 @@ pub fn save_zone_system(
         log::info!("[SaveSystem] ====== PROCESSING SPAWNED ZONE OBJECTS ======");
         let mut updated_objects_count = 0usize;
         let mut added_objects_count = 0usize;
-        
-        for (_entity, global_transform, zone_object, event_object, warp_object, water_plane, terrain_block, editor_placed) in zone_objects_query.iter() {
+
+        for (
+            _entity,
+            global_transform,
+            zone_object,
+            event_object,
+            warp_object,
+            water_plane,
+            terrain_block,
+            editor_placed,
+        ) in zone_objects_query.iter()
+        {
             // Water planes are persisted through per-block IFO water data.
             if matches!(zone_object, ZoneObject::Water) {
                 if let Some(water) = water_plane {
                     let block_key = (water.block_x, water.block_y);
-                    let block = export_data.get_or_create_modified_block(water.block_x, water.block_y);
+                    let block =
+                        export_data.get_or_create_modified_block(water.block_x, water.block_y);
                     if water_blocks_cleared.insert(block_key) {
                         block.block.water_planes.clear();
                     }
                     block.block.water_size = water.water_size;
                     block.block.water_planes.push(IfoWaterPlane {
-                        start: [water.start_ifo_cm.x, water.start_ifo_cm.y, water.start_ifo_cm.z],
+                        start: [
+                            water.start_ifo_cm.x,
+                            water.start_ifo_cm.y,
+                            water.start_ifo_cm.z,
+                        ],
                         end: [water.end_ifo_cm.x, water.end_ifo_cm.y, water.end_ifo_cm.z],
                     });
                     modified_blocks.insert(block_key);
@@ -445,21 +533,41 @@ pub fn save_zone_system(
                     }
 
                     let mut block_ok = true;
-                    let him_path = output_path.join(format!("{}_{}.HIM", terrain.block_x, terrain.block_y));
-                    if let Err(err) = write_him_file(&him_path, terrain.him_width, terrain.him_height, &out_heights) {
+                    let him_path =
+                        output_path.join(format!("{}_{}.HIM", terrain.block_x, terrain.block_y));
+                    if let Err(err) = write_him_file(
+                        &him_path,
+                        terrain.him_width,
+                        terrain.him_height,
+                        &out_heights,
+                    ) {
                         errors.push(format!("{}: {}", him_path.display(), err));
                         terrain_blocks_failed += 1;
                         block_ok = false;
-                        log::error!("[SaveSystem] Failed to write terrain HIM file {:?}: {}", him_path, err);
+                        log::error!(
+                            "[SaveSystem] Failed to write terrain HIM file {:?}: {}",
+                            him_path,
+                            err
+                        );
                     }
 
                     if terrain.til_width > 0 && terrain.til_height > 0 {
-                        let til_path = output_path.join(format!("{}_{}.TIL", terrain.block_x, terrain.block_y));
-                        if let Err(err) = write_til_file(&til_path, terrain.til_width, terrain.til_height, &out_tiles) {
+                        let til_path = output_path
+                            .join(format!("{}_{}.TIL", terrain.block_x, terrain.block_y));
+                        if let Err(err) = write_til_file(
+                            &til_path,
+                            terrain.til_width,
+                            terrain.til_height,
+                            &out_tiles,
+                        ) {
                             errors.push(format!("{}: {}", til_path.display(), err));
                             terrain_blocks_failed += 1;
                             block_ok = false;
-                            log::error!("[SaveSystem] Failed to write terrain TIL file {:?}: {}", til_path, err);
+                            log::error!(
+                                "[SaveSystem] Failed to write terrain TIL file {:?}: {}",
+                                til_path,
+                                err
+                            );
                         }
                     }
 
@@ -474,7 +582,7 @@ pub fn save_zone_system(
             // Determine block coordinates from position
             // Zone is 64x64 blocks, each block is 160 units
             let (scale, rotation, translation) = global_transform.to_scale_rotation_translation();
-            
+
             // Calculate block coordinates from WORLD coordinates
             let (block_x, block_y) = world_to_block_coords(translation);
 
@@ -513,7 +621,7 @@ pub fn save_zone_system(
             // IMPORTANT: Objects with EditorPlacedObject component are ALWAYS new objects
             // They have ifo_object_id=0 which would incorrectly match existing objects at index 0
             let mut is_new_object = editor_placed.is_some();
-            
+
             // Only try to update existing objects if this is NOT an editor-placed object
             if !is_new_object {
                 if let Some(ifo_id) = ifo_object_id {
@@ -521,7 +629,7 @@ pub fn save_zone_system(
                     let block = export_data.get_block(block_x, block_y);
                     if let Some(block_data) = block {
                         let existing_count = block_data.block.total_objects();
-                        
+
                         // Check if this ifo_id could be valid for this block
                         if ifo_id < existing_count {
                             // Try to find and update in the appropriate list
@@ -529,7 +637,7 @@ pub fn save_zone_system(
                             // A more sophisticated approach would find and update the exact object
                             log::debug!("[SaveSystem] Object with ifo_object_id={} may exist in block ({}, {})",
                                 ifo_id, block_x, block_y);
-                            
+
                             // For now, we'll check if we can find a matching object and update it
                             // This is a simplified approach - we check by object_id match
                             let found = update_existing_object(
@@ -543,22 +651,25 @@ pub fn save_zone_system(
                                 event_object,
                                 warp_object,
                             );
-                            
+
                             if found {
                                 is_new_object = false;
                                 updated_objects_count += 1;
-                                log::debug!("[SaveSystem] Updated existing object with ifo_object_id={}", ifo_id);
+                                log::debug!(
+                                    "[SaveSystem] Updated existing object with ifo_object_id={}",
+                                    ifo_id
+                                );
                             }
                         }
                     }
                 }
             }
-            
+
             if is_new_object {
                 // Add as new object
                 added_objects_count += 1;
                 modified_blocks.insert((block_x, block_y));
-                
+
                 // Get or create the block (marked as modified)
                 let block = export_data.get_or_create_modified_block(block_x, block_y);
 
@@ -604,14 +715,18 @@ pub fn save_zone_system(
                     }
                     ZoneObject::WarpObject(id) => {
                         if let Some(warp_obj) = warp_object {
-                            let mut ifo_warp = IfoWarpObject::new(id.zsc_object_id as u32, warp_obj.warp_id.get());
+                            let mut ifo_warp =
+                                IfoWarpObject::new(id.zsc_object_id as u32, warp_obj.warp_id.get());
                             ifo_warp.object = ifo_object.clone();
                             block.block.warp_objects.push(ifo_warp);
                         }
                     }
                     ZoneObject::WarpObjectPart(part) => {
                         if let Some(warp_obj) = warp_object {
-                            let mut ifo_warp = IfoWarpObject::new(part.zsc_object_id as u32, warp_obj.warp_id.get());
+                            let mut ifo_warp = IfoWarpObject::new(
+                                part.zsc_object_id as u32,
+                                warp_obj.warp_id.get(),
+                            );
                             ifo_warp.object = ifo_object.clone();
                             block.block.warp_objects.push(ifo_warp);
                         }
@@ -640,11 +755,18 @@ pub fn save_zone_system(
                 }
             }
         }
-        
+
         log::info!("[SaveSystem] ====== FINISHED PROCESSING SPAWNED ZONE OBJECTS ======");
-        log::info!("[SaveSystem] Updated {} existing objects, added {} new objects", updated_objects_count, added_objects_count);
-        log::info!("[SaveSystem] Total objects in export_data: {} (was {} before processing)",
-            export_data.total_objects(), existing_object_count);
+        log::info!(
+            "[SaveSystem] Updated {} existing objects, added {} new objects",
+            updated_objects_count,
+            added_objects_count
+        );
+        log::info!(
+            "[SaveSystem] Total objects in export_data: {} (was {} before processing)",
+            export_data.total_objects(),
+            existing_object_count
+        );
         log::info!("[SaveSystem] Modified blocks: {:?}", modified_blocks);
 
         // Create backup of original files before overwriting
@@ -664,8 +786,12 @@ pub fn save_zone_system(
             // Skip unmodified blocks - only write files that have been changed
             if !block_data.modified {
                 skipped_blocks += 1;
-                log::debug!("[SaveSystem] Skipping unmodified block {}_{} ({} objects)",
-                    block_data.block_x, block_data.block_y, block_data.block.total_objects());
+                log::debug!(
+                    "[SaveSystem] Skipping unmodified block {}_{} ({} objects)",
+                    block_data.block_x,
+                    block_data.block_y,
+                    block_data.block.total_objects()
+                );
                 continue;
             }
 
@@ -679,8 +805,12 @@ pub fn save_zone_system(
                     stats.blocks_exported += 1;
                     stats.bytes_written += size;
                     stats.total_objects += block_data.block.total_objects();
-                    log::info!("[SaveSystem] Exported {} ({} bytes, {} objects)",
-                        file_name, size, block_data.block.total_objects());
+                    log::info!(
+                        "[SaveSystem] Exported {} ({} bytes, {} objects)",
+                        file_name,
+                        size,
+                        block_data.block.total_objects()
+                    );
                 }
                 Err(e) => {
                     stats.blocks_failed += 1;
@@ -696,15 +826,24 @@ pub fn save_zone_system(
 
         // Update save status
         let any_exports = stats.blocks_exported > 0 || terrain_blocks_written > 0;
-        if stats.blocks_failed == 0 && terrain_blocks_failed == 0 && errors.is_empty() && any_exports {
-            let result = SaveResult::success(stats.blocks_exported + terrain_blocks_written, stats.total_objects);
+        if stats.blocks_failed == 0
+            && terrain_blocks_failed == 0
+            && errors.is_empty()
+            && any_exports
+        {
+            let result = SaveResult::success(
+                stats.blocks_exported + terrain_blocks_written,
+                stats.total_objects,
+            );
             log::info!("[SaveSystem] {}", result.message());
             save_status.set_complete(result);
-            
+
             // Mark zone as unmodified
             map_editor_state.is_modified = false;
         } else if !any_exports {
-            let result = SaveResult::failure("No blocks were exported (no IFO/water/terrain changes detected)".to_string());
+            let result = SaveResult::failure(
+                "No blocks were exported (no IFO/water/terrain changes detected)".to_string(),
+            );
             log::error!("[SaveSystem] {}", result.message());
             save_status.set_complete(result);
         } else {
@@ -746,10 +885,10 @@ fn update_existing_object(
     let Some(block_ref) = export_data.blocks[index].as_mut() else {
         return false;
     };
-    
+
     // Mark block as modified since we're updating an object
     block_ref.modified = true;
-    
+
     // Use ifo_object_id as direct index into the appropriate list
     // This is the unique identifier for objects within their type-specific list
     match zone_object {
@@ -760,8 +899,12 @@ fn update_existing_object(
                 obj.position = new_ifo_object.position;
                 obj.rotation = new_ifo_object.rotation;
                 obj.scale = new_ifo_object.scale;
-                log::debug!("[SaveSystem] Updated deco_object[{}] in block ({}, {})",
-                    ifo_object_id, block_x, block_y);
+                log::debug!(
+                    "[SaveSystem] Updated deco_object[{}] in block ({}, {})",
+                    ifo_object_id,
+                    block_x,
+                    block_y
+                );
                 return true;
             }
         }
@@ -772,8 +915,12 @@ fn update_existing_object(
                 obj.position = new_ifo_object.position;
                 obj.rotation = new_ifo_object.rotation;
                 obj.scale = new_ifo_object.scale;
-                log::debug!("[SaveSystem] Updated cnst_object[{}] in block ({}, {})",
-                    ifo_object_id, block_x, block_y);
+                log::debug!(
+                    "[SaveSystem] Updated cnst_object[{}] in block ({}, {})",
+                    ifo_object_id,
+                    block_x,
+                    block_y
+                );
                 return true;
             }
         }
@@ -789,8 +936,12 @@ fn update_existing_object(
                     evt_obj.quest_trigger_name = event.quest_trigger_name.clone();
                     evt_obj.script_function_name = event.script_function_name.clone();
                 }
-                log::debug!("[SaveSystem] Updated event_object[{}] in block ({}, {})",
-                    ifo_object_id, block_x, block_y);
+                log::debug!(
+                    "[SaveSystem] Updated event_object[{}] in block ({}, {})",
+                    ifo_object_id,
+                    block_x,
+                    block_y
+                );
                 return true;
             }
         }
@@ -805,8 +956,12 @@ fn update_existing_object(
                 if let Some(warp) = warp_object {
                     warp_obj.object.warp_id = warp.warp_id.get();
                 }
-                log::debug!("[SaveSystem] Updated warp_object[{}] in block ({}, {})",
-                    ifo_object_id, block_x, block_y);
+                log::debug!(
+                    "[SaveSystem] Updated warp_object[{}] in block ({}, {})",
+                    ifo_object_id,
+                    block_x,
+                    block_y
+                );
                 return true;
             }
         }
@@ -817,8 +972,12 @@ fn update_existing_object(
                 sound_obj.object.position = new_ifo_object.position;
                 sound_obj.object.rotation = new_ifo_object.rotation;
                 sound_obj.object.scale = new_ifo_object.scale;
-                log::debug!("[SaveSystem] Updated sound_object[{}] in block ({}, {})",
-                    ifo_object_id, block_x, block_y);
+                log::debug!(
+                    "[SaveSystem] Updated sound_object[{}] in block ({}, {})",
+                    ifo_object_id,
+                    block_x,
+                    block_y
+                );
                 return true;
             }
         }
@@ -829,8 +988,12 @@ fn update_existing_object(
                 effect_obj.object.position = new_ifo_object.position;
                 effect_obj.object.rotation = new_ifo_object.rotation;
                 effect_obj.object.scale = new_ifo_object.scale;
-                log::debug!("[SaveSystem] Updated effect_object[{}] in block ({}, {})",
-                    ifo_object_id, block_x, block_y);
+                log::debug!(
+                    "[SaveSystem] Updated effect_object[{}] in block ({}, {})",
+                    ifo_object_id,
+                    block_x,
+                    block_y
+                );
                 return true;
             }
         }
@@ -841,8 +1004,12 @@ fn update_existing_object(
                 obj.position = new_ifo_object.position;
                 obj.rotation = new_ifo_object.rotation;
                 obj.scale = new_ifo_object.scale;
-                log::debug!("[SaveSystem] Updated animated_object[{}] in block ({}, {})",
-                    ifo_object_id, block_x, block_y);
+                log::debug!(
+                    "[SaveSystem] Updated animated_object[{}] in block ({}, {})",
+                    ifo_object_id,
+                    block_x,
+                    block_y
+                );
                 return true;
             }
         }
@@ -851,10 +1018,15 @@ fn update_existing_object(
             return false;
         }
     }
-    
+
     // Object index out of bounds for this type list
-    log::warn!("[SaveSystem] ifo_object_id {} out of bounds for {:?} in block ({}, {})",
-        ifo_object_id, zone_object, block_x, block_y);
+    log::warn!(
+        "[SaveSystem] ifo_object_id {} out of bounds for {:?} in block ({}, {})",
+        ifo_object_id,
+        zone_object,
+        block_x,
+        block_y
+    );
     false
 }
 
@@ -862,12 +1034,15 @@ fn update_existing_object(
 fn create_backup(zone_path: &PathBuf) -> std::io::Result<()> {
     // Check if the zone path exists on the real filesystem
     if !zone_path.exists() {
-        log::warn!("[SaveSystem] Zone path does not exist on filesystem: {:?}", zone_path);
+        log::warn!(
+            "[SaveSystem] Zone path does not exist on filesystem: {:?}",
+            zone_path
+        );
         return Ok(()); // Skip backup if path doesn't exist
     }
 
     let backup_dir = zone_path.join("backup");
-    
+
     // Create backup directory if it doesn't exist
     if !backup_dir.exists() {
         std::fs::create_dir_all(&backup_dir)?;
@@ -883,8 +1058,11 @@ fn create_backup(zone_path: &PathBuf) -> std::io::Result<()> {
     for entry in std::fs::read_dir(zone_path)? {
         let entry = entry?;
         let path = entry.path();
-        
-        if path.extension().map_or(false, |ext| ext.eq_ignore_ascii_case("ifo")) {
+
+        if path
+            .extension()
+            .map_or(false, |ext| ext.eq_ignore_ascii_case("ifo"))
+        {
             let file_name = path.file_name().unwrap();
             let backup_path = timestamped_backup_dir.join(file_name);
             std::fs::copy(&path, &backup_path)?;
@@ -893,7 +1071,11 @@ fn create_backup(zone_path: &PathBuf) -> std::io::Result<()> {
     }
 
     if copied_count > 0 {
-        log::info!("[SaveSystem] Created backup of {} IFO files in {:?}", copied_count, timestamped_backup_dir);
+        log::info!(
+            "[SaveSystem] Created backup of {} IFO files in {:?}",
+            copied_count,
+            timestamped_backup_dir
+        );
     }
 
     Ok(())

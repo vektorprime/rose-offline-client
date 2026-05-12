@@ -1,5 +1,5 @@
 use bevy::ecs::query::QueryData;
-use bevy::prelude::{Assets, Entity, MessageWriter, Local, Query, Res, ResMut, With};
+use bevy::prelude::{Assets, Entity, Local, MessageWriter, Query, Res, ResMut, With};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_data::SkillId;
@@ -52,20 +52,18 @@ fn ui_add_skill_tree_slot(
             .response;
     };
 
-    let learned_level = if let Some((_, _, level)) = player
-        .1
-        .find_skill_level(&game_data.skills, base_skill_id)
-    {
-        if level < skill.level {
-            None
-        } else if skill.limit_level > 0 {
-            Some(level.min(skill.limit_level))
+    let learned_level =
+        if let Some((_, _, level)) = player.1.find_skill_level(&game_data.skills, base_skill_id) {
+            if level < skill.level {
+                None
+            } else if skill.limit_level > 0 {
+                Some(level.min(skill.limit_level))
+            } else {
+                Some(level)
+            }
         } else {
-            Some(level)
-        }
-    } else {
-        None
-    };
+            None
+        };
 
     let skill_data = game_data.skills.get_skill(
         SkillId::new((skill.id + learned_level.unwrap_or(skill.level).max(1) - 1) as u16).unwrap(),
@@ -160,7 +158,10 @@ pub fn ui_skill_tree_system(
     mut ui_state: Local<UiStateSkillTree>,
     mut ui_state_windows: ResMut<UiStateWindows>,
     mut ui_sound_events: MessageWriter<UiSoundEvent>,
-    mut query_player: Query<(Entity, &CharacterInfo, &SkillList, &SkillPoints), With<PlayerCharacter>>,
+    mut query_player: Query<
+        (Entity, &CharacterInfo, &SkillList, &SkillPoints),
+        With<PlayerCharacter>,
+    >,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,

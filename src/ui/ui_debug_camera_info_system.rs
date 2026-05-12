@@ -25,7 +25,6 @@ pub fn ui_debug_camera_info_system(
     egui::Window::new("Camera")
         .open(&mut ui_state_debug_windows.camera_info_open)
         .show(egui_context.ctx_mut().unwrap(), |ui| {
-
             egui::Grid::new("camera_info_grid")
                 .num_columns(2)
                 .show(ui, |ui| {

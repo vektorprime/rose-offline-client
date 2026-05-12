@@ -1,6 +1,6 @@
 use bevy::prelude::{Query, ResMut};
-use bevy_post_process::bloom::Bloom;
 use bevy_egui::{egui, EguiContexts};
+use bevy_post_process::bloom::Bloom;
 
 use crate::{render::ZoneLighting, ui::UiStateDebugWindows};
 

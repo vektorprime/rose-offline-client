@@ -32,15 +32,23 @@ widget_to_rect! { DrawText }
 
 impl LoadWidget for DrawText {
     fn load_widget(&mut self, _ui_resources: &UiResources) {
-        log::trace!("[DRAWTEXT LOAD] Loading DrawText widget: id={}, name='{}', text='{}'",
-            self.id, self.name, self.text);
+        log::trace!(
+            "[DRAWTEXT LOAD] Loading DrawText widget: id={}, name='{}', text='{}'",
+            self.id,
+            self.name,
+            self.text
+        );
     }
 }
 
 impl DrawWidget for DrawText {
     fn draw_widget(&self, ui: &mut egui::Ui, bindings: &mut DataBindings) {
-        log::trace!("[DRAWTEXT DRAW] Drawing DrawText widget: id={}, name='{}', text='{}'",
-            self.id, self.name, self.text);
+        log::trace!(
+            "[DRAWTEXT DRAW] Drawing DrawText widget: id={}, name='{}', text='{}'",
+            self.id,
+            self.name,
+            self.text
+        );
 
         if !bindings.get_visible(self.id) {
             return;

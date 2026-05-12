@@ -4,9 +4,10 @@ use std::path::Path;
 
 use rose_data::ZoneId;
 use rose_offline_client::{
-    load_config, run_game, run_map_editor, run_model_viewer, run_zone_viewer, Config, FilesystemDeviceConfig,
-    SystemsConfig,
+    load_config,
     logging::{init_session_logging, LoggingConfig, LoggingGuard},
+    run_game, run_map_editor, run_model_viewer, run_zone_viewer, Config, FilesystemDeviceConfig,
+    SystemsConfig,
 };
 
 fn main() {
@@ -278,7 +279,7 @@ fn main() {
     }
 
     println!("Determining which mode to run...");
-    
+
     // Determine mode name for logging
     let mode = if matches.is_present("model-viewer") {
         "ModelViewer"
@@ -289,17 +290,17 @@ fn main() {
     } else {
         "Game"
     };
-    
+
     // Initialize session-based logging
     // The guard must be kept alive for the duration of the application
     let _logging_guard = init_session_logging(
-        mode,
-        None, // Use default logging config
+        mode, None, // Use default logging config
         None, // No additional session config
-    ).expect("Failed to initialize logging");
-    
+    )
+    .expect("Failed to initialize logging");
+
     log::info!("[LOGGING] Session logging initialized for mode: {}", mode);
-    
+
     if matches.is_present("model-viewer") {
         println!("Running in model viewer mode");
         run_model_viewer(&config);

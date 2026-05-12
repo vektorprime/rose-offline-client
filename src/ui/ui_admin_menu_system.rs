@@ -1,6 +1,6 @@
 use bevy::{
-    prelude::{ButtonInput, KeyCode, Local, Res, ResMut, Resource},
     ecs::system::SystemParam,
+    prelude::{ButtonInput, KeyCode, Local, Res, ResMut, Resource},
 };
 use bevy_egui::{egui, EguiContexts};
 use regex::Regex;
@@ -18,7 +18,7 @@ use crate::{
 #[derive(Resource)]
 pub struct UiStateAdminMenu {
     pub admin_menu_open: bool,
-    
+
     // Input fields
     pub tp_player_name: String,
     pub announce_message: String,
@@ -32,17 +32,17 @@ pub struct UiStateAdminMenu {
     pub item_type: String,
     pub item_id: String,
     pub item_qty: String,
-    
+
     // Toggle states
     pub god_mode: bool,
     pub ghost_mode: bool,
-    
+
     // Item popup state
     pub show_item_popup: bool,
     pub selected_item_type: ItemType,
     pub item_search_filter: String,
     filtered_items: Vec<u16>,
-    
+
     // Skill popup state
     pub show_skill_popup: bool,
     pub skill_search_filter: String,
@@ -105,7 +105,7 @@ pub fn ui_admin_menu_system(
     }
 
     let ctx = egui_context.ctx_mut().unwrap();
-    
+
     egui::Window::new("Admin Menu (F10)")
         .default_width(350.0)
         .resizable(true)
@@ -113,12 +113,14 @@ pub fn ui_admin_menu_system(
             // Display current ping if available
             if let Some(ping_ms) = ping_state.last_ping_ms {
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(format!("Ping: {} ms", ping_ms))
-                        .color(egui::Color32::from_rgb(100, 255, 100)));
+                    ui.label(
+                        egui::RichText::new(format!("Ping: {} ms", ping_ms))
+                            .color(egui::Color32::from_rgb(100, 255, 100)),
+                    );
                 });
                 ui.separator();
             }
-            
+
             // === Character Section ===
             ui.collapsing("Character", |ui| {
                 ui.horizontal(|ui| {
@@ -131,7 +133,7 @@ pub fn ui_admin_menu_system(
                         ui_state_admin_menu.ghost_mode = !ui_state_admin_menu.ghost_mode;
                     }
                 });
-                
+
                 ui.horizontal(|ui| {
                     if ui.button("Heal").clicked() {
                         send_command(&game_connection, "/heal");
@@ -140,15 +142,15 @@ pub fn ui_admin_menu_system(
                         send_command(&game_connection, "/revive");
                     }
                 });
-                
+
                 ui.horizontal(|ui| {
                     if ui.button("Save").clicked() {
                         send_command(&game_connection, "/save");
                     }
                 });
-                
+
                 ui.separator();
-                
+
                 // Speed setting
                 ui.horizontal(|ui| {
                     ui.label("Speed:");
@@ -160,7 +162,7 @@ pub fn ui_admin_menu_system(
                         }
                     }
                 });
-                
+
                 // Money setting
                 ui.horizontal(|ui| {
                     ui.label("Money:");
@@ -173,7 +175,7 @@ pub fn ui_admin_menu_system(
                     }
                 });
             });
-            
+
             // === Teleportation Section ===
             ui.collapsing("Teleportation", |ui| {
                 // Teleport to player
@@ -187,7 +189,7 @@ pub fn ui_admin_menu_system(
                         }
                     }
                 });
-                
+
                 // Map move to zone
                 ui.horizontal(|ui| {
                     ui.label("Zone ID:");
@@ -216,12 +218,12 @@ pub fn ui_admin_menu_system(
                         send_command(&game_connection, "/zonelist");
                     }
                 });
-                
+
                 if ui.button("Where (Show Position)").clicked() {
                     send_command(&game_connection, "/where");
                 }
             });
-            
+
             // === Server Section ===
             ui.collapsing("Server", |ui| {
                 ui.horizontal(|ui| {
@@ -232,7 +234,7 @@ pub fn ui_admin_menu_system(
                         send_command(&game_connection, "/who");
                     }
                 });
-                
+
                 ui.horizontal(|ui| {
                     if ui.button("Server Info").clicked() {
                         send_command(&game_connection, "/serverinfo");
@@ -241,9 +243,9 @@ pub fn ui_admin_menu_system(
                         send_command(&game_connection, "/ping");
                     }
                 });
-                
+
                 ui.separator();
-                
+
                 // Announce
                 ui.label("Announcement:");
                 ui.text_edit_multiline(&mut ui_state_admin_menu.announce_message);
@@ -257,21 +259,21 @@ pub fn ui_admin_menu_system(
                     }
                 });
             });
-            
+
             // === Spawning Section ===
             ui.collapsing("Spawning", |ui| {
                 // Item spawner popup button
                 if ui.button("📦 Give Item (Popup)").clicked() {
                     ui_state_admin_menu.show_item_popup = true;
                 }
-                
+
                 // Skill learn popup button
                 if ui.button("📜 Learn Skill (Popup)").clicked() {
                     ui_state_admin_menu.show_skill_popup = true;
                 }
-                
+
                 ui.separator();
-                
+
                 // Spawn monsters
                 ui.horizontal(|ui| {
                     ui.label("Monster ID:");
@@ -281,15 +283,20 @@ pub fn ui_admin_menu_system(
                 });
                 ui.horizontal(|ui| {
                     if ui.button("Spawn Monsters").clicked() {
-                        if !ui_state_admin_menu.mon_id.is_empty() && !ui_state_admin_menu.mon_count.is_empty() {
-                            let cmd = format!("/mon {} {}", ui_state_admin_menu.mon_id, ui_state_admin_menu.mon_count);
+                        if !ui_state_admin_menu.mon_id.is_empty()
+                            && !ui_state_admin_menu.mon_count.is_empty()
+                        {
+                            let cmd = format!(
+                                "/mon {} {}",
+                                ui_state_admin_menu.mon_id, ui_state_admin_menu.mon_count
+                            );
                             send_command(&game_connection, &cmd);
                         }
                     }
                 });
-                
+
                 ui.separator();
-                
+
                 // Give items (manual entry)
                 ui.label("Manual Item Entry:");
                 ui.horizontal(|ui| {
@@ -304,8 +311,13 @@ pub fn ui_admin_menu_system(
                 });
                 ui.horizontal(|ui| {
                     if ui.button("Give Item").clicked() {
-                        if !ui_state_admin_menu.item_type.is_empty() && !ui_state_admin_menu.item_id.is_empty() {
-                            let mut cmd = format!("/item {} {}", ui_state_admin_menu.item_type, ui_state_admin_menu.item_id);
+                        if !ui_state_admin_menu.item_type.is_empty()
+                            && !ui_state_admin_menu.item_id.is_empty()
+                        {
+                            let mut cmd = format!(
+                                "/item {} {}",
+                                ui_state_admin_menu.item_type, ui_state_admin_menu.item_id
+                            );
                             if !ui_state_admin_menu.item_qty.is_empty() {
                                 cmd.push_str(&format!(" {}", ui_state_admin_menu.item_qty));
                             }
@@ -314,7 +326,7 @@ pub fn ui_admin_menu_system(
                     }
                 });
             });
-            
+
             // === Quick Commands ===
             ui.collapsing("Quick Commands", |ui| {
                 ui.horizontal(|ui| {
@@ -327,7 +339,7 @@ pub fn ui_admin_menu_system(
                 });
             });
         });
-    
+
     // Render item spawner popup
     if ui_state_admin_menu.show_item_popup {
         render_item_spawner_popup(
@@ -338,7 +350,7 @@ pub fn ui_admin_menu_system(
             &game_connection,
         );
     }
-    
+
     // Render skill learn popup
     if ui_state_admin_menu.show_skill_popup {
         render_skill_learn_popup(
@@ -360,7 +372,7 @@ fn render_item_spawner_popup(
     game_connection: &Option<Res<GameConnection>>,
 ) {
     let mut show_popup = true;
-    
+
     egui::Window::new("Item Spawner")
         .default_width(500.0)
         .default_height(400.0)
@@ -378,7 +390,7 @@ fn render_item_spawner_popup(
                     (ItemType::Back, "Back"),
                     (ItemType::Jewellery, "Jewellery"),
                 ];
-                
+
                 for (item_type, label) in tabs_row1 {
                     let selected = ui_state.selected_item_type == item_type;
                     if ui.selectable_label(selected, label).clicked() {
@@ -387,7 +399,7 @@ fn render_item_spawner_popup(
                     }
                 }
             });
-            
+
             // Category tabs - Second row
             ui.horizontal(|ui| {
                 let tabs_row2 = [
@@ -399,7 +411,7 @@ fn render_item_spawner_popup(
                     (ItemType::Quest, "Quest"),
                     (ItemType::Vehicle, "Vehicle"),
                 ];
-                
+
                 for (item_type, label) in tabs_row2 {
                     let selected = ui_state.selected_item_type == item_type;
                     if ui.selectable_label(selected, label).clicked() {
@@ -408,9 +420,9 @@ fn render_item_spawner_popup(
                     }
                 }
             });
-            
+
             ui.separator();
-            
+
             // Search filter
             ui.horizontal(|ui| {
                 ui.label("Search:");
@@ -423,14 +435,14 @@ fn render_item_spawner_popup(
                     ui_state.filtered_items.clear();
                 }
             });
-            
+
             ui.separator();
-            
+
             // Update filtered items if needed
             if ui_state.filtered_items.is_empty() {
                 update_filtered_items(ui_state, game_data);
             }
-            
+
             // Scrollable item list
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::Grid::new("item_spawner_grid")
@@ -443,11 +455,12 @@ fn render_item_spawner_popup(
                         ui.label(egui::RichText::new("Name").strong());
                         ui.label(egui::RichText::new("Action").strong());
                         ui.end_row();
-                        
+
                         // Items
                         for &item_id in &ui_state.filtered_items {
-                            let item_reference = ItemReference::new(ui_state.selected_item_type, item_id as usize);
-                            
+                            let item_reference =
+                                ItemReference::new(ui_state.selected_item_type, item_id as usize);
+
                             if let Some(item_data) = game_data.items.get_base_item(item_reference) {
                                 // Icon
                                 if let Some(sprite) = ui_resources.get_sprite_by_index(
@@ -455,41 +468,45 @@ fn render_item_spawner_popup(
                                     item_data.icon_index as usize,
                                 ) {
                                     ui.add(
-                                        egui::Image::new((sprite.texture_id, egui::Vec2::new(32.0, 32.0)))
-                                            .uv(sprite.uv)
+                                        egui::Image::new((
+                                            sprite.texture_id,
+                                            egui::Vec2::new(32.0, 32.0),
+                                        ))
+                                        .uv(sprite.uv),
                                     );
                                 } else {
                                     ui.allocate_space(egui::Vec2::new(32.0, 32.0));
                                 }
-                                
+
                                 // ID
                                 ui.label(format!("{}", item_id));
-                                
+
                                 // Name
                                 ui.label(&item_data.name);
-                                
+
                                 // Spawn button
                                 if ui.button("Give").clicked() {
                                     if let Some(game_connection) = game_connection.as_ref() {
-                                        if let Some(item_type_id) = encode_item_type(ui_state.selected_item_type) {
-                                            let command = format!("/item {} {} 1", item_type_id, item_id);
+                                        if let Some(item_type_id) =
+                                            encode_item_type(ui_state.selected_item_type)
+                                        {
+                                            let command =
+                                                format!("/item {} {} 1", item_type_id, item_id);
                                             game_connection
                                                 .client_message_tx
-                                                .send(ClientMessage::Chat {
-                                                    text: command,
-                                                })
+                                                .send(ClientMessage::Chat { text: command })
                                                 .ok();
                                         }
                                     }
                                 }
-                                
+
                                 ui.end_row();
                             }
                         }
                     });
             });
         });
-    
+
     ui_state.show_item_popup = show_popup;
 }
 
@@ -506,7 +523,7 @@ fn update_filtered_items(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameDa
     } else {
         None
     };
-    
+
     ui_state.filtered_items = game_data
         .items
         .iter_items(ui_state.selected_item_type)
@@ -519,7 +536,9 @@ fn update_filtered_items(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameDa
         .filter_map(|(item_reference, item_data)| {
             // Filter out items with empty names or names that don't match filter
             if item_data.name.is_empty()
-                || !filter_name_re.as_ref().map_or(true, |re| re.is_match(&item_data.name))
+                || !filter_name_re
+                    .as_ref()
+                    .map_or(true, |re| re.is_match(&item_data.name))
             {
                 None
             } else {
@@ -529,7 +548,7 @@ fn update_filtered_items(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameDa
         .collect();
 }
 
-  /// Helper function to send a command to the server
+/// Helper function to send a command to the server
 fn send_command(game_connection: &Option<Res<GameConnection>>, command: &str) {
     if let Some(game_connection) = game_connection.as_ref() {
         game_connection
@@ -550,7 +569,7 @@ fn render_skill_learn_popup(
     game_connection: &Option<Res<GameConnection>>,
 ) {
     let mut show_popup = true;
-    
+
     egui::Window::new("Skill Learn")
         .default_width(500.0)
         .default_height(400.0)
@@ -558,7 +577,7 @@ fn render_skill_learn_popup(
         .open(&mut show_popup)
         .show(ctx, |ui| {
             ui.separator();
-            
+
             // Search filter
             ui.horizontal(|ui| {
                 ui.label("Search:");
@@ -571,14 +590,14 @@ fn render_skill_learn_popup(
                     ui_state.filtered_skills.clear();
                 }
             });
-            
+
             ui.separator();
-            
+
             // Update filtered skills if needed
             if ui_state.filtered_skills.is_empty() {
                 update_filtered_skills(ui_state, game_data);
             }
-            
+
             // Scrollable skill list
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::Grid::new("skill_learn_grid")
@@ -591,7 +610,7 @@ fn render_skill_learn_popup(
                         ui.label(egui::RichText::new("Name").strong());
                         ui.label(egui::RichText::new("Action").strong());
                         ui.end_row();
-                        
+
                         // Skills
                         for &skill_id in &ui_state.filtered_skills {
                             if let Some(skill_data) = game_data.skills.get_skill(skill_id) {
@@ -601,39 +620,40 @@ fn render_skill_learn_popup(
                                     skill_data.icon_number as usize,
                                 ) {
                                     ui.add(
-                                        egui::Image::new((sprite.texture_id, egui::Vec2::new(32.0, 32.0)))
-                                            .uv(sprite.uv)
+                                        egui::Image::new((
+                                            sprite.texture_id,
+                                            egui::Vec2::new(32.0, 32.0),
+                                        ))
+                                        .uv(sprite.uv),
                                     );
                                 } else {
                                     ui.allocate_space(egui::Vec2::new(32.0, 32.0));
                                 }
-                                
+
                                 // ID
                                 ui.label(format!("{}", skill_id.get()));
-                                
+
                                 // Name
                                 ui.label(&skill_data.name);
-                                
+
                                 // Learn/Remove button
                                 if ui.button("Learn").clicked() {
                                     if let Some(game_connection) = game_connection.as_ref() {
                                         let command = format!("/skill add {}", skill_id.get());
                                         game_connection
                                             .client_message_tx
-                                            .send(ClientMessage::Chat {
-                                                text: command,
-                                            })
+                                            .send(ClientMessage::Chat { text: command })
                                             .ok();
                                     }
                                 }
-                                
+
                                 ui.end_row();
                             }
                         }
                     });
             });
         });
-    
+
     ui_state.show_skill_popup = show_popup;
 }
 
@@ -650,14 +670,16 @@ fn update_filtered_skills(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameD
     } else {
         None
     };
-    
+
     ui_state.filtered_skills = game_data
         .skills
         .iter()
         .filter(|skill_data| {
             // Filter out skills with empty names or names that don't match filter
             if skill_data.name.is_empty()
-                || !filter_name_re.as_ref().map_or(true, |re| re.is_match(&skill_data.name))
+                || !filter_name_re
+                    .as_ref()
+                    .map_or(true, |re| re.is_match(&skill_data.name))
             {
                 false
             } else {

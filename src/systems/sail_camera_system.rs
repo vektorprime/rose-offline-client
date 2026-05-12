@@ -18,8 +18,8 @@ pub fn sail_camera_system(
     }
 
     for mut orbit_camera in camera_query.iter_mut() {
-        let target_distance = (11.5 + (boat.speed / boat.max_speed.max(0.1)).clamp(0.0, 1.0) * 6.5)
-            .clamp(10.0, 22.0);
+        let target_distance =
+            (11.5 + (boat.speed / boat.max_speed.max(0.1)).clamp(0.0, 1.0) * 6.5).clamp(10.0, 22.0);
         orbit_camera.follow_distance = orbit_camera.follow_distance.clamp(10.0, 22.0);
 
         if !mouse_buttons.pressed(MouseButton::Right) {
@@ -42,4 +42,3 @@ pub fn sail_camera_system(
         orbit_camera.follow_offset.y = 1.75;
     }
 }
-

@@ -407,7 +407,7 @@ pub fn command_system(
         let vehicle_active_motion_completed = vehicle_active_motion
             .as_ref()
             .map_or(true, |animation| animation.completed());
-            
+
         // DIAGNOSTIC: Disabled - Log animation state for player characters
         // if player_character.is_some() {
         //     log::info!("[RESPAWN_CMD_DIAG] Player command: {:?}, next_command: {:?}, dead: {:?}",
@@ -415,7 +415,7 @@ pub fn command_system(
         //     log::info!("[RESPAWN_CMD_DIAG] Animation completed: {}, requires_anim_complete: {}",
         //         active_motion_completed, requires_animation_complete);
         // }
-        
+
         if !next_command.is_die()
             && requires_animation_complete
             && ((vehicle.is_none() && !active_motion_completed)
@@ -505,7 +505,8 @@ pub fn command_system(
                             update_active_motion(
                                 &mut commands.entity(active_motion_entity),
                                 &mut active_motion,
-                                asset_server.load(motion_data.path.path().to_string_lossy().into_owned()),
+                                asset_server
+                                    .load(motion_data.path.path().to_string_lossy().into_owned()),
                                 1.0,
                                 false,
                             );
@@ -536,7 +537,8 @@ pub fn command_system(
                             update_active_motion(
                                 &mut commands.entity(active_motion_entity),
                                 &mut active_motion,
-                                asset_server.load(motion_data.path.path().to_string_lossy().into_owned()),
+                                asset_server
+                                    .load(motion_data.path.path().to_string_lossy().into_owned()),
                                 1.0,
                                 true,
                             );
@@ -806,7 +808,9 @@ pub fn command_system(
             &mut Command::Attack(CommandAttack {
                 target: target_entity,
             }) => {
-                let target = if let Ok((target_entity, target_position, target_dead)) = query_attack_target.get(target_entity) {
+                let target = if let Ok((target_entity, target_position, target_dead)) =
+                    query_attack_target.get(target_entity)
+                {
                     (target_entity, target_position, target_dead)
                 } else {
                     // Invalid target, stop attacking
@@ -835,8 +839,7 @@ pub fn command_system(
                         || (vehicle.is_some() && vehicle_attack_animation.is_some())
                     {
                         // Update rotation to ensure facing enemy
-                        facing_direction
-                            .set_desired_vector(target.1.position - position.position);
+                        facing_direction.set_desired_vector(target.1.position - position.position);
 
                         // Update command state
                         *command = Command::with_attack(target_entity);
@@ -1017,7 +1020,8 @@ pub fn command_system(
                 if let Some(skill_data) = game_data.skills.get_skill(skill_id) {
                     let (target_position, target_entity) = match skill_target {
                         Some(CommandCastSkillTarget::Entity(target_entity)) => {
-                            let target = if let Ok((target_entity, target_position, target_dead)) = query_attack_target.get(target_entity)
+                            let target = if let Ok((target_entity, target_position, target_dead)) =
+                                query_attack_target.get(target_entity)
                             {
                                 (target_entity, target_position, target_dead)
                             } else {
@@ -1073,7 +1077,8 @@ pub fn command_system(
                             update_active_motion(
                                 &mut commands.entity(active_motion_entity),
                                 &mut active_motion,
-                                asset_server.load(motion_data.path.path().to_string_lossy().into_owned()),
+                                asset_server
+                                    .load(motion_data.path.path().to_string_lossy().into_owned()),
                                 skill_data.casting_motion_speed,
                                 false,
                             );

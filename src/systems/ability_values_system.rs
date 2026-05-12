@@ -69,7 +69,8 @@ pub fn ability_values_system(
 
     query_set
         .p1()
-        .iter_mut().for_each(|(mut ability_values, npc, status_effects)| {
+        .iter_mut()
+        .for_each(|(mut ability_values, npc, status_effects)| {
             // Update NPC ability values
             *ability_values = game_data
                 .ability_value_calculator

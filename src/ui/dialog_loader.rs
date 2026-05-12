@@ -1,5 +1,5 @@
 use bevy::{
-    asset::{AssetId, AssetLoader, io::Reader, LoadContext},
+    asset::{io::Reader, AssetId, AssetLoader, LoadContext},
     prelude::{AssetEvent, Assets, Local, MessageReader, Res, ResMut, TypePath},
 };
 
@@ -28,7 +28,7 @@ impl AssetLoader for DialogLoader {
     ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
             let path = load_context.path().path().to_string_lossy().to_string();
-            
+
             // SAFETY: This is only for diagnostic logging during single-threaded asset loading
             unsafe {
                 DIALOG_LOAD_COUNT += 1;
@@ -40,23 +40,23 @@ impl AssetLoader for DialogLoader {
                     );
                 }
             }
-            
+
             let mut bytes = Vec::new();
             use bevy::tasks::futures_lite::AsyncReadExt;
             reader.read_to_end(&mut bytes).await?;
-            
+
             // SAFETY: Diagnostic logging
             unsafe {
                 DIALOG_LOAD_BYTES += bytes.len();
             }
-            
+
             log::debug!(
                 "[DIALOG LOADER] Loading dialog: {}, size: {} bytes (load count: {})",
                 path,
                 bytes.len(),
                 unsafe { DIALOG_LOAD_COUNT }
             );
-            
+
             let bytes_str = std::str::from_utf8(&bytes)?;
             let dialog: Dialog = quick_xml::de::from_str(bytes_str)?;
             Ok(dialog)
@@ -144,15 +144,15 @@ pub fn load_dialog_sprites_system(
         //log::info!("[DIALOG SYSTEM] loaded_required_textures=true, processing {} pending dialogs", load_state.pending_dialogs.len());
         for handle in load_state.pending_dialogs.drain(..) {
             if let Some(dialog) = assets.get_mut(handle) {
-               // log::info!("[DIALOG SYSTEM] Loading widgets for dialog with {} widgets", dialog.widgets.len());
-                
+                // log::info!("[DIALOG SYSTEM] Loading widgets for dialog with {} widgets", dialog.widgets.len());
+
                 // Log each widget type before loading
                 for (index, widget) in dialog.widgets.iter().enumerate() {
                     let discriminant = std::mem::discriminant(widget);
                     // log::debug!("[DIALOG SYSTEM]   Widget {}/{}: type={:?}",
-                     //   index + 1, dialog.widgets.len(), discriminant);
+                    //   index + 1, dialog.widgets.len(), discriminant);
                 }
-                
+
                 dialog.widgets.load_widget(&ui_resources);
                 dialog.loaded = true;
                 //log::info!("[DIALOG SYSTEM] Dialog loaded and marked as loaded: {:?}", handle);

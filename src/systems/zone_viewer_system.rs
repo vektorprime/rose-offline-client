@@ -1,7 +1,7 @@
 use bevy::{
     log::info,
     math::Vec3,
-    prelude::{Camera3d, Commands, Entity, Query, ResMut, With, GlobalTransform, Transform},
+    prelude::{Camera3d, Commands, Entity, GlobalTransform, Query, ResMut, Transform, With},
 };
 
 use crate::{
@@ -43,11 +43,7 @@ pub fn zone_viewer_enter_system(
             .entity(entity)
             .remove::<OrbitCamera>()
             .remove::<CameraAnimation>()
-            .insert(FreeCamera::new(
-                camera_position,
-                camera_yaw,
-                camera_pitch,
-            ));
+            .insert(FreeCamera::new(camera_position, camera_yaw, camera_pitch));
         let _ = entity; // Suppress unused variable warning
     }
 
@@ -80,12 +76,15 @@ fn calculate_look_direction(yaw: f32, pitch: f32) -> String {
 
 /// Diagnostic system to log camera state every frame for debugging black screen issues
 pub fn debug_camera_render_state_system(
-    query_cameras: Query<(Entity, &Transform, &GlobalTransform, Option<&FreeCamera>), With<Camera3d>>,
+    query_cameras: Query<
+        (Entity, &Transform, &GlobalTransform, Option<&FreeCamera>),
+        With<Camera3d>,
+    >,
 ) {
     for (entity, transform, global_transform, free_cam) in query_cameras.iter() {
         let translation = global_transform.translation();
         let forward = global_transform.forward();
-        
+
         //log::info!("[RENDER DEBUG] Camera Entity: {:?}", entity);
         //log::info!("[RENDER DEBUG]   Local Position: {:.2}, {:.2}, {:.2}",
         //    transform.translation.x, transform.translation.y, transform.translation.z);
@@ -93,23 +92,23 @@ pub fn debug_camera_render_state_system(
         //    translation.x, translation.y, translation.z);
         //log::info!("[RENDER DEBUG]   Forward Direction: {:.2}, {:.2}, {:.2}",
         //    forward.x, forward.y, forward.z);
-        
+
         if let Some(_cam) = free_cam {
             //log::info!("[RENDER DEBUG]   FreeCamera component present");
         }
-        
+
         // Check if camera is at origin (common black screen cause)
         if translation.length() < 0.01 {
             //log::warn!("[RENDER DEBUG] WARNING: Camera is at or near origin! This may cause black screen.");
         }
-        
+
         // Check if camera is looking at origin
         let to_origin = -translation;
         let alignment = forward.dot(to_origin.normalize());
         if alignment > 0.9 {
             //log::info!("[RENDER DEBUG] Camera is looking toward origin (alignment: {:.2})", alignment);
         }
-        
+
         //log::info!("[RENDER DEBUG] ===========================================");
         let _ = entity; // Suppress unused variable warning
     }

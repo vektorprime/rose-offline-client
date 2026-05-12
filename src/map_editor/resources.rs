@@ -1,5 +1,5 @@
 //! Map Editor Resources
-//! 
+//!
 //! This module contains the resource definitions for the map editor system.
 
 use bevy::prelude::*;
@@ -28,7 +28,7 @@ impl DuplicateSelectedEvent {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Create a new duplicate event with custom offset
     pub fn with_offset(offset: Vec3) -> Self {
         Self { offset }
@@ -40,37 +40,37 @@ impl DuplicateSelectedEvent {
 pub struct MapEditorState {
     /// Whether the map editor is enabled
     pub enabled: bool,
-    
+
     /// Currently selected entities (multi-select support)
     pub selected_entities: HashSet<Entity>,
-    
+
     /// Current editor mode
     pub editor_mode: EditorMode,
-    
+
     /// Transform space for gizmos
     pub transform_space: TransformSpace,
-    
+
     /// Whether to snap to grid
     pub snap_to_grid: bool,
-    
+
     /// Grid size for snapping
     pub grid_size: f32,
-    
+
     /// Whether to show the grid
     pub show_grid: bool,
-    
+
     /// Whether the map has unsaved modifications
     pub is_modified: bool,
-    
+
     /// Search filter for model browser
     pub model_browser_search: String,
-    
+
     /// Filter for hierarchy panel
     pub hierarchy_filter: String,
-    
+
     /// Undo stack for editor actions
     pub undo_stack: Vec<EditorAction>,
-    
+
     /// Redo stack for editor actions
     pub redo_stack: Vec<EditorAction>,
 }
@@ -93,22 +93,22 @@ impl MapEditorState {
             redo_stack: Vec::new(),
         }
     }
-    
+
     /// Clear all selected entities
     pub fn clear_selection(&mut self) {
         self.selected_entities.clear();
     }
-    
+
     /// Add an entity to the selection
     pub fn select_entity(&mut self, entity: Entity) {
         self.selected_entities.insert(entity);
     }
-    
+
     /// Remove an entity from the selection
     pub fn deselect_entity(&mut self, entity: Entity) {
         self.selected_entities.remove(&entity);
     }
-    
+
     /// Toggle entity selection
     pub fn toggle_entity_selection(&mut self, entity: Entity) {
         if self.selected_entities.contains(&entity) {
@@ -117,68 +117,68 @@ impl MapEditorState {
             self.selected_entities.insert(entity);
         }
     }
-    
+
     /// Check if an entity is selected
     pub fn is_entity_selected(&self, entity: Entity) -> bool {
         self.selected_entities.contains(&entity)
     }
-    
+
     /// Get the number of selected entities
     pub fn selection_count(&self) -> usize {
         self.selected_entities.len()
     }
-    
+
     /// Get the first selected entity (if any)
     pub fn first_selected(&self) -> Option<Entity> {
         self.selected_entities.iter().next().copied()
     }
-    
+
     /// Push an action to the undo stack and clear redo stack
     pub fn push_action(&mut self, action: EditorAction) {
         self.undo_stack.push(action);
-        
+
         // Limit undo history size
         if self.undo_stack.len() > MAX_UNDO_HISTORY {
             self.undo_stack.remove(0);
         }
-        
+
         // Clear redo stack when new action is performed
         self.redo_stack.clear();
-        
+
         // Mark as modified
         self.is_modified = true;
     }
-    
+
     /// Pop an action from the undo stack
     pub fn pop_undo(&mut self) -> Option<EditorAction> {
         self.undo_stack.pop()
     }
-    
+
     /// Push an action to the redo stack
     pub fn push_redo(&mut self, action: EditorAction) {
         self.redo_stack.push(action);
-        
+
         // Limit redo history size
         if self.redo_stack.len() > MAX_UNDO_HISTORY {
             self.redo_stack.remove(0);
         }
     }
-    
+
     /// Pop an action from the redo stack
     pub fn pop_redo(&mut self) -> Option<EditorAction> {
         self.redo_stack.pop()
     }
-    
+
     /// Check if undo is available
     pub fn can_undo(&self) -> bool {
         !self.undo_stack.is_empty()
     }
-    
+
     /// Check if redo is available
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
     }
-    
+
     /// Clear all undo/redo history
     pub fn clear_history(&mut self) {
         self.undo_stack.clear();
@@ -196,9 +196,7 @@ pub enum EditorAction {
         new_transform: Transform,
     },
     /// Entity was added
-    AddEntity {
-        entity: Entity,
-    },
+    AddEntity { entity: Entity },
     /// Entity was deleted (stores data for recreation)
     DeleteEntity {
         entity: Entity,
@@ -222,9 +220,7 @@ pub enum EditorAction {
         entities: Vec<(Entity, Transform, String, String)>, // (entity, transform, entity_type, serialized_data)
     },
     /// Multiple entities were added
-    AddEntities {
-        entities: Vec<Entity>,
-    },
+    AddEntities { entities: Vec<Entity> },
 }
 
 /// Editor mode for the map editor
@@ -353,7 +349,13 @@ pub struct ModelInfo {
 
 impl ModelInfo {
     /// Create a new ModelInfo with basic information
-    pub fn new(id: u32, name: String, mesh_path: String, category: ModelCategory, part_count: usize) -> Self {
+    pub fn new(
+        id: u32,
+        name: String,
+        mesh_path: String,
+        category: ModelCategory,
+        part_count: usize,
+    ) -> Self {
         Self {
             id,
             name,
@@ -362,7 +364,7 @@ impl ModelInfo {
             part_count,
         }
     }
-    
+
     /// Get a short name for display (just the file name without extension)
     pub fn short_name(&self) -> &str {
         // Extract just the file name from the path
@@ -392,9 +394,12 @@ pub struct AvailableModels {
 impl AvailableModels {
     /// Get total count of all models
     pub fn total_count(&self) -> usize {
-        self.deco_models.len() + self.cnst_models.len() + self.event_models.len() + self.special_models.len()
+        self.deco_models.len()
+            + self.cnst_models.len()
+            + self.event_models.len()
+            + self.special_models.len()
     }
-    
+
     /// Get models for a specific category
     pub fn get_models(&self, category: ModelCategory) -> &[ModelInfo] {
         match category {
@@ -405,7 +410,7 @@ impl AvailableModels {
             ModelCategory::All => &[], // Use all_models() iterator instead
         }
     }
-    
+
     /// Get mutable models for a specific category
     pub fn get_models_mut(&mut self, category: ModelCategory) -> &mut Vec<ModelInfo> {
         match category {
@@ -416,13 +421,13 @@ impl AvailableModels {
             ModelCategory::All => &mut self.deco_models, // Fallback
         }
     }
-    
+
     /// Find a model by ID across all categories
     pub fn find_by_id(&self, id: u32, category: ModelCategory) -> Option<&ModelInfo> {
         let models = self.get_models(category);
         models.iter().find(|m| m.id == id)
     }
-    
+
     /// Check if any models are loaded
     pub fn is_empty(&self) -> bool {
         self.deco_models.is_empty()
@@ -467,7 +472,7 @@ impl CustomZonePath {
             zone_id,
         }
     }
-    
+
     /// Clear the custom path
     pub fn clear(&mut self) {
         self.path = None;
@@ -487,27 +492,27 @@ impl SelectedModel {
             pending_placement: false,
         }
     }
-    
+
     /// Select a model for placement
     pub fn select(&mut self, model: ModelInfo) {
         self.model = Some(model);
     }
-    
+
     /// Clear the selected model
     pub fn clear(&mut self) {
         self.model = None;
     }
-    
+
     /// Check if a model is selected
     pub fn is_selected(&self) -> bool {
         self.model.is_some()
     }
-    
+
     /// Toggle browser visibility
     pub fn toggle_browser(&mut self) {
         self.browser_visible = !self.browser_visible;
     }
-    
+
     /// Check if there's a pending placement and clear the flag
     pub fn take_pending_placement(&mut self) -> bool {
         let pending = self.pending_placement;
@@ -553,7 +558,7 @@ pub enum ZoneObjectType {
 }
 
 /// Resource to track deleted zone objects for save system
-/// 
+///
 /// When objects are deleted in the editor, they're removed from the Bevy world.
 /// The save system pre-populates from existing IFO data which still contains the deleted objects.
 /// This resource tracks deletions so the save system can remove them from the export data.
@@ -565,20 +570,27 @@ pub struct DeletedZoneObjects {
 
 impl DeletedZoneObjects {
     /// Add a deleted object to the tracking list
-    pub fn add(&mut self, block_x: u32, block_y: u32, ifo_object_id: usize, object_type: ZoneObjectType) {
-        self.objects.push((block_x, block_y, ifo_object_id, object_type));
+    pub fn add(
+        &mut self,
+        block_x: u32,
+        block_y: u32,
+        ifo_object_id: usize,
+        object_type: ZoneObjectType,
+    ) {
+        self.objects
+            .push((block_x, block_y, ifo_object_id, object_type));
     }
-    
+
     /// Clear all tracked deletions (call after successful save)
     pub fn clear(&mut self) {
         self.objects.clear();
     }
-    
+
     /// Check if there are any tracked deletions
     pub fn is_empty(&self) -> bool {
         self.objects.is_empty()
     }
-    
+
     /// Get the count of tracked deletions
     pub fn len(&self) -> usize {
         self.objects.len()

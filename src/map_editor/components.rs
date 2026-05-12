@@ -1,5 +1,5 @@
 //! Map Editor Components
-//! 
+//!
 //! This module contains component definitions for the map editor system.
 
 use bevy::prelude::*;

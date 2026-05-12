@@ -1,8 +1,6 @@
-use bevy::{
-    prelude::{
-        Changed, Commands, ViewVisibility, InheritedVisibility, Entity, GlobalTransform, MessageWriter, Query, Res,
-        Transform, Visibility,
-    },
+use bevy::prelude::{
+    Changed, Commands, Entity, GlobalTransform, InheritedVisibility, MessageWriter, Query, Res,
+    Transform, ViewVisibility, Visibility,
 };
 use rose_game_common::components::StatusEffects;
 
@@ -33,9 +31,7 @@ pub fn visible_status_effects_system(
                         continue;
                     }
 
-                    commands
-                        .entity(*visible_status_effect_entity)
-                        .despawn();
+                    commands.entity(*visible_status_effect_entity).despawn();
                     *visible_status_effect = None;
                 }
 
@@ -66,9 +62,7 @@ pub fn visible_status_effects_system(
                     }
                 }
             } else if let Some((_, visible_status_effect_entity)) = visible_status_effect.take() {
-                commands
-                    .entity(visible_status_effect_entity)
-                    .despawn();
+                commands.entity(visible_status_effect_entity).despawn();
             }
         }
     }

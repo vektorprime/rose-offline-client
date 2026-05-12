@@ -237,7 +237,11 @@ pub fn ui_create_clan_system(
 
         if ui_state.clan_slogan.is_empty() {
             message_box_events.write(MessageBoxEvent::Show {
-                message: game_data.client_strings.clan_create_error_slogan.as_str().into(),
+                message: game_data
+                    .client_strings
+                    .clan_create_error_slogan
+                    .as_str()
+                    .into(),
                 modal: true,
                 ok: None,
                 cancel: None,

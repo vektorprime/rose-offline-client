@@ -378,9 +378,7 @@ impl<'w> DragAndDropSlot<'w> {
 
                     let qty_rect = Rect::from_min_max(
                         egui::Pos2::new(
-                            content_rect.max.x
-                                - text_galley.rect.right()
-                                - self.quantity_margin,
+                            content_rect.max.x - text_galley.rect.right() - self.quantity_margin,
                             content_rect.min.y,
                         ),
                         egui::Pos2::new(
@@ -390,7 +388,11 @@ impl<'w> DragAndDropSlot<'w> {
                                 + text_galley.rect.height(),
                         ),
                     );
-                    ui.painter().rect_filled(qty_rect, egui::Rounding::same(0), Color32::from_rgba_unmultiplied(50, 50, 50, 200));
+                    ui.painter().rect_filled(
+                        qty_rect,
+                        egui::Rounding::same(0),
+                        Color32::from_rgba_unmultiplied(50, 50, 50, 200),
+                    );
 
                     ui.painter().add(Shape::galley(
                         egui::Pos2::new(

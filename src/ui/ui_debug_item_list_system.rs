@@ -297,8 +297,12 @@ pub fn ui_debug_item_list_system(
                         .is_equipment_item();
 
                     let mut row_index = 0;
-                    body.rows(45.0, ui_state_debug_item_list.filtered_items.len() + usize::from(is_equipment_item), |mut row| {
-                        if is_equipment_item && row_index == 0 {
+                    body.rows(
+                        45.0,
+                        ui_state_debug_item_list.filtered_items.len()
+                            + usize::from(is_equipment_item),
+                        |mut row| {
+                            if is_equipment_item && row_index == 0 {
                                 row.col(|_| {});
 
                                 row.col(|ui| {
@@ -366,8 +370,11 @@ pub fn ui_debug_item_list_system(
                                         item_data.icon_index as usize,
                                     ) {
                                         ui.add(
-                                            egui::Image::new((sprite.texture_id, egui::Vec2::new(40.0, 40.0)))
-                                                .uv(sprite.uv),
+                                            egui::Image::new((
+                                                sprite.texture_id,
+                                                egui::Vec2::new(40.0, 40.0),
+                                            ))
+                                            .uv(sprite.uv),
                                         )
                                         .on_hover_ui(
                                             |ui| {
@@ -375,8 +382,7 @@ pub fn ui_debug_item_list_system(
                                                     Item::from_item_data(item_data, 1)
                                                 {
                                                     let query = query_set.p1();
-                                                    let player_tooltip_data =
-                                                        query.single().ok();
+                                                    let player_tooltip_data = query.single().ok();
                                                     ui_add_item_tooltip(
                                                         ui,
                                                         &game_data,

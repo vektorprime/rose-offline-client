@@ -3,11 +3,11 @@
 //! This system validates that zone entities have the required components
 //! for rendering and helps diagnose black screen issues.
 
+use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::*;
-use bevy_mesh::{Mesh, Mesh3d};
 use bevy_camera::primitives::Aabb;
 use bevy_camera::visibility::Visibility;
-use bevy::pbr::MeshMaterial3d;
+use bevy_mesh::{Mesh, Mesh3d};
 
 use crate::components::{Zone, ZoneObject};
 use crate::resources::zone_debug_diagnostics::ZoneDebugDiagnostics;
@@ -53,11 +53,20 @@ impl RenderValidationStats {
         log::info!("Total entities checked: {}", self.total_entities_checked);
         log::info!("Entities with Mesh: {}", self.entities_with_mesh);
         log::info!("Entities with Material: {}", self.entities_with_material);
-        log::info!("Entities with Visibility: {}", self.entities_with_visibility);
+        log::info!(
+            "Entities with Visibility: {}",
+            self.entities_with_visibility
+        );
         log::info!("Entities with Transform: {}", self.entities_with_transform);
-        log::info!("Entities with GlobalTransform: {}", self.entities_with_global_transform);
-        log::info!("Entities failing validation: {}", self.entities_failing_validation);
-        
+        log::info!(
+            "Entities with GlobalTransform: {}",
+            self.entities_with_global_transform
+        );
+        log::info!(
+            "Entities failing validation: {}",
+            self.entities_failing_validation
+        );
+
         if !self.validation_failures_by_reason.is_empty() {
             log::warn!("\nValidation failures by reason:");
             for (reason, count) in &self.validation_failures_by_reason {
@@ -76,7 +85,18 @@ pub fn zone_render_validation_system(
     // Combined query for Zone entities
     zone_query: Query<(Entity, Option<&Children>), With<Zone>>,
     // Combined query for ZoneObject entities with all render components - using StandardMaterial
-    zone_object_query: Query<(Entity, Option<&Children>, Option<&Mesh3d>, Option<&Visibility>, Option<&Transform>, Option<&GlobalTransform>, Option<&MeshMaterial3d<StandardMaterial>>), With<ZoneObject>>,
+    zone_object_query: Query<
+        (
+            Entity,
+            Option<&Children>,
+            Option<&Mesh3d>,
+            Option<&Visibility>,
+            Option<&Transform>,
+            Option<&GlobalTransform>,
+            Option<&MeshMaterial3d<StandardMaterial>>,
+        ),
+        With<ZoneObject>,
+    >,
 ) {
     // Only run validation every 60 frames (approx 1 second at 60fps)
     static mut FRAME_COUNTER: usize = 0;
@@ -84,26 +104,30 @@ pub fn zone_render_validation_system(
         FRAME_COUNTER += 1;
         FRAME_COUNTER % 60 == 0
     };
-    
+
     if !should_run {
         return;
     }
 
     stats.reset();
-    
+
     log::info!("[RENDER VALIDATION] Starting zone entity validation...");
 
     // Track zone objects with valid render components
-    let mut zone_objects_with_mesh: std::collections::HashSet<Entity> = std::collections::HashSet::new();
-    let mut zone_objects_with_material: std::collections::HashSet<Entity> = std::collections::HashSet::new();
+    let mut zone_objects_with_mesh: std::collections::HashSet<Entity> =
+        std::collections::HashSet::new();
+    let mut zone_objects_with_material: std::collections::HashSet<Entity> =
+        std::collections::HashSet::new();
 
     // Validate ZoneObject entities
     log::info!("[RENDER VALIDATION] Checking ZoneObject entities...");
     let mut zone_object_count = 0;
-    
-    for (entity, children, mesh, visibility, transform, global_transform, material) in zone_object_query.iter() {
+
+    for (entity, children, mesh, visibility, transform, global_transform, material) in
+        zone_object_query.iter()
+    {
         zone_object_count += 1;
-        
+
         // Only validate entities that have meshes (the actual renderable parts)
         if let Some(mesh_handle) = mesh {
             let has_mesh = true;
@@ -114,11 +138,21 @@ pub fn zone_render_validation_system(
             let has_global_transform: bool = global_transform.is_some();
             let mesh_handle: &Handle<Mesh> = mesh_handle;
 
-            if has_mesh { stats.entities_with_mesh += 1; }
-            if has_material { stats.entities_with_material += 1; }
-            if has_visibility { stats.entities_with_visibility += 1; }
-            if has_transform { stats.entities_with_transform += 1; }
-            if has_global_transform { stats.entities_with_global_transform += 1; }
+            if has_mesh {
+                stats.entities_with_mesh += 1;
+            }
+            if has_material {
+                stats.entities_with_material += 1;
+            }
+            if has_visibility {
+                stats.entities_with_visibility += 1;
+            }
+            if has_transform {
+                stats.entities_with_transform += 1;
+            }
+            if has_global_transform {
+                stats.entities_with_global_transform += 1;
+            }
             stats.total_entities_checked += 1;
 
             // Track entities
@@ -130,30 +164,52 @@ pub fn zone_render_validation_system(
             // Only log failures, not every entity
             if !has_material || !has_transform || !has_global_transform {
                 let mut failures = Vec::new();
-                if !has_material { failures.push("Missing Material"); }
-                if !has_visibility { failures.push("Missing Visibility"); }
-                if !is_visible { failures.push("Not Visible"); }
-                if !has_transform { failures.push("Missing Transform"); }
-                if !has_global_transform { failures.push("Missing GlobalTransform"); }
-                
+                if !has_material {
+                    failures.push("Missing Material");
+                }
+                if !has_visibility {
+                    failures.push("Missing Visibility");
+                }
+                if !is_visible {
+                    failures.push("Not Visible");
+                }
+                if !has_transform {
+                    failures.push("Missing Transform");
+                }
+                if !has_global_transform {
+                    failures.push("Missing GlobalTransform");
+                }
+
                 stats.entities_failing_validation += 1;
                 let reason = failures.join(", ");
-                *stats.validation_failures_by_reason.entry(reason.clone()).or_insert(0) += 1;
-                
+                *stats
+                    .validation_failures_by_reason
+                    .entry(reason.clone())
+                    .or_insert(0) += 1;
+
                 if !has_material {
-                    log::warn!("[RENDER VALIDATION] Entity {:?} MISSING MATERIAL - mesh_id={:?}",
-                        entity, mesh_handle.id());
+                    log::warn!(
+                        "[RENDER VALIDATION] Entity {:?} MISSING MATERIAL - mesh_id={:?}",
+                        entity,
+                        mesh_handle.id()
+                    );
                 }
-                
-                log::warn!("[RENDER VALIDATION] ZoneObject {:?} failed: {}", entity, reason);
+
+                log::warn!(
+                    "[RENDER VALIDATION] ZoneObject {:?} failed: {}",
+                    entity,
+                    reason
+                );
             }
         }
-        
+
         // Also track parent ZoneObjects that have children with mesh/material
         if let Some(children) = children {
             for child in children.iter() {
                 // Check if child has mesh/material by querying it
-                if let Ok((_, _, child_mesh, _, _, _, child_material)) = zone_object_query.get(child) {
+                if let Ok((_, _, child_mesh, _, _, _, child_material)) =
+                    zone_object_query.get(child)
+                {
                     let child_mesh: Option<&Mesh3d> = child_mesh;
                     let child_material: Option<&MeshMaterial3d<StandardMaterial>> = child_material;
                     if child_mesh.is_some() {
@@ -166,16 +222,24 @@ pub fn zone_render_validation_system(
             }
         }
     }
-    
-    log::info!("[RENDER VALIDATION] Checked {} ZoneObject entities", zone_object_count);
-    log::info!("[RENDER VALIDATION] ZoneObjects with mesh children: {}, with material children: {}",
-        zone_objects_with_mesh.len(), zone_objects_with_material.len());
+
+    log::info!(
+        "[RENDER VALIDATION] Checked {} ZoneObject entities",
+        zone_object_count
+    );
+    log::info!(
+        "[RENDER VALIDATION] ZoneObjects with mesh children: {}, with material children: {}",
+        zone_objects_with_mesh.len(),
+        zone_objects_with_material.len()
+    );
 
     // Log summary
     stats.log_summary();
 
     // If many entities are failing validation, this could explain the black screen
-    if stats.entities_failing_validation > stats.total_entities_checked / 2 && stats.total_entities_checked > 0 {
+    if stats.entities_failing_validation > stats.total_entities_checked / 2
+        && stats.total_entities_checked > 0
+    {
         log::error!("[RENDER VALIDATION] CRITICAL: More than 50% of entities failed validation!");
         log::error!("[RENDER VALIDATION] This explains the black screen issue - entities have no mesh/material!");
     }
@@ -231,8 +295,14 @@ pub fn asset_loading_validation_system(
         log::info!("[ASSET VALIDATION] All checked assets are loaded");
     }
 
-    log::info!("[ASSET VALIDATION] Mesh assets in storage: {}", meshes.len());
-    log::info!("[ASSET VALIDATION] Image assets in storage: {}", images.len());
+    log::info!(
+        "[ASSET VALIDATION] Mesh assets in storage: {}",
+        meshes.len()
+    );
+    log::info!(
+        "[ASSET VALIDATION] Image assets in storage: {}",
+        images.len()
+    );
 }
 
 /// System to validate camera configuration
@@ -251,25 +321,25 @@ pub fn camera_validation_system(
 
     let camera_count = camera_query.iter().count();
     //log::info!("[CAMERA VALIDATION] Found {} 3D cameras", camera_count);
-    
+
     for (entity, camera, transform) in camera_query.iter() {
         //log::info!("[CAMERA VALIDATION] Camera {:?}:", entity);
         //log::info!("  - Is active: {}", camera.is_active);
         //log::info!("  - Order: {}", camera.order);
-        
+
         if let Some(transform) = transform {
             //log::info!("  - Position: {:?}", transform.translation);
             //log::info!("  - Looking at: (check forward vector)");
         } else {
             //log::warn!("  - WARNING: No Transform component!");
         }
-        
+
         if !camera.is_active {
             //log::warn!("[CAMERA VALIDATION] WARNING: Camera {:?} is not active!", entity);
         }
         let _ = entity; // Suppress unused variable warning
     }
-    
+
     if camera_count == 0 {
         //log::error!("[CAMERA VALIDATION] CRITICAL: No 3D cameras found! This explains the black screen!");
     }
@@ -282,74 +352,94 @@ pub fn mesh_inspection_system(
     mesh_query: Query<(Entity, &Mesh3d), With<ZoneObject>>,
 ) {
     use bevy::mesh::VertexAttributeValues;
-    
+
     static mut FRAME_COUNTER: usize = 0;
     static mut INSPECT_INDEX: usize = 0;
-    
+
     let should_run = unsafe {
         FRAME_COUNTER += 1;
         FRAME_COUNTER % 30 == 0
     };
-    
+
     if !should_run {
         return;
     }
-    
+
     let mesh_list: Vec<_> = mesh_query.iter().collect();
     if mesh_list.is_empty() {
         return;
     }
-    
+
     // Inspect up to 10 meshes per frame (round-robin)
     const MAX_INSPECT_PER_FRAME: usize = 10;
     let inspect_start = unsafe { INSPECT_INDEX };
     let inspect_end = (inspect_start + MAX_INSPECT_PER_FRAME).min(mesh_list.len());
-    
+
     for i in inspect_start..inspect_end {
         let (entity, mesh_handle) = mesh_list[i];
-        
+
         if let Some(mesh) = meshes.get(mesh_handle) {
             // Check for required attributes
             let has_positions = mesh.attribute(Mesh::ATTRIBUTE_POSITION).is_some();
             let has_normals = mesh.attribute(Mesh::ATTRIBUTE_NORMAL).is_some();
             let has_uvs = mesh.attribute(Mesh::ATTRIBUTE_UV_0).is_some();
             let indices_count = mesh.indices().map(|i| i.len()).unwrap_or(0);
-            
+
             // Validate vertex count
-            let vertex_count = mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+            let vertex_count = mesh
+                .attribute(Mesh::ATTRIBUTE_POSITION)
                 .map(|attr| match attr {
                     VertexAttributeValues::Float32x3(v) => v.len(),
                     _ => 0,
                 })
                 .unwrap_or(0);
-            
+
             // Log any issues
             if vertex_count == 0 {
-                log::error!("[MESH INSPECTION] Entity {:?} has mesh with 0 vertices! Handle: {:?}", 
-                    entity, mesh_handle);
+                log::error!(
+                    "[MESH INSPECTION] Entity {:?} has mesh with 0 vertices! Handle: {:?}",
+                    entity,
+                    mesh_handle
+                );
             } else if indices_count == 0 {
-                log::error!("[MESH INSPECTION] Entity {:?} has mesh with 0 indices! Vertices: {}", 
-                    entity, vertex_count);
+                log::error!(
+                    "[MESH INSPECTION] Entity {:?} has mesh with 0 indices! Vertices: {}",
+                    entity,
+                    vertex_count
+                );
             } else if !has_positions {
-                log::error!("[MESH INSPECTION] Entity {:?} mesh missing POSITION attribute!", entity);
+                log::error!(
+                    "[MESH INSPECTION] Entity {:?} mesh missing POSITION attribute!",
+                    entity
+                );
             } else if vertex_count > 0 && vertex_count < 3 {
-                log::warn!("[MESH INSPECTION] Entity {:?} has suspiciously low vertex count: {}", 
-                    entity, vertex_count);
+                log::warn!(
+                    "[MESH INSPECTION] Entity {:?} has suspiciously low vertex count: {}",
+                    entity,
+                    vertex_count
+                );
             }
-            
+
             // Log detailed info for first few meshes each cycle
             if i < 3 {
                 log::info!("[MESH INSPECTION] Entity {:?}: {} vertices, {} indices, positions={}, normals={}, uvs={}", 
                     entity, vertex_count, indices_count, has_positions, has_normals, has_uvs);
             }
         } else {
-            log::warn!("[MESH INSPECTION] Entity {:?} has mesh handle but asset not loaded! Handle: {:?}", 
-                entity, mesh_handle);
+            log::warn!(
+                "[MESH INSPECTION] Entity {:?} has mesh handle but asset not loaded! Handle: {:?}",
+                entity,
+                mesh_handle
+            );
         }
     }
-    
+
     unsafe {
-        INSPECT_INDEX = if inspect_end >= mesh_list.len() { 0 } else { inspect_end };
+        INSPECT_INDEX = if inspect_end >= mesh_list.len() {
+            0
+        } else {
+            inspect_end
+        };
     }
 }
 
@@ -366,24 +456,34 @@ pub fn material_validation_system(
             return;
         }
     }
-    
+
     let mut not_loaded_count = 0;
     let mut total_checked = 0;
-    
+
     // Validate StandardMaterials
     for (entity, mat_handle) in standard_mat_query.iter() {
         total_checked += 1;
         if standard_materials.get(mat_handle).is_none() {
             not_loaded_count += 1;
-            log::warn!("[MATERIAL VALIDATION] Entity {:?} StandardMaterial not loaded! Handle: {:?}",
-                entity, mat_handle);
+            log::warn!(
+                "[MATERIAL VALIDATION] Entity {:?} StandardMaterial not loaded! Handle: {:?}",
+                entity,
+                mat_handle
+            );
         }
     }
-    
+
     if not_loaded_count > 0 {
-        log::warn!("[MATERIAL VALIDATION] {}/{} materials not loaded!", not_loaded_count, total_checked);
+        log::warn!(
+            "[MATERIAL VALIDATION] {}/{} materials not loaded!",
+            not_loaded_count,
+            total_checked
+        );
     } else if total_checked > 0 {
-        log::info!("[MATERIAL VALIDATION] All {} materials are loaded", total_checked);
+        log::info!(
+            "[MATERIAL VALIDATION] All {} materials are loaded",
+            total_checked
+        );
     }
 }
 
@@ -402,31 +502,32 @@ pub fn entity_count_tracing_system(
     all_entities: Query<Entity>,
 ) {
     tracer.frame_count += 1;
-    
+
     let current_count = all_entities.iter().count();
     let delta = current_count as i64 - tracer.last_entity_count as i64;
-    
+
     if delta > 0 {
         tracer.spawn_count_this_frame += delta as usize;
     } else if delta < 0 {
         tracer.despawn_count_this_frame += (-delta) as usize;
     }
-    
+
     // Log every 60 frames (approx 1 second at 60fps)
     if tracer.frame_count % 60 == 0 {
-        log::info!("[ENTITY TRACE] Frame {}: {} entities (spawned: {}, despawned: {}, delta: {})",
+        log::info!(
+            "[ENTITY TRACE] Frame {}: {} entities (spawned: {}, despawned: {}, delta: {})",
             tracer.frame_count,
             current_count,
             tracer.spawn_count_this_frame,
             tracer.despawn_count_this_frame,
             delta
         );
-        
+
         // Reset counters
         tracer.spawn_count_this_frame = 0;
         tracer.despawn_count_this_frame = 0;
     }
-    
+
     tracer.last_entity_count = current_count;
 }
 
@@ -496,9 +597,7 @@ pub fn aabb_diagnostic_system(
             entities_without_aabb,
             total_mesh_entities
         );
-        log::warn!(
-            "This can cause frustum culling to incorrectly mark meshes as invisible!"
-        );
+        log::warn!("This can cause frustum culling to incorrectly mark meshes as invisible!");
     }
 
     if visible_without_aabb > 0 {
@@ -521,15 +620,18 @@ pub struct ZoneRenderValidationPlugin;
 impl Plugin for ZoneRenderValidationPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RenderValidationStats>()
-           .init_resource::<EntityFrameTracer>()
-           .add_systems(Update, (
-               zone_render_validation_system,
-               asset_loading_validation_system,
-               camera_validation_system,
-               mesh_inspection_system,
-               material_validation_system,
-               entity_count_tracing_system,
-               aabb_diagnostic_system,
-           ));
+            .init_resource::<EntityFrameTracer>()
+            .add_systems(
+                Update,
+                (
+                    zone_render_validation_system,
+                    asset_loading_validation_system,
+                    camera_validation_system,
+                    mesh_inspection_system,
+                    material_validation_system,
+                    entity_count_tracing_system,
+                    aabb_diagnostic_system,
+                ),
+            );
     }
 }

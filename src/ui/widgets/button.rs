@@ -68,24 +68,24 @@ impl LoadWidget for Button {
 
         self.normal_sprite = ui_resources.get_sprite(self.module_id, &self.normal_sprite_name);
         //log::info!("[BUTTON LOAD] Button {}: normal_sprite '{}' -> {:?} (texture_id={:?})",
-            //self.id, self.normal_sprite_name, self.normal_sprite.is_some(),
-            //self.normal_sprite.as_ref().map(|s| s.texture_id));
+        //self.id, self.normal_sprite_name, self.normal_sprite.is_some(),
+        //self.normal_sprite.as_ref().map(|s| s.texture_id));
 
         self.over_sprite = ui_resources.get_sprite(self.module_id, &self.over_sprite_name);
         //log::info!("[BUTTON LOAD] Button {}: over_sprite '{}' -> {}",
-           //self.id, self.over_sprite_name, self.over_sprite.is_some());
+        //self.id, self.over_sprite_name, self.over_sprite.is_some());
 
         self.blink_sprite = ui_resources.get_sprite(self.module_id, &self.blink_sprite_name);
         //log::info!("[BUTTON LOAD] Button {}: blink_sprite '{}' -> {}",
-            //self.id, self.blink_sprite_name, self.blink_sprite.is_some());
+        //self.id, self.blink_sprite_name, self.blink_sprite.is_some());
 
         self.down_sprite = ui_resources.get_sprite(self.module_id, &self.down_sprite_name);
         //log::info!("[BUTTON LOAD] Button {}: down_sprite '{}' -> {}",
-            //self.id, self.down_sprite_name, self.down_sprite.is_some());
+        //self.id, self.down_sprite_name, self.down_sprite.is_some());
 
         self.disable_sprite = ui_resources.get_sprite(self.module_id, &self.disable_sprite_name);
         //log::info!("[BUTTON LOAD] Button {}: disable_sprite '{}' -> {}",
-            //self.id, self.disable_sprite_name, self.disable_sprite.is_some());
+        //self.id, self.disable_sprite_name, self.disable_sprite.is_some());
     }
 }
 
@@ -97,14 +97,14 @@ impl DrawWidget for Button {
         }
 
         let rect = self.widget_rect(ui.min_rect().min);
-        
+
         // Debug: Log button drawing details
         // log::info!("[BUTTON DRAW] Button id={} name='{}' rect=({:.1},{:.1}) size=({:.1}x{:.1}) normal_sprite={}",
         //     self.id, self.name, rect.min.x, rect.min.y, rect.width(), rect.height(),
         //     self.normal_sprite.is_some());
         let enabled = bindings.get_enabled(self.id);
-       // log::debug!("[BUTTON DRAW] Button id={} name='{}' visible={}, enabled={}, rect=({:.1},{:.1}) size=({:.1}x{:.1})",
-           // self.id, self.name, visible, enabled, rect.min.x, rect.min.y, rect.width(), rect.height());
+        // log::debug!("[BUTTON DRAW] Button id={} name='{}' visible={}, enabled={}, rect=({:.1},{:.1}) size=({:.1}x{:.1})",
+        // self.id, self.name, visible, enabled, rect.min.x, rect.min.y, rect.width(), rect.height());
 
         let mut response = ui.allocate_rect(
             rect,
@@ -146,8 +146,11 @@ impl DrawWidget for Button {
             let label = bindings.get_label(self.id);
             if let Some(label) = label {
                 let rect = rect.shrink(2.0);
-                let mut child_ui =
-                    ui.child_ui(rect, egui::Layout::top_down_justified(egui::Align::Center), None);
+                let mut child_ui = ui.child_ui(
+                    rect,
+                    egui::Layout::top_down_justified(egui::Align::Center),
+                    None,
+                );
                 let style = ui.style();
                 let mut font_id = style.override_text_style.clone().map_or_else(
                     || egui::FontSelection::Default.resolve(style),

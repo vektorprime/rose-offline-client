@@ -1,7 +1,8 @@
 use bevy::{
     math::Vec3Swizzles,
     prelude::{
-        Assets, Entity, Local, MessageReader, MessageWriter, Messages, Query, Res, ResMut, With, World,
+        Assets, Entity, Local, MessageReader, MessageWriter, Messages, Query, Res, ResMut, With,
+        World,
     },
 };
 use bevy_egui::{egui, EguiContexts};

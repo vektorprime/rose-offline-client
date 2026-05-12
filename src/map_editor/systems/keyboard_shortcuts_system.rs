@@ -15,7 +15,10 @@ use bevy_egui::EguiContexts;
 
 use crate::components::ZoneObject;
 use crate::map_editor::components::SelectedInEditor;
-use crate::map_editor::resources::{DeletedZoneObjects, DuplicateSelectedEvent, EditorAction, EditorMode, MapEditorState, ZoneObjectType};
+use crate::map_editor::resources::{
+    DeletedZoneObjects, DuplicateSelectedEvent, EditorAction, EditorMode, MapEditorState,
+    ZoneObjectType,
+};
 use crate::systems::{FreeCamera, OrbitCamera};
 
 const ZONE_CENTER_X: f32 = 5200.0;
@@ -52,68 +55,82 @@ pub fn keyboard_shortcuts_system(
     if !map_editor_state.enabled {
         return;
     }
-    
+
     // Check if egui wants keyboard input
     let ctx = egui_contexts.ctx_mut().unwrap();
     if ctx.wants_keyboard_input() {
         return;
     }
-    
+
     // Handle mode switching (W/E/R/Q)
     handle_mode_switches(&mut map_editor_state, &keyboard);
-    
+
     // Handle Escape - Deselect all
     if keyboard.just_pressed(KeyCode::Escape) {
         handle_deselect_all(&mut map_editor_state, &mut commands, &selected_entities);
     }
-    
+
     // Handle Tab - Toggle free camera
     if keyboard.just_pressed(KeyCode::Tab) {
         handle_toggle_free_camera(&mut commands, &camera_query, &free_camera_query);
     }
-    
+
     // Handle Delete - Delete selected entities
-    if keyboard.just_pressed(KeyCode::Delete) ||
-       (keyboard.just_pressed(KeyCode::Backspace) && keyboard.pressed(KeyCode::ControlLeft)) {
-        handle_delete_selected(&mut commands, &mut map_editor_state, &mut deleted_zone_objects, &selected_entities, &transforms, &zone_objects);
+    if keyboard.just_pressed(KeyCode::Delete)
+        || (keyboard.just_pressed(KeyCode::Backspace) && keyboard.pressed(KeyCode::ControlLeft))
+    {
+        handle_delete_selected(
+            &mut commands,
+            &mut map_editor_state,
+            &mut deleted_zone_objects,
+            &selected_entities,
+            &transforms,
+            &zone_objects,
+        );
     }
-    
+
     // Handle Ctrl+D - Duplicate selected entities
     if keyboard.just_pressed(KeyCode::KeyD) && is_ctrl_pressed(&keyboard) {
         // Send duplicate event - the duplicate_system will handle it
         duplicate_events.write(DuplicateSelectedEvent::new());
         log::info!("[KeyboardShortcuts] Duplicate event sent via Ctrl+D");
     }
-    
+
     // Handle Ctrl+A - Select all
     if keyboard.just_pressed(KeyCode::KeyA) && is_ctrl_pressed(&keyboard) {
         handle_select_all(&mut map_editor_state);
     }
-    
+
     // Handle Ctrl+Shift+A - Deselect all (alternative)
-    if keyboard.just_pressed(KeyCode::KeyA) && is_ctrl_pressed(&keyboard) && is_shift_pressed(&keyboard) {
+    if keyboard.just_pressed(KeyCode::KeyA)
+        && is_ctrl_pressed(&keyboard)
+        && is_shift_pressed(&keyboard)
+    {
         handle_deselect_all(&mut map_editor_state, &mut commands, &selected_entities);
     }
-    
+
     // Handle F - Focus on selected entity
     if keyboard.just_pressed(KeyCode::KeyF) {
         handle_focus_selected(&map_editor_state);
     }
-    
+
     // Handle G - Toggle snap to grid
     if keyboard.just_pressed(KeyCode::KeyG) && !is_ctrl_pressed(&keyboard) {
         map_editor_state.snap_to_grid = !map_editor_state.snap_to_grid;
-        log::info!("[KeyboardShortcuts] Snap to grid: {}", map_editor_state.snap_to_grid);
+        log::info!(
+            "[KeyboardShortcuts] Snap to grid: {}",
+            map_editor_state.snap_to_grid
+        );
     }
-    
+
     // Note: Ctrl+S save functionality is handled via the menu bar UI
     // The keyboard input S (without modifiers) is used for FreeCamera movement
-    
+
     // Handle Ctrl+N - New map (log for now)
     if keyboard.just_pressed(KeyCode::KeyN) && is_ctrl_pressed(&keyboard) {
         log::info!("[KeyboardShortcuts] New map requested (not implemented yet)");
     }
-    
+
     // Handle Ctrl+O - Open map (log for now)
     if keyboard.just_pressed(KeyCode::KeyO) && is_ctrl_pressed(&keyboard) {
         log::info!("[KeyboardShortcuts] Open map requested (not implemented yet)");
@@ -129,15 +146,21 @@ fn handle_toggle_free_camera(
     for camera_entity in camera_query.iter() {
         if free_camera_query.get(camera_entity).is_ok() {
             // FreeCamera exists, remove it and add OrbitCamera
-            commands.entity(camera_entity)
+            commands
+                .entity(camera_entity)
                 .remove::<FreeCamera>()
                 .insert(OrbitCamera::new(camera_entity, Vec3::ZERO, 10.0));
             log::info!("[KeyboardShortcuts] Switched to OrbitCamera");
         } else {
             // No FreeCamera, add it and remove OrbitCamera
-            commands.entity(camera_entity)
+            commands
+                .entity(camera_entity)
                 .remove::<OrbitCamera>()
-                .insert(FreeCamera::new(Vec3::new(5120.0, 50.0, -5120.0), -45.0, -20.0));
+                .insert(FreeCamera::new(
+                    Vec3::new(5120.0, 50.0, -5120.0),
+                    -45.0,
+                    -20.0,
+                ));
             log::info!("[KeyboardShortcuts] Switched to FreeCamera");
         }
     }
@@ -167,25 +190,25 @@ fn handle_mode_switches(map_editor_state: &mut MapEditorState, keyboard: &Button
         map_editor_state.editor_mode = EditorMode::Rotate;
         log::info!("[KeyboardShortcuts] Switched to Rotate mode");
     }
-    
+
     // R for Scale mode
     if keyboard.just_pressed(KeyCode::KeyR) {
         map_editor_state.editor_mode = EditorMode::Scale;
         log::info!("[KeyboardShortcuts] Switched to Scale mode");
     }
-    
+
     // Q for Select mode
     if keyboard.just_pressed(KeyCode::KeyQ) {
         map_editor_state.editor_mode = EditorMode::Select;
         log::info!("[KeyboardShortcuts] Switched to Select mode");
     }
-    
+
     // V for Add mode
     if keyboard.just_pressed(KeyCode::KeyV) {
         map_editor_state.editor_mode = EditorMode::Add;
         log::info!("[KeyboardShortcuts] Switched to Add mode");
     }
-    
+
     // X for Delete mode
     if keyboard.just_pressed(KeyCode::KeyX) {
         map_editor_state.editor_mode = EditorMode::Delete;
@@ -200,16 +223,16 @@ fn handle_deselect_all(
     selected_entities: &Query<Entity, With<SelectedInEditor>>,
 ) {
     let count = map_editor_state.selection_count();
-    
+
     if count > 0 {
         // Remove SelectedInEditor component from all selected entities
         for entity in selected_entities.iter() {
             commands.entity(entity).remove::<SelectedInEditor>();
         }
-        
+
         // Clear the selection set
         map_editor_state.clear_selection();
-        
+
         log::info!("[KeyboardShortcuts] Deselected {} entities", count);
     }
 }
@@ -224,28 +247,31 @@ fn handle_delete_selected(
     zone_objects: &Query<&ZoneObject>,
 ) {
     let entities: Vec<Entity> = selected_entities.iter().collect();
-    
+
     if entities.is_empty() {
         return;
     }
-    
+
     // Collect entities with their transforms for undo
     let mut deleted_entities = Vec::new();
-    
+
     for entity in &entities {
-        let transform = transforms.get(*entity).ok()
+        let transform = transforms
+            .get(*entity)
+            .ok()
             .map(|gt| Transform::from_translation(gt.translation()))
             .unwrap_or_default();
-        
+
         // For a full implementation, we would serialize the entity's components here
         let serialized_data = String::new(); // Placeholder
-        
+
         deleted_entities.push((*entity, transform, "Unknown".to_string(), serialized_data));
     }
-    
+
     // Record the action for undo
     if deleted_entities.len() == 1 {
-        let (entity, transform, entity_type, serialized_data) = deleted_entities.into_iter().next().unwrap();
+        let (entity, transform, entity_type, serialized_data) =
+            deleted_entities.into_iter().next().unwrap();
         map_editor_state.push_action(EditorAction::DeleteEntity {
             entity,
             transform,
@@ -257,14 +283,16 @@ fn handle_delete_selected(
             entities: deleted_entities,
         });
     }
-    
+
     // Track deleted zone objects for save system
     for entity in &entities {
         // Get transform and ZoneObject component to track deletion
-        if let (Ok(global_transform), Ok(zone_object)) = (transforms.get(*entity), zone_objects.get(*entity)) {
+        if let (Ok(global_transform), Ok(zone_object)) =
+            (transforms.get(*entity), zone_objects.get(*entity))
+        {
             let translation = global_transform.translation();
             let (block_x, block_y) = world_to_block_coords(translation);
-            
+
             // Get ifo_object_id and object type from ZoneObject
             let (ifo_object_id, object_type) = match zone_object {
                 ZoneObject::DecoObject(id) => (id.ifo_object_id, ZoneObjectType::Deco),
@@ -275,11 +303,17 @@ fn handle_delete_selected(
                 ZoneObject::EventObjectPart(part) => (part.ifo_object_id, ZoneObjectType::Event),
                 ZoneObject::WarpObject(id) => (id.ifo_object_id, ZoneObjectType::Warp),
                 ZoneObject::WarpObjectPart(part) => (part.ifo_object_id, ZoneObjectType::Warp),
-                ZoneObject::SoundObject { ifo_object_id, .. } => (*ifo_object_id, ZoneObjectType::Sound),
-                ZoneObject::EffectObject { ifo_object_id, .. } => (*ifo_object_id, ZoneObjectType::Effect),
+                ZoneObject::SoundObject { ifo_object_id, .. } => {
+                    (*ifo_object_id, ZoneObjectType::Sound)
+                }
+                ZoneObject::EffectObject { ifo_object_id, .. } => {
+                    (*ifo_object_id, ZoneObjectType::Effect)
+                }
                 ZoneObject::AnimatedObject(_) => {
                     // Animated objects don't have ifo_object_id, skip tracking
-                    log::debug!("[KeyboardShortcuts] Skipping deletion tracking for AnimatedObject");
+                    log::debug!(
+                        "[KeyboardShortcuts] Skipping deletion tracking for AnimatedObject"
+                    );
                     continue;
                 }
                 ZoneObject::Water | ZoneObject::Terrain(_) => {
@@ -288,24 +322,32 @@ fn handle_delete_selected(
                     continue;
                 }
             };
-            
+
             // Record the deletion
             deleted_zone_objects.add(block_x, block_y, ifo_object_id, object_type);
-            log::info!("[KeyboardShortcuts] Tracked deletion: block ({}, {}), ifo_id={}, type={:?}", 
-                block_x, block_y, ifo_object_id, object_type);
+            log::info!(
+                "[KeyboardShortcuts] Tracked deletion: block ({}, {}), ifo_id={}, type={:?}",
+                block_x,
+                block_y,
+                ifo_object_id,
+                object_type
+            );
         }
     }
-    
+
     // Despawn all selected entities
     for entity in &entities {
         commands.entity(*entity).despawn();
     }
-    
+
     // Clear selection
     map_editor_state.clear_selection();
-    
-    log::info!("[KeyboardShortcuts] Deleted {} entities (tracked {} zone objects for save)", 
-        entities.len(), deleted_zone_objects.len());
+
+    log::info!(
+        "[KeyboardShortcuts] Deleted {} entities (tracked {} zone objects for save)",
+        entities.len(),
+        deleted_zone_objects.len()
+    );
 }
 
 /// Handle Ctrl+A - Select all entities
@@ -314,7 +356,7 @@ fn handle_select_all(map_editor_state: &mut MapEditorState) {
     // 1. Query all selectable entities (with EditorSelectable component)
     // 2. Add SelectedInEditor component to all
     // 3. Add all to map_editor_state.selected_entities
-    
+
     log::info!("[KeyboardShortcuts] Select all (not fully implemented)");
 }
 
@@ -323,11 +365,11 @@ fn handle_focus_selected(map_editor_state: &MapEditorState) {
     if map_editor_state.selection_count() == 0 {
         return;
     }
-    
+
     // For a full implementation, we would:
     // 1. Get the first selected entity's transform
     // 2. Move the editor camera to focus on it
-    
+
     if let Some(_entity) = map_editor_state.first_selected() {
         log::info!("[KeyboardShortcuts] Focus on selected entity (not fully implemented)");
     }
@@ -342,13 +384,13 @@ pub fn keyboard_shortcuts_help_system(
     if !map_editor_state.enabled {
         return;
     }
-    
+
     let binding = egui_contexts.ctx_mut();
     let ctx = binding.as_ref().unwrap();
-    
+
     // Show help when H is pressed (would need keyboard input)
     // For now, this is a placeholder for a help overlay
-    
+
     egui::Window::new("Keyboard Shortcuts")
         .collapsible(true)
         .default_open(false)

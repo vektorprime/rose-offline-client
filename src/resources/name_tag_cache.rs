@@ -1,7 +1,7 @@
 use arrayvec::ArrayVec;
 use bevy::{
-    prelude::{Handle, Image, Resource, Vec2},
     platform::collections::HashMap,
+    prelude::{Handle, Image, Resource, Vec2},
 };
 
 use crate::render::WorldUiRect;

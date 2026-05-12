@@ -1,5 +1,5 @@
 //! Model Browser Panel for Map Editor
-//! 
+//!
 //! This panel displays available models organized by category (Deco, Cnst, Event)
 //! and allows users to select models for placement.
 
@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
 use crate::map_editor::resources::{
-    AvailableModels, MapEditorState, ModelCategory, SelectedModel, EditorMode,
+    AvailableModels, EditorMode, MapEditorState, ModelCategory, SelectedModel,
 };
 
 /// Model browser panel - displays at the bottom of the screen
@@ -21,7 +21,7 @@ pub fn editor_model_browser_panel(
     if !map_editor_state.enabled || !selected_model.browser_visible {
         return;
     }
-    
+
     // Panel at the bottom of the screen
     egui::TopBottomPanel::bottom("model_browser_panel")
         .min_height(150.0)
@@ -30,17 +30,17 @@ pub fn editor_model_browser_panel(
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("Model Browser");
-                
+
                 // Category tabs
                 ui.separator();
-                
+
                 let categories = [
                     (ModelCategory::Deco, "Deco"),
                     (ModelCategory::Cnst, "Cnst"),
                     (ModelCategory::Event, "Event"),
                     (ModelCategory::Special, "Special"),
                 ];
-                
+
                 for (category, label) in categories {
                     let is_selected = selected_model.selected_category == category;
                     let text = if is_selected {
@@ -48,40 +48,43 @@ pub fn editor_model_browser_panel(
                     } else {
                         label.to_string()
                     };
-                    
+
                     let count = available_models.get_models(category).len();
                     let button_text = format!("{} ({})", text, count);
-                    
+
                     if ui.selectable_label(is_selected, button_text).clicked() {
                         selected_model.selected_category = category;
                         // Clear filter when switching categories
                         selected_model.search_filter.clear();
                     }
                 }
-                
+
                 // Search box
                 ui.separator();
                 ui.label("Search:");
-                if ui.text_edit_singleline(&mut selected_model.search_filter).changed() {
+                if ui
+                    .text_edit_singleline(&mut selected_model.search_filter)
+                    .changed()
+                {
                     // Filter is applied dynamically when rendering the list
                 }
                 if ui.button("Clear").clicked() {
                     selected_model.search_filter.clear();
                 }
             });
-            
+
             // Model list with scrolling
             egui::ScrollArea::vertical()
                 .max_height(150.0)
                 .show(ui, |ui| {
                     let category = selected_model.selected_category;
                     let models = available_models.get_models(category);
-                    
+
                     if models.is_empty() {
                         ui.label(format!("No {} models loaded", category.display_name()));
                         return;
                     }
-                    
+
                     // Filter models by search text
                     let search_lower = selected_model.search_filter.to_lowercase();
                     let filtered_models: Vec<_> = models
@@ -96,7 +99,7 @@ pub fn editor_model_browser_panel(
                             }
                         })
                         .collect();
-                    
+
                     if filtered_models.is_empty() {
                         ui.label(format!(
                             "No models match filter '{}'",
@@ -104,51 +107,57 @@ pub fn editor_model_browser_panel(
                         ));
                         return;
                     }
-                    
+
                     // Display models in a grid
                     let columns = 4;
-                    let mut row_ui = ui.columns(columns, |cols| {
-                        for (i, model) in filtered_models.iter().enumerate() {
-                            let col_index = i % columns;
-                            let col = &mut cols[col_index];
-                            
-                            // Check if this model is currently selected
-                            let is_selected = selected_model.model.as_ref()
-                                .map(|m| m.id == model.id && m.category == model.category)
-                                .unwrap_or(false);
-                            
-                            // Model button with name
-                            let response = col.selectable_label(is_selected, &model.name);
-                            
-                            if response.clicked() {
-                                selected_model.select((*model).clone());
-                                log::info!(
+                    let mut row_ui =
+                        ui.columns(columns, |cols| {
+                            for (i, model) in filtered_models.iter().enumerate() {
+                                let col_index = i % columns;
+                                let col = &mut cols[col_index];
+
+                                // Check if this model is currently selected
+                                let is_selected = selected_model
+                                    .model
+                                    .as_ref()
+                                    .map(|m| m.id == model.id && m.category == model.category)
+                                    .unwrap_or(false);
+
+                                // Model button with name
+                                let response = col.selectable_label(is_selected, &model.name);
+
+                                if response.clicked() {
+                                    selected_model.select((*model).clone());
+                                    log::info!(
                                     "[MODEL BROWSER] Selected model: {} (ID: {}, Category: {:?})",
                                     model.name, model.id, model.category
                                 );
+                                }
+
+                                // Show tooltip on hover
+                                response.on_hover_ui(|ui| {
+                                    ui.label(format!("ID: {}", model.id));
+                                    ui.label(format!("Mesh: {}", model.mesh_path));
+                                    ui.label(format!("Parts: {}", model.part_count));
+                                    ui.separator();
+                                    ui.label("Click to select for placement");
+                                });
                             }
-                            
-                            // Show tooltip on hover
-                            response.on_hover_ui(|ui| {
-                                ui.label(format!("ID: {}", model.id));
-                                ui.label(format!("Mesh: {}", model.mesh_path));
-                                ui.label(format!("Parts: {}", model.part_count));
-                                ui.separator();
-                                ui.label("Click to select for placement");
-                            });
-                        }
-                    });
-                    
+                        });
+
                     // Silence unused variable warning
                     let _ = row_ui;
                 });
-            
+
             // Status bar with selected model info and Add to Zone button
             ui.horizontal(|ui| {
                 let total = available_models.total_count();
-                let category_count = available_models.get_models(selected_model.selected_category).len();
+                let category_count = available_models
+                    .get_models(selected_model.selected_category)
+                    .len();
                 let search_lower = selected_model.search_filter.to_lowercase();
-                let filtered_count = available_models.get_models(selected_model.selected_category)
+                let filtered_count = available_models
+                    .get_models(selected_model.selected_category)
                     .iter()
                     .filter(|model| {
                         if search_lower.is_empty() {
@@ -159,23 +168,26 @@ pub fn editor_model_browser_panel(
                         }
                     })
                     .count();
-                
+
                 ui.label(format!(
                     "Total: {} models | {} category: {} models",
                     total,
                     selected_model.selected_category.display_name(),
                     category_count
                 ));
-                
+
                 if !selected_model.search_filter.is_empty() {
                     ui.label(format!("| Filtered: {}", filtered_count));
                 }
-                
+
                 if let Some(ref model) = selected_model.model {
                     ui.separator();
-                    ui.colored_label(egui::Color32::LIGHT_GREEN, format!("Selected: {}", model.name));
+                    ui.colored_label(
+                        egui::Color32::LIGHT_GREEN,
+                        format!("Selected: {}", model.name),
+                    );
                     ui.label(format!("(ID: {})", model.id));
-                    
+
                     // Add to Zone button
                     ui.separator();
                     let add_button = ui.button("➕ Add to Zone");
@@ -188,9 +200,12 @@ pub fn editor_model_browser_panel(
                             model.id
                         );
                     }
-                    
+
                     // Show current editor mode
-                    ui.label(format!("| Mode: {}", map_editor_state.editor_mode.display_name()));
+                    ui.label(format!(
+                        "| Mode: {}",
+                        map_editor_state.editor_mode.display_name()
+                    ));
                 }
             });
         });
@@ -204,7 +219,7 @@ pub fn model_browser_panel_system(
     mut selected_model: ResMut<SelectedModel>,
 ) {
     let ctx = contexts.ctx_mut().unwrap();
-    
+
     editor_model_browser_panel(
         &*ctx,
         &map_editor_state,

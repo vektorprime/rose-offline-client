@@ -19,14 +19,17 @@
 //! +--------------------------------------------------+
 //! ```
 
-pub mod menu_bar;
 pub mod hierarchy_panel;
+pub mod menu_bar;
 pub mod model_browser_panel;
 pub mod properties_panel;
 pub mod status_bar;
 pub mod zone_list_panel;
 
-use bevy::{ecs::{schedule::IntoScheduleConfigs, system::SystemParam}, prelude::*};
+use bevy::{
+    ecs::{schedule::IntoScheduleConfigs, system::SystemParam},
+    prelude::*,
+};
 use bevy_egui::{egui, EguiContexts};
 use bevy_rapier3d::prelude::{Collider, CollisionGroups, RigidBody};
 use std::io::Write;
@@ -36,30 +39,31 @@ use crate::components::{
     EventObject, MapEditorTerrainBlock, MapEditorWaterPlane, WarpObject, Zone, ZoneObject,
     COLLISION_FILTER_INSPECTABLE, COLLISION_GROUP_ZONE_WATER,
 };
+use crate::events::LoadZoneEvent;
 use crate::map_editor::components::SelectedInEditor;
-use crate::map_editor::resources::{AvailableModels, DuplicateSelectedEvent, EditorMode, HierarchyFilter, MapEditorState, SelectedModel};
-use crate::map_editor::systems::property_update_system::PropertyChangeEvent;
-use crate::map_editor::save::{SaveZoneEvent, SaveStatus};
+use crate::map_editor::resources::{
+    AvailableModels, DuplicateSelectedEvent, EditorMode, HierarchyFilter, MapEditorState,
+    SelectedModel,
+};
 use crate::map_editor::save::ifo_export::export_ifo_block;
 use crate::map_editor::save::ifo_types::IfoBlock;
-use crate::resources::{CurrentZone, GameData};
-use crate::events::LoadZoneEvent;
+use crate::map_editor::save::{SaveStatus, SaveZoneEvent};
+use crate::map_editor::systems::property_update_system::PropertyChangeEvent;
 use crate::render::WaterMaterial;
+use crate::resources::{CurrentZone, GameData};
 use crate::zone_loader::ZoneLoaderAsset;
 use crate::VfsResource;
 use rose_data::ZoneId;
 
+use hierarchy_panel::{editor_hierarchy_panel, HierarchyQuery};
 use menu_bar::editor_menu_bar;
 use menu_bar::{HelpWindowState, NewZoneDialogState, SaveVersionDialogState};
-use hierarchy_panel::{editor_hierarchy_panel, HierarchyQuery};
 use model_browser_panel::editor_model_browser_panel;
 use status_bar::editor_status_bar;
-use zone_list_panel::{ZoneListPanelState, zone_list_panel_system};
+use zone_list_panel::{zone_list_panel_system, ZoneListPanelState};
 
 // Re-export the standalone properties panel function
-pub use properties_panel::{
-    editor_properties_panel, EntityDataQuery, PendingPropertyEdits,
-};
+pub use properties_panel::{editor_properties_panel, EntityDataQuery, PendingPropertyEdits};
 
 /// System parameter combining queries needed by the properties panel
 #[derive(SystemParam)]
@@ -107,7 +111,8 @@ impl Plugin for EditorUiPlugin {
             // Keyboard shortcuts don't render UI, can stay in Update
             .add_systems(
                 Update,
-                model_browser_panel::model_browser_keyboard_shortcuts.run_if(resource_exists::<SelectedModel>),
+                model_browser_panel::model_browser_keyboard_shortcuts
+                    .run_if(resource_exists::<SelectedModel>),
             )
             .add_systems(
                 bevy_egui::EguiPrimaryContextPass,
@@ -121,7 +126,7 @@ impl Plugin for EditorUiPlugin {
                 bevy_egui::EguiPrimaryContextPass,
                 add_water_plane_system.run_if(resource_exists::<MapEditorState>),
             );
-        
+
         log::info!("[EditorUiPlugin] Editor UI plugin initialized with model browser, zone list, and new zone handler");
     }
 }
@@ -179,9 +184,9 @@ pub fn editor_ui_system(
     if !map_editor_state.enabled {
         return;
     }
-    
+
     let ctx = contexts.ctx_mut().unwrap();
-    
+
     // Get effective zone ID for editor actions.
     // If editing a brand-new custom zone via fallback-loaded source zone,
     // prefer the custom zone id so Save targets/logs reflect user intent.
@@ -197,7 +202,7 @@ pub fn editor_ui_system(
         })
         .or(loaded_zone_id);
     let next_zone_id_hint = find_next_available_zone_id(&game_data);
-    
+
     // Menu Bar (top)
     editor_menu_bar(
         &*ctx,
@@ -214,10 +219,10 @@ pub fn editor_ui_system(
         &mut menu_state.save_version_dialog_state,
         &mut menu_state.new_zone_dialog_state,
     );
-    
+
     // Hierarchy Panel (left side) - now with entity query access
     editor_hierarchy_panel(&*ctx, &map_editor_state, &hierarchy_query, &mut commands);
-    
+
     // Properties Panel (right side) - now with entity data access
     editor_properties_panel(
         &*ctx,
@@ -229,7 +234,7 @@ pub fn editor_ui_system(
         &mut property_change_event,
         &mut duplicate_event,
     );
-    
+
     // Status Bar (bottom)
     editor_status_bar(&*ctx, &mut map_editor_state, &save_status, current_zone_id);
 }
@@ -245,9 +250,9 @@ pub fn model_browser_panel_system(
     if !map_editor_state.enabled {
         return;
     }
-    
+
     let ctx = contexts.ctx_mut().unwrap();
-    
+
     editor_model_browser_panel(
         &*ctx,
         &map_editor_state,
@@ -274,7 +279,7 @@ pub fn new_zone_system(
             // we would show a dialog asking the user to save.
             log::warn!("[NewZone] Zone has unsaved changes, but proceeding with new zone (dialog not implemented)");
         }
-        
+
         // Despawn all zone objects
         let mut despawned_count = 0;
         for entity in query.iter() {
@@ -299,12 +304,19 @@ pub fn new_zone_system(
         // Bootstrap default files if requested
         if event.initialize_default_block {
             if let Err(err) = bootstrap_default_zone_blocks(&target_path) {
-                log::error!("[NewZone] Failed to bootstrap default block files at {:?}: {}", target_path, err);
+                log::error!(
+                    "[NewZone] Failed to bootstrap default block files at {:?}: {}",
+                    target_path,
+                    err
+                );
             } else {
-                log::info!("[NewZone] Bootstrapped flat default zone files at {:?}", target_path);
+                log::info!(
+                    "[NewZone] Bootstrapped flat default zone files at {:?}",
+                    target_path
+                );
             }
         }
-        
+
         // Clear selection and reset modification state
         map_editor_state.clear_selection();
         map_editor_state.is_modified = false;
@@ -313,7 +325,11 @@ pub fn new_zone_system(
         // Set custom zone path for saving
         custom_zone_path.path = Some(target_path.clone());
         custom_zone_path.zone_id = requested_zone_id;
-        log::info!("[NewZone] Set custom zone path: {:?} for zone id {}", target_path, requested_zone_id);
+        log::info!(
+            "[NewZone] Set custom zone path: {:?} for zone id {}",
+            target_path,
+            requested_zone_id
+        );
 
         if let Some(zone_id) = ZoneId::new(requested_zone_id) {
             if game_data.zone_list.get_zone(zone_id).is_some() {
@@ -337,8 +353,11 @@ pub fn new_zone_system(
                 }
             }
         }
-        
-        log::info!("[NewZone] Cleared {} zone objects, editor state reset", despawned_count);
+
+        log::info!(
+            "[NewZone] Cleared {} zone objects, editor state reset",
+            despawned_count
+        );
     }
 }
 
@@ -376,7 +395,11 @@ pub fn add_water_plane_system(
                     terrain.him_heights_cm.iter().copied().sum::<f32>()
                         / terrain.him_heights_cm.len() as f32
                 };
-                (terrain.block_x, terrain.block_y, avg + terrain.height_offset_cm)
+                (
+                    terrain.block_x,
+                    terrain.block_y,
+                    avg + terrain.height_offset_cm,
+                )
             })
             .unwrap_or((0, 0, 0.0));
 
@@ -514,12 +537,23 @@ fn bootstrap_default_zone_blocks(zone_path: &PathBuf) -> Result<(), anyhow::Erro
     // a full editable terrain surface for the new custom zone path.
     for block_y in 0..64u32 {
         for block_x in 0..64u32 {
-            write_default_him(&zone_path.join(format!("{}_{}.HIM", block_x, block_y)), 65, 65)?;
-            write_default_til(&zone_path.join(format!("{}_{}.TIL", block_x, block_y)), 16, 16)?;
+            write_default_him(
+                &zone_path.join(format!("{}_{}.HIM", block_x, block_y)),
+                65,
+                65,
+            )?;
+            write_default_til(
+                &zone_path.join(format!("{}_{}.TIL", block_x, block_y)),
+                16,
+                16,
+            )?;
 
             let mut ifo_block = IfoBlock::new(block_x, block_y);
             ifo_block.original_block_order = vec![];
-            export_ifo_block(&ifo_block, &zone_path.join(format!("{}_{}.IFO", block_x, block_y)))?;
+            export_ifo_block(
+                &ifo_block,
+                &zone_path.join(format!("{}_{}.IFO", block_x, block_y)),
+            )?;
         }
     }
 

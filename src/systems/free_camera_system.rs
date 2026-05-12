@@ -5,7 +5,8 @@ use bevy::{
     },
     math::{Quat, Vec2, Vec3},
     prelude::{
-        BevyError, Component, MessageReader, KeyCode, Local, MouseButton, Query, Res, Time, Transform, With,
+        BevyError, Component, KeyCode, Local, MessageReader, MouseButton, Query, Res, Time,
+        Transform, With,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
@@ -81,7 +82,8 @@ pub fn free_camera_system(
         return Ok(());
     };
 
-    let allow_mouse_input = control_state.is_dragging || !egui_ctx.ctx_mut().unwrap().wants_pointer_input();
+    let allow_mouse_input =
+        control_state.is_dragging || !egui_ctx.ctx_mut().unwrap().wants_pointer_input();
     let allow_keyboard_input = !egui_ctx.ctx_mut().unwrap().wants_keyboard_input();
 
     let left_pressed = mouse_buttons.pressed(MouseButton::Left);
@@ -111,10 +113,10 @@ pub fn free_camera_system(
     if allow_keyboard_input {
         for key in keyboard.get_pressed() {
             match key {
-                KeyCode::KeyW => move_vec.z -= 1.0,      // Forward
-                KeyCode::KeyS => move_vec.z += 1.0,      // Backward
-                KeyCode::KeyA => move_vec.x -= 1.0,      // Left
-                KeyCode::KeyD => move_vec.x += 1.0,      // Right
+                KeyCode::KeyW => move_vec.z -= 1.0, // Forward
+                KeyCode::KeyS => move_vec.z += 1.0, // Backward
+                KeyCode::KeyA => move_vec.x -= 1.0, // Left
+                KeyCode::KeyD => move_vec.x += 1.0, // Right
                 // Note: Q and E are NOT used for camera up/down to avoid conflict
                 // with map editor mode switching (Q=Select, E=Rotate)
                 KeyCode::ShiftLeft => speed_boost_multiplier = 4.0,
@@ -141,17 +143,21 @@ pub fn free_camera_system(
         let rot_x = yaw_rot * Vec3::X;
         let rot_z = yaw_rot * Vec3::Z;
 
-        let move_delta: Vec3 = -(drag_vec.x * rot_x + (drag_vec.z * rot_z) - Vec3::new(0.0, drag_vec.y, 0.0))
+        let move_delta: Vec3 = -(drag_vec.x * rot_x + (drag_vec.z * rot_z)
+            - Vec3::new(0.0, drag_vec.y, 0.0))
             * time.delta().as_secs_f32()
             * speed_boost_multiplier
             * drag_speed;
-        
+
         let translation: mint::Vector3<f32> = mint::Vector3 {
             x: move_delta.x,
             y: move_delta.y,
             z: move_delta.z,
         };
-        free_camera.rig.driver_mut::<Position>().translate(translation);
+        free_camera
+            .rig
+            .driver_mut::<Position>()
+            .translate(translation);
     }
 
     if move_vec.length_squared() > 0.0 || translate_vec.length_squared() > 0.0 {
@@ -159,13 +165,16 @@ pub fn free_camera_system(
             * time.delta().as_secs_f32()
             * speed_boost_multiplier
             * move_speed;
-        
+
         let translation: mint::Vector3<f32> = mint::Vector3 {
             x: move_delta.x,
             y: move_delta.y,
             z: move_delta.z,
         };
-        free_camera.rig.driver_mut::<Position>().translate(translation);
+        free_camera
+            .rig
+            .driver_mut::<Position>()
+            .translate(translation);
     }
 
     if right_pressed && !left_pressed && !middle_pressed {

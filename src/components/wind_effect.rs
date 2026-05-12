@@ -26,7 +26,7 @@ impl Default for WindSwaySettings {
             enabled: true,
             global_intensity: 0.1,
             grass_speed: 2.0,
-            grass_amplitude: 0.2,  // ~11 degrees - clearly visible
+            grass_amplitude: 0.2, // ~11 degrees - clearly visible
             tree_speed: 1.5,
             tree_amplitude: 0.15, // ~8 degrees - visible but gentler
             debug_log_count: false,
@@ -133,15 +133,15 @@ pub fn wind_sway_system(
     if !settings.enabled {
         return;
     }
-    
+
     // Debug logging if enabled
     if settings.debug_log_count {
         let count = query.iter().len();
         log::info!("[WIND SWAY] {} entities with WindSway component", count);
     }
-    
+
     let time_seconds = time.elapsed_secs();
-    
+
     for (wind_sway, mut transform) in query.iter_mut() {
         // Get speed and amplitude from settings based on type
         let (speed, amplitude) = if wind_sway.is_grass {
@@ -149,21 +149,23 @@ pub fn wind_sway_system(
         } else {
             (settings.tree_speed, settings.tree_amplitude)
         };
-        
+
         // Multi-frequency sine wave for more natural movement
         // Primary wave
         let primary_wave = (time_seconds * speed + wind_sway.phase_offset).sin();
         // Secondary faster wave for flutter effect
-        let secondary_wave = (time_seconds * speed * 2.3 + wind_sway.phase_offset * 1.5).sin() * 0.3;
+        let secondary_wave =
+            (time_seconds * speed * 2.3 + wind_sway.phase_offset * 1.5).sin() * 0.3;
         // Slow large movement
         let slow_wave = (time_seconds * speed * 0.3 + wind_sway.phase_offset * 0.7).sin() * 0.2;
-        
+
         // Combine waves with settings
-        let combined_sway = (primary_wave + secondary_wave + slow_wave) * amplitude * settings.global_intensity;
-        
+        let combined_sway =
+            (primary_wave + secondary_wave + slow_wave) * amplitude * settings.global_intensity;
+
         // Create rotation quaternion around the sway axis
         let sway_rotation = Quat::from_axis_angle(wind_sway.sway_axis, combined_sway);
-        
+
         // Apply sway on top of base rotation
         // For grass: rotate around the base (X-axis primarily)
         // For leaves: rotate around the attachment point
@@ -173,7 +175,9 @@ pub fn wind_sway_system(
             transform.rotation = wind_sway.base_rotation * sway_rotation * sway_z;
         } else {
             // Tree leaves sway more gently with slight flutter
-            let flutter = (time_seconds * 8.0 + wind_sway.phase_offset).sin() * 0.02 * settings.global_intensity;
+            let flutter = (time_seconds * 8.0 + wind_sway.phase_offset).sin()
+                * 0.02
+                * settings.global_intensity;
             let flutter_rot = Quat::from_axis_angle(Vec3::Y, flutter);
             transform.rotation = wind_sway.base_rotation * sway_rotation * flutter_rot;
         }

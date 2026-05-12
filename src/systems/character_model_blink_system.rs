@@ -1,9 +1,7 @@
 use bevy::prelude::{Commands, Query, Res, Time};
 use rand::Rng;
 
-use crate::{
-    components::{BlinkClip, CharacterBlinkTimer, CharacterModel, CharacterModelPart, Dead},
-};
+use crate::components::{BlinkClip, CharacterBlinkTimer, CharacterModel, CharacterModelPart, Dead};
 
 pub fn character_model_blink_system(
     mut commands: Commands,
@@ -46,14 +44,17 @@ pub fn character_model_blink_system(
         if changed {
             // Apply BlinkClip component to face mesh entities when state changes
             // This tracks blink state per entity for potential shader-based clipping
-            let blink_clip = if blink_timer.is_open { 
-                BlinkClip::EyesOpen 
-            } else { 
-                BlinkClip::EyesClosed 
+            let blink_clip = if blink_timer.is_open {
+                BlinkClip::EyesOpen
+            } else {
+                BlinkClip::EyesClosed
             };
 
             // Insert the BlinkClip component on all face model part entities
-            for &face_entity in character_model.model_parts[CharacterModelPart::CharacterFace].1.iter() {
+            for &face_entity in character_model.model_parts[CharacterModelPart::CharacterFace]
+                .1
+                .iter()
+            {
                 commands.entity(face_entity).insert(blink_clip);
             }
         }

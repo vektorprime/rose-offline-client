@@ -38,7 +38,6 @@ impl AsRef<[u8]> for AudioSource {
     }
 }
 
-
 impl Asset for AudioSource {}
 
 impl VisitAssetDependencies for AudioSource {

@@ -86,4 +86,3 @@ pub enum SailSide {
     Starboard,
     Center,
 }
-

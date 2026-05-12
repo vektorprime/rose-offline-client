@@ -1,27 +1,27 @@
 use bevy::{
     input::ButtonInput,
     prelude::{
-        App, Camera, Camera3d, GlobalTransform, IntoScheduleConfigs, KeyCode, Plugin, Query, Res, ResMut, Update, With,
+        App, Camera, Camera3d, GlobalTransform, IntoScheduleConfigs, KeyCode, Plugin, Query, Res,
+        ResMut, Update, With,
     },
     window::{PrimaryWindow, Window},
 };
 use bevy_egui::{EguiContexts, EguiPreUpdateSet};
-use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter};
 use bevy_rapier3d::plugin::context::systemparams::ReadRapierContext;
+use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter};
 
 use rose_game_common::{components::*, messages::ClientEntityId};
 
-use crate::{
-    components::*,
-    resources::DebugInspector,
-};
+use crate::{components::*, resources::DebugInspector};
 
 pub struct DebugInspectorPlugin;
 
 impl Plugin for DebugInspectorPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(DebugInspector::default())
-            .add_systems(Update, debug_inspector_picking_system.after(bevy_egui::EguiPreUpdateSet::InitContexts));
+        app.insert_resource(DebugInspector::default()).add_systems(
+            Update,
+            debug_inspector_picking_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+        );
 
         app.register_type::<rose_data::MotionId>()
             .register_type::<rose_data::NpcId>()
@@ -101,7 +101,7 @@ fn debug_inspector_picking_system(
     let Ok(rapier_context) = rapier_context.single() else {
         return Ok(());
     };
-    
+
     if !debug_inspector_state.enable_picking {
         // Picking disabled
         return Ok(());

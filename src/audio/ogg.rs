@@ -1,10 +1,10 @@
-use bevy::asset::{AssetLoader, io::Reader, LoadContext};
-use std::future::Future;
-use bevy::tasks::futures_lite::AsyncReadExt;
+use bevy::asset::{io::Reader, AssetLoader, LoadContext};
 use bevy::reflect::TypePath;
+use bevy::tasks::futures_lite::AsyncReadExt;
 use lewton::{
     audio::AudioReadError, inside_ogg::OggStreamReader, samples::InterleavedSamples, VorbisError,
 };
+use std::future::Future;
 
 use crate::audio::audio_source::AudioSource;
 
@@ -31,8 +31,9 @@ impl AssetLoader for OggLoader {
                 bytes: bytes.into(),
                 decoded: None,
                 create_streaming_source_fn: |audio_source| {
-                    OggAudioSource::new(audio_source)
-                        .map(|source| Box::new(source) as Box<dyn StreamingAudioSource + Send + Sync>)
+                    OggAudioSource::new(audio_source).map(|source| {
+                        Box::new(source) as Box<dyn StreamingAudioSource + Send + Sync>
+                    })
                 },
             })
         }

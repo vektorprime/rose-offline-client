@@ -1,14 +1,14 @@
 //! Zone Memory Profiler System
-//! 
+//!
 //! This system provides memory profiling and leak detection for the zone loading pipeline.
 //! It tracks asset allocations, entity counts, and detects memory leak patterns.
 
-use std::collections::HashMap;
-use bevy::prelude::*;
 use bevy::asset::Assets;
+use bevy::prelude::*;
+use std::collections::HashMap;
 
-use crate::zone_loader::MemoryTrackingResource;
 use crate::resources::zone_debug_diagnostics::ZoneDebugDiagnostics;
+use crate::zone_loader::MemoryTrackingResource;
 
 /// Resource for detailed memory profiling
 #[derive(Resource, Default, Debug)]
@@ -115,7 +115,7 @@ impl ZoneMemoryProfiler {
         memory_tracking: &MemoryTrackingResource,
     ) {
         let now = std::time::Instant::now();
-        
+
         // Check if enough time has passed since last snapshot
         if let Some(last) = self.last_snapshot_time {
             if now.duration_since(last).as_secs() < self.snapshot_interval_secs {
@@ -188,7 +188,8 @@ impl ZoneMemoryProfiler {
         }
 
         // Check for asset handle leak
-        let mesh_growth = last.memory_tracking.mesh_handles_created as i64 - first.memory_tracking.mesh_handles_created as i64;
+        let mesh_growth = last.memory_tracking.mesh_handles_created as i64
+            - first.memory_tracking.mesh_handles_created as i64;
         if mesh_growth > 50 {
             let alert = LeakAlert {
                 detected_at: std::time::Instant::now(),
@@ -204,7 +205,8 @@ impl ZoneMemoryProfiler {
         }
 
         // Check for excessive duplicate requests
-        let duplicate_growth = last.memory_tracking.duplicate_asset_requests - first.memory_tracking.duplicate_asset_requests;
+        let duplicate_growth = last.memory_tracking.duplicate_asset_requests
+            - first.memory_tracking.duplicate_asset_requests;
         if duplicate_growth > 50 {
             let alert = LeakAlert {
                 detected_at: std::time::Instant::now(),
@@ -220,8 +222,10 @@ impl ZoneMemoryProfiler {
         }
 
         // Check for memory growth pattern (entities spawned but not despawned)
-        let spawned = last.memory_tracking.entities_spawned as i64 - first.memory_tracking.entities_spawned as i64;
-        let despawned = last.memory_tracking.entities_despawned as i64 - first.memory_tracking.entities_despawned as i64;
+        let spawned = last.memory_tracking.entities_spawned as i64
+            - first.memory_tracking.entities_spawned as i64;
+        let despawned = last.memory_tracking.entities_despawned as i64
+            - first.memory_tracking.entities_despawned as i64;
         if spawned > 50 && despawned == 0 {
             let alert = LeakAlert {
                 detected_at: std::time::Instant::now(),
@@ -239,10 +243,10 @@ impl ZoneMemoryProfiler {
 
     fn add_leak_alert(&mut self, alert: LeakAlert) {
         // Only add if we don't have a similar recent alert
-        let is_duplicate = self.leak_alerts.iter().rev().take(5).any(|a| {
-            a.alert_type == alert.alert_type && 
-            a.detected_at.elapsed().as_secs() < 30
-        });
+        let is_duplicate =
+            self.leak_alerts.iter().rev().take(5).any(|a| {
+                a.alert_type == alert.alert_type && a.detected_at.elapsed().as_secs() < 30
+            });
 
         if !is_duplicate {
             match alert.severity {
@@ -251,9 +255,9 @@ impl ZoneMemoryProfiler {
                 LeakSeverity::Info => log::info!("[MEMORY PROFILER] {}", alert.message),
             }
             log::info!("[MEMORY PROFILER] Suggestion: {}", alert.suggestion);
-            
+
             self.leak_alerts.push(alert);
-            
+
             // Keep only recent alerts
             if self.leak_alerts.len() > 20 {
                 self.leak_alerts.remove(0);
@@ -283,22 +287,32 @@ impl ZoneMemoryProfiler {
         log::info!("========================================");
         log::info!("ZONE MEMORY PROFILER REPORT");
         log::info!("========================================");
-        
+
         if let Some(latest) = self.snapshots.last() {
             log::info!("Current snapshot:");
             log::info!("  Entities: {}", latest.entity_count);
             log::info!("  Meshes: {}", latest.mesh_count);
             log::info!("  Materials: {}", latest.material_count);
             log::info!("  Textures: {}", latest.texture_count);
-            log::info!("  Asset handles created: mesh={}, material={}, texture={}",
+            log::info!(
+                "  Asset handles created: mesh={}, material={}, texture={}",
                 latest.memory_tracking.mesh_handles_created,
                 latest.memory_tracking.material_handles_created,
-                latest.memory_tracking.texture_handles_created);
-            log::info!("  Unique asset paths: {}", latest.memory_tracking.unique_asset_paths);
-            log::info!("  Duplicate requests: {}", latest.memory_tracking.duplicate_asset_requests);
-            log::info!("  Spawned: {}, Despawned: {}",
+                latest.memory_tracking.texture_handles_created
+            );
+            log::info!(
+                "  Unique asset paths: {}",
+                latest.memory_tracking.unique_asset_paths
+            );
+            log::info!(
+                "  Duplicate requests: {}",
+                latest.memory_tracking.duplicate_asset_requests
+            );
+            log::info!(
+                "  Spawned: {}, Despawned: {}",
                 latest.memory_tracking.entities_spawned,
-                latest.memory_tracking.entities_despawned);
+                latest.memory_tracking.entities_despawned
+            );
         }
 
         log::info!("\nPeak usage:");
@@ -307,7 +321,10 @@ impl ZoneMemoryProfiler {
         log::info!("  Materials: {}", self.peak_material_count);
         log::info!("  Textures: {}", self.peak_texture_count);
 
-        log::info!("\nGrowth rate: {:.2} entities/second", self.get_entity_growth_rate());
+        log::info!(
+            "\nGrowth rate: {:.2} entities/second",
+            self.get_entity_growth_rate()
+        );
 
         if !self.leak_alerts.is_empty() {
             log::warn!("\nActive leak alerts: {}", self.leak_alerts.len());
@@ -337,17 +354,19 @@ pub fn zone_memory_profiler_system(
     // Count various asset types
     let mesh_count = meshes.len();
     let texture_count = images.len();
-    
+
     // Estimate material count from diagnostics
     let material_count = diagnostics.entities_by_type.values().sum();
-    
+
     // Take snapshot
     profiler.take_snapshot(
         all_entities.iter().count(),
         mesh_count,
         material_count,
         texture_count,
-        memory_tracking.mesh_handles_created + memory_tracking.material_handles_created + memory_tracking.texture_handles_created,
+        memory_tracking.mesh_handles_created
+            + memory_tracking.material_handles_created
+            + memory_tracking.texture_handles_created,
         &memory_tracking,
     );
 
@@ -355,7 +374,8 @@ pub fn zone_memory_profiler_system(
     static mut FRAME_COUNTER: usize = 0;
     unsafe {
         FRAME_COUNTER += 1;
-        if FRAME_COUNTER % 300 == 0 { // Every 5 seconds at 60fps
+        if FRAME_COUNTER % 300 == 0 {
+            // Every 5 seconds at 60fps
             profiler.log_report();
         }
     }
@@ -363,15 +383,13 @@ pub fn zone_memory_profiler_system(
 
 /// System to check for command buffer accumulation
 /// This can happen if Commands are not being flushed properly
-pub fn command_buffer_validation_system(
-    diagnostics: Res<ZoneDebugDiagnostics>,
-) {
+pub fn command_buffer_validation_system(diagnostics: Res<ZoneDebugDiagnostics>) {
     static mut LAST_SPAWN_COUNT: usize = 0;
     static mut FRAME_COUNTER: usize = 0;
-    
+
     unsafe {
         FRAME_COUNTER += 1;
-        
+
         // Check every 60 frames
         if FRAME_COUNTER % 60 != 0 {
             return;
@@ -395,10 +413,12 @@ pub struct ZoneMemoryProfilerPlugin;
 
 impl Plugin for ZoneMemoryProfilerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ZoneMemoryProfiler>()
-           .add_systems(Update, (
-               zone_memory_profiler_system,
-               command_buffer_validation_system,
-           ));
+        app.init_resource::<ZoneMemoryProfiler>().add_systems(
+            Update,
+            (
+                zone_memory_profiler_system,
+                command_buffer_validation_system,
+            ),
+        );
     }
 }

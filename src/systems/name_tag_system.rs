@@ -8,15 +8,15 @@ use bevy::{
     log::{info, warn},
     platform::collections::HashMap,
     prelude::{
-        Assets, Changed, ChildOf, Color, Commands, Entity, MessageReader,
-        GlobalTransform, Handle, Image, Local, Query, Res, ResMut, Transform, Vec2, Vec3,
-        Visibility, With, Without,
+        Assets, Changed, ChildOf, Color, Commands, Entity, GlobalTransform, Handle, Image, Local,
+        MessageReader, Query, Res, ResMut, Transform, Vec2, Vec3, Visibility, With, Without,
     },
-    render::{
-        render_resource::{Extent3d, TextureDimension, TextureFormat},
-    },
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
-use bevy_camera::{Camera, visibility::{NoFrustumCulling, VisibilityClass}};
+use bevy_camera::{
+    visibility::{NoFrustumCulling, VisibilityClass},
+    Camera,
+};
 use bevy_egui::{egui, EguiContexts, PrimaryEguiContext};
 
 use rose_game_common::components::{Level, Npc, Team};
@@ -259,7 +259,6 @@ fn create_nametag_data(
 
         max_bounds = max_bounds.max(row_max);
         row_bounds.push((row_min, row_max));
-
     }
 
     // info!("[NAME_TAG_DEBUG] All font textures found, max_bounds: {:?}", max_bounds);
@@ -269,7 +268,7 @@ fn create_nametag_data(
     let target_texture_height = (max_bounds.y as u32).next_power_of_two();
     let data_len = (target_texture_width * target_texture_height * 4) as usize;
     let mut data = vec![0; data_len];
-    
+
     // info!("[NAME_TAG_DEBUG] Allocated texture: {}x{}", target_texture_width, target_texture_height);
 
     // Copy letters to texture
@@ -320,7 +319,7 @@ fn create_nametag_data(
             }
         }
     }
-    
+
     // info!("[NAME_TAG_DEBUG] Copied {} glyphs to texture", total_glyphs_copied);
 
     let mut total_nonzero_alpha = 0usize;
@@ -335,11 +334,7 @@ fn create_nametag_data(
     }
     info!(
         "[NAME_TAG_DIAG] Entity {:?} texture {}x{} alpha_nonzero={} max_alpha={}",
-        debug_entity,
-        target_texture_width,
-        target_texture_height,
-        total_nonzero_alpha,
-        max_alpha
+        debug_entity, target_texture_width, target_texture_height, total_nonzero_alpha, max_alpha
     );
 
     if total_nonzero_alpha == 0 {
@@ -362,7 +357,7 @@ fn create_nametag_data(
     // Use nearest sampling so world-space text remains crisp instead of blurry.
     image.sampler = ImageSampler::nearest();
     let image = images.add(image);
-    
+
     // info!("[NAME_TAG_DEBUG] Created image handle: {:?}", image);
 
     let mut rects: ArrayVec<WorldUiRect, 2> = ArrayVec::new();
@@ -454,7 +449,7 @@ pub fn name_tag_system(
     let Ok(camera_entity) = query_camera.single() else {
         return;
     };
-    
+
     let player = query_player.single().ok();
     let pixels_per_point = egui_context.ctx_mut().unwrap().pixels_per_point();
 
@@ -492,7 +487,7 @@ pub fn name_tag_system(
             name_tag_cache.pending.clear();
         }
     }
-    
+
     for object in query_add.iter() {
         let name_tag_type = if let Some(npc) = object.npc {
             if object
@@ -529,7 +524,9 @@ pub fn name_tag_system(
                 name_tag_cache.cache.get(&object.name.name).unwrap()
             } else {
                 // Re-insert pending data to try again next frame
-                name_tag_cache.pending.insert(object.entity, pending_name_tag_data);
+                name_tag_cache
+                    .pending
+                    .insert(object.entity, pending_name_tag_data);
                 continue;
             }
         } else {
@@ -552,9 +549,9 @@ pub fn name_tag_system(
         } else {
             Visibility::Hidden
         };
-        
+
         // info!("[NAME_TAG_DEBUG] Spawning name tag entity for '{}' with visibility {:?}", object.name.name, visibility);
-        
+
         let name_tag_entity = commands
             .spawn((
                 NameTag { name_tag_type },
@@ -781,9 +778,9 @@ pub fn name_tag_system(
             .entity(object.entity)
             .insert(NameTagEntity(name_tag_entity))
             .add_child(name_tag_entity);
-            
+
         // info!("[NAME_TAG_DEBUG] Successfully created name tag for entity {:?} name='{}'", object.entity, object.name.name);
     }
-    
+
     // info!("[NAME_TAG_DEBUG] === NAME TAG SYSTEM END === Cache: {}, Pending: {}", name_tag_cache.cache.len(), name_tag_cache.pending.len());
 }

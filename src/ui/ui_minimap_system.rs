@@ -88,10 +88,10 @@ pub struct UiStateMinimap {
     // Image scale factor (for upscaled images)
     // 1.0 = original resolution, 2.0 = 2x upscaled, 4.0 = 4x upscaled
     pub image_scale: f32,
-    
+
     // Scaled outline pixels (original * scale)
     pub scaled_outline_pixels: f32,
-    
+
     // Centered mode (for ALT+M toggle)
     pub is_centered: bool,
 }
@@ -140,13 +140,16 @@ fn generate_text_galley(
     text_job.wrap.max_rows = 1;
     text_job.wrap.break_anywhere = true;
 
-    ctx.layer_painter(egui::LayerId::background()).layout_job(text_job)
+    ctx.layer_painter(egui::LayerId::background())
+        .layout_job(text_job)
 }
 
 /// Check if an entity is a monster (NPC with hostile team)
 fn is_monster_entity(client_entity: &ClientEntity, team: &Team, player_team: &Team) -> bool {
     client_entity.entity_type == ClientEntityType::Monster
-        || (client_entity.entity_type == ClientEntityType::Npc && team.id != player_team.id && team.id != Team::DEFAULT_NPC_TEAM_ID)
+        || (client_entity.entity_type == ClientEntityType::Npc
+            && team.id != player_team.id
+            && team.id != Team::DEFAULT_NPC_TEAM_ID)
 }
 
 pub fn ui_minimap_system(
@@ -156,7 +159,15 @@ pub fn ui_minimap_system(
     query_player: Query<(&Position, &Team, Option<&PartyInfo>), With<PlayerCharacter>>,
     query_characters: Query<(&CharacterInfo, &Position, &Team), Without<PlayerCharacter>>,
     // Query for monsters (NPCs that are hostile)
-    query_monsters: Query<(&Position, &ClientEntity, &Team, Option<&crate::components::ClientEntityName>), (With<Npc>, Without<PlayerCharacter>)>,
+    query_monsters: Query<
+        (
+            &Position,
+            &ClientEntity,
+            &Team,
+            Option<&crate::components::ClientEntityName>,
+        ),
+        (With<Npc>, Without<PlayerCharacter>),
+    >,
     asset_server: Res<AssetServer>,
     query_camera: Query<&Transform, With<Camera3d>>,
     images: Res<Assets<Image>>,
@@ -177,7 +188,7 @@ pub fn ui_minimap_system(
     // Handle ALT+M shortcut to toggle centered mode
     let alt_pressed = keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight);
     let m_just_pressed = keyboard.just_pressed(KeyCode::KeyM);
-    
+
     if alt_pressed && m_just_pressed {
         ui_state.is_centered = !ui_state.is_centered;
         // Resize window based on centered mode
@@ -228,9 +239,11 @@ pub fn ui_minimap_system(
             if let Some(minimap_path) =
                 zone_data.and_then(|zone_data| zone_data.minimap_path.as_ref())
             {
-                ui_state.minimap_image = asset_server.load(minimap_path.path().to_string_lossy().into_owned());
-                ui_state.minimap_texture =
-                    egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(ui_state.minimap_image.clone()));
+                ui_state.minimap_image =
+                    asset_server.load(minimap_path.path().to_string_lossy().into_owned());
+                ui_state.minimap_texture = egui_context.add_image(
+                    bevy_egui::EguiTextureHandle::Strong(ui_state.minimap_image.clone()),
+                );
             }
 
             ui_state.zone_id = Some(current_zone.id);
@@ -256,13 +269,16 @@ pub fn ui_minimap_system(
 
     if ui_state.minimap_image_size.is_none() {
         if let Some(minimap_image) = images.get(&ui_state.minimap_image) {
-            let minimap_image_size = Vec2::new(minimap_image.size()[0] as f32, minimap_image.size()[1] as f32);
+            let minimap_image_size = Vec2::new(
+                minimap_image.size()[0] as f32,
+                minimap_image.size()[1] as f32,
+            );
             ui_state.minimap_image_size = Some(minimap_image_size);
 
             if let Some(zone_data) = game_data.zone_list.get_zone(current_zone.id) {
                 let world_block_size =
                     16.0 * current_zone_data.zon.grid_per_patch * current_zone_data.zon.grid_size;
-                
+
                 // ============================================================
                 // MINIMAP COORDINATE SYSTEM - CORRECTED ANALYSIS
                 // ============================================================
@@ -280,25 +296,29 @@ pub fn ui_minimap_system(
                 // - distance_per_pixel = world_block_size / (64 * 3.76)
                 //
                 // ============================================================
-                
+
                 // ORIGINAL map dimensions (correct values)
                 const ORIGINAL_IMAGE_WIDTH: f32 = 576.0;
                 const ORIGINAL_IMAGE_HEIGHT: f32 = 512.0;
-                
+
                 // Calculate scale from actual dimensions vs original
                 let scale_x = minimap_image_size.x / ORIGINAL_IMAGE_WIDTH;
                 let scale_y = minimap_image_size.y / ORIGINAL_IMAGE_HEIGHT;
                 ui_state.image_scale = ((scale_x + scale_y) / 2.0).max(1.0);
-                
+
                 // Scale the outline pixels
                 ui_state.scaled_outline_pixels = ORIGINAL_MAP_OUTLINE_PIXELS * ui_state.image_scale;
-                
+
                 // Calculate scaled pixels per block
                 let scaled_pixels_per_block = ORIGINAL_MAP_BLOCK_PIXELS * ui_state.image_scale;
-                
+
                 // Calculate how many world blocks the image covers
-                let minimap_blocks_x = (minimap_image_size.x - 2.0 * ui_state.scaled_outline_pixels) / scaled_pixels_per_block;
-                let minimap_blocks_y = (minimap_image_size.y - 2.0 * ui_state.scaled_outline_pixels) / scaled_pixels_per_block;
+                let minimap_blocks_x = (minimap_image_size.x
+                    - 2.0 * ui_state.scaled_outline_pixels)
+                    / scaled_pixels_per_block;
+                let minimap_blocks_y = (minimap_image_size.y
+                    - 2.0 * ui_state.scaled_outline_pixels)
+                    / scaled_pixels_per_block;
 
                 // World coverage from zone data
                 let min_pos_x = zone_data.minimap_start_x as f32 * world_block_size;
@@ -309,7 +329,7 @@ pub fn ui_minimap_system(
 
                 ui_state.min_world_pos = Vec2::new(min_pos_x, min_pos_y);
                 ui_state.max_world_pos = Vec2::new(max_pos_x, max_pos_y);
-                
+
                 // distance_per_pixel must be scaled - more pixels = smaller world distance per pixel
                 ui_state.distance_per_pixel = world_block_size / scaled_pixels_per_block;
             }
@@ -385,14 +405,22 @@ pub fn ui_minimap_system(
     } else {
         MAX_WINDOW_SIZE.to_array().into()
     };
-    
+
     egui::Window::new("Minimap")
         .anchor(window_anchor, [0.0, 0.0])
         .frame(egui::Frame::none())
         .title_bar(false)
         .resizable(!minimised)
-        .min_size(if minimised { egui::vec2(150.0, 25.0) } else { MIN_WINDOW_SIZE.to_array().into() })
-        .max_size(if minimised { egui::vec2(300.0, 25.0) } else { max_window_size })
+        .min_size(if minimised {
+            egui::vec2(150.0, 25.0)
+        } else {
+            MIN_WINDOW_SIZE.to_array().into()
+        })
+        .max_size(if minimised {
+            egui::vec2(300.0, 25.0)
+        } else {
+            max_window_size
+        })
         .default_width(dialog_width)
         .default_height(dialog_height)
         .show(egui_context.ctx_mut().unwrap(), |ui| {
@@ -440,8 +468,8 @@ pub fn ui_minimap_system(
 
                 if zoom_delta != 0.0 && response.hovered() {
                     let old_zoom = ui_state.zoom_level;
-                    ui_state.zoom_level = (ui_state.zoom_level * (1.0 + zoom_delta))
-                        .clamp(MIN_ZOOM, MAX_ZOOM);
+                    ui_state.zoom_level =
+                        (ui_state.zoom_level * (1.0 + zoom_delta)).clamp(MIN_ZOOM, MAX_ZOOM);
 
                     // Zoom towards cursor position
                     if let Some(cursor_pos) = response.hover_pos() {
@@ -450,7 +478,8 @@ pub fn ui_minimap_system(
                             cursor_pos.y - minimap_rect.min.y,
                         );
                         let map_cursor_pos = ui_state.scroll + cursor_offset / old_zoom;
-                        let new_map_cursor_pos = ui_state.scroll + cursor_offset / ui_state.zoom_level;
+                        let new_map_cursor_pos =
+                            ui_state.scroll + cursor_offset / ui_state.zoom_level;
                         ui_state.scroll += (map_cursor_pos - new_map_cursor_pos);
                     }
                 }
@@ -555,7 +584,8 @@ pub fn ui_minimap_system(
 
                 // Draw other characters (if enabled)
                 if ui_state.show_players {
-                    for (character_info, character_position, character_team) in query_characters.iter()
+                    for (character_info, character_position, character_team) in
+                        query_characters.iter()
                     {
                         let icon_image = if player_team
                             .map_or(false, |player_team| character_team.id != player_team.id)
@@ -637,7 +667,9 @@ pub fn ui_minimap_system(
                 // Draw monsters (if enabled)
                 if ui_state.show_monsters {
                     if let Some(player_team) = player_team {
-                        for (monster_position, client_entity, team, entity_name) in query_monsters.iter() {
+                        for (monster_position, client_entity, team, entity_name) in
+                            query_monsters.iter()
+                        {
                             // Only show hostile monsters
                             if !is_monster_entity(client_entity, team, player_team) {
                                 continue;
@@ -647,19 +679,31 @@ pub fn ui_minimap_system(
                                 continue;
                             };
 
-                            let monster_minimap_position = map_absolute_position(ui_state, monster_position.position);
+                            let monster_minimap_position =
+                                map_absolute_position(ui_state, monster_position.position);
                             let icon_scale = zoom.clamp(0.75, 1.5);
-                            let icon_size = Vec2::new(icon_image.width, icon_image.height) * icon_scale;
+                            let icon_size =
+                                Vec2::new(icon_image.width, icon_image.height) * icon_scale;
                             let icon_rect = egui::Rect::from_min_size(
-                                (monster_minimap_position - icon_size / 2.0).to_array().into(),
+                                (monster_minimap_position - icon_size / 2.0)
+                                    .to_array()
+                                    .into(),
                                 icon_size.to_array().into(),
                             );
 
                             if minimap_rect.contains_rect(icon_rect) {
                                 // Draw with red tint for hostile monsters
-                                let rect = egui::Rect::from_min_size(icon_rect.min, icon_size.to_array().into());
-                                let mut mesh = egui::epaint::Mesh::with_texture(icon_image.texture_id);
-                                mesh.add_rect_with_uv(rect, icon_image.uv, egui::Color32::from_rgb(255, 100, 100));
+                                let rect = egui::Rect::from_min_size(
+                                    icon_rect.min,
+                                    icon_size.to_array().into(),
+                                );
+                                let mut mesh =
+                                    egui::epaint::Mesh::with_texture(icon_image.texture_id);
+                                mesh.add_rect_with_uv(
+                                    rect,
+                                    icon_image.uv,
+                                    egui::Color32::from_rgb(255, 100, 100),
+                                );
                                 ui.painter().add(egui::epaint::Shape::mesh(mesh));
 
                                 // Show monster name on hover
@@ -683,8 +727,9 @@ pub fn ui_minimap_system(
                     let minimap_player_sprite = ui_resources.get_minimap_player_sprite().unwrap();
                     let player_icon_size =
                         Vec2::new(minimap_player_sprite.width, minimap_player_sprite.height);
-                    let minimap_player_pos_screen = Vec2::new(minimap_rect.min.x, minimap_rect.min.y)
-                        + (minimap_player_pos - ui_state.scroll) * zoom;
+                    let minimap_player_pos_screen =
+                        Vec2::new(minimap_rect.min.x, minimap_rect.min.y)
+                            + (minimap_player_pos - ui_state.scroll) * zoom;
                     let widget_rect = egui::Rect::from_min_size(
                         (minimap_player_pos_screen - player_icon_size / 2.0)
                             .to_array()
@@ -768,7 +813,11 @@ pub fn ui_minimap_system(
 
                 // Draw toggle bar
                 let toggle_bar_rect = egui::Rect::from_min_size(
-                    ui.min_rect().min + egui::vec2(1.0, dialog_height - TOGGLE_BAR_HEIGHT - COORDS_BAR_HEIGHT - 2.0),
+                    ui.min_rect().min
+                        + egui::vec2(
+                            1.0,
+                            dialog_height - TOGGLE_BAR_HEIGHT - COORDS_BAR_HEIGHT - 2.0,
+                        ),
                     egui::vec2(dialog_width - 2.0, TOGGLE_BAR_HEIGHT),
                 );
 
@@ -784,25 +833,57 @@ pub fn ui_minimap_system(
                         ui.spacing_mut().item_spacing.x = 4.0;
 
                         // Players toggle
-                        let players_text = if ui_state.show_players { "✓ Players" } else { "✗ Players" };
-                        let players_color = if ui_state.show_players { egui::Color32::GREEN } else { egui::Color32::GRAY };
-                        ui.label(egui::RichText::new(players_text).color(players_color).size(10.0));
+                        let players_text = if ui_state.show_players {
+                            "✓ Players"
+                        } else {
+                            "✗ Players"
+                        };
+                        let players_color = if ui_state.show_players {
+                            egui::Color32::GREEN
+                        } else {
+                            egui::Color32::GRAY
+                        };
+                        ui.label(
+                            egui::RichText::new(players_text)
+                                .color(players_color)
+                                .size(10.0),
+                        );
                         if ui.small("+/-").clicked() {
                             ui_state.show_players = !ui_state.show_players;
                         }
 
                         // NPCs toggle
-                        let npcs_text = if ui_state.show_npcs { "✓ NPCs" } else { "✗ NPCs" };
-                        let npcs_color = if ui_state.show_npcs { egui::Color32::GREEN } else { egui::Color32::GRAY };
+                        let npcs_text = if ui_state.show_npcs {
+                            "✓ NPCs"
+                        } else {
+                            "✗ NPCs"
+                        };
+                        let npcs_color = if ui_state.show_npcs {
+                            egui::Color32::GREEN
+                        } else {
+                            egui::Color32::GRAY
+                        };
                         ui.label(egui::RichText::new(npcs_text).color(npcs_color).size(10.0));
                         if ui.small("+/-").clicked() {
                             ui_state.show_npcs = !ui_state.show_npcs;
                         }
 
                         // Monsters toggle
-                        let monsters_text = if ui_state.show_monsters { "✓ Monsters" } else { "✗ Monsters" };
-                        let monsters_color = if ui_state.show_monsters { egui::Color32::GREEN } else { egui::Color32::GRAY };
-                        ui.label(egui::RichText::new(monsters_text).color(monsters_color).size(10.0));
+                        let monsters_text = if ui_state.show_monsters {
+                            "✓ Monsters"
+                        } else {
+                            "✗ Monsters"
+                        };
+                        let monsters_color = if ui_state.show_monsters {
+                            egui::Color32::GREEN
+                        } else {
+                            egui::Color32::GRAY
+                        };
+                        ui.label(
+                            egui::RichText::new(monsters_text)
+                                .color(monsters_color)
+                                .size(10.0),
+                        );
                         if ui.small("+/-").clicked() {
                             ui_state.show_monsters = !ui_state.show_monsters;
                         }
@@ -810,17 +891,33 @@ pub fn ui_minimap_system(
                         ui.separator();
 
                         // Zoom indicator
-                        ui.label(egui::RichText::new(format!("🔍 {:.1}x", ui_state.zoom_level)).color(egui::Color32::WHITE).size(10.0));
+                        ui.label(
+                            egui::RichText::new(format!("🔍 {:.1}x", ui_state.zoom_level))
+                                .color(egui::Color32::WHITE)
+                                .size(10.0),
+                        );
 
                         // Follow player toggle
-                        let follow_text = if ui_state.follow_player { "📍" } else { "⭕" };
-                        if ui.small(follow_text).on_hover_text("Toggle follow player").clicked() {
+                        let follow_text = if ui_state.follow_player {
+                            "📍"
+                        } else {
+                            "⭕"
+                        };
+                        if ui
+                            .small(follow_text)
+                            .on_hover_text("Toggle follow player")
+                            .clicked()
+                        {
                             ui_state.follow_player = !ui_state.follow_player;
                         }
-                        
+
                         // Centered mode indicator
                         let center_text = if ui_state.is_centered { "⊞" } else { "⊟" };
-                        if ui.small(center_text).on_hover_text("Toggle centered mode (ALT+M)").clicked() {
+                        if ui
+                            .small(center_text)
+                            .on_hover_text("Toggle centered mode (ALT+M)")
+                            .clicked()
+                        {
                             ui_state.is_centered = !ui_state.is_centered;
                         }
                     });

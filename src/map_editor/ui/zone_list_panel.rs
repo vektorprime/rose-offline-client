@@ -1,5 +1,5 @@
 //! Zone List Panel for the Map Editor
-//! 
+//!
 //! Provides a panel for switching between zones in the map editor.
 //! Based on the zone viewer's ui_debug_zone_list_system.rs
 
@@ -11,7 +11,7 @@ use rose_data::ZoneId;
 
 use crate::{
     events::LoadZoneEvent,
-    resources::{GameData, CurrentZone},
+    resources::{CurrentZone, GameData},
 };
 
 /// State for the zone list panel
@@ -62,16 +62,16 @@ pub fn editor_zone_list_panel(
     if !state.is_open {
         return;
     }
-    
+
     // Update filtered zones if needed (before the window to avoid borrow issues)
     if state.filter_dirty {
         update_filtered_zones(state, game_data);
         state.filter_dirty = false;
     }
-    
+
     let mut is_open = state.is_open;
     let current_zone_id = current_zone.map(|c| c.id);
-    
+
     egui::Window::new("Open Zone")
         .open(&mut is_open)
         .resizable(true)
@@ -89,15 +89,15 @@ pub fn editor_zone_list_panel(
                     state.filter_dirty = true;
                 }
             });
-            
+
             // Despawn option
             ui.horizontal(|ui| {
                 ui.label("Despawn other zones:");
                 ui.checkbox(&mut state.despawn_other_zones, "Enable");
             });
-            
+
             ui.separator();
-            
+
             // Show current zone info
             if let Some(current) = current_zone_id {
                 let zone_name = game_data
@@ -106,14 +106,14 @@ pub fn editor_zone_list_panel(
                     .map(|z| z.name.as_str())
                     .unwrap_or("Unknown");
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(format!("Current Zone: {} ({})", 
+                    ui.label(egui::RichText::new(format!("Current Zone: {} ({})",
                         zone_name,
                         current.get()
                     )).color(egui::Color32::LIGHT_BLUE));
                 });
                 ui.separator();
             }
-            
+
             // Zone list table
             let filtered_zones = state.filtered_zones.clone();
             egui_extras::TableBuilder::new(ui)
@@ -140,17 +140,17 @@ pub fn editor_zone_list_panel(
                                 row.col(|ui| {
                                     ui.label(format!("{}", zone_data.id.get()));
                                 });
-                                
+
                                 row.col(|ui| {
                                     ui.label(&zone_data.name);
                                 });
-                                
+
                                 row.col(|ui| {
                                     // Highlight current zone
                                     let is_current = current_zone_id
                                         .map(|c| c == zone_id)
                                         .unwrap_or(false);
-                                    
+
                                     if is_current {
                                         // Show a styled "Current" label for the current zone
                                         ui.add_enabled(
@@ -180,9 +180,9 @@ pub fn editor_zone_list_panel(
                         }
                     });
                 });
-            
+
             ui.separator();
-            
+
             // Footer with count
             ui.horizontal(|ui| {
                 ui.label(format!(
@@ -192,7 +192,7 @@ pub fn editor_zone_list_panel(
                 ));
             });
         });
-    
+
     state.is_open = is_open;
 }
 
@@ -203,7 +203,7 @@ fn update_filtered_zones(state: &mut ZoneListPanelState, game_data: &GameData) {
     } else {
         None
     };
-    
+
     state.filtered_zones = game_data
         .zone_list
         .iter()
@@ -219,7 +219,7 @@ fn update_filtered_zones(state: &mut ZoneListPanelState, game_data: &GameData) {
             }
         })
         .collect();
-    
+
     // Sort by zone ID
     state.filtered_zones.sort_by_key(|id| id.get());
 }
@@ -238,7 +238,7 @@ pub fn zone_list_panel_system(
     if !map_editor_state.enabled {
         return;
     }
-    
+
     editor_zone_list_panel(
         &*egui_context.ctx_mut().unwrap(),
         &mut state,

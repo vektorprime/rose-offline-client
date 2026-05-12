@@ -1,16 +1,19 @@
 use bevy::{
-    color::{Srgba, Alpha},
+    color::{Alpha, Srgba},
+    math::primitives::Sphere,
     math::Vec3,
     prelude::{
-        AlphaMode, Assets, ButtonInput, Camera, Camera3d, Color, Commands, GlobalTransform,
-        Handle, KeyCode, Local, Mesh, Mesh3d, MeshMaterial3d, Query, Res, ResMut, StandardMaterial, Time, Transform, Visibility, With,
+        AlphaMode, Assets, ButtonInput, Camera, Camera3d, Color, Commands, GlobalTransform, Handle,
+        KeyCode, Local, Mesh, Mesh3d, MeshMaterial3d, Query, Res, ResMut, StandardMaterial, Time,
+        Transform, Visibility, With,
     },
-    math::primitives::Sphere,
     window::{PrimaryWindow, Window},
 };
-use bevy_camera::visibility::{ViewVisibility, InheritedVisibility};
+use bevy_camera::visibility::{InheritedVisibility, ViewVisibility};
 use bevy_egui::{egui, EguiContexts};
-use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter, RapierContext, Restitution, RigidBody};
+use bevy_rapier3d::prelude::{
+    Collider, CollisionGroups, Group, QueryFilter, RapierContext, Restitution, RigidBody,
+};
 use rand::prelude::SliceRandom;
 use rose_data::NpcId;
 use rose_game_common::components::Npc;
@@ -180,10 +183,9 @@ pub fn ui_debug_physics_system(
                             ball_mesh.clone()
                         } else {
                             let ball_radius = ui_state_debug_physics.ball_radius;
-                            ui_state_debug_physics.ball_meshes.push((
-                                ball_radius,
-                                meshes.add(Sphere::new(ball_radius)),
-                            ));
+                            ui_state_debug_physics
+                                .ball_meshes
+                                .push((ball_radius, meshes.add(Sphere::new(ball_radius))));
                             ui_state_debug_physics.ball_meshes.last().unwrap().1.clone()
                         };
 

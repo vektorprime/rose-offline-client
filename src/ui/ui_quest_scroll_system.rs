@@ -1,5 +1,5 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, Commands, MessageReader, MessageWriter, Local, Res, ResMut};
+use bevy::prelude::{Assets, Commands, Local, MessageReader, MessageWriter, Res, ResMut};
 use bevy_egui::{egui, EguiContexts};
 use egui::text::LayoutJob;
 
@@ -83,7 +83,11 @@ pub fn ui_quest_scroll_system(
 
     // Handle incoming quest scroll events
     for event in quest_scroll_events.read() {
-        if let QuestScrollEvent::Show { item_slot, quest_trigger } = event {
+        if let QuestScrollEvent::Show {
+            item_slot,
+            quest_trigger,
+        } = event
+        {
             // Cancel any currently open dialog
             if let Some(active) = ui_state.active.take() {
                 // Send cancel event for the previous dialog
@@ -105,7 +109,11 @@ pub fn ui_quest_scroll_system(
                 ..Default::default()
             };
             desc_job.wrap.max_width = dialog.width - 16.0;
-            desc_job.append("Quest Scroll - Accept this quest?", 0.0, desc_format.clone());
+            desc_job.append(
+                "Quest Scroll - Accept this quest?",
+                0.0,
+                desc_format.clone(),
+            );
 
             let id = egui::Id::new("quest_scroll_dialog");
 
@@ -142,7 +150,7 @@ pub fn ui_quest_scroll_system(
 
     // Render and handle the active dialog
     if let Some(active_dialog) = ui_state.active.as_mut() {
-         let dialog = if let Some(dialog) = get_dialog(&mut dialog_assets, &ui_resources) {
+        let dialog = if let Some(dialog) = get_dialog(&mut dialog_assets, &ui_resources) {
             dialog
         } else {
             return;
@@ -152,7 +160,8 @@ pub fn ui_quest_scroll_system(
             let ctx = egui_context.ctx_mut().unwrap();
             let painter = ctx.layer_painter(egui::LayerId::background());
             let title_galley = painter.layout_job(active_dialog.title_layout_job.clone());
-            let description_galley = painter.layout_job(active_dialog.description_layout_job.clone());
+            let description_galley =
+                painter.layout_job(active_dialog.description_layout_job.clone());
             let description_size = description_galley.size();
             let num_image_middle = 1 + (description_size.y / image_middle_height) as usize;
             (title_galley, description_galley, num_image_middle)
@@ -163,7 +172,8 @@ pub fn ui_quest_scroll_system(
             image_top_height + image_middle_height * num_image_middle as f32 + image_bottom_height;
 
         let screen_size = egui_context
-            .ctx_mut().unwrap()
+            .ctx_mut()
+            .unwrap()
             .input(|input| input.screen_rect().size());
         let default_x = screen_size.x / 2.0 - dialog_width / 2.0;
         let default_y = screen_size.y / 2.0 - dialog_height / 2.0;
@@ -249,8 +259,14 @@ pub fn ui_quest_scroll_system(
 
                     // Draw description
                     let description_rect = egui::Rect::from_min_size(
-                        ui.min_rect().min + egui::vec2(8.0, image_top_height + 16.0 + title_galley.size().y),
-                        egui::vec2(dialog_width - 16.0, image_middle_height * num_image_middle as f32 - title_galley.size().y - 16.0),
+                        ui.min_rect().min
+                            + egui::vec2(8.0, image_top_height + 16.0 + title_galley.size().y),
+                        egui::vec2(
+                            dialog_width - 16.0,
+                            image_middle_height * num_image_middle as f32
+                                - title_galley.size().y
+                                - 16.0,
+                        ),
                     );
                     ui.allocate_ui_at_rect(description_rect, |ui| {
                         ui.add(egui::Label::new(description_galley.clone()));

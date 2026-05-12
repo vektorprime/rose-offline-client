@@ -132,11 +132,11 @@ pub struct UiResources {
     pub dialog_quest_list: Handle<Dialog>,
     pub dialog_respawn: Handle<Dialog>,
     pub dialog_select_server: Handle<Dialog>,
-   pub dialog_skill_list: Handle<Dialog>,
+    pub dialog_skill_list: Handle<Dialog>,
     pub dialog_skill_tree: Handle<Dialog>,
- 
+
     pub cursors: EnumMap<UiCursorType, UiCursor>,
- 
+
     pub skill_tree_dealer: Handle<Dialog>,
     pub skill_tree_hawker: Handle<Dialog>,
     pub skill_tree_muse: Handle<Dialog>,
@@ -165,21 +165,21 @@ impl UiResources {
                 return None;
             }
         };
-        
+
         let sprite_sheet = match self.sprite_sheets[sprite_sheet_type].as_ref() {
             Some(sheet) => sheet,
             None => {
                 return None;
             }
         };
-        
+
         let sprites_by_name = match sprite_sheet.sprites_by_name.as_ref() {
             Some(map) => map,
             None => {
                 return None;
             }
         };
-        
+
         let sprite_index = match sprites_by_name.get(sprite_name) {
             Some(idx) => idx,
             None => {
@@ -201,21 +201,21 @@ impl UiResources {
                 return None;
             }
         };
-        
+
         let sprite = match sprite_sheet.sprites.get(sprite_index) {
             Some(s) => s,
             None => {
                 return None;
             }
         };
-        
+
         let texture = match sprite_sheet.loaded_textures.get(sprite.texture_id as usize) {
             Some(t) => t,
             None => {
                 return None;
             }
         };
-        
+
         let texture_size = match texture.size {
             Some(size) if size.x > 0.0 && size.y > 0.0 => size,
             Some(_) | None => {
@@ -327,7 +327,8 @@ fn load_ui_spritesheet(
     for (tsi_texture_index, tsi_texture) in tsi_file.textures.iter().enumerate() {
         let texture_path = format!("3ddata/control/res/{}", tsi_texture.filename).to_lowercase();
         let handle = asset_server.load(&texture_path);
-        let texture_id = egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(handle.clone()));
+        let texture_id =
+            egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(handle.clone()));
         loaded_textures.push(UiTexture {
             handle,
             texture_id,
@@ -381,7 +382,9 @@ pub fn update_ui_resources(
         .filter_map(|(_, spritesheet)| spritesheet.as_mut())
     {
         for (texture_index, texture) in spritesheet.loaded_textures.iter_mut().enumerate() {
-            let has_valid_size = texture.size.map_or(false, |size| size.x > 0.0 && size.y > 0.0);
+            let has_valid_size = texture
+                .size
+                .map_or(false, |size| size.x > 0.0 && size.y > 0.0);
             let needs_premultiply = !texture.premultiplied_alpha;
             if has_valid_size && !needs_premultiply {
                 continue;
@@ -396,7 +399,11 @@ pub fn update_ui_resources(
                         texture.premultiplied_alpha = true;
                     }
                 } else {
-                    log::warn!("[UI RESOURCES] Texture has zero size: texture_index={}, size={:?}", texture_index, size);
+                    log::warn!(
+                        "[UI RESOURCES] Texture has zero size: texture_index={}, size={:?}",
+                        texture_index,
+                        size
+                    );
                     loaded_all = false;
                     loaded_required = false;
                 }
@@ -420,7 +427,7 @@ pub fn update_ui_resources(
         if ui_cursor.loaded {
             continue;
         }
-        
+
         let load_state = asset_server.get_load_state(&ui_cursor.handle);
         if cursors.get(&ui_cursor.handle).is_some() {
             ui_cursor.loaded = true;
@@ -428,7 +435,10 @@ pub fn update_ui_resources(
             // Cursor not loaded yet or failed - mark as loaded to continue
             ui_cursor.loaded = true;
             if matches!(load_state, Some(LoadState::Failed(_))) {
-                log::warn!("[UI RESOURCES] Cursor failed to load: {:?}", ui_cursor.handle);
+                log::warn!(
+                    "[UI RESOURCES] Cursor failed to load: {:?}",
+                    ui_cursor.handle
+                );
             }
         }
     }
@@ -448,17 +458,28 @@ pub fn update_ui_resources(
                             }
                         } else if matches!(texture_load_state, Some(LoadState::Failed(_))) {
                             texture.size = Some(Vec2::ZERO);
-                            log::warn!("[UI RESOURCES] Skill tree texture failed to load: {:?}", texture.handle);
-                        } else if matches!(texture_load_state, Some(LoadState::Loading) | Some(LoadState::NotLoaded)) {
+                            log::warn!(
+                                "[UI RESOURCES] Skill tree texture failed to load: {:?}",
+                                texture.handle
+                            );
+                        } else if matches!(
+                            texture_load_state,
+                            Some(LoadState::Loading) | Some(LoadState::NotLoaded)
+                        ) {
                             loaded_all = false;
                         } else {
                             loaded_all = false;
-                            log::warn!("[UI RESOURCES] Skill tree texture load state unknown (None): {:?}", texture.handle);
+                            log::warn!(
+                                "[UI RESOURCES] Skill tree texture load state unknown (None): {:?}",
+                                texture.handle
+                            );
                         }
                     } else {
-                        let handle = asset_server
-                            .load(format!("3ddata/control/res/{}", &skill_widget.image).to_lowercase());
-                        let texture_id = egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(handle.clone()));
+                        let handle = asset_server.load(
+                            format!("3ddata/control/res/{}", &skill_widget.image).to_lowercase(),
+                        );
+                        let texture_id = egui_context
+                            .add_image(bevy_egui::EguiTextureHandle::Strong(handle.clone()));
                         skill_widget.ui_texture = Some(UiTexture {
                             handle: handle.clone(),
                             texture_id,
@@ -470,12 +491,21 @@ pub fn update_ui_resources(
                 }
             }
         } else if matches!(load_state, Some(LoadState::Failed(_))) {
-            log::warn!("[UI RESOURCES] Skill tree dialog failed to load: {:?}", skill_tree);
-        } else if matches!(load_state, Some(LoadState::Loading) | Some(LoadState::NotLoaded)) {
+            log::warn!(
+                "[UI RESOURCES] Skill tree dialog failed to load: {:?}",
+                skill_tree
+            );
+        } else if matches!(
+            load_state,
+            Some(LoadState::Loading) | Some(LoadState::NotLoaded)
+        ) {
             loaded_all = false;
         } else {
             loaded_all = false;
-            log::warn!("[UI RESOURCES] Skill tree dialog load state unknown (None): {:?}", skill_tree);
+            log::warn!(
+                "[UI RESOURCES] Skill tree dialog load state unknown (None): {:?}",
+                skill_tree
+            );
         }
     };
 
@@ -497,17 +527,60 @@ pub fn load_ui_resources(
     let vfs = &vfs_resource.vfs;
 
     let dialog_filenames = [
-        "DELIVERYSTORE.XML", "DLGADDFRIEND.XML", "DLGAVATA.XML", "DLGAVATARSTORE.XML", "DLGBANK.XML",
-        "DLGCHAT.XML", "DLGCHATFILTER.XML", "DLGCHATROOM.XML", "DLGCLAN.XML", "DLGCLANREGNOTICE.XML",
-        "DLGCOMM.XML", "DLGCREATEAVATAR.XML", "DLGDEAL.XML", "DLGDIALOG.XML", "DLGDIALOGEVENT.XML",
-        "DLGEXCHANGE.XML", "DLGGOODS.XML", "DLGHELP.XML", "DLGINFO.XML", "DLGINPUTNAME.XML",
-        "DLGITEM.XML", "DLGLOGIN.XML", "DLGMAKE.XML", "DLGMEMO.XML", "DLGMEMOVIEW.XML", "DLGMENU.XML",
-        "DLGMINIMAP.XML", "DLGNINPUT.XML", "DLGNOTIFY.XML", "DLGOPTION.XML", "DLGORGANIZECLAN.XML",
-        "DLGPARTY.XML", "DLGPARTYOPTION.XML", "DLGPRIVATECHAT.XML", "DLGPRIVATESTORE.XML",
-        "DLGQUEST.XML", "DLGQUICKBAR.XML", "DLGRESTART.XML", "DLGSELAVATAR.XML", "DLGSELECTEVENT.XML",
-        "DLGSELONLYSVR.XML", "DLGSELSVR.XML", "DLGSEPARATE.XML", "DLGSKILL.XML", "DLGSKILLTREE.XML",
-        "DLGSTORE.XML", "DLGSYSTEM.XML", "DLGSYSTEMMSG.XML", "DLGUPGRADE.XML", "MSGBOX.XML",
-        "SKILLTREE_DEALER.XML", "SKILLTREE_HAWKER.XML", "SKILLTREE_MUSE.XML", "SKILLTREE_SOLDIER.XML",
+        "DELIVERYSTORE.XML",
+        "DLGADDFRIEND.XML",
+        "DLGAVATA.XML",
+        "DLGAVATARSTORE.XML",
+        "DLGBANK.XML",
+        "DLGCHAT.XML",
+        "DLGCHATFILTER.XML",
+        "DLGCHATROOM.XML",
+        "DLGCLAN.XML",
+        "DLGCLANREGNOTICE.XML",
+        "DLGCOMM.XML",
+        "DLGCREATEAVATAR.XML",
+        "DLGDEAL.XML",
+        "DLGDIALOG.XML",
+        "DLGDIALOGEVENT.XML",
+        "DLGEXCHANGE.XML",
+        "DLGGOODS.XML",
+        "DLGHELP.XML",
+        "DLGINFO.XML",
+        "DLGINPUTNAME.XML",
+        "DLGITEM.XML",
+        "DLGLOGIN.XML",
+        "DLGMAKE.XML",
+        "DLGMEMO.XML",
+        "DLGMEMOVIEW.XML",
+        "DLGMENU.XML",
+        "DLGMINIMAP.XML",
+        "DLGNINPUT.XML",
+        "DLGNOTIFY.XML",
+        "DLGOPTION.XML",
+        "DLGORGANIZECLAN.XML",
+        "DLGPARTY.XML",
+        "DLGPARTYOPTION.XML",
+        "DLGPRIVATECHAT.XML",
+        "DLGPRIVATESTORE.XML",
+        "DLGQUEST.XML",
+        "DLGQUICKBAR.XML",
+        "DLGRESTART.XML",
+        "DLGSELAVATAR.XML",
+        "DLGSELECTEVENT.XML",
+        "DLGSELONLYSVR.XML",
+        "DLGSELSVR.XML",
+        "DLGSEPARATE.XML",
+        "DLGSKILL.XML",
+        "DLGSKILLTREE.XML",
+        "DLGSTORE.XML",
+        "DLGSYSTEM.XML",
+        "DLGSYSTEMMSG.XML",
+        "DLGUPGRADE.XML",
+        "MSGBOX.XML",
+        "SKILLTREE_DEALER.XML",
+        "SKILLTREE_HAWKER.XML",
+        "SKILLTREE_MUSE.XML",
+        "SKILLTREE_SOLDIER.XML",
     ];
 
     let mut dialog_files = HashMap::new();
@@ -614,10 +687,10 @@ pub fn load_ui_resources(
 }
 
 /// System to apply the requested cursor to the primary window.
-/// 
+///
 /// In Bevy 0.16+, custom cursors are set via the CursorIcon component on the window entity.
 /// The custom_cursor feature must be enabled for this to work.
-/// 
+///
 /// Note: This system currently uses egui's cursor management. To implement custom cursors
 /// using Bevy's CustomCursorImage API:
 /// 1. Enable the "custom_cursor" feature in Cargo.toml

@@ -27,18 +27,21 @@ use crate::{
 #[allow(clippy::too_many_arguments)]
 pub fn player_command_system(
     mut player_command_events: MessageReader<PlayerCommandEvent>,
-    mut query_player: Query<(
-        Entity,
-        Option<&Bank>,
-        &Cooldowns,
-        &mut Hotbar,
-        &Inventory,
-        &Position,
-        &SkillList,
-        &Team,
-        Option<&Clan>,
-        Option<&PartyInfo>,
-    ), With<PlayerCharacter>>,
+    mut query_player: Query<
+        (
+            Entity,
+            Option<&Bank>,
+            &Cooldowns,
+            &mut Hotbar,
+            &Inventory,
+            &Position,
+            &SkillList,
+            &Team,
+            Option<&Clan>,
+            Option<&PartyInfo>,
+        ),
+        With<PlayerCharacter>,
+    >,
     query_client_entity: Query<&ClientEntity>,
     query_dropped_items: Query<(&ClientEntity, &Position), With<ItemDrop>>,
     query_team: Query<(&ClientEntity, &Team)>,
@@ -60,7 +63,18 @@ pub fn player_command_system(
     if query_player_result.is_err() {
         return;
     }
-    let (player_entity, player_bank, player_cooldowns, mut player_hotbar, player_inventory, player_position, player_skill_list, player_team, player_clan, player_party_info) = query_player_result.unwrap();
+    let (
+        player_entity,
+        player_bank,
+        player_cooldowns,
+        mut player_hotbar,
+        player_inventory,
+        player_position,
+        player_skill_list,
+        player_team,
+        player_clan,
+        player_party_info,
+    ) = query_player_result.unwrap();
 
     for event in player_command_events.read() {
         let mut event = event.clone();
@@ -282,7 +296,13 @@ pub fn player_command_system(
                         | SkillType::FireBullet
                         | SkillType::AreaTarget => {
                             let target_entity_id = {
-                                if let Ok((target_entity, target_character_info, target_client_entity, target_command, target_team)) = query_skill_target
+                                if let Ok((
+                                    target_entity,
+                                    target_character_info,
+                                    target_client_entity,
+                                    target_command,
+                                    target_team,
+                                )) = query_skill_target
                                     .get(selected_target.selected.unwrap_or(player_entity))
                                 {
                                     let target_is_alive = !target_command.is_die();
@@ -373,7 +393,7 @@ pub fn player_command_system(
                                                 )
                                         }
                                     };
-    
+
                                     if target_is_valid {
                                         Some(target_client_entity.id)
                                     } else {
@@ -468,12 +488,12 @@ pub fn player_command_system(
                             // Check if item is on cooldown
                             if cooldown_group
                                 .and_then(|cooldown_group| {
-                                    player_cooldowns
-                                        .get_consumable_cooldown_percent(cooldown_group)
+                                    player_cooldowns.get_consumable_cooldown_percent(cooldown_group)
                                 })
                                 .is_some()
                             {
-                                chatbox_events.write(ChatboxEvent::System("Waiting...".to_string()));
+                                chatbox_events
+                                    .write(ChatboxEvent::System("Waiting...".to_string()));
                                 continue;
                             }
 
@@ -492,10 +512,16 @@ pub fn player_command_system(
                                             | SkillType::TargetStateDuration
                                     ) {
                                         // Validate target using the same logic as skills
-                                        let is_valid_target = if let Some(target_entity) = selected_target.selected {
-                                            if let Ok((target_id, target_character_info, target_client_entity,
-                                                       target_command, target_team)) =
-                                                query_skill_target.get(target_entity)
+                                        let is_valid_target = if let Some(target_entity) =
+                                            selected_target.selected
+                                        {
+                                            if let Ok((
+                                                target_id,
+                                                target_character_info,
+                                                target_client_entity,
+                                                target_command,
+                                                target_team,
+                                            )) = query_skill_target.get(target_entity)
                                             {
                                                 let target_is_alive = !target_command.is_die();
                                                 let target_is_caster = target_id == player_entity;
@@ -522,14 +548,22 @@ pub fn player_command_system(
                                                                 || target_character_info.map_or(
                                                                     false,
                                                                     |character_info| {
-                                                                        player_clan.map_or(false, |clan| {
-                                                                            clan.find_member(&character_info.name).is_some()
-                                                                        })
+                                                                        player_clan.map_or(
+                                                                            false,
+                                                                            |clan| {
+                                                                                clan.find_member(
+                                                                                    &character_info
+                                                                                        .name,
+                                                                                )
+                                                                                .is_some()
+                                                                            },
+                                                                        )
                                                                     },
                                                                 ))
                                                     }
                                                     SkillTargetFilter::Allied => {
-                                                        target_is_alive && target_team.id == player_team.id
+                                                        target_is_alive
+                                                            && target_team.id == player_team.id
                                                     }
                                                     SkillTargetFilter::Monster => {
                                                         target_is_alive
@@ -540,7 +574,8 @@ pub fn player_command_system(
                                                     }
                                                     SkillTargetFilter::Enemy => {
                                                         target_is_alive
-                                                            && target_team.id != Team::DEFAULT_NPC_TEAM_ID
+                                                            && target_team.id
+                                                                != Team::DEFAULT_NPC_TEAM_ID
                                                             && target_team.id != player_team.id
                                                     }
                                                     SkillTargetFilter::EnemyCharacter => {
@@ -562,7 +597,8 @@ pub fn player_command_system(
                                                         target_is_alive
                                                             && matches!(
                                                                 target_client_entity.entity_type,
-                                                                ClientEntityType::Character | ClientEntityType::Monster
+                                                                ClientEntityType::Character
+                                                                    | ClientEntityType::Monster
                                                             )
                                                     }
                                                     SkillTargetFilter::DeadAlliedCharacter => {
@@ -590,9 +626,10 @@ pub fn player_command_system(
                                         };
 
                                         if is_valid_target {
-                                            use_item_target = selected_target.selected.and_then(|e| {
-                                                query_client_entity.get(e).ok().map(|ce| ce.id)
-                                            });
+                                            use_item_target =
+                                                selected_target.selected.and_then(|e| {
+                                                    query_client_entity.get(e).ok().map(|ce| ce.id)
+                                                });
                                         } else {
                                             chatbox_events.write(ChatboxEvent::System(
                                                 "Invalid target".to_string(),
@@ -808,7 +845,7 @@ pub fn player_command_system(
             }
             PlayerCommandEvent::Move(position, target_entity) => {
                 //log::info!("[RESPAWN_MOVE_DIAG] PlayerCommandEvent::Move received: position=({}, {}, {})", position.x, position.y, position.z);
-                
+
                 let target_entity_id = target_entity
                     .and_then(|target_entity| query_client_entity.get(target_entity).ok())
                     .map(|target_client_entity| target_client_entity.id);
@@ -910,9 +947,8 @@ pub fn player_command_system(
                                 })
                                 .ok();
                         } else {
-                            chatbox_events.write(ChatboxEvent::System(
-                                "No repair tool selected".to_string(),
-                            ));
+                            chatbox_events
+                                .write(ChatboxEvent::System("No repair tool selected".to_string()));
                         }
                     }
                 }

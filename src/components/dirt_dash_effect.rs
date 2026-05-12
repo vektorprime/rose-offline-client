@@ -22,12 +22,12 @@ pub struct DirtDashEffect {
 impl Default for DirtDashEffect {
     fn default() -> Self {
         Self {
-            min_speed: 100.0,          // Minimum speed to trigger effect
+            min_speed: 100.0, // Minimum speed to trigger effect
             spawn_timer: 0.0,
-            spawn_interval: 0.08,      // Spawn every 80ms when running (less frequent)
-            particles_per_burst: 1,    // Spawn 1 particle per burst (more subtle)
-            feet_offset: 0.0,          // At feet level
-            spread_radius: 0.15,       // Slightly larger spread for dust cloud effect
+            spawn_interval: 0.08, // Spawn every 80ms when running (less frequent)
+            particles_per_burst: 1, // Spawn 1 particle per burst (more subtle)
+            feet_offset: 0.0,     // At feet level
+            spread_radius: 0.15,  // Slightly larger spread for dust cloud effect
         }
     }
 }
@@ -136,14 +136,14 @@ impl Default for DirtDashSettings {
         Self {
             // Light gray dust/smoke color with low opacity for subtlety
             particle_color: Vec4::new(0.7, 0.68, 0.65, 0.25),
-            min_lifetime: 0.1,          // Can be instant
-            max_lifetime: 0.6,          // Up to 0.8 seconds
-            min_size: 0.01,             // Very small particles
-            max_size: 0.1,              // Can grow larger for smoke effect
-            min_upward_velocity: 0.05,  // Very low upward velocity (hovering)
-            max_upward_velocity: 0.15,  // Very low upward velocity (hovering)
+            min_lifetime: 0.1,               // Can be instant
+            max_lifetime: 0.6,               // Up to 0.8 seconds
+            min_size: 0.01,                  // Very small particles
+            max_size: 0.1,                   // Can grow larger for smoke effect
+            min_upward_velocity: 0.05,       // Very low upward velocity (hovering)
+            max_upward_velocity: 0.15,       // Very low upward velocity (hovering)
             horizontal_velocity_factor: 0.0, // No horizontal spread - stays near player
-            gravity: 0.1,               // Very low gravity for floating effect
+            gravity: 0.1,                    // Very low gravity for floating effect
             max_particles: 300,
             drift_speed: 0.1,           // Gentle random drift
             vertical_oscillation: 0.02, // Subtle bobbing motion

@@ -1,13 +1,10 @@
 use bevy::{
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Changed, Commands, ViewVisibility, InheritedVisibility,
-        Entity, GlobalTransform, Query, Res, ResMut, Transform, Visibility,
-        World,
+        AssetServer, Assets, Changed, Commands, Entity, GlobalTransform, InheritedVisibility,
+        Query, Res, ResMut, Transform, ViewVisibility, Visibility, World,
     },
-    render::{
-        alpha::AlphaMode,
-    },
+    render::alpha::AlphaMode,
 };
 use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 
@@ -17,8 +14,8 @@ use crate::{
     animation::SkeletalAnimation,
     components::{CharacterModel, CharacterModelPart, DummyBoneOffset, Vehicle, VehicleModel},
     model_loader::ModelLoader,
-    render::{ParticleMaterial, RoseEffectExtension},
     render::object_material_extension::RoseObjectExtension,
+    render::{ParticleMaterial, RoseEffectExtension},
 };
 
 pub fn vehicle_model_system(
@@ -39,7 +36,9 @@ pub fn vehicle_model_system(
     mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
     mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
-    mut effect_mesh_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>>,
+    mut effect_mesh_materials: ResMut<
+        Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
+    >,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
     mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
     mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
@@ -113,9 +112,7 @@ pub fn vehicle_model_system(
             });
 
             // Despawn vehicle model
-            commands
-                .entity(vehicle.vehicle_model_entity)
-                .despawn();
+            commands.entity(vehicle.vehicle_model_entity).despawn();
             commands.entity(entity).remove::<Vehicle>();
         } else if matches!(move_mode, MoveMode::Drive) {
             let driver_model_entity = skinned_mesh.joints[0];

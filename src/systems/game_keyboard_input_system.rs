@@ -2,8 +2,7 @@ use bevy::{
     input::ButtonInput,
     math::{Vec2, Vec3},
     prelude::{
-        Camera3d, Entity, KeyCode, Local, MessageWriter, Query, Res, State, Time, Transform,
-        With,
+        Camera3d, Entity, KeyCode, Local, MessageWriter, Query, Res, State, Time, Transform, With,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
@@ -28,7 +27,16 @@ pub fn game_keyboard_input_system(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     query_window: Query<&CursorOptions, With<PrimaryWindow>>,
     query_camera: Query<&Transform, With<Camera3d>>,
-    query_player: Query<(Entity, &Position, &MoveSpeed, Option<&FlightState>, Option<&BoatState>), With<PlayerCharacter>>,
+    query_player: Query<
+        (
+            Entity,
+            &Position,
+            &MoveSpeed,
+            Option<&FlightState>,
+            Option<&BoatState>,
+        ),
+        With<PlayerCharacter>,
+    >,
     mut egui_ctx: EguiContexts,
     time: Res<Time>,
     mut move_command_cooldown: Local<f32>,
@@ -57,7 +65,9 @@ pub fn game_keyboard_input_system(
         return;
     };
 
-    let Ok((player_entity, player_position, move_speed, player_flight_state, player_boat_state)) = query_player.single() else {
+    let Ok((player_entity, player_position, move_speed, player_flight_state, player_boat_state)) =
+        query_player.single()
+    else {
         return;
     };
 
@@ -121,8 +131,9 @@ pub fn game_keyboard_input_system(
         || keyboard_input.just_pressed(KeyCode::KeyS)
         || keyboard_input.just_pressed(KeyCode::KeyD);
 
-    let direction_changed = last_move_direction
-        .map_or(true, |last_direction| last_direction.dot(move_direction) < 0.999);
+    let direction_changed = last_move_direction.map_or(true, |last_direction| {
+        last_direction.dot(move_direction) < 0.999
+    });
 
     if *move_command_cooldown <= 0.0 || started_moving || direction_changed {
         let lead_distance = move_speed.speed * WASD_MOVE_COMMAND_LEAD_TIME_SECS;

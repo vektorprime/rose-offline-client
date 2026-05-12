@@ -257,7 +257,8 @@ pub fn ui_hotbar_system(
     let is_vertical = ui_state_hot_bar.is_vertical;
 
     let screen_size = egui_context
-        .ctx_mut().unwrap()
+        .ctx_mut()
+        .unwrap()
         .input(|input| input.screen_rect().size());
     let default_position = egui::pos2(
         screen_size.x / 2.0 - dialog.width / 2.0,

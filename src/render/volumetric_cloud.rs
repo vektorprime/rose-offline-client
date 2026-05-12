@@ -401,10 +401,13 @@ pub fn spawn_volumetric_clouds(
             cluster_size = remaining;
         }
 
-        let cluster_center_x = center_x - spawn_radius + rand::random::<f32>() * (2.0 * spawn_radius);
-        let cluster_center_z = center_z - spawn_radius + rand::random::<f32>() * (2.0 * spawn_radius);
+        let cluster_center_x =
+            center_x - spawn_radius + rand::random::<f32>() * (2.0 * spawn_radius);
+        let cluster_center_z =
+            center_z - spawn_radius + rand::random::<f32>() * (2.0 * spawn_radius);
         let cluster_center_y = spawn_height + (rand::random::<f32>() - 0.5) * 120.0;
-        let cluster_spread = cloud_settings.cloud_radius_max * (0.55 + rand::random::<f32>() * 0.95);
+        let cluster_spread =
+            cloud_settings.cloud_radius_max * (0.55 + rand::random::<f32>() * 0.95);
 
         for _ in 0..cluster_size {
             let allow_overshoot = remaining == 1;
@@ -516,13 +519,7 @@ pub fn sync_volumetric_cloud_structure_system(
         log::info!(
             "[VOLUMETRIC CLOUDS] Structural settings changed, respawning cloud instances immediately"
         );
-        spawn_volumetric_clouds(
-            commands,
-            meshes,
-            materials,
-            cloud_settings,
-            existing_clouds,
-        );
+        spawn_volumetric_clouds(commands, meshes, materials, cloud_settings, existing_clouds);
     }
 
     *previous_structural_settings = Some(current_structural_settings);

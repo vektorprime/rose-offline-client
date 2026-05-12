@@ -66,7 +66,8 @@ pub struct MonsterChatter {
 impl MonsterChatter {
     pub fn new(min_interval: f32, max_interval: f32) -> Self {
         Self {
-            time_until_next_chat: rand::random::<f32>() * (max_interval - min_interval) + min_interval,
+            time_until_next_chat: rand::random::<f32>() * (max_interval - min_interval)
+                + min_interval,
             min_interval,
             max_interval,
         }

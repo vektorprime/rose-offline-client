@@ -3,8 +3,8 @@ use bevy::{
     ecs::query::QueryEntityError,
     math::{Quat, Vec3, Vec3A},
     prelude::{
-        AssetServer, Assets, Commands, Entity, GlobalTransform, Query, Res,
-        Transform, With, Without,
+        AssetServer, Assets, Commands, Entity, GlobalTransform, Query, Res, Transform, With,
+        Without,
     },
 };
 use bevy_camera::primitives::Aabb;

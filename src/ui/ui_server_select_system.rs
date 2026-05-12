@@ -1,5 +1,5 @@
 use bevy::asset::Asset;
-use bevy::prelude::{Assets, Commands, MessageWriter, Local, Res};
+use bevy::prelude::{Assets, Commands, Local, MessageWriter, Res};
 use bevy_egui::{egui, EguiContexts};
 
 use crate::{
@@ -49,7 +49,8 @@ pub fn ui_server_select_system(
     let mut try_select_server = false;
 
     let screen_size = egui_context
-        .ctx_mut().unwrap()
+        .ctx_mut()
+        .unwrap()
         .input(|input| input.screen_rect().size());
     let position = egui::pos2(screen_size.x - dialog.width - 60.0, 100.0);
 

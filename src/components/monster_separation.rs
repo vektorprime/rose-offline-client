@@ -15,9 +15,9 @@ pub struct MonsterSeparation {
 impl Default for MonsterSeparation {
     fn default() -> Self {
         Self {
-            separation_radius: 1.0,  // 1.5 meters
+            separation_radius: 1.0, // 1.5 meters
             separation_force: 5.0,
-            max_separation: 2.0,     // 2 meters per second max
+            max_separation: 2.0, // 2 meters per second max
         }
     }
 }

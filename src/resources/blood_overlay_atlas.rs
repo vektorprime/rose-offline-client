@@ -5,8 +5,8 @@
 
 use bevy::{
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
     reflect::Reflect,
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 
 /// Cached blood overlay textures used by the blood overlay system.
@@ -29,13 +29,20 @@ impl BloodOverlayAtlas {
     pub fn new(images: &mut Assets<Image>) -> Self {
         let mut atlas = Self::default();
         for i in 0..Self::VARIANT_COUNT {
-            atlas.blood_stains.push(BloodOverlayAtlas::create_blood_stain_texture_inner(images, i));
+            atlas
+                .blood_stains
+                .push(BloodOverlayAtlas::create_blood_stain_texture_inner(
+                    images, i,
+                ));
         }
         atlas
     }
 
     /// Creates a procedural blood stain texture.
-    fn create_blood_stain_texture_inner(images: &mut Assets<Image>, variant: usize) -> Handle<Image> {
+    fn create_blood_stain_texture_inner(
+        images: &mut Assets<Image>,
+        variant: usize,
+    ) -> Handle<Image> {
         let size = 256u32;
         let center = size as f32 * 0.5;
         let seed = variant as f32 + 1.0;
@@ -84,7 +91,8 @@ impl BloodOverlayAtlas {
             TextureDimension::D2,
             data,
             TextureFormat::Rgba8UnormSrgb,
-            bevy::asset::RenderAssetUsages::MAIN_WORLD | bevy::asset::RenderAssetUsages::RENDER_WORLD,
+            bevy::asset::RenderAssetUsages::MAIN_WORLD
+                | bevy::asset::RenderAssetUsages::RENDER_WORLD,
         ))
     }
 }

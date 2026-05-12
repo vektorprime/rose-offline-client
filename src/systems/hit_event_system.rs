@@ -1,8 +1,7 @@
 use bevy::{
     ecs::query::QueryData,
     prelude::{
-        Commands, Entity, GlobalTransform, MessageReader, MessageWriter, Query, Res, ResMut,
-        Vec3,
+        Commands, Entity, GlobalTransform, MessageReader, MessageWriter, Query, Res, ResMut, Vec3,
     },
 };
 
@@ -14,8 +13,7 @@ use rose_game_common::{
 use crate::{
     components::{
         ClientEntity, ClientEntityType, Dead, DeathBloodHandled, ModelHeight, NextCommand,
-        PendingDamageList,
-        PendingSkillEffectList, PendingSkillTargetList,
+        PendingDamageList, PendingSkillEffectList, PendingSkillTargetList,
     },
     events::{BloodEffectEvent, HitEvent, SpawnEffectData, SpawnEffectEvent},
     resources::{BloodEffectConfig, ClientEntityList, DamageDigitsSpawner, GameData},
@@ -160,9 +158,7 @@ pub fn hit_event_system(
                 let defender_pos = defender.global_transform.translation();
                 let impact_direction = query_transform
                     .get(event.attacker)
-                    .map(|transform| {
-                        normalize_or(defender_pos - transform.translation(), Vec3::Y)
-                    })
+                    .map(|transform| normalize_or(defender_pos - transform.translation(), Vec3::Y))
                     .unwrap_or(Vec3::Y);
 
                 if is_killed {

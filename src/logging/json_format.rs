@@ -4,10 +4,7 @@
 //! entries as JSON Lines with automatic tag extraction.
 
 use serde_json::json;
-use tracing::{
-    field::Visit,
-    Event, Level, Subscriber,
-};
+use tracing::{field::Visit, Event, Level, Subscriber};
 use tracing_subscriber::{
     fmt::{
         format::{FmtSpan, FormatEvent, FormatFields, Writer},
@@ -26,15 +23,15 @@ pub fn extract_tag(message: &str) -> Option<&str> {
     if !message.starts_with('[') {
         return None;
     }
-    
+
     let end = message.find(']')?;
     let tag = &message[1..end];
-    
+
     // Skip empty tags
     if tag.trim().is_empty() {
         return None;
     }
-    
+
     Some(tag)
 }
 
@@ -124,10 +121,10 @@ where
         event: &Event<'_>,
     ) -> std::fmt::Result {
         let metadata = event.metadata();
-        
+
         // Get timestamp in ISO 8601 format with timezone
         let timestamp = chrono::Local::now().to_rfc3339();
-        
+
         // Get log level
         let level = match *metadata.level() {
             Level::ERROR => "ERROR",
@@ -140,11 +137,14 @@ where
         // Collect the message and key-value pairs
         let mut visitor = JsonVisitor::new();
         event.record(&mut visitor);
-        
+
         // Extract tag from message if present
         let (tag, message) = if let Some(msg) = &visitor.message {
             if let Some(tag_str) = extract_tag(msg) {
-                (Some(tag_str.to_string()), remove_tag_prefix(msg).to_string())
+                (
+                    Some(tag_str.to_string()),
+                    remove_tag_prefix(msg).to_string(),
+                )
             } else {
                 (None, msg.clone())
             }
@@ -158,44 +158,44 @@ where
         json_obj.insert("level".to_string(), json!(level));
         json_obj.insert("tag".to_string(), json!(tag));
         json_obj.insert("msg".to_string(), json!(message));
-        
+
         // Add target (module path) if enabled
         if self.display_target {
             json_obj.insert("target".to_string(), json!(metadata.target()));
         }
-        
+
         // Add filename if enabled
         if self.display_filename {
             if let Some(filename) = metadata.file() {
                 json_obj.insert("file".to_string(), json!(filename));
             }
         }
-        
+
         // Add line number if enabled
         if self.display_line_number {
             if let Some(line) = metadata.line() {
                 json_obj.insert("line".to_string(), json!(line));
             }
         }
-        
+
         // Add span context if available
         if let Some(span) = ctx.lookup_current() {
             let span_name = span.name();
             let mut span_obj = serde_json::Map::new();
             span_obj.insert("name".to_string(), json!(span_name));
-            
+
             // Add span fields if available
             if let Some(fields) = span.extensions().get::<FormattedFields<N>>() {
                 if !fields.fields.is_empty() {
                     span_obj.insert("fields".to_string(), json!(fields.fields.as_str()));
                 }
             }
-            
+
             json_obj.insert("span".to_string(), json!(span_obj));
         } else {
             json_obj.insert("span".to_string(), json!(serde_json::Value::Null));
         }
-        
+
         // Add any additional key-value pairs
         if !visitor.kvs.is_empty() {
             json_obj.insert("kvs".to_string(), json!(visitor.kvs));
@@ -204,12 +204,11 @@ where
         }
 
         // Write the JSON line
-        let json_str = serde_json::to_string(&json_obj)
-            .map_err(|_| std::fmt::Error)?;
-        
+        let json_str = serde_json::to_string(&json_obj).map_err(|_| std::fmt::Error)?;
+
         writer.write_str(&json_str)?;
         writer.write_str("\n")?;
-        
+
         Ok(())
     }
 }
@@ -242,7 +241,8 @@ impl Visit for JsonVisitor {
         if field.name() == "message" {
             self.message = Some(format!("{:?}", value));
         } else {
-            self.kvs.insert(field.name().to_string(), json!(format!("{:?}", value)));
+            self.kvs
+                .insert(field.name().to_string(), json!(format!("{:?}", value)));
         }
     }
 
@@ -262,8 +262,13 @@ impl Visit for JsonVisitor {
         self.kvs.insert(field.name().to_string(), json!(value));
     }
 
-    fn record_error(&mut self, field: &tracing::field::Field, value: &(dyn std::error::Error + 'static)) {
-        self.kvs.insert(field.name().to_string(), json!(value.to_string()));
+    fn record_error(
+        &mut self,
+        field: &tracing::field::Field,
+        value: &(dyn std::error::Error + 'static),
+    ) {
+        self.kvs
+            .insert(field.name().to_string(), json!(value.to_string()));
     }
 }
 
@@ -291,10 +296,7 @@ mod tests {
             remove_tag_prefix("[ZONE LOADER] Loading zone 1"),
             "Loading zone 1"
         );
-        assert_eq!(
-            remove_tag_prefix("[VFS]File not found"),
-            "File not found"
-        );
+        assert_eq!(remove_tag_prefix("[VFS]File not found"), "File not found");
         assert_eq!(remove_tag_prefix("No tag here"), "No tag here");
     }
 }

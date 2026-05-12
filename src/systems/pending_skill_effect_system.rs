@@ -88,7 +88,9 @@ fn apply_skill_effect(
 
             status_effects.apply_status_effect(
                 status_effect_data,
-                current_instant.checked_add(skill_data.status_effect_duration).unwrap_or(current_instant),
+                current_instant
+                    .checked_add(skill_data.status_effect_duration)
+                    .unwrap_or(current_instant),
                 adjust_value,
             );
         }
@@ -176,15 +178,13 @@ pub fn pending_skill_effect_system(
                     // Apply any skill affects from caster_entity
                     let mut i = 0;
                     while i < pending_skill_effect_list.len() {
-                        if pending_skill_effect_list[i].caster_entity != Some(caster_entity)
-                        {
+                        if pending_skill_effect_list[i].caster_entity != Some(caster_entity) {
                             i += 1;
                             continue;
                         }
 
-                        let pending_skill_effect = pending_skill_effect_list
-                            .pending_skill_effects
-                            .remove(i);
+                        let pending_skill_effect =
+                            pending_skill_effect_list.pending_skill_effects.remove(i);
 
                         if let Some(skill_data) =
                             game_data.skills.get_skill(pending_skill_effect.skill_id)
@@ -237,8 +237,7 @@ pub fn pending_skill_effect_system(
                 let pending_skill_effect =
                     pending_skill_effect_list.pending_skill_effects.remove(i);
 
-                if let Some(skill_data) =
-                    game_data.skills.get_skill(pending_skill_effect.skill_id)
+                if let Some(skill_data) = game_data.skills.get_skill(pending_skill_effect.skill_id)
                 {
                     hit_events.write(HitEvent::with_skill_effect(
                         pending_skill_effect.caster_entity.unwrap_or(target_entity),

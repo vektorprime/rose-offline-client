@@ -28,7 +28,16 @@ const IID_BTN_MENU: i32 = 11;
 fn add_equipped_weapon_slot(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
-    player: &(Entity, &AbilityValues, &CharacterInfo, &Level, &HealthPoints, &ManaPoints, &ExperiencePoints, &Equipment),
+    player: &(
+        Entity,
+        &AbilityValues,
+        &CharacterInfo,
+        &Level,
+        &HealthPoints,
+        &ManaPoints,
+        &ExperiencePoints,
+        &Equipment,
+    ),
     player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     game_data: &GameData,
     ui_resources: &UiResources,
@@ -92,7 +101,19 @@ pub fn ui_player_info_system(
     mut egui_context: EguiContexts,
     mut ui_state_windows: ResMut<UiStateWindows>,
     mut ui_sound_events: MessageWriter<UiSoundEvent>,
-    query_player: Query<(Entity, &AbilityValues, &CharacterInfo, &Level, &HealthPoints, &ManaPoints, &ExperiencePoints, &Equipment), With<PlayerCharacter>>,
+    query_player: Query<
+        (
+            Entity,
+            &AbilityValues,
+            &CharacterInfo,
+            &Level,
+            &HealthPoints,
+            &ManaPoints,
+            &ExperiencePoints,
+            &Equipment,
+        ),
+        With<PlayerCharacter>,
+    >,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
@@ -138,20 +159,12 @@ pub fn ui_player_info_system(
                         (
                             IID_GAUGE_HP,
                             &hp,
-                            &format!(
-                                "{}/{}",
-                                player.4.hp,
-                                player.1.get_max_health()
-                            ),
+                            &format!("{}/{}", player.4.hp, player.1.get_max_health()),
                         ),
                         (
                             IID_GAUGE_MP,
                             &mp,
-                            &format!(
-                                "{}/{}",
-                                player.5.mp,
-                                player.1.get_max_mana()
-                            ),
+                            &format!("{}/{}", player.5.mp, player.1.get_max_mana()),
                         ),
                         (IID_GAUGE_EXP, &xp, &format!("{:.2}%", xp * 100.0)),
                     ],

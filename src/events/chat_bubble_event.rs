@@ -1,4 +1,7 @@
-use bevy::{prelude::{Message, Color, Entity}, reflect::Reflect};
+use bevy::{
+    prelude::{Color, Entity, Message},
+    reflect::Reflect,
+};
 
 /// Message to trigger spawning a chat bubble
 #[derive(Message, Reflect)]

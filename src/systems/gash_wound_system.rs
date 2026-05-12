@@ -189,7 +189,10 @@ pub fn wound_spawn_system(
     mesh_query: Query<&Mesh3d>,
     skinned_mesh_query: Query<&SkinnedMesh>,
     // Query to resolve material_index → mesh entity from CharacterModel
-    query_materials: Query<(Entity, &MeshMaterial3d<ExtendedMaterial<StandardMaterial, crate::render::RoseObjectExtension>>)>,
+    query_materials: Query<(
+        Entity,
+        &MeshMaterial3d<ExtendedMaterial<StandardMaterial, crate::render::RoseObjectExtension>>,
+    )>,
     config: Res<BloodEffectConfig>,
     atlas: Res<BloodOverlayAtlas>,
 ) {
@@ -205,8 +208,13 @@ pub fn wound_spawn_system(
                 wound_position,
                 wound_normal: _,
             } => {
-                let Ok((model_height, mut overlay_opt, _wounds_opt, character_model_opt, global_transform_opt)) =
-                    query_targets.get_mut(*entity)
+                let Ok((
+                    model_height,
+                    mut overlay_opt,
+                    _wounds_opt,
+                    character_model_opt,
+                    global_transform_opt,
+                )) = query_targets.get_mut(*entity)
                 else {
                     continue;
                 };
@@ -216,8 +224,9 @@ pub fn wound_spawn_system(
 
                 // Determine wound size and variant
                 let wound_size = (config.wound_min_size
-                    + rand::random::<f32>() * (config.wound_max_size - config.wound_min_size).max(0.001))
-                    .max(0.16);
+                    + rand::random::<f32>()
+                        * (config.wound_max_size - config.wound_min_size).max(0.001))
+                .max(0.16);
 
                 let variant_count = atlas.blood_stains.len().max(1);
                 let stain_variant = rand::random::<usize>() % variant_count;
@@ -338,7 +347,10 @@ fn resolve_material_entity(
     parent_entity: Entity,
     material_index: usize,
     character_model_opt: Option<&CharacterModel>,
-    query_materials: &Query<(Entity, &MeshMaterial3d<ExtendedMaterial<StandardMaterial, crate::render::RoseObjectExtension>>)>,
+    query_materials: &Query<(
+        Entity,
+        &MeshMaterial3d<ExtendedMaterial<StandardMaterial, crate::render::RoseObjectExtension>>,
+    )>,
 ) -> Option<Entity> {
     let character_model = character_model_opt?;
 

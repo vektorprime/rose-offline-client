@@ -6,7 +6,8 @@ use bevy::{
     math::{Quat, Vec3},
     pbr::{ExtendedMaterial, MeshMaterial3d, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Commands, Entity, GlobalTransform, Mesh3d, Resource, Transform, Visibility,
+        AssetServer, Assets, Commands, Entity, GlobalTransform, Mesh3d, Resource, Transform,
+        Visibility,
     },
     render::{
         alpha::AlphaMode,
@@ -16,7 +17,7 @@ use bevy::{
 };
 use bevy_camera::{
     primitives::Aabb,
-    visibility::{ViewVisibility, InheritedVisibility},
+    visibility::{InheritedVisibility, ViewVisibility},
 };
 use bevy_mesh::{Mesh, PrimitiveTopology};
 use bytemuck::{Pod, Zeroable};
@@ -28,8 +29,7 @@ use crate::{
     audio::{AudioSource, GlobalSound, SoundGain, SpatialSound},
     components::{Effect, EffectMesh, EffectParticle, ParticleSequence},
     render::{
-        ParticleMaterial, RoseEffectExtension,
-        ParticleRenderBillboardType, ParticleRenderData,
+        ParticleMaterial, ParticleRenderBillboardType, ParticleRenderData, RoseEffectExtension,
     },
     zms_asset_loader::ZmsNoSkinAssetLoader,
 };
@@ -111,25 +111,34 @@ pub fn spawn_effect(
     // Use cache to avoid loading from file every time
     let path_str = effect_path.path().to_string_lossy().into_owned();
     log::info!("[EFFECT LOADER] Loading effect: {}", path_str);
-    
+
     let eft_file = if let Some(cache) = effect_cache {
         if let Some(cached) = cache.get(&path_str) {
-            log::info!("[EFFECT LOADER] Effect loaded from cache: {} particles, {} meshes", 
-                cached.particles.len(), cached.meshes.len());
+            log::info!(
+                "[EFFECT LOADER] Effect loaded from cache: {} particles, {} meshes",
+                cached.particles.len(),
+                cached.meshes.len()
+            );
             cached
         } else {
             // Load from disk and cache
             let loaded = Arc::new(vfs.read_file::<EftFile, _>(&effect_path).ok()?);
-            log::info!("[EFFECT LOADER] Effect loaded from disk: {} particles, {} meshes", 
-                loaded.particles.len(), loaded.meshes.len());
+            log::info!(
+                "[EFFECT LOADER] Effect loaded from disk: {} particles, {} meshes",
+                loaded.particles.len(),
+                loaded.meshes.len()
+            );
             cache.insert_arc(path_str, Arc::clone(&loaded));
             loaded
         }
     } else {
         // No cache available, load directly
         let loaded = Arc::new(vfs.read_file::<EftFile, _>(&effect_path).ok()?);
-        log::info!("[EFFECT LOADER] Effect loaded (no cache): {} particles, {} meshes", 
-            loaded.particles.len(), loaded.meshes.len());
+        log::info!(
+            "[EFFECT LOADER] Effect loaded (no cache): {} particles, {} meshes",
+            loaded.particles.len(),
+            loaded.meshes.len()
+        );
         loaded
     };
 
@@ -162,7 +171,7 @@ pub fn spawn_effect(
         if !sound_path.is_empty() && sound_path != "NULL" {
             let audio_source: bevy::asset::Handle<AudioSource> = asset_server.load(&sound_path);
             let repeating = eft_file.sound_repeat_count == 0; // 0 means infinite repeat
-            
+
             // Use spatial sound if position is provided, otherwise use global sound
             if let Some(position) = effect_position {
                 let sound_entity = if repeating {
@@ -180,7 +189,7 @@ pub fn spawn_effect(
                         SoundGain::default(),
                     ))
                 };
-                
+
                 child_entities.push(sound_entity.id());
             } else {
                 // Global sound (no spatial positioning)
@@ -190,12 +199,9 @@ pub fn spawn_effect(
                         SoundGain::default(),
                     ))
                 } else {
-                    commands.spawn((
-                        GlobalSound::new(audio_source),
-                        SoundGain::default(),
-                    ))
+                    commands.spawn((GlobalSound::new(audio_source), SoundGain::default()))
                 };
-                
+
                 child_entities.push(sound_entity.id());
             }
         }
@@ -313,20 +319,22 @@ fn spawn_mesh(
                 ViewVisibility::default(),
             ))
             .with_children(|child_builder| {
-                let mesh_path = ZmsNoSkinAssetLoader::convert_path(
-                    eft_mesh.mesh_file.path(),
-                );
+                let mesh_path = ZmsNoSkinAssetLoader::convert_path(eft_mesh.mesh_file.path());
                 let mesh: bevy::prelude::Handle<bevy::prelude::Mesh> = asset_server.load(mesh_path);
-                
+
                 // Handle NULL texture paths for effect meshes
-                let texture_path = eft_mesh.mesh_texture_file.path().to_string_lossy().into_owned();
+                let texture_path = eft_mesh
+                    .mesh_texture_file
+                    .path()
+                    .to_string_lossy()
+                    .into_owned();
                 let texture_handle = if texture_path.is_empty() || texture_path == "NULL" {
                     log::warn!("[EFFECT LOADER] NULL or empty mesh texture path, using fallback");
                     asset_server.load::<bevy::prelude::Image>("ETC/SPECULAR_SPHEREMAP.DDS")
                 } else {
                     asset_server.load::<bevy::prelude::Image>(&texture_path)
                 };
-                
+
                 let material = effect_mesh_materials.add(ExtendedMaterial {
                     base: StandardMaterial {
                         base_color_texture: Some(texture_handle),
@@ -379,7 +387,12 @@ fn spawn_mesh(
                 }
 
                 if let Some(transform_animation_path) = &eft_mesh.animation_file {
-                    let motion = asset_server.load(transform_animation_path.path().to_string_lossy().into_owned());
+                    let motion = asset_server.load(
+                        transform_animation_path
+                            .path()
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
                     entity_comands.insert((TransformAnimation::repeat(
                         motion,
                         if eft_mesh.animation_repeat_count == 0 {
@@ -445,25 +458,35 @@ fn spawn_particle(
                     );
 
                     // Handle NULL texture paths for particles
-                    let particle_texture_path = sequence.texture_path.path().to_string_lossy().into_owned();
-                    let particle_texture_handle = if particle_texture_path.is_empty() || particle_texture_path == "NULL" {
-                        log::warn!("[EFFECT LOADER] NULL or empty particle texture path, using fallback");
-                        asset_server.load::<bevy::prelude::Image>("ETC/SPECULAR_SPHEREMAP.DDS")
-                    } else {
-                        asset_server.load::<bevy::prelude::Image>(&particle_texture_path)
-                    };
-                    
+                    let particle_texture_path =
+                        sequence.texture_path.path().to_string_lossy().into_owned();
+                    let particle_texture_handle =
+                        if particle_texture_path.is_empty() || particle_texture_path == "NULL" {
+                            log::warn!(
+                            "[EFFECT LOADER] NULL or empty particle texture path, using fallback"
+                        );
+                            asset_server.load::<bevy::prelude::Image>("ETC/SPECULAR_SPHEREMAP.DDS")
+                        } else {
+                            asset_server.load::<bevy::prelude::Image>(&particle_texture_path)
+                        };
+
                     // Initialize storage buffers with placeholder data to avoid zero-size buffer error
                     let num_particles = sequence.num_particles as usize;
-                    let positions_data: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ZERO; num_particles];
-                    let sizes_data: Vec<bevy::math::Vec2> = vec![bevy::math::Vec2::ZERO; num_particles];
-                    let colors_data: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ONE; num_particles];
-                    let textures_data: Vec<bevy::math::Vec4> = vec![bevy::math::Vec4::ZERO; num_particles];
+                    let positions_data: Vec<bevy::math::Vec4> =
+                        vec![bevy::math::Vec4::ZERO; num_particles];
+                    let sizes_data: Vec<bevy::math::Vec2> =
+                        vec![bevy::math::Vec2::ZERO; num_particles];
+                    let colors_data: Vec<bevy::math::Vec4> =
+                        vec![bevy::math::Vec4::ONE; num_particles];
+                    let textures_data: Vec<bevy::math::Vec4> =
+                        vec![bevy::math::Vec4::ZERO; num_particles];
 
-                    let positions_buffer = storage_buffers.add(ShaderStorageBuffer::from(positions_data));
+                    let positions_buffer =
+                        storage_buffers.add(ShaderStorageBuffer::from(positions_data));
                     let sizes_buffer = storage_buffers.add(ShaderStorageBuffer::from(sizes_data));
                     let colors_buffer = storage_buffers.add(ShaderStorageBuffer::from(colors_data));
-                    let textures_buffer = storage_buffers.add(ShaderStorageBuffer::from(textures_data));
+                    let textures_buffer =
+                        storage_buffers.add(ShaderStorageBuffer::from(textures_data));
 
                     let particle_material = particle_materials.add(ParticleMaterial {
                         texture: particle_texture_handle,
@@ -472,8 +495,12 @@ fn spawn_particle(
                         colors: colors_buffer,
                         textures: textures_buffer,
                         blend_op: encode_blend_op(decode_blend_op(sequence.blend_op as u32)),
-                        src_blend_factor: encode_blend_factor(decode_blend_factor(sequence.src_blend_mode as u32)),
-                        dst_blend_factor: encode_blend_factor(decode_blend_factor(sequence.dst_blend_mode as u32)),
+                        src_blend_factor: encode_blend_factor(decode_blend_factor(
+                            sequence.src_blend_mode as u32,
+                        )),
+                        dst_blend_factor: encode_blend_factor(decode_blend_factor(
+                            sequence.dst_blend_mode as u32,
+                        )),
                         billboard_type: match sequence.align_type {
                             0 => 2, // Full billboard
                             1 => 0, // No billboard
@@ -491,10 +518,14 @@ fn spawn_particle(
                     // The shader uses vertex_index to calculate particle_idx = vertex_index / 6u and vert_idx = vertex_index % 6u
                     // This means we need 6 vertices per particle (2 triangles forming a quad)
                     let particle_vertex_count = num_particles * 6;
-                    let particle_positions: Vec<[f32; 3]> = vec![[0.0, 0.0, 0.0]; particle_vertex_count];
+                    let particle_positions: Vec<[f32; 3]> =
+                        vec![[0.0, 0.0, 0.0]; particle_vertex_count];
                     let particle_mesh = meshes.add(
-                        Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-                            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, particle_positions)
+                        Mesh::new(
+                            PrimitiveTopology::TriangleList,
+                            RenderAssetUsages::default(),
+                        )
+                        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, particle_positions),
                     );
 
                     let mut entity_comands = child_builder.spawn((
@@ -512,7 +543,12 @@ fn spawn_particle(
                     ));
 
                     if let Some(transform_animation_path) = &eft_particle.animation_file {
-                        let motion = asset_server.load(transform_animation_path.path().to_string_lossy().into_owned());
+                        let motion = asset_server.load(
+                            transform_animation_path
+                                .path()
+                                .to_string_lossy()
+                                .into_owned(),
+                        );
                         entity_comands.insert((TransformAnimation::repeat(
                             motion,
                             if eft_particle.animation_repeat_count == 0 {

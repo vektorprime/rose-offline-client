@@ -43,12 +43,13 @@ use rose_network_common::ConnectionError;
 use crate::{
     bundles::{ability_values_add_value_exclusive, ability_values_set_value_exclusive},
     components::{
-        Bank, BoatState, Clan, ClanMember, ClanMembership, ClientEntity, ClientEntityName, ClientEntityType,
-        CollisionHeightOnly, CollisionPlayer, Command, CommandCastSkillTarget, Cooldowns, Dead,
-        DirtDashEffect, FacingDirection, FlightState, ItemDropOwner, ItemDropRemainingTime, MonsterSeparation,
-        NextCommand, PartyInfo, PartyOwner, PassiveRecoveryTime, PendingDamage, PendingDamageList,
-        PendingSkillEffect, PendingSkillEffectList, PendingSkillTarget, PendingSkillTargetList,
-        PersonalStore, PlayerCharacter, Position, VisibleStatusEffects,
+        Bank, BoatState, Clan, ClanMember, ClanMembership, ClientEntity, ClientEntityName,
+        ClientEntityType, CollisionHeightOnly, CollisionPlayer, Command, CommandCastSkillTarget,
+        Cooldowns, Dead, DirtDashEffect, FacingDirection, FlightState, ItemDropOwner,
+        ItemDropRemainingTime, MonsterSeparation, NextCommand, PartyInfo, PartyOwner,
+        PassiveRecoveryTime, PendingDamage, PendingDamageList, PendingSkillEffect,
+        PendingSkillEffectList, PendingSkillTarget, PendingSkillTargetList, PersonalStore,
+        PlayerCharacter, Position, VisibleStatusEffects,
     },
     events::{
         BankEvent, ChatBubbleEvent, ChatBubbleType, ChatboxEvent, ClientEntityEvent,
@@ -259,10 +260,10 @@ pub fn game_connection_system(
                 commands.queue(move |world: &mut World| {
                     let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
                     let final_spawn_y = spawn_y + 1.5; // Add 1.5m offset for subtle fall effect
-                    
-                    log::info!("[PLAYER SPAWN] Spawning at terrain height: {:.2}m + 1.5m offset = {:.2}m (server z was: {:.2})", 
+
+                    log::info!("[PLAYER SPAWN] Spawning at terrain height: {:.2}m + 1.5m offset = {:.2}m (server z was: {:.2})",
                         spawn_y, final_spawn_y, position.z / 100.0);
-                    
+
                     if let Ok(mut player) = world.get_entity_mut(player_entity_for_closure) {
                         player.insert((
                             Transform::from_xyz(
@@ -810,7 +811,7 @@ pub fn game_connection_system(
                 is_immediate,
                 from_skill,
             }) => {
-                log::info!("[GAME_CONNECTION] Received DamageEntity: attacker={:?}, defender={:?}, damage={}, is_killed={}, is_immediate={}", 
+                log::info!("[GAME_CONNECTION] Received DamageEntity: attacker={:?}, defender={:?}, damage={}, is_killed={}, is_immediate={}",
                     attacker_entity_id, defender_entity_id, damage.amount, is_killed, is_immediate);
 
                 if let Some(defender_entity) = client_entity_list.get(defender_entity_id) {
@@ -833,7 +834,7 @@ pub fn game_connection_system(
                     commands.queue(move |world: &mut World| {
                         log::info!("[GAME_CONNECTION] Queued command executing for defender entity {:?}", defender_entity);
                         let mut defender = world.entity_mut(defender_entity);
-                        
+
                         if let Some(mut pending_damage_list) =
                             defender.get_mut::<PendingDamageList>()
                         {

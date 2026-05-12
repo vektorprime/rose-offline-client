@@ -66,7 +66,9 @@ pub use name_tag_settings::NameTagSettings;
 pub use network_thread::{run_network_thread, NetworkThread, NetworkThreadMessage};
 pub use render_configuration::RenderConfiguration;
 pub use season_materials::{setup_season_materials, SeasonMaterials};
-pub use season_settings::{FallSettings, SeasonSettings, SpringSettings, SummerSettings, WinterSettings};
+pub use season_settings::{
+    FallSettings, SeasonSettings, SpringSettings, SummerSettings, WinterSettings,
+};
 pub use selected_target::SelectedTarget;
 pub use server_configuration::ServerConfiguration;
 pub use server_list::{ServerList, ServerListGameServer, ServerListWorldServer};

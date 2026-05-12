@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bevy::{
     math::Vec3Swizzles,
-    prelude::{Assets, Entity, MessageReader, Local, Query, Res, With},
+    prelude::{Assets, Entity, Local, MessageReader, Query, Res, With},
 };
 use bevy_egui::{egui, EguiContexts};
 use rose_file_readers::{ConFile, ConMessageType};
@@ -10,7 +10,10 @@ use rose_game_common::components::QuestState;
 
 use crate::{
     components::{ClanMembership, ClientEntity, ClientEntityName, PlayerCharacter, Position},
-    events::{BankEvent, ChatboxEvent, ClanDialogEvent, ConversationDialogEvent, NpcStoreEvent, SystemFuncEvent},
+    events::{
+        BankEvent, ChatboxEvent, ClanDialogEvent, ConversationDialogEvent, NpcStoreEvent,
+        SystemFuncEvent,
+    },
     resources::{GameData, UiResources, UiSprite},
     scripting::{
         lua4::{Lua4Function, Lua4VM, Lua4VMError, Lua4VMRustClosures, Lua4Value},

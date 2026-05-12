@@ -5,7 +5,9 @@
 
 use crate::graphics::*;
 use bevy::{core_pipeline::tonemapping::Tonemapping, prelude::*, render::view::ColorGrading};
-use bevy_light::{CascadeShadowConfig, DirectionalLight, DirectionalLightShadowMap, ShadowFilteringMethod};
+use bevy_light::{
+    CascadeShadowConfig, DirectionalLight, DirectionalLightShadowMap, ShadowFilteringMethod,
+};
 use bevy_post_process::bloom::Bloom;
 
 /// System that applies color grading settings (brightness, contrast, saturation, gamma)
@@ -191,5 +193,5 @@ pub fn apply_ambient_light_system(
 
     // Apply ambient light brightness
     // Base brightness is 80.0 (Bevy's default), multiplier ranges from 0.0 to 2.0
-    ambient_light.brightness =80.0 * graphics_settings.ambient_light_brightness;
+    ambient_light.brightness = 80.0 * graphics_settings.ambient_light_brightness;
 }

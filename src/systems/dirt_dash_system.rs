@@ -1,7 +1,7 @@
 use bevy::{
     math::Vec3Swizzles,
-    prelude::*,
     pbr::{MeshMaterial3d, StandardMaterial},
+    prelude::*,
     render::alpha::AlphaMode,
 };
 use rand::Rng;
@@ -67,11 +67,7 @@ pub fn dirt_dash_spawn_system(
     settings: Res<DirtDashSettings>,
     assets: Res<DirtDashAssets>,
     mut commands: Commands,
-    mut query: Query<(
-        &Position,
-        &Command,
-        &mut DirtDashEffect,
-    )>,
+    mut query: Query<(&Position, &Command, &mut DirtDashEffect)>,
     particle_count: Query<(), With<DirtDashParticle>>,
 ) {
     let delta_time = time.delta_secs();
@@ -127,16 +123,26 @@ pub fn dirt_dash_spawn_system(
 
                 // Calculate velocity - minimal upward velocity for hovering effect
                 // Clamp min/max to prevent crash if settings are invalid
-                let min_upward = settings.min_upward_velocity.min(settings.max_upward_velocity);
-                let max_upward = settings.max_upward_velocity.max(settings.min_upward_velocity);
+                let min_upward = settings
+                    .min_upward_velocity
+                    .min(settings.max_upward_velocity);
+                let max_upward = settings
+                    .max_upward_velocity
+                    .max(settings.min_upward_velocity);
                 let upward_velocity = rng.gen_range(min_upward..max_upward);
 
                 // Minimal horizontal velocity - dust stays near player
                 let horizontal_velocity = if speed > 0.0 {
                     let move_dir = direction.normalize();
                     Vec3::new(
-                        -move_dir.x * speed * settings.horizontal_velocity_factor * rng.gen_range(0.3..1.0),
-                        -move_dir.y * speed * settings.horizontal_velocity_factor * rng.gen_range(0.3..1.0),
+                        -move_dir.x
+                            * speed
+                            * settings.horizontal_velocity_factor
+                            * rng.gen_range(0.3..1.0),
+                        -move_dir.y
+                            * speed
+                            * settings.horizontal_velocity_factor
+                            * rng.gen_range(0.3..1.0),
                         0.0,
                     )
                 } else {
@@ -149,7 +155,7 @@ pub fn dirt_dash_spawn_system(
                 let min_lifetime = settings.min_lifetime.min(settings.max_lifetime);
                 let max_lifetime = settings.max_lifetime.max(settings.min_lifetime);
                 let lifetime = rng.gen_range(min_lifetime..max_lifetime);
-                
+
                 let min_size = settings.min_size.min(settings.max_size);
                 let max_size = settings.max_size.max(settings.min_size);
                 let size = rng.gen_range(min_size..max_size);
@@ -218,8 +224,8 @@ pub fn dirt_dash_particle_update_system(
         transform.translation.z += particle.drift_direction.z * delta_time;
 
         // Apply vertical oscillation (gentle bobbing)
-        let oscillation = (particle.age * 3.0 + particle.oscillation_phase).sin()
-            * settings.vertical_oscillation;
+        let oscillation =
+            (particle.age * 3.0 + particle.oscillation_phase).sin() * settings.vertical_oscillation;
         transform.translation.y = particle.base_y + oscillation;
 
         // Update position based on velocity
@@ -238,7 +244,7 @@ pub fn dirt_dash_particle_update_system(
             1.5 - (t - 0.2) * 0.8
         };
         particle.current_size = particle.initial_size * size_factor;
-        
+
         // Update transform scale
         transform.scale = Vec3::splat(particle.current_size);
     }

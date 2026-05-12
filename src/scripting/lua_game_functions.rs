@@ -148,7 +148,9 @@ fn GF_openBank(
 ) -> Vec<Lua4Value> {
     (|| -> Option<()> {
         let npc_client_entity_id = ClientEntityId(parameters.get(0)?.to_usize().ok()?);
-        context.queue_bank_event(BankEvent::OpenBankFromClientEntity { client_entity_id: npc_client_entity_id });
+        context.queue_bank_event(BankEvent::OpenBankFromClientEntity {
+            client_entity_id: npc_client_entity_id,
+        });
         Some(())
     })();
     vec![]

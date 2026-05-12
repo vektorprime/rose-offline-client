@@ -1,17 +1,15 @@
 //! Selection Highlight System
-//! 
+//!
 //! This module provides visual feedback for selected entities in the map editor.
 //! It draws selection outlines/highlights using Bevy's gizmo system.
 
-use bevy::{
-    prelude::{
-        App, Color, Entity, GlobalTransform, Gizmos, IntoScheduleConfigs, Plugin, Query, Res, 
-        Update, With, Without, Vec3, InheritedVisibility, Transform,
-    },
+use bevy::prelude::{
+    App, Color, Entity, Gizmos, GlobalTransform, InheritedVisibility, IntoScheduleConfigs, Plugin,
+    Query, Res, Transform, Update, Vec3, With, Without,
 };
 
 use crate::map_editor::{
-    components::{SelectedInEditor, EditorSelectable},
+    components::{EditorSelectable, SelectedInEditor},
     resources::MapEditorState,
 };
 
@@ -25,7 +23,7 @@ impl Plugin for SelectionHighlightPlugin {
 }
 
 /// System that draws visual highlights around selected entities
-/// 
+///
 /// This system:
 /// - Draws bounding boxes around selected entities using gizmos
 /// - Uses a bright highlight color for visibility
@@ -46,7 +44,7 @@ pub fn selection_highlight_system(
 
     // Selection highlight color (bright cyan)
     let selection_color = Color::srgba(0.0, 1.0, 1.0, 0.8);
-    
+
     // Hover color for selectable but not selected entities
     let _hover_color = Color::srgba(1.0, 1.0, 0.0, 0.4);
 
@@ -62,7 +60,7 @@ pub fn selection_highlight_system(
         let position = transform.translation();
         let rotation = transform.rotation();
         let scale = transform.scale();
-        
+
         // Calculate a bounding box based on scale
         // Use a reasonable default size that can be seen
         let half_size = 1.0;
@@ -81,7 +79,7 @@ pub fn selection_highlight_system(
 
         // Draw entity index indicator
         let _ = entity; // Acknowledge entity variable
-        
+
         // Note: In a full implementation, you might want to:
         // - Get actual mesh bounding boxes for more accurate outlines
         // - Draw entity names/IDs above selected entities

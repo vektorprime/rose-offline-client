@@ -4,6 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use bevy::asset::RenderAssetUsages;
 use bevy::{
     asset::{io::Reader, Asset, AssetLoader, LoadContext},
     ecs::component::Component,
@@ -11,8 +12,7 @@ use bevy::{
     reflect::TypePath,
     tasks::futures_lite::AsyncReadExt,
 };
-use bevy_mesh::{Indices, VertexAttributeValues, PrimitiveTopology};
-use bevy::asset::RenderAssetUsages;
+use bevy_mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
 use log::info;
 use rose_file_readers::{RoseFile, ZmsFile};
 
@@ -48,7 +48,7 @@ impl AssetLoader for ZmsAssetLoader {
             let mut bytes = Vec::new();
             use bevy::tasks::futures_lite::AsyncReadExt;
             reader.read_to_end(&mut bytes).await?;
-            
+
             let asset_path = load_context.path().path().to_string_lossy();
 
             match <ZmsFile as RoseFile>::read((&bytes).into(), &Default::default()) {
@@ -67,7 +67,7 @@ impl AssetLoader for ZmsAssetLoader {
                     //     bone_weight_count,
                     //     bone_index_count
                     // );
-                    
+
                     let mut mesh = Mesh::new(
                         PrimitiveTopology::TriangleList,
                         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
@@ -138,12 +138,11 @@ impl AssetLoader for ZmsAssetLoader {
                     }
 
                     if !zms.material_num_faces.is_empty() {
-                        load_context.labeled_asset_scope(
-                            "material_num_faces".to_string(),
-                            |_lc| Ok::<ZmsMaterialNumFaces, anyhow::Error>(ZmsMaterialNumFaces {
+                        load_context.labeled_asset_scope("material_num_faces".to_string(), |_lc| {
+                            Ok::<ZmsMaterialNumFaces, anyhow::Error>(ZmsMaterialNumFaces {
                                 material_num_faces: zms.material_num_faces,
-                            }),
-                        );
+                            })
+                        });
                     }
 
                     Ok(mesh)
@@ -248,12 +247,11 @@ impl AssetLoader for ZmsNoSkinAssetLoader {
                     }
 
                     if !zms.material_num_faces.is_empty() {
-                        load_context.labeled_asset_scope(
-                            "material_num_faces".to_string(),
-                            |_lc| Ok::<ZmsMaterialNumFaces, anyhow::Error>(ZmsMaterialNumFaces {
+                        load_context.labeled_asset_scope("material_num_faces".to_string(), |_lc| {
+                            Ok::<ZmsMaterialNumFaces, anyhow::Error>(ZmsMaterialNumFaces {
                                 material_num_faces: zms.material_num_faces,
-                            }),
-                        );
+                            })
+                        });
                     }
 
                     Ok(mesh)

@@ -1,4 +1,6 @@
-use bevy::prelude::{Assets, Entity, Local, MessageReader, MessageWriter, Query, Res, ResMut, With};
+use bevy::prelude::{
+    Assets, Entity, Local, MessageReader, MessageWriter, Query, Res, ResMut, With,
+};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::{
@@ -77,7 +79,17 @@ pub fn ui_party_system(
     mut ui_state_windows: ResMut<UiStateWindows>,
     mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut egui_context: EguiContexts,
-    mut query_player: Query<(Entity, &AbilityValues, &CharacterInfo, &HealthPoints, &Level, Option<&PartyInfo>), With<PlayerCharacter>>,
+    mut query_player: Query<
+        (
+            Entity,
+            &AbilityValues,
+            &CharacterInfo,
+            &HealthPoints,
+            &Level,
+            Option<&PartyInfo>,
+        ),
+        With<PlayerCharacter>,
+    >,
     query_party_member: Query<(&CharacterInfo, &AbilityValues, &HealthPoints, &Level)>,
     query_invite: Query<(&ClientEntity, &ClientEntityName)>,
     mut party_events: MessageReader<PartyEvent>,
@@ -281,10 +293,8 @@ pub fn ui_party_system(
                                                     query_party_member.get(entity).ok()
                                                 })
                                             {
-                                                let hp_percent = party_member.2.hp
-                                                    as f32
-                                                    / party_member.1.get_max_health()
-                                                        as f32;
+                                                let hp_percent = party_member.2.hp as f32
+                                                    / party_member.1.get_max_health() as f32;
 
                                                 ui_state.party_member_health_gauge.x = 220.0
                                                     - ui_state.party_member_health_gauge.width;

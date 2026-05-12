@@ -297,11 +297,14 @@ fn ui_add_inventory_slot(
             ItemSlot::Inventory(InventoryPageType::Consumables, _) => {
                 // Check if this is a repair tool
                 if let Some(ref item) = item {
-                    if let Some(item_data) = game_data.items.get_base_item(item.get_item_reference()) {
+                    if let Some(item_data) =
+                        game_data.items.get_base_item(item.get_item_reference())
+                    {
                         if matches!(item_data.class, rose_data::ItemClass::RepairTool) {
                             // Enter repair mode with this repair tool
                             *repair_mode = Some(inventory_slot);
-                            player_command_events.write(PlayerCommandEvent::EnterRepairMode(inventory_slot));
+                            player_command_events
+                                .write(PlayerCommandEvent::EnterRepairMode(inventory_slot));
                             return;
                         }
                     }

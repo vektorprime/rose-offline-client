@@ -83,8 +83,8 @@ pub fn projectile_system(
                 parabola.current_time += time.delta_secs();
 
                 let mut move_vec = parabola.move_vec * time.delta_secs();
-                move_vec.y += ((parabola.end_y - parabola.start_y) / parabola.total_time)
-                    * time.delta_secs();
+                move_vec.y +=
+                    ((parabola.end_y - parabola.start_y) / parabola.total_time) * time.delta_secs();
 
                 (parabola.current_time >= parabola.total_time, move_vec)
             }

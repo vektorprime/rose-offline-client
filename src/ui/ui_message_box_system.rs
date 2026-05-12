@@ -154,7 +154,8 @@ pub fn ui_message_box_system(
             image_top_height + image_middle_height * num_image_middle as f32 + image_bottom_height;
 
         let screen_size = egui_context
-            .ctx_mut().unwrap()
+            .ctx_mut()
+            .unwrap()
             .input(|input| input.screen_rect().size());
         let default_x = (screen_size.x / 2.0 - dialog.width / 2.0) + (i * 20) as f32;
         let default_y = (screen_size.y / 2.0 - dialog_height / 2.0) + (i * 20) as f32;

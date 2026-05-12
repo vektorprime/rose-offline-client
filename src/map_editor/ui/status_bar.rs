@@ -66,7 +66,7 @@ pub fn editor_status_bar(
                 };
                 ui.label(egui::RichText::new(&zone_text).strong());
                 ui.separator();
-                
+
                 // Modification status or save status
                 if save_status.is_saving {
                     ui.label(egui::RichText::new("⏳ Saving...").color(egui::Color32::YELLOW));
@@ -77,7 +77,7 @@ pub fn editor_status_bar(
                         ui.label(egui::RichText::new("✗ Save Failed").color(egui::Color32::RED));
                     }
                     ui.separator();
-                    
+
                     // Show modification status after save result
                     if map_editor_state.is_modified {
                         ui.label(egui::RichText::new("● Modified").color(egui::Color32::YELLOW));
@@ -88,7 +88,7 @@ pub fn editor_status_bar(
                     ui.label(egui::RichText::new("Saved").color(egui::Color32::GREEN));
                 }
                 ui.separator();
-                
+
                 // Selection count
                 let selection_count = map_editor_state.selection_count();
                 if selection_count > 0 {
@@ -97,19 +97,19 @@ pub fn editor_status_bar(
                     ui.label("No selection");
                 }
                 ui.separator();
-                
+
                 // Editor mode - clickable dropdown that opens upward
                 let current_mode = map_editor_state.editor_mode;
                 let mode_text = format!("Mode: {} ▲", current_mode.display_name());
-                
+
                 let button_response = ui.button(&mode_text);
                 let popup_id = ui.make_persistent_id("mode_dropdown_popup");
-                
+
                 // Toggle popup when button is clicked
                 if button_response.clicked() {
                     ui.memory_mut(|mem| mem.toggle_popup(popup_id));
                 }
-                
+
                 // Open popup above the button (since status bar is at bottom)
                 // Use the new Popup API (egui 0.33)
                 use egui::{Popup, PopupCloseBehavior, RectAlign};
@@ -120,7 +120,7 @@ pub fn editor_status_bar(
                     .width(button_response.rect.width())
                     .show(|ui| {
                         ui.set_min_width(100.0);
-                        
+
                         let modes = [
                             EditorMode::Select,
                             EditorMode::Translate,
@@ -129,7 +129,7 @@ pub fn editor_status_bar(
                             EditorMode::Add,
                             EditorMode::Delete,
                         ];
-                        
+
                         for mode in modes {
                             let is_selected = mode == current_mode;
                             let label = if is_selected {
@@ -137,33 +137,33 @@ pub fn editor_status_bar(
                             } else {
                                 format!("  {}", mode.display_name())
                             };
-                            
+
                             if ui.button(&label).clicked() {
                                 map_editor_state.editor_mode = mode;
                                 ui.memory_mut(|mem| mem.close_popup(popup_id));
                             }
                         }
                     });
-                
+
                 ui.separator();
-                
+
                 // Grid status
                 if map_editor_state.show_grid {
                     ui.label(format!("Grid: {:.1}", map_editor_state.grid_size));
                 } else {
                     ui.label("Grid: Off");
                 }
-                
+
                 // Spacer to push camera position to the right
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Camera position (placeholder - would be populated from camera query)
                     ui.label("Camera: (0.0, 50.0, -100.0)");
                     ui.separator();
-                    
+
                     // Object count (placeholder)
                     ui.label("Objects: 1,234");
                     ui.separator();
-                    
+
                     // FPS indicator (placeholder)
                     ui.label("FPS: 60");
                 });

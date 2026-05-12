@@ -41,10 +41,7 @@ pub fn camera_animation_system(
         let zmo_handle = camera_animation.motion();
         let Some(zmo_asset) = motion_assets.get(zmo_handle) else {
             let load_state = asset_server.get_load_state(zmo_handle);
-            if matches!(
-                load_state,
-                Some(LoadState::Failed(_))
-            ) {
+            if matches!(load_state, Some(LoadState::Failed(_))) {
                 // If the asset has failed to load, mark the animation as completed
                 camera_animation.set_completed();
             }
@@ -58,7 +55,7 @@ pub fn camera_animation_system(
         let (Some(mut transform), Some(mut projection)) = (transform, projection) else {
             continue;
         };
-        
+
         let current_frame_fract = animation.current_frame_fract();
         let current_frame_index = animation.current_frame_index();
         let next_frame_index = animation.next_frame_index();

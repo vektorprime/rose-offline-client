@@ -285,7 +285,7 @@ impl Lua4VM {
                     // Pop value, key; set table[a][key] = value where table is at stack[a] and key is in constant_strings[b]
                     let value = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
                     let key_str = function.constant_strings[b as usize].clone();
-                    
+
                     // Get table at index a (relative to local stack)
                     let table_index = local_stack_index + a as usize;
                     if table_index < stack.len() {
@@ -302,14 +302,14 @@ impl Lua4VM {
                     if table_index >= stack.len() {
                         return Err(Lua4VMError::MissingStackValue.into());
                     }
-                    
+
                     // Collect values to set (they're on stack in reverse order)
                     let mut values = Vec::new();
                     for _ in 0..count {
                         values.push(stack.pop().ok_or(Lua4VMError::MissingStackValue)?);
                     }
                     values.reverse();
-                    
+
                     if let Lua4Value::Table { array, .. } = &mut stack[table_index] {
                         for (i, value) in values.into_iter().enumerate() {
                             while array.len() <= i {
@@ -324,14 +324,14 @@ impl Lua4VM {
                 Lua4Instruction::OP_SETMAP(n) => {
                     // Pop n pairs of (key, value) and set them in the table on top of stack
                     let table_value = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
-                    
+
                     let mut pairs = Vec::new();
                     for _ in 0..n {
                         let value = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
                         let key = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
                         pairs.push((key, value));
                     }
-                    
+
                     match table_value {
                         Lua4Value::Table { mut fields, .. } => {
                             for (key, value) in pairs {
@@ -339,7 +339,10 @@ impl Lua4VM {
                                     fields.insert(key_str, value);
                                 }
                             }
-                            stack.push(Lua4Value::Table { fields, array: Vec::new() });
+                            stack.push(Lua4Value::Table {
+                                fields,
+                                array: Vec::new(),
+                            });
                         }
                         _ => return Err(Lua4VMError::NotTable.into()),
                     }
@@ -347,7 +350,7 @@ impl Lua4VM {
                 Lua4Instruction::OP_ADD => {
                     let rhs = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
                     let lhs = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
-                    
+
                     let result = match (&lhs, &rhs) {
                         (Lua4Value::Number(a), Lua4Value::Number(b)) => Lua4Value::Number(a + b),
                         (Lua4Value::String(a), Lua4Value::String(b)) => {
@@ -368,7 +371,7 @@ impl Lua4VM {
                 Lua4Instruction::OP_SUB => {
                     let rhs = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
                     let lhs = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
-                    
+
                     let result = match (&lhs, &rhs) {
                         (Lua4Value::Number(a), Lua4Value::Number(b)) => Lua4Value::Number(a - b),
                         _ => Lua4Value::Nil,
@@ -378,7 +381,7 @@ impl Lua4VM {
                 Lua4Instruction::OP_MULT => {
                     let rhs = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
                     let lhs = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
-                    
+
                     let result = match (&lhs, &rhs) {
                         (Lua4Value::Number(a), Lua4Value::Number(b)) => Lua4Value::Number(a * b),
                         _ => Lua4Value::Nil,
@@ -388,9 +391,11 @@ impl Lua4VM {
                 Lua4Instruction::OP_DIV => {
                     let rhs = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
                     let lhs = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
-                    
+
                     let result = match (&lhs, &rhs) {
-                        (Lua4Value::Number(a), Lua4Value::Number(b)) if *b != 0.0 => Lua4Value::Number(a / b),
+                        (Lua4Value::Number(a), Lua4Value::Number(b)) if *b != 0.0 => {
+                            Lua4Value::Number(a / b)
+                        }
                         _ => Lua4Value::Nil,
                     };
                     stack.push(result);
@@ -398,9 +403,11 @@ impl Lua4VM {
                 Lua4Instruction::OP_POW => {
                     let rhs = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
                     let lhs = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
-                    
+
                     let result = match (&lhs, &rhs) {
-                        (Lua4Value::Number(a), Lua4Value::Number(b)) => Lua4Value::Number(a.powf(*b)),
+                        (Lua4Value::Number(a), Lua4Value::Number(b)) => {
+                            Lua4Value::Number(a.powf(*b))
+                        }
                         _ => Lua4Value::Nil,
                     };
                     stack.push(result);
@@ -432,7 +439,7 @@ impl Lua4VM {
                     let value = stack.pop().ok_or(Lua4VMError::MissingStackValue)?;
                     let result = match value {
                         Lua4Value::Nil => Lua4Value::Number(1.0), // true in Lua4 (1.0 = true)
-                        _ => Lua4Value::Nil, // false in Lua4 (nil = false)
+                        _ => Lua4Value::Nil,                      // false in Lua4 (nil = false)
                     };
                     stack.push(result);
                 }
@@ -532,19 +539,19 @@ impl Lua4VM {
                     let step_idx = stack.len() - 1;
                     let limit_idx = stack.len() - 2;
                     let init_idx = stack.len() - 3;
-                    
+
                     if step_idx >= 3 {
                         let step = match &stack[step_idx] {
                             Lua4Value::Number(s) => *s,
                             _ => 1.0,
                         };
-                        
+
                         // Initialize control variable (decrement by step for post-increment semantics)
                         if let Lua4Value::Number(mut init) = stack[init_idx].clone() {
                             init -= step;
                             stack[init_idx] = Lua4Value::Number(init);
                         }
-                        
+
                         // Jump to FORLOOP
                         pc = (pc as i32 + skip) as usize;
                     }
@@ -555,7 +562,7 @@ impl Lua4VM {
                     let step_idx = stack.len() - 1;
                     let limit_idx = stack.len() - 2;
                     let init_idx = stack.len() - 3;
-                    
+
                     if step_idx >= 3 {
                         let init = match &stack[init_idx] {
                             Lua4Value::Number(i) => *i,
@@ -569,11 +576,11 @@ impl Lua4VM {
                             Lua4Value::Number(s) => *s,
                             _ => 1.0,
                         };
-                        
+
                         // Increment control variable
                         let new_init = init + step;
                         stack[init_idx] = Lua4Value::Number(new_init);
-                        
+
                         // Check if we should continue
                         if (step > 0.0 && new_init <= limit) || (step < 0.0 && new_init >= limit) {
                             // Loop body
@@ -594,7 +601,7 @@ impl Lua4VM {
                     // Stack has: function, state, control, result
                     let result_idx = stack.len() - 1;
                     let control_idx = stack.len() - 3;
-                    
+
                     if result_idx >= 3 {
                         // Check if result is nil (end of iteration)
                         if matches!(&stack[result_idx], Lua4Value::Nil) {

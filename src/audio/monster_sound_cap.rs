@@ -1,10 +1,10 @@
 use bevy::{
     asset::Handle,
+    ecs::system::ResMut,
     math::Vec3,
     prelude::{
         Commands, Component, Entity, GlobalTransform, Query, Res, Resource, Transform, With,
     },
-    ecs::system::ResMut,
 };
 
 use crate::{
@@ -55,13 +55,11 @@ pub fn process_monster_sound_queue_system(
         .unwrap_or(Vec3::ZERO);
 
     // Sort by distance to player (closest first)
-    sound_queue
-        .pending_sounds
-        .sort_by(|a, b| {
-            a.distance_to_player
-                .partial_cmp(&b.distance_to_player)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+    sound_queue.pending_sounds.sort_by(|a, b| {
+        a.distance_to_player
+            .partial_cmp(&b.distance_to_player)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Only spawn the closest N sounds
     for sound_data in sound_queue

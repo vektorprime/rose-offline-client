@@ -1,22 +1,22 @@
 //! Editor Selection System
-//! 
+//!
 //! This module provides raycast-based entity picking for the map editor.
 //! It handles click-based selection with multi-select support via Ctrl modifier.
 
 use bevy::{
     input::ButtonInput,
     prelude::{
-        App, Camera, Camera3d, Commands, Entity, GlobalTransform, IntoScheduleConfigs, KeyCode, 
-        MouseButton, Plugin, Query, Res, ResMut, Update, With, Added, Or, Without,
+        Added, App, Camera, Camera3d, Commands, Entity, GlobalTransform, IntoScheduleConfigs,
+        KeyCode, MouseButton, Or, Plugin, Query, Res, ResMut, Update, With, Without,
     },
     window::{PrimaryWindow, Window},
 };
 use bevy_egui::EguiContexts;
-use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter};
 use bevy_rapier3d::plugin::context::systemparams::ReadRapierContext;
+use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter};
 
 use crate::{
-    components::{COLLISION_FILTER_INSPECTABLE, ColliderParent},
+    components::{ColliderParent, COLLISION_FILTER_INSPECTABLE},
     map_editor::{
         components::{EditorSelectable, SelectedInEditor},
         resources::MapEditorState,
@@ -29,14 +29,14 @@ pub struct EditorSelectionPlugin;
 impl Plugin for EditorSelectionPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            Update, 
-            editor_picking_system.after(bevy_egui::EguiPreUpdateSet::InitContexts)
+            Update,
+            editor_picking_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
         );
     }
 }
 
 /// System that handles entity picking via raycast from mouse position
-/// 
+///
 /// This system:
 /// - Casts a ray from the camera through the mouse position
 /// - Uses Rapier3D raycast to detect hits
@@ -111,12 +111,13 @@ pub fn editor_picking_system(
             if let Some((hit_entity, _distance)) = hit_result {
                 // The ray hit a collider entity. We need to find the parent entity
                 // which is the actual game object (not the collider child)
-                let target_entity = if let Ok(collider_parent) = query_collider_parent.get(hit_entity) {
-                    collider_parent.entity
-                } else {
-                    // If no ColliderParent, the collider is on the main entity itself
-                    hit_entity
-                };
+                let target_entity =
+                    if let Ok(collider_parent) = query_collider_parent.get(hit_entity) {
+                        collider_parent.entity
+                    } else {
+                        // If no ColliderParent, the collider is on the main entity itself
+                        hit_entity
+                    };
 
                 // Check if the entity is selectable in the editor
                 let is_selectable = query_selectable.get(target_entity).is_ok();
@@ -126,7 +127,7 @@ pub fn editor_picking_system(
                 let _ = is_selectable; // Acknowledge the variable
 
                 // Handle multi-select with Ctrl
-                let ctrl_pressed = keyboard.pressed(KeyCode::ControlLeft) 
+                let ctrl_pressed = keyboard.pressed(KeyCode::ControlLeft)
                     || keyboard.pressed(KeyCode::ControlRight);
 
                 if ctrl_pressed {
@@ -146,10 +147,10 @@ pub fn editor_picking_system(
                     for entity in query_selected.iter() {
                         commands.entity(entity).remove::<SelectedInEditor>();
                     }
-                    
+
                     // Clear selection state
                     map_editor_state.clear_selection();
-                    
+
                     // Select the new entity
                     map_editor_state.select_entity(target_entity);
                     commands.entity(target_entity).insert(SelectedInEditor);
@@ -162,14 +163,14 @@ pub fn editor_picking_system(
                 );
             } else {
                 // Clicked empty space - clear selection (unless Ctrl is held)
-                if !keyboard.pressed(KeyCode::ControlLeft) 
-                    && !keyboard.pressed(KeyCode::ControlRight) 
+                if !keyboard.pressed(KeyCode::ControlLeft)
+                    && !keyboard.pressed(KeyCode::ControlRight)
                 {
                     // Remove SelectedInEditor from all currently selected entities
                     for entity in query_selected.iter() {
                         commands.entity(entity).remove::<SelectedInEditor>();
                     }
-                    
+
                     map_editor_state.clear_selection();
                     log::debug!("[MapEditor] Selection cleared");
                 }

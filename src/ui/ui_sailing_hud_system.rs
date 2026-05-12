@@ -115,7 +115,8 @@ fn draw_speed_gauge(ui: &mut egui::Ui, speed: f32, max_speed: f32) {
         egui::Color32::from_rgba_premultiplied(0, 0, 0, 140),
     );
     if fill_width > 1.0 {
-        let fill_rect = egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_width, bar_rect.height()));
+        let fill_rect =
+            egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_width, bar_rect.height()));
         painter.rect_filled(fill_rect, 4.0, speed_color(speed_ratio));
     }
     painter.rect_stroke(
@@ -269,4 +270,3 @@ pub fn ui_sailing_hud_system(
             ui.label("A/D steer, W/S sail trim, E disembark");
         });
 }
-

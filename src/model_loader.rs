@@ -5,15 +5,10 @@ use bevy::{
     math::{Mat4, Quat, Vec2, Vec3, Vec4},
     pbr::{ExtendedMaterial, MeshMaterial3d, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Color, Commands, Entity,
-        GlobalTransform, Handle, Image, Mesh, Mesh3d, Resource, Transform, Visibility,
-        InheritedVisibility, ViewVisibility,
+        AssetServer, Assets, Color, Commands, Entity, GlobalTransform, Handle, Image,
+        InheritedVisibility, Mesh, Mesh3d, Resource, Transform, ViewVisibility, Visibility,
     },
-    render::{
-        alpha::AlphaMode,
-        render_resource::Face,
-        storage::ShaderStorageBuffer,
-    },
+    render::{alpha::AlphaMode, render_resource::Face, storage::ShaderStorageBuffer},
 };
 use bevy_camera::{primitives::Aabb, visibility::NoFrustumCulling};
 use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
@@ -39,8 +34,8 @@ use crate::{
     // diagnostics::render_diagnostics::{log_alpha_blend_mesh_setup_simple},
     effect_loader::{spawn_effect, EffectCache},
     render::{
-        ParticleMaterial, TrailEffect, RoseEffectExtension,
-        object_material_extension::RoseObjectExtension,
+        object_material_extension::RoseObjectExtension, ParticleMaterial, RoseEffectExtension,
+        TrailEffect,
     },
 };
 
@@ -318,7 +313,7 @@ impl ModelLoader {
                     .joints
                     .get(dummy_bone_offset + *link_dummy_bone_id as usize)
                 {
-                if let Some(effect_entity) = spawn_effect(
+                    if let Some(effect_entity) = spawn_effect(
                         &self.vfs,
                         commands,
                         asset_server,
@@ -339,7 +334,7 @@ impl ModelLoader {
             }
         }
 
-            if let Some(npc_data) = self.npc_database.get_npc(npc_id) {
+        if let Some(npc_data) = self.npc_database.get_npc(npc_id) {
             if npc_data.right_hand_part_index != 0 {
                 let mut parts = spawn_model(
                     commands,
@@ -527,7 +522,8 @@ impl ModelLoader {
                     .character_motion_database
                     .get_character_action_motion(action, weapon_motion_type, 0)
                 {
-                    return asset_server.load(motion_data.path.path().to_string_lossy().into_owned());
+                    return asset_server
+                        .load(motion_data.path.path().to_string_lossy().into_owned());
                 }
             }
 
@@ -543,7 +539,8 @@ impl ModelLoader {
                     .character_motion_database
                     .get_character_action_motion(action, 0, 0)
                 {
-                    return asset_server.load(motion_data.path.path().to_string_lossy().into_owned());
+                    return asset_server
+                        .load(motion_data.path.path().to_string_lossy().into_owned());
                 }
             }
 
@@ -1069,20 +1066,20 @@ impl ModelLoader {
                             if let Some(dummy_bone_entity) =
                                 skinned_mesh.joints.get(dummy_bone_offset + dummy_index)
                             {
-                if let Some(effect_entity) = spawn_effect(
-                        &self.vfs,
-                        commands,
-                        asset_server,
-                        particle_materials,
-                        effect_mesh_materials,
-                        storage_buffers,
-                        meshes,
-                        effect_path.into(),
-                        false,
-                        None,
-                        Some(&self.effect_cache),
-                        None, // No position for bone-attached effects
-                    ) {
+                                if let Some(effect_entity) = spawn_effect(
+                                    &self.vfs,
+                                    commands,
+                                    asset_server,
+                                    particle_materials,
+                                    effect_mesh_materials,
+                                    storage_buffers,
+                                    meshes,
+                                    effect_path.into(),
+                                    false,
+                                    None,
+                                    Some(&self.effect_cache),
+                                    None, // No position for bone-attached effects
+                                ) {
                                     commands.entity(*dummy_bone_entity).add_child(effect_entity);
                                     model_parts[vehicle_part_index].1.push(effect_entity);
                                 }
@@ -1267,12 +1264,12 @@ fn spawn_skeleton(
             bind_pose[dummy_id + dummy_bone_offset] * bind_pose[dummy_bone.parent as usize];
     }
 
-    let inverse_bind_pose: Vec<Mat4> = bind_pose
-        .iter()
-        .map(|x| x.to_matrix().inverse())
-        .collect();
+    let inverse_bind_pose: Vec<Mat4> = bind_pose.iter().map(|x| x.to_matrix().inverse()).collect();
 
-    assert!(!inverse_bind_pose.is_empty(), "Skeleton has no inverse bind poses!");
+    assert!(
+        !inverse_bind_pose.is_empty(),
+        "Skeleton has no inverse bind poses!"
+    );
 
     // Validate inverse bind poses are not degenerate
     for (i, matrix) in inverse_bind_pose.iter().enumerate() {
@@ -1328,22 +1325,22 @@ fn spawn_skeleton(
     }
 }
 
-    #[allow(clippy::too_many_arguments)]
-    fn spawn_model(
-        commands: &mut Commands,
-        asset_server: &AssetServer,
-        standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
-        object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
-        model_entity: Entity,
-        model_list: &ZscFile,
-        model_id: usize,
-        skinned_mesh: Option<&SkinnedMesh>,
-        default_bone_index: Option<usize>,
-        dummy_bone_offset: usize,
-        load_clip_faces: bool,
-        specular_image: &Handle<Image>,
-        skinned_mesh_parent: Option<Entity>,
-    ) -> Vec<Entity> {
+#[allow(clippy::too_many_arguments)]
+fn spawn_model(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+    object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    model_entity: Entity,
+    model_list: &ZscFile,
+    model_id: usize,
+    skinned_mesh: Option<&SkinnedMesh>,
+    default_bone_index: Option<usize>,
+    dummy_bone_offset: usize,
+    load_clip_faces: bool,
+    specular_image: &Handle<Image>,
+    skinned_mesh_parent: Option<Entity>,
+) -> Vec<Entity> {
     let mut parts = Vec::new();
     let object = if let Some(object) = model_list.objects.get(model_id) {
         object
@@ -1351,11 +1348,14 @@ fn spawn_skeleton(
         return parts;
     };
 
-        for object_part in object.parts.iter() {
+    for object_part in object.parts.iter() {
         let mesh_id = object_part.mesh_id as usize;
         // Convert path to lowercase to ensure extension matching works with Bevy's asset loader
         // Bevy's extension matching is case-sensitive, and ZmsAssetLoader registers for "zms"
-        let mesh_path: String = model_list.meshes[mesh_id].path().to_string_lossy().to_lowercase();
+        let mesh_path: String = model_list.meshes[mesh_id]
+            .path()
+            .to_string_lossy()
+            .to_lowercase();
         let mesh: Handle<Mesh> = asset_server.load(mesh_path);
         let material_id = object_part.material_id as usize;
         let zsc_material = &model_list.materials[material_id];
@@ -1388,10 +1388,10 @@ fn spawn_skeleton(
         let material = create_rose_object_material(
             object_materials,
             texture_handle,
-            None, // lightmap_texture
+            None,                         // lightmap_texture
             Some(specular_image.clone()), // specular_texture
-            Vec2::new(0.0, 0.0), // lightmap_offset
-            1.0, // lightmap_scale
+            Vec2::new(0.0, 0.0),          // lightmap_offset
+            1.0,                          // lightmap_scale
             if zsc_material.alpha_enabled {
                 if let Some(threshold) = zsc_material.alpha_test {
                     AlphaMode::Mask(threshold)
@@ -1401,7 +1401,7 @@ fn spawn_skeleton(
             } else {
                 AlphaMode::Opaque
             }, // alpha_mode
-            zsc_material.two_sided, // two_sided
+            zsc_material.two_sided,       // two_sided
         );
 
         let mut entity_commands = commands.spawn((
@@ -1415,10 +1415,11 @@ fn spawn_skeleton(
         ));
 
         if load_clip_faces {
-            let zms_material_num_faces = crate::zms_asset_loader::ZmsMaterialNumFacesHandle(asset_server.load(format!(
-                "{}#material_num_faces",
-                model_list.meshes[mesh_id].path().to_string_lossy()
-            )));
+            let zms_material_num_faces =
+                crate::zms_asset_loader::ZmsMaterialNumFacesHandle(asset_server.load(format!(
+                    "{}#material_num_faces",
+                    model_list.meshes[mesh_id].path().to_string_lossy()
+                )));
             entity_commands.insert(zms_material_num_faces);
         }
 
@@ -1433,7 +1434,7 @@ fn spawn_skeleton(
         //     object_part.dummy_index,
         //     default_bone_index
         // );
-        
+
         // CRITICAL: Do NOT insert SkinnedMesh directly in Bevy0.16
         // The ZSC material's is_skin flag doesn't guarantee the ZMS mesh has joint attributes
         // If SkinnedMesh is inserted but the mesh lacks joint attributes, it causes a bind group mismatch
@@ -1475,9 +1476,7 @@ fn spawn_skeleton(
         };
 
         let parent_entity = link_bone_entity.unwrap_or(model_entity);
-        commands
-            .entity(parent_entity)
-            .add_child(entity);
+        commands.entity(parent_entity).add_child(entity);
 
         parts.push(entity);
     }

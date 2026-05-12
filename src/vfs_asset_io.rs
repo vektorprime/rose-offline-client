@@ -1,9 +1,10 @@
+use bevy::app::App;
 use bevy::asset::{
     io::{AssetReader, AssetReaderError, AssetSourceBuilder, AssetSourceId, Reader, VecReader},
     AssetApp, AssetServer,
 };
-use bevy::app::App;
-use bevy::prelude::{Plugin, Res, Resource, Event};
+use bevy::prelude::{Event, Plugin, Res, Resource};
+use rose_file_readers::{VfsFile, VirtualFilesystem};
 use std::{
     collections::HashMap,
     future::Future,
@@ -13,7 +14,6 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
-use rose_file_readers::{VfsFile, VirtualFilesystem};
 
 use crate::resources::VfsResource;
 
@@ -45,17 +45,17 @@ impl VfsReadStats {
     pub fn log_file_read(&mut self, path: &str, size: usize) {
         self.total_files_read += 1;
         self.total_bytes_read += size;
-        
+
         if size > self.largest_file_size {
             self.largest_file_size = size;
             self.largest_file_path = path.to_string();
         }
-        
+
         // Log large files (>10MB) for memory leak investigation
         //if size > 10 * 1024 * 1024 {
         //    log::warn!("[VFS MEMORY] Large file loaded: {} (size: {})", path, format_bytes(size));
         //}
-        
+
         // Log every 100 files and every 100MB
         //if self.total_files_read % 100 == 0 {
         //    log::info!(
@@ -67,7 +67,7 @@ impl VfsReadStats {
         //    );
         //}
     }
-    
+
     pub fn log_summary(&self) {
         //log::info!("[VFS MEMORY] ==========================================");
         //log::info!("[VFS MEMORY] VFS Read Statistics Summary");
@@ -102,12 +102,12 @@ impl bevy::tasks::futures_lite::AsyncRead for CursorWrapper {
         let pos = self.position as usize;
         let available = self.data.len().saturating_sub(pos);
         let to_read = std::cmp::min(buf.len(), available);
-        
+
         if to_read > 0 {
             buf[..to_read].copy_from_slice(&self.data[pos..pos + to_read]);
             self.position += to_read as u64;
         }
-        
+
         Poll::Ready(Ok(to_read))
     }
 }
@@ -138,19 +138,17 @@ impl bevy::tasks::futures_lite::AsyncSeek for CursorWrapper {
     }
 }
 
-
-
 impl std::io::Read for CursorWrapper {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let pos = self.position as usize;
         let available = self.data.len().saturating_sub(pos);
         let to_read = std::cmp::min(buf.len(), available);
-        
+
         if to_read > 0 {
             buf[..to_read].copy_from_slice(&self.data[pos..pos + to_read]);
             self.position += to_read as u64;
         }
-        
+
         Ok(to_read)
     }
 }
@@ -158,20 +156,20 @@ impl std::io::Read for CursorWrapper {
 impl std::io::Seek for CursorWrapper {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
         use std::io::SeekFrom;
-        
+
         let new_pos = match pos {
             SeekFrom::Start(offset) => offset as i64,
             SeekFrom::End(offset) => self.data.len() as i64 + offset,
             SeekFrom::Current(offset) => self.position as i64 + offset,
         };
-        
+
         if new_pos < 0 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "invalid seek to a negative position",
             ));
         }
-        
+
         self.position = new_pos as u64;
         Ok(self.position)
     }
@@ -179,7 +177,8 @@ impl std::io::Seek for CursorWrapper {
 
 /// Global file cache shared between all VfsAssetIo instances
 /// This cache persists file data in memory to avoid repeated disk/VFS reads
-static VFS_FILE_CACHE: std::sync::OnceLock<std::sync::RwLock<HashMap<String, Arc<Vec<u8>>>>> = std::sync::OnceLock::new();
+static VFS_FILE_CACHE: std::sync::OnceLock<std::sync::RwLock<HashMap<String, Arc<Vec<u8>>>>> =
+    std::sync::OnceLock::new();
 
 /// Get or initialize the global file cache
 fn get_file_cache() -> &'static std::sync::RwLock<HashMap<String, Arc<Vec<u8>>>> {
@@ -219,7 +218,10 @@ pub struct VfsAssetIo {
 
 impl VfsAssetIo {
     pub fn new(vfs: Arc<VirtualFilesystem>, base_path: PathBuf) -> Self {
-        log::info!("[VFS ASSET IO] Creating new VfsAssetIo instance with base_path: {:?}", base_path);
+        log::info!(
+            "[VFS ASSET IO] Creating new VfsAssetIo instance with base_path: {:?}",
+            base_path
+        );
         Self {
             vfs,
             base_path,
@@ -227,11 +229,14 @@ impl VfsAssetIo {
             use_cache: true,
         }
     }
-    
+
     /// Create a new VfsAssetIo without caching (for special cases)
     #[allow(dead_code)]
     pub fn new_without_cache(vfs: Arc<VirtualFilesystem>, base_path: PathBuf) -> Self {
-        log::info!("[VFS ASSET IO] Creating new VfsAssetIo instance (no cache) with base_path: {:?}", base_path);
+        log::info!(
+            "[VFS ASSET IO] Creating new VfsAssetIo instance (no cache) with base_path: {:?}",
+            base_path
+        );
         Self {
             vfs,
             base_path,
@@ -239,14 +244,14 @@ impl VfsAssetIo {
             use_cache: false,
         }
     }
-    
+
     /// Log the current VFS read statistics summary
     pub fn log_read_stats(&self) {
         if let Ok(stats) = self.read_stats.lock() {
             stats.log_summary();
         }
     }
-    
+
     /// Get a copy of the current read statistics
     pub fn get_read_stats(&self) -> Option<VfsReadStats> {
         self.read_stats.lock().ok().map(|s| VfsReadStats {
@@ -256,30 +261,30 @@ impl VfsAssetIo {
             largest_file_path: s.largest_file_path.clone(),
         })
     }
-    
+
     /// Try to get a file from the cache
     fn get_from_cache(&self, path: &str) -> Option<Arc<Vec<u8>>> {
         if !self.use_cache {
             return None;
         }
-        
+
         if let Ok(cache) = get_file_cache().read() {
             cache.get(path).cloned()
         } else {
             None
         }
     }
-    
+
     /// Store a file in the cache
     fn store_in_cache(&self, path: &str, data: Vec<u8>) -> Arc<Vec<u8>> {
         let arc_data = Arc::new(data);
-        
+
         if self.use_cache {
             if let Ok(mut cache) = get_file_cache().write() {
                 cache.insert(path.to_string(), arc_data.clone());
             }
         }
-        
+
         arc_data
     }
 }
@@ -311,7 +316,10 @@ impl AssetReader for VfsAssetIo {
             if path_str.ends_with(".zone_loader") {
                 //log::info!("[VFS DIAGNOSTIC] ===========================================");
                 //log::info!("[VFS DIAGNOSTIC] Processing .zone_loader file: {}", path_str);
-                let zone_id = path_str.trim_end_matches(".zone_loader").parse::<u8>().unwrap();
+                let zone_id = path_str
+                    .trim_end_matches(".zone_loader")
+                    .parse::<u8>()
+                    .unwrap();
                 //log::info!("[VFS DIAGNOSTIC] Parsed zone_id: {}", zone_id);
                 let data = vec![zone_id];
                 // log::info!("[VFS DIAGNOSTIC] Returning zone_loader data for zone_id: {}", zone_id);
@@ -328,24 +336,32 @@ impl AssetReader for VfsAssetIo {
                     //log::info!("[VFS DEBUG] Successfully read shader from local filesystem: \"{}\"", path_str);
                     return Ok(VecReader::new(data));
                 }
-                log::warn!("[VFS DEBUG] Failed to read shader from local filesystem: \"{}\"", path_str);
+                log::warn!(
+                    "[VFS DEBUG] Failed to read shader from local filesystem: \"{}\"",
+                    path_str
+                );
             }
 
             // CHECK CACHE FIRST - This is the key optimization!
             // If the file is already in memory, return it directly without disk/VFS access
             if let Some(cached_data) = self.get_from_cache(path_str) {
                 // Log cache hit (only for DDS and model files to reduce noise)
-                if path_str.to_uppercase().ends_with(".DDS") ||
-                   path_str.to_uppercase().ends_with(".ZMS") ||
-                   path_str.to_uppercase().ends_with(".ROSE") {
-                    log::debug!("[VFS CACHE HIT] {} (size: {})", path_str, format_bytes(cached_data.len()));
+                if path_str.to_uppercase().ends_with(".DDS")
+                    || path_str.to_uppercase().ends_with(".ZMS")
+                    || path_str.to_uppercase().ends_with(".ROSE")
+                {
+                    log::debug!(
+                        "[VFS CACHE HIT] {} (size: {})",
+                        path_str,
+                        format_bytes(cached_data.len())
+                    );
                 }
-                
+
                 // Track read statistics (as cache hit)
                 if let Ok(mut stats) = self.read_stats.lock() {
                     stats.log_file_read(path_str, cached_data.len());
                 }
-                
+
                 // Clone the Arc's data for VecReader
                 return Ok(VecReader::new((*cached_data).clone()));
             }
@@ -356,19 +372,27 @@ impl AssetReader for VfsAssetIo {
             if real_filesystem_path.exists() {
                 match std::fs::read(&real_filesystem_path) {
                     Ok(data) => {
-                        log::info!("[VFS] Loaded from real filesystem: {} (size: {})", path_str, format_bytes(data.len()));
-                        
+                        log::info!(
+                            "[VFS] Loaded from real filesystem: {} (size: {})",
+                            path_str,
+                            format_bytes(data.len())
+                        );
+
                         // Track read statistics
                         if let Ok(mut stats) = self.read_stats.lock() {
                             stats.log_file_read(path_str, data.len());
                         }
-                        
+
                         // Store in cache for future access
                         let cached = self.store_in_cache(path_str, data);
                         return Ok(VecReader::new((*cached).clone()));
                     }
                     Err(e) => {
-                        log::warn!("[VFS] File exists at {:?} but failed to read: {}", real_filesystem_path, e);
+                        log::warn!(
+                            "[VFS] File exists at {:?} but failed to read: {}",
+                            real_filesystem_path,
+                            e
+                        );
                     }
                 }
             }
@@ -381,12 +405,12 @@ impl AssetReader for VfsAssetIo {
                         VfsFile::Buffer(buffer) => {
                             let size = buffer.len();
                             //log::debug!("[VFS MEMORY] File loaded from VFS buffer: {} (size: {})", path_str, format_bytes(size));
-                            
+
                             // Track read statistics
                             if let Ok(mut stats) = self.read_stats.lock() {
                                 stats.log_file_read(path_str, size);
                             }
-                            
+
                             // Store in cache for future access
                             let cached = self.store_in_cache(path_str, buffer);
                             Ok(VecReader::new((*cached).clone()))
@@ -395,12 +419,12 @@ impl AssetReader for VfsAssetIo {
                             let size = view.len();
                             let data: Vec<u8> = view.into();
                             //log::debug!("[VFS MEMORY] File loaded from VFS view: {} (size: {})", path_str, format_bytes(size));
-                            
+
                             // Track read statistics
                             if let Ok(mut stats) = self.read_stats.lock() {
                                 stats.log_file_read(path_str, size);
                             }
-                            
+
                             // Store in cache for future access
                             let cached = self.store_in_cache(path_str, data);
                             Ok(VecReader::new((*cached).clone()))
@@ -440,7 +464,12 @@ impl AssetReader for VfsAssetIo {
     fn read_directory<'a>(
         &'a self,
         _path: &'a Path,
-    ) -> impl Future<Output = Result<Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>, AssetReaderError>> + Send {
+    ) -> impl Future<
+        Output = Result<
+            Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>,
+            AssetReaderError,
+        >,
+    > + Send {
         async move {
             // ============================================================================
             // CRITICAL FIX - DO NOT REMOVE - DO NOT MODIFY
@@ -470,7 +499,10 @@ impl AssetReader for VfsAssetIo {
             // non-AssetReader API that doesn't trigger Bevy's hot-reload system.
             // ============================================================================
             let stream = bevy::tasks::futures_lite::stream::iter(Vec::<PathBuf>::new());
-            Ok(Box::new(stream) as Box<dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static>)
+            Ok(Box::new(stream)
+                as Box<
+                    dyn bevy::tasks::futures_lite::Stream<Item = PathBuf> + Send + Unpin + 'static,
+                >)
         }
     }
 
@@ -481,20 +513,20 @@ impl AssetReader for VfsAssetIo {
         async move {
             log::info!("[VFS DIAGNOSTIC] is_directory called for path: {:?}", path);
             let path_str = path.to_str().unwrap_or("");
-            
+
             // FIX: Return false for .zone_loader files (they're files, not directories)
             if path_str.ends_with(".zone_loader") {
                 //log::info!("[VFS DIAGNOSTIC] Returning false for .zone_loader file: {}", path_str);
                 return Ok(false);
             }
-            
+
             Ok(false)
         }
     }
 }
 
 /// Plugin that registers the VFS as the default asset source.
-/// 
+///
 /// # Requirements
 /// This plugin requires that `VfsResource` is already inserted into the app before
 /// this plugin is built. The plugin retrieves the VFS from the resource rather than
@@ -524,15 +556,19 @@ impl Plugin for VfsAssetReaderPlugin {
         //log::info!("[VFS ASSET READER PLUGIN] build() called, registering VFS as default asset source");
 
         // Get the VFS and base_path from VfsResource
-        let vfs = app.world().get_resource::<VfsResource>()
+        let vfs = app
+            .world()
+            .get_resource::<VfsResource>()
             .expect("VfsResource must be inserted before VfsAssetReaderPlugin is built")
             .vfs
             .clone();
-        let base_path = app.world().get_resource::<VfsResource>()
+        let base_path = app
+            .world()
+            .get_resource::<VfsResource>()
             .expect("VfsResource must be inserted before VfsAssetReaderPlugin is built")
             .base_path
             .clone();
-        
+
         //log::info!("[VFS ASSET READER PLUGIN] VFS retrieved from VfsResource, Arc pointer: {:p}", vfs.as_ref());
         //log::info!("[VFS ASSET READER PLUGIN] About to call register_asset_source()");
 
@@ -553,11 +589,15 @@ impl Plugin for VfsAssetReaderPlugin {
         // FIX: Register a custom asset source specifically for .zone_loader files
         // This bypasses the file existence check that prevents .zone_loader files from being loaded
         // We need to get the VFS and base_path again for this second registration since the first closure captured them
-        let vfs_for_zone_loader = app.world().get_resource::<VfsResource>()
+        let vfs_for_zone_loader = app
+            .world()
+            .get_resource::<VfsResource>()
             .expect("VfsResource must be inserted before VfsAssetReaderPlugin is built")
             .vfs
             .clone();
-        let base_path_for_zone_loader = app.world().get_resource::<VfsResource>()
+        let base_path_for_zone_loader = app
+            .world()
+            .get_resource::<VfsResource>()
             .expect("VfsResource must be inserted before VfsAssetReaderPlugin is built")
             .base_path
             .clone();
@@ -583,7 +623,10 @@ impl Plugin for VfsAssetReaderPlugin {
                     //log::info!("[VFS ASSET READER PLUGIN] Reader type: {}", reader_type);
                 }
                 Err(e) => {
-                    log::error!("[VFS ASSET READER PLUGIN] Failed to get default asset source: {:?}", e);
+                    log::error!(
+                        "[VFS ASSET READER PLUGIN] Failed to get default asset source: {:?}",
+                        e
+                    );
                 }
             }
             match asset_server.get_source(AssetSourceId::from("zone_loader")) {
@@ -594,7 +637,10 @@ impl Plugin for VfsAssetReaderPlugin {
                     //log::info!("[VFS ASSET READER PLUGIN] zone_loader Reader type: {}", reader_type);
                 }
                 Err(e) => {
-                    log::error!("[VFS ASSET READER PLUGIN] Failed to get zone_loader asset source: {:?}", e);
+                    log::error!(
+                        "[VFS ASSET READER PLUGIN] Failed to get zone_loader asset source: {:?}",
+                        e
+                    );
                 }
             }
         });

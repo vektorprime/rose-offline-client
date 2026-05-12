@@ -8,23 +8,23 @@ use crate::events::MoveSpeedSetEvent;
 pub fn parse_move_speed_command(message: &str) -> Option<f32> {
     let trimmed = message.trim();
     let lower = trimmed.to_lowercase();
-    
+
     if !lower.starts_with("/mspeed") {
         return None;
     }
-    
+
     // Parse the speed value after "/mspeed"
     let rest = trimmed[7..].trim();
-    
+
     if rest.is_empty() {
         return None;
     }
-    
+
     rest.parse::<f32>().ok()
 }
 
 /// System that handles move speed command detection from chat messages.
-/// 
+///
 /// This system is designed to work alongside the chatbox system.
 /// The chatbox system should check messages before sending to the server
 /// using the [`parse_move_speed_command`] helper function, and if it returns Some,

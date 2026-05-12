@@ -49,7 +49,12 @@ impl BloodStain {
     }
 
     /// Creates a new blood stain at the given UV position for a specific material entity.
-    pub fn new_for_material(uv_center: Vec2, uv_size: f32, variant: usize, material_entity: Entity) -> Self {
+    pub fn new_for_material(
+        uv_center: Vec2,
+        uv_size: f32,
+        variant: usize,
+        material_entity: Entity,
+    ) -> Self {
         Self {
             uv_center,
             uv_size: Vec2::splat(uv_size),
@@ -105,7 +110,8 @@ impl BloodOverlay {
             // Remove oldest stain
             self.stains.remove(0);
         }
-        self.stains.push(BloodStain::new(uv_center, uv_size, variant));
+        self.stains
+            .push(BloodStain::new(uv_center, uv_size, variant));
         self.texture_dirty = true;
         self.is_bloodied = true;
     }
@@ -142,7 +148,8 @@ impl BloodOverlay {
         self.stains
             .iter()
             .filter(|s| {
-                s.visible && (s.material_entity.is_none() || s.material_entity == Some(material_entity))
+                s.visible
+                    && (s.material_entity.is_none() || s.material_entity == Some(material_entity))
             })
             .collect()
     }
@@ -164,7 +171,12 @@ impl BloodOverlay {
 
     /// Returns whether a specific material's overlay needs regeneration.
     pub fn is_material_dirty(&self, material_entity: Entity) -> bool {
-        self.texture_dirty || self.material_dirty.get(&material_entity).copied().unwrap_or(false)
+        self.texture_dirty
+            || self
+                .material_dirty
+                .get(&material_entity)
+                .copied()
+                .unwrap_or(false)
     }
 
     /// Marks a specific material's overlay as clean after regeneration.

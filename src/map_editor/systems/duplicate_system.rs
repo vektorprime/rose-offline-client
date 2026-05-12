@@ -4,18 +4,16 @@
 //! including meshes, materials, collision, and child parts.
 
 use bevy::{
-    prelude::*,
-    light::NotShadowCaster,
-    pbr::ExtendedMaterial,
+    camera::visibility::RenderLayers, light::NotShadowCaster, pbr::ExtendedMaterial, prelude::*,
     render::alpha::AlphaMode,
-    camera::visibility::RenderLayers,
 };
-use bevy_rapier3d::prelude::{CollisionGroups, Group, RigidBody, Collider, AsyncCollider, ComputedColliderShape};
+use bevy_rapier3d::prelude::{
+    AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, Group, RigidBody,
+};
 
 use crate::components::{
-    ZoneObject, ZoneObjectId, ZoneObjectPart, ColliderParent,
-    COLLISION_FILTER_INSPECTABLE, COLLISION_FILTER_COLLIDABLE,
-    COLLISION_GROUP_ZONE_OBJECT,
+    ColliderParent, ZoneObject, ZoneObjectId, ZoneObjectPart, COLLISION_FILTER_COLLIDABLE,
+    COLLISION_FILTER_INSPECTABLE, COLLISION_GROUP_ZONE_OBJECT,
 };
 use crate::map_editor::{
     components::{EditorSelectable, SelectedInEditor},
@@ -64,46 +62,57 @@ pub fn handle_duplicate_event(
 ) {
     for event in events.read() {
         let entities: Vec<Entity> = selected_entities.iter().collect();
-        
+
         if entities.is_empty() {
             log::debug!("[DuplicateSystem] No entities selected for duplication");
             continue;
         }
-        
-        log::info!("[DuplicateSystem] Duplicating {} entities with offset {:?}", entities.len(), event.offset);
-        
+
+        log::info!(
+            "[DuplicateSystem] Duplicating {} entities with offset {:?}",
+            entities.len(),
+            event.offset
+        );
+
         // Remove selection from current entities
         for entity in &entities {
             commands.entity(*entity).remove::<SelectedInEditor>();
         }
-        
+
         // Track new entities for selection and undo
         let mut new_entities = Vec::new();
-        
+
         // Get zone data for mesh loading if available
-        let zone_data = current_zone.as_ref().and_then(|z| zone_loader_assets.get(&z.handle));
-        
+        let zone_data = current_zone
+            .as_ref()
+            .and_then(|z| zone_loader_assets.get(&z.handle));
+
         for entity in &entities {
             // Get the original transform
             let Ok(global_transform) = transforms.get(*entity) else {
-                log::warn!("[DuplicateSystem] Could not get transform for entity {:?}", entity);
+                log::warn!(
+                    "[DuplicateSystem] Could not get transform for entity {:?}",
+                    entity
+                );
                 continue;
             };
-            
+
             let original_translation = global_transform.translation();
             let new_translation = original_translation + event.offset;
             let new_transform = Transform::from_translation(new_translation)
                 .with_rotation(global_transform.rotation())
                 .with_scale(global_transform.scale());
-            
+
             // Get the original name
-            let new_name = names.get(*entity).ok()
+            let new_name = names
+                .get(*entity)
+                .ok()
                 .map(|n| format!("{}_copy", n.as_str()))
                 .unwrap_or_else(|| "DuplicatedEntity".to_string());
-            
+
             // Get the ZoneObject component
             let zone_object = zone_objects.get(*entity).ok();
-            
+
             // Create the duplicated parent entity
             let mut entity_commands = commands.spawn((
                 new_transform,
@@ -115,12 +124,12 @@ pub fn handle_duplicate_event(
                 InheritedVisibility::default(),
                 ViewVisibility::default(),
             ));
-            
+
             // Copy ZoneObject component if present
             if let Some(zone_obj) = zone_object {
                 let duplicated_zone_obj = duplicate_zone_object(zone_obj);
                 entity_commands.insert(duplicated_zone_obj);
-                
+
                 // Add EditorPlacedObject marker with info from zone object
                 if let Some((model_id, category)) = get_model_info_from_zone_object(zone_obj) {
                     entity_commands.insert(EditorPlacedObject {
@@ -129,14 +138,14 @@ pub fn handle_duplicate_event(
                         placed_at: std::time::Instant::now(),
                     });
                 }
-                
+
                 // Add RigidBody for physics
                 entity_commands.insert(RigidBody::Fixed);
             }
-            
+
             let new_entity = entity_commands.id();
             new_entities.push(new_entity);
-            
+
             // Duplicate child parts (meshes, collision, etc.)
             if let Ok(children) = children_query.get(*entity) {
                 duplicate_child_parts(
@@ -151,7 +160,7 @@ pub fn handle_duplicate_event(
                     &asset_server,
                 );
             }
-            
+
             log::info!(
                 "[DuplicateSystem] Created duplicate entity {:?} '{}' at position {:?}",
                 new_entity,
@@ -159,21 +168,24 @@ pub fn handle_duplicate_event(
                 new_translation
             );
         }
-        
+
         // Clear old selection and set new selection
         map_editor_state.clear_selection();
         for entity in &new_entities {
             map_editor_state.select_entity(*entity);
         }
-        
+
         // Record the action for undo
         if !new_entities.is_empty() {
             map_editor_state.push_action(EditorAction::AddEntities {
                 entities: new_entities.clone(),
             });
         }
-        
-        log::info!("[DuplicateSystem] Duplicated {} entities", new_entities.len());
+
+        log::info!(
+            "[DuplicateSystem] Duplicated {} entities",
+            new_entities.len()
+        );
     }
 }
 
@@ -242,11 +254,17 @@ fn duplicate_zone_object(zone_obj: &ZoneObject) -> ZoneObject {
         }),
         ZoneObject::AnimatedObject(obj) => ZoneObject::AnimatedObject(obj.clone()),
         ZoneObject::Terrain(terrain) => ZoneObject::Terrain(terrain.clone()),
-        ZoneObject::EffectObject { ifo_object_id: _, effect_path } => ZoneObject::EffectObject {
+        ZoneObject::EffectObject {
+            ifo_object_id: _,
+            effect_path,
+        } => ZoneObject::EffectObject {
             ifo_object_id: 0,
             effect_path: effect_path.clone(),
         },
-        ZoneObject::SoundObject { ifo_object_id: _, sound_path } => ZoneObject::SoundObject {
+        ZoneObject::SoundObject {
+            ifo_object_id: _,
+            sound_path,
+        } => ZoneObject::SoundObject {
             ifo_object_id: 0,
             sound_path: sound_path.clone(),
         },
@@ -263,8 +281,12 @@ fn get_model_info_from_zone_object(zone_obj: &ZoneObject) -> Option<(u32, ModelC
         ZoneObject::WarpObject(id) => Some((id.zsc_object_id as u32, ModelCategory::Special)),
         ZoneObject::DecoObjectPart(part) => Some((part.zsc_object_id as u32, ModelCategory::Deco)),
         ZoneObject::CnstObjectPart(part) => Some((part.zsc_object_id as u32, ModelCategory::Cnst)),
-        ZoneObject::EventObjectPart(part) => Some((part.zsc_object_id as u32, ModelCategory::Event)),
-        ZoneObject::WarpObjectPart(part) => Some((part.zsc_object_id as u32, ModelCategory::Special)),
+        ZoneObject::EventObjectPart(part) => {
+            Some((part.zsc_object_id as u32, ModelCategory::Event))
+        }
+        ZoneObject::WarpObjectPart(part) => {
+            Some((part.zsc_object_id as u32, ModelCategory::Special))
+        }
         _ => None,
     }
 }
@@ -310,7 +332,7 @@ fn duplicate_child_parts(
                 InheritedVisibility::default(),
                 ViewVisibility::default(),
             ));
-            
+
             // Copy or reload mesh
             if let Some(mesh_handle) = mesh {
                 part_commands.insert(mesh_handle.clone());
@@ -322,7 +344,7 @@ fn duplicate_child_parts(
                     part_commands.insert(Mesh3d(mesh_handle));
                 }
             }
-            
+
             // Copy or reload material
             if let Some(material_handle) = material {
                 part_commands.insert(material_handle.clone());
@@ -337,7 +359,7 @@ fn duplicate_child_parts(
                     object_materials,
                 );
             }
-            
+
             // Add rendering components
             part_commands.insert(bevy::camera::visibility::NoFrustumCulling);
             part_commands.insert(bevy::camera::primitives::Aabb::from_min_max(
@@ -345,13 +367,13 @@ fn duplicate_child_parts(
                 Vec3::splat(100000.0),
             ));
             part_commands.insert(RenderLayers::layer(0));
-            
+
             // Add collision components
             part_commands.insert(ColliderParent::new(parent_entity));
             part_commands.insert(AsyncCollider(ComputedColliderShape::TriMesh(
                 bevy_rapier3d::prelude::TriMeshFlags::FIX_INTERNAL_EDGES,
             )));
-            
+
             // Determine collision filter
             let mut collision_filter = COLLISION_FILTER_INSPECTABLE;
             if part.collision_shape != crate::components::ZoneObjectPartCollisionShape::None {
@@ -362,17 +384,17 @@ fn duplicate_child_parts(
                     collision_filter |= Group::from_bits_retain(1 << 4); // COLLISION_FILTER_CLICKABLE
                 }
             }
-            
+
             part_commands.insert(CollisionGroups::new(
                 COLLISION_GROUP_ZONE_OBJECT,
                 collision_filter,
             ));
-            
+
             let part_entity = part_commands.id();
-            
+
             // Add as child of parent
             commands.entity(parent_entity).add_child(part_entity);
-            
+
             // Recursively handle nested children
             if let Ok(nested_children) = children_query.get(child) {
                 duplicate_child_parts(
@@ -407,33 +429,33 @@ fn load_material_for_part(
     } else {
         &zone_data.zsc_cnst
     };
-    
+
     if zsc_object_id >= zsc.objects.len() {
         return;
     }
-    
+
     let object = &zsc.objects[zsc_object_id];
     if zsc_part_id >= object.parts.len() {
         return;
     }
-    
+
     let object_part = &object.parts[zsc_part_id];
     let material_id = object_part.material_id as usize;
-    
+
     if material_id >= zsc.materials.len() {
         return;
     }
-    
+
     let zsc_material = &zsc.materials[material_id];
     let material_path = zsc_material.path.path().to_string_lossy().into_owned();
-    
+
     // Load base texture
     let base_texture_handle = if material_path.is_empty() || material_path == "NULL" {
         asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS")
     } else {
         asset_server.load(&material_path)
     };
-    
+
     // Create material
     let material = object_materials.add(ExtendedMaterial {
         base: StandardMaterial {
@@ -462,9 +484,9 @@ fn load_material_for_part(
             blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
         },
     });
-    
+
     part_commands.insert(MeshMaterial3d(material));
-    
+
     // Disable shadow casting for transparent materials
     if zsc_material.alpha_enabled && zsc_material.alpha_test.is_none() {
         part_commands.insert(NotShadowCaster);

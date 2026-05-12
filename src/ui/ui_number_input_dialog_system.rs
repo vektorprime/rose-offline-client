@@ -2,10 +2,7 @@ use bevy::asset::Asset;
 use bevy::prelude::{Assets, Commands, Local, MessageWriter, Messages, Res, ResMut};
 use bevy_egui::{
     egui,
-    egui::{
-        epaint::text::cursor::CCursor,
-        text_selection::CCursorRange,
-    },
+    egui::{epaint::text::cursor::CCursor, text_selection::CCursorRange},
     EguiContexts,
 };
 
@@ -112,7 +109,8 @@ pub fn ui_number_input_dialog_system(
     };
 
     let screen_size = egui_context
-        .ctx_mut().unwrap()
+        .ctx_mut()
+        .unwrap()
         .input(|input| input.screen_rect().size());
     let default_x = screen_size.x / 2.0 - dialog.width / 2.0;
     let default_y = screen_size.y / 2.0 - dialog.height / 2.0;

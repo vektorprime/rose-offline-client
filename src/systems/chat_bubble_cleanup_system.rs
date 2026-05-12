@@ -1,8 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{
-    components::{ChatBubbleEntity, ClientEntityName},
-};
+use crate::components::{ChatBubbleEntity, ClientEntityName};
 
 /// System that cleans up chat bubbles when their target entities are despawned
 /// This listens for removed ClientEntityName components as a signal that entities are being removed

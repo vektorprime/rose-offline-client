@@ -1,4 +1,4 @@
-use bevy::prelude::{Resource, Reflect};
+use bevy::prelude::{Reflect, Resource};
 
 use crate::components::ClientEntityType;
 
