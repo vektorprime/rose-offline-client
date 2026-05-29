@@ -1,30 +1,15 @@
 use bevy::prelude::*;
 use bevy_mesh::VertexAttributeValues;
 
-use crate::components::{BoatState, PlayerCharacter, SailMesh, SailSide};
+use crate::components::{BoatState, SailMesh, SailSide};
 use crate::graphics::{GraphicsSettings, SailQuality};
 use crate::resources::WindState;
-
-fn sail_speed_factor(angle_to_wind: f32) -> f32 {
-    let angle = angle_to_wind.abs();
-    if angle < 0.78 {
-        (angle / 0.78).powf(2.0) * 0.3
-    } else if angle < 1.57 {
-        let t = (angle - 0.78) / (1.57 - 0.78);
-        0.3 + t * 0.7
-    } else if angle < 2.36 {
-        let t = (angle - 1.57) / (2.36 - 1.57);
-        1.0 - t * 0.2
-    } else {
-        let t = (angle - 2.36) / (std::f32::consts::PI - 2.36);
-        0.8 - t * 0.3
-    }
-}
+use crate::sailing::{angle_to_wind_abs, sail_speed_factor};
 
 fn nearest_parent_boat_state(
     mut current: Entity,
     parent_query: &Query<&ChildOf>,
-    boat_query: &Query<&BoatState, With<PlayerCharacter>>,
+    boat_query: &Query<&BoatState>,
 ) -> Option<BoatState> {
     for _ in 0..16 {
         if let Ok(boat) = boat_query.get(current) {
@@ -44,7 +29,7 @@ pub fn sail_animation_system(
     time: Res<Time>,
     wind: Res<WindState>,
     graphics_settings: Res<GraphicsSettings>,
-    boat_query: Query<&BoatState, With<PlayerCharacter>>,
+    boat_query: Query<&BoatState>,
     parent_query: Query<&ChildOf>,
     mut sail_query: Query<(Entity, &mut SailMesh, &Mesh3d)>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -70,13 +55,7 @@ pub fn sail_animation_system(
             continue;
         }
 
-        let angle_to_wind = (boat.heading - wind.angle).rem_euclid(std::f32::consts::TAU);
-        let angle_to_wind_abs = if angle_to_wind > std::f32::consts::PI {
-            std::f32::consts::TAU - angle_to_wind
-        } else {
-            angle_to_wind
-        };
-
+        let angle_to_wind_abs = angle_to_wind_abs(boat.heading, wind.angle);
         let fill_factor = sail_speed_factor(angle_to_wind_abs).clamp(0.0, 1.0);
         sail_data.billow = fill_factor;
 

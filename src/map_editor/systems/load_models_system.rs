@@ -367,11 +367,6 @@ pub fn update_models_on_zone_load_system(
             "Cnst",
         );
 
-        log::info!(
-            "[UPDATE MODELS] Updated models from loaded zone: {} deco, {} cnst",
-            models.deco_models.len(),
-            models.cnst_models.len()
-        );
     }
 }
 

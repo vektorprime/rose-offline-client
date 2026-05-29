@@ -2,16 +2,46 @@ use bevy::pbr::MeshMaterial3d;
 use bevy::{prelude::*, render::alpha::AlphaMode};
 use rand::Rng;
 
-use crate::components::{
-    BoatState, BowSprayParticle, PlayerCharacter, WakeEmitter, WakeParticle, WakeSource,
-};
+use crate::components::{BoatState, BowSprayParticle, WakeEmitter, WakeParticle, WakeSource};
 use crate::graphics::GraphicsSettings;
+
+const WAKE_ALPHA_BUCKETS: usize = 8;
 
 #[derive(Resource)]
 pub struct BoatWakeAssets {
     pub mesh: Handle<Mesh>,
-    pub wake_material: Handle<StandardMaterial>,
-    pub spray_material: Handle<StandardMaterial>,
+    pub wake_materials: Vec<Handle<StandardMaterial>>,
+    pub spray_materials: Vec<Handle<StandardMaterial>>,
+}
+
+fn create_alpha_materials(
+    materials: &mut Assets<StandardMaterial>,
+    color: Color,
+    max_alpha: f32,
+) -> Vec<Handle<StandardMaterial>> {
+    let rgba = color.to_srgba();
+    (0..WAKE_ALPHA_BUCKETS)
+        .map(|index| {
+            let alpha = max_alpha * (index as f32 + 1.0) / WAKE_ALPHA_BUCKETS as f32;
+            materials.add(StandardMaterial {
+                base_color: Color::srgba(rgba.red, rgba.green, rgba.blue, alpha),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                cull_mode: None,
+                ..default()
+            })
+        })
+        .collect()
+}
+
+fn material_for_alpha(
+    material_handles: &[Handle<StandardMaterial>],
+    alpha: f32,
+) -> Handle<StandardMaterial> {
+    let index = ((alpha.clamp(0.0, 1.0) * WAKE_ALPHA_BUCKETS as f32).ceil() as usize)
+        .saturating_sub(1)
+        .min(material_handles.len().saturating_sub(1));
+    material_handles[index].clone()
 }
 
 pub fn setup_boat_wake_assets(
@@ -24,32 +54,20 @@ pub fn setup_boat_wake_assets(
         Vec2::splat(0.5),
     )));
 
-    let wake_material = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.9, 0.95, 1.0, 0.4),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        cull_mode: None,
-        ..default()
-    });
-
-    let spray_material = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.96, 0.98, 1.0, 0.55),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        cull_mode: None,
-        ..default()
-    });
+    let wake_materials = create_alpha_materials(&mut materials, Color::srgb(0.9, 0.95, 1.0), 0.55);
+    let spray_materials =
+        create_alpha_materials(&mut materials, Color::srgb(0.96, 0.98, 1.0), 0.65);
 
     commands.insert_resource(BoatWakeAssets {
         mesh,
-        wake_material,
-        spray_material,
+        wake_materials,
+        spray_materials,
     });
 }
 
 pub fn ensure_boat_wake_emitter_system(
     mut commands: Commands,
-    query: Query<(Entity, &BoatState, Option<&WakeEmitter>), With<PlayerCharacter>>,
+    query: Query<(Entity, &BoatState, Option<&WakeEmitter>)>,
 ) {
     for (entity, boat, wake_emitter) in query.iter() {
         if boat.active && wake_emitter.is_none() {
@@ -60,27 +78,12 @@ pub fn ensure_boat_wake_emitter_system(
     }
 }
 
-fn clone_with_alpha(
-    materials: &mut Assets<StandardMaterial>,
-    base_handle: &Handle<StandardMaterial>,
-    alpha: f32,
-) -> Handle<StandardMaterial> {
-    let mut material = materials.get(base_handle).cloned().unwrap_or_default();
-    let rgba = material.base_color.to_srgba();
-    material.base_color = Color::srgba(rgba.red, rgba.green, rgba.blue, alpha);
-    materials.add(material)
-}
-
 pub fn boat_wake_spawn_system(
     time: Res<Time>,
     graphics_settings: Res<GraphicsSettings>,
     wake_assets: Res<BoatWakeAssets>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
-    mut boat_query: Query<
-        (Entity, &BoatState, &Transform, &mut WakeEmitter),
-        With<PlayerCharacter>,
-    >,
+    mut boat_query: Query<(Entity, &BoatState, &Transform, &mut WakeEmitter)>,
     wake_particles: Query<&WakeSource, With<WakeParticle>>,
     spray_particles: Query<&WakeSource, With<BowSprayParticle>>,
     mut commands: Commands,
@@ -133,18 +136,16 @@ pub fn boat_wake_spawn_system(
                 let wake_dir = (-forward + right * side * 0.3).normalize_or_zero();
                 let velocity = wake_dir * (boat.speed * 0.3);
 
-                let particle_material = clone_with_alpha(
-                    &mut materials,
-                    &wake_assets.wake_material,
-                    (0.18 + speed_ratio * 0.35).clamp(0.0, 1.0),
-                );
+                let initial_alpha = (0.18 + speed_ratio * 0.35).clamp(0.0, 1.0);
+                let particle_material =
+                    material_for_alpha(&wake_assets.wake_materials, initial_alpha);
 
                 commands.spawn((
                     WakeSource { boat_entity },
                     WakeParticle {
                         velocity,
                         lifetime: Timer::from_seconds(wake_lifetime_secs, TimerMode::Once),
-                        initial_alpha: (0.18 + speed_ratio * 0.35).clamp(0.0, 1.0),
+                        initial_alpha,
                         initial_scale: wake_scale,
                     },
                     Mesh3d(wake_assets.mesh.clone()),
@@ -188,11 +189,9 @@ pub fn boat_wake_spawn_system(
                 let backward = boat.speed * rng.gen_range(0.25..0.45);
                 let spray_velocity = Vec3::new(0.0, upward, 0.0) + (-forward * backward);
 
-                let particle_material = clone_with_alpha(
-                    &mut materials,
-                    &wake_assets.spray_material,
-                    rng.gen_range(0.35..0.65),
-                );
+                let initial_alpha = rng.gen_range(0.35..0.65);
+                let particle_material =
+                    material_for_alpha(&wake_assets.spray_materials, initial_alpha);
                 let initial_scale = rng.gen_range(0.1..0.2);
                 let lifetime = rng.gen_range(0.3..0.6);
 
@@ -201,7 +200,7 @@ pub fn boat_wake_spawn_system(
                     BowSprayParticle {
                         velocity: spray_velocity,
                         lifetime: Timer::from_seconds(lifetime, TimerMode::Once),
-                        initial_alpha: rng.gen_range(0.35..0.65),
+                        initial_alpha,
                         initial_scale,
                     },
                     Mesh3d(wake_assets.mesh.clone()),
@@ -222,13 +221,13 @@ pub fn boat_wake_spawn_system(
 pub fn boat_wake_update_system(
     time: Res<Time>,
     mut commands: Commands,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    wake_assets: Res<BoatWakeAssets>,
     mut wake_query: Query<
         (
             Entity,
             &mut WakeParticle,
             &mut Transform,
-            &MeshMaterial3d<StandardMaterial>,
+            &mut MeshMaterial3d<StandardMaterial>,
         ),
         Without<BowSprayParticle>,
     >,
@@ -237,14 +236,14 @@ pub fn boat_wake_update_system(
             Entity,
             &mut BowSprayParticle,
             &mut Transform,
-            &MeshMaterial3d<StandardMaterial>,
+            &mut MeshMaterial3d<StandardMaterial>,
         ),
         Without<WakeParticle>,
     >,
 ) {
     let dt = time.delta_secs();
 
-    for (entity, mut particle, mut transform, material_handle) in wake_query.iter_mut() {
+    for (entity, mut particle, mut transform, mut material_handle) in wake_query.iter_mut() {
         particle.lifetime.tick(time.delta());
         if particle.lifetime.is_finished() {
             commands.entity(entity).despawn();
@@ -259,13 +258,10 @@ pub fn boat_wake_update_system(
         let current_scale = particle.initial_scale * (1.0 + life_t * 0.5);
         transform.scale = Vec3::splat(current_scale);
 
-        if let Some(material) = materials.get_mut(&material_handle.0) {
-            let rgba = material.base_color.to_srgba();
-            material.base_color = Color::srgba(rgba.red, rgba.green, rgba.blue, current_alpha);
-        }
+        material_handle.0 = material_for_alpha(&wake_assets.wake_materials, current_alpha);
     }
 
-    for (entity, mut particle, mut transform, material_handle) in spray_query.iter_mut() {
+    for (entity, mut particle, mut transform, mut material_handle) in spray_query.iter_mut() {
         particle.lifetime.tick(time.delta());
         if particle.lifetime.is_finished() {
             commands.entity(entity).despawn();
@@ -281,9 +277,6 @@ pub fn boat_wake_update_system(
         let current_scale = particle.initial_scale * (1.0 + life_t * 0.35);
         transform.scale = Vec3::splat(current_scale);
 
-        if let Some(material) = materials.get_mut(&material_handle.0) {
-            let rgba = material.base_color.to_srgba();
-            material.base_color = Color::srgba(rgba.red, rgba.green, rgba.blue, current_alpha);
-        }
+        material_handle.0 = material_for_alpha(&wake_assets.spray_materials, current_alpha);
     }
 }

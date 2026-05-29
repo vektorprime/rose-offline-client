@@ -25,15 +25,109 @@ The following components are **already implemented and compiling** (see [`sailin
 
 ---
 
-## What Remains — Detailed Specifications
+## How To Read This Document Now
 
-The following sections describe everything that still needs to be built. Each section is self-contained enough to be a separate work item.
+This document began as a plan for unimplemented work. The client has since implemented the local prototype and several visual/UI sections. The sections below are still useful as design specs, but their status labels should be interpreted through this updated matrix:
+
+| Section | Current status | Next engineering goal |
+|---------|----------------|-----------------------|
+| A. Sail Mesh Deformation | Implemented locally | Keep as-is unless tuning quality/perf; make remote boats use the same path after networking. |
+| B. Boat Wake & Spray | Implemented locally | Reduce material churn, improve pooling/culling, support remote boats. |
+| C. Sailing HUD | Implemented locally | Polish layout, condition prompts, and align with production UI style. |
+| D. Ocean Zone Map | Client scaffold only | Author real map data and server registration. |
+| E. Server Authority & Networking | Not implemented | Highest-risk remaining code work. Move wind/movement/validation authority server-side. |
+| F. Audio System | Not implemented | Add looped and one-shot sounds using existing audio patterns. |
+| G. Enhanced Sail Camera | Implemented locally | Tune comfort and add optional FOV/smoothing refinements. |
+| H. Multiplayer Boat Rendering | Not implemented | Requires E first, then remote interpolation and visual spawning. |
+| I. Disembark Mechanics | Partially implemented | Current E-key shore placement exists, but production boarding validation must be restored server-side. |
+
+## Current Architecture Snapshot
+
+### Entity Model
+
+Current sailing is implemented as a mode on the local player entity:
+
+```text
+PlayerCharacter entity
+  - Position
+  - Transform
+  - FacingDirection
+  - BoatState { active, heading, speed, sail_trim, model_root_entity, ... }
+  - WakeEmitter, only while active
+  - child: boat model root
+      - hull/deck/cabin/mast/sails/rudder child meshes
+```
+
+This is intentionally simpler than a fully replicated boat. It lets the current client reuse existing player position, camera target, collision, and zone systems. For multiplayer/server work, pick one of these two designs before writing packets:
+
+| Design | Description | Pros | Cons |
+|--------|-------------|------|------|
+| Player movement mode | The player remains the authoritative network entity and receives `MoveMode::Sail` plus boat fields. | Smaller packet changes; easier migration from current code. | Harder to support abandoned boats, passengers, boat combat, or remote boat identity. |
+| Standalone boat entity | Server creates a boat entity and attaches/rides the player. | Cleaner for multiplayer visuals, passengers, combat, persistence. | More packet/entity lifecycle work. |
+
+Recommendation: use the player movement mode for the first server-authoritative MVP, but keep the component names and packet shape compatible with standalone boat entities later.
+
+### Schedule Order
+
+The client app currently schedules sailing behavior as ordinary Bevy systems gated by `AppState::Game`. Preserve this ordering unless a specific bug requires changing it:
+
+1. `wind_update_system` updates `WindState`.
+2. `ensure_boat_state_system` adds `BoatState` to the local player when missing.
+3. `boat_toggle_system` handles board/disembark messages and visual spawn/despawn.
+4. `ensure_boat_wake_emitter_system` adds/removes `WakeEmitter`.
+5. `sailing_movement_system` reads input, wind, water, and updates `Position`.
+6. `sail_animation_system`, `boat_buoyancy_system`, `sail_camera_system`, and wake spawn/update react to the moved boat.
+7. `ui_sailing_hud_system` draws the current state.
+
+Reasoning: movement must run after board/disembark so newly boarded players move in the same frame. Sail animation and wake should run after movement so visuals reflect the latest speed/heading. The HUD can run late because it only reads the final frame state.
+
+### Coordinate And Unit Rules
+
+The client uses two coordinate spaces:
+
+| Data | Unit | Axes |
+|------|------|------|
+| `Position` | centimeters | X right, Y forward, Z up |
+| `Transform` | meters | X right, Y up, Z back |
+
+When implementing or reviewing sailing code, do not mix these directly. The common conversion is:
+
+```rust
+transform.translation.x = position.x / 100.0;
+transform.translation.y = position.z / 100.0;
+transform.translation.z = -position.y / 100.0;
+```
+
+The sailing movement system should continue to move `Position` in centimeters. Rendering/camera code can read `Transform` after the normal sync/collision path has applied the conversion.
+
+### Bevy 0.18.1 Rules Confirmed From Source
+
+These are source-validated Bevy details that matter for implementation:
+
+| Topic | Confirmed behavior | Sailing implication |
+|-------|--------------------|---------------------|
+| Messages | Use `#[derive(Message)]`, `App::add_message::<T>()`, `MessageWriter::write`, and `MessageReader::read`. | `BoardBoatEvent` and `DisembarkBoatEvent` should stay as Bevy messages for local UI/input orchestration. |
+| Hierarchy | `ChildOf` is the authoritative parent relation. `Children` is maintained through relationship hooks. Despawning a parent recursively despawns descendants. | The boat model root can be parented to the player with `add_child`; root `despawn()` removes hull/sail/rudder children in Bevy 0.18. |
+| Mesh mutation | Runtime mesh data must remain available in the main world. Meshes created only for render extraction cannot be mutated later. | Subdivided sail meshes must use `RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD` before `sail_animation_system` edits vertices. |
+| Input | `ButtonInput<KeyCode>::pressed` is held-state input; `just_pressed` is one-frame input. | Rudder/trim use `pressed`; board/disembark command triggers should use message or just-pressed style inputs. |
+| Time | `Time::delta_secs()` and `elapsed_secs()` are available. `Timer::tick`, `just_finished`, and `fraction` drive repeating effects. | Wake emitters and bow spray should continue to use Bevy timers. |
+| System registration | `add_systems(Update, ...)`, `PostStartup`, and `in_state(AppState::Game)` are the correct Bevy 0.18 APIs. | Keep setup-only mesh/material resources in `PostStartup`; keep gameplay systems in `Update` with state gating. |
+| Query disjointness | Bevy detects conflicting mutable query access at runtime (`B0001`). | Particle update queries that both mutate `Transform` must use disjoint filters such as `Without<BowSprayParticle>` / `Without<WakeParticle>`. |
+| Egui | `EguiContexts::ctx_mut()` returns `Result`; input focus helpers are available through egui context/input resources. | HUD systems should return cleanly when no context exists and avoid stealing input from chat/debug windows. |
+
+---
+
+## Remaining And Production-Hardening Specifications
+
+The following sections describe the remaining work and hardening tasks. Each section is self-contained enough to be assigned as a separate work item. When a section is already implemented locally, use its deliverables as a checklist for review/tuning rather than as a request to rewrite working code.
 
 ---
 
 ## A. Sail Mesh Deformation System
 
-**Status**: Not implemented. The `SailMesh` component exists with `billow` and `side` fields, but nothing reads or writes them, and the sail mesh geometry is never updated at runtime.
+**Status**: Implemented locally. `SailMesh` now stores base vertex positions, dimensions, and subdivision level; `sail_animation_system` updates mesh vertices at runtime and honors `SailingGraphicsSettings.sailing.sail_deformation_quality`.
+
+**Remaining work**: tune deformation constants, verify remote boats reuse the same animation path, and add regression tests around quality-level mesh generation if this becomes fragile.
 
 ### A.1 Goal
 
@@ -70,7 +164,7 @@ pub fn sail_animation_system(
 
 ### A.3 Mesh Subdivision Approach
 
-The current sail is a `Plane3d` — a flat quad with only 4 vertices. This cannot deform smoothly. Replace it with a subdivided grid:
+The original prototype plan assumed a flat `Plane3d`. The current implementation already replaces that with a subdivided grid via `create_subdivided_sail_mesh()`. Keep that approach for all future sail visuals, including remote boats:
 
 ```rust
 /// Creates a subdivided sail mesh for runtime deformation.
@@ -129,7 +223,10 @@ fn create_subdivided_sail_mesh(width: f32, height: f32, subdivisions: u32) -> Me
         }
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::all());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
     mesh.insert_indices(Indices::U32(indices));
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
@@ -171,18 +268,23 @@ From [`SailingGraphicsSettings`](../src/graphics/graphics_settings.rs):
 
 ### A.6 Deliverables
 
-- [ ] `create_subdivided_sail_mesh()` function in [`boat_spawn_system.rs`](../src/systems/boat_spawn_system.rs)
-- [ ] Replace `Plane3d` sail mesh with subdivided mesh at spawn time
-- [ ] `sail_animation_system` in new file `src/systems/sail_animation_system.rs`
-- [ ] Register system in [`lib.rs`](../src/lib.rs) — run in `Update`, after `sailing_movement_system`
-- [ ] Store base vertex positions in `SailMesh` component for reference
-- [ ] Respect `SailingGraphicsSettings.sail_deformation_quality`
+- [x] `create_subdivided_sail_mesh()` function in [`boat_spawn_system.rs`](../src/systems/boat_spawn_system.rs)
+- [x] Replace static plane sail mesh with subdivided mesh at spawn time
+- [x] `sail_animation_system` in `src/systems/sail_animation_system.rs`
+- [x] Register system in [`lib.rs`](../src/lib.rs), running in `Update` after `sailing_movement_system`
+- [x] Store base vertex positions in `SailMesh` component for reference
+- [x] Respect `SailingGraphicsSettings.sailing.sail_deformation_quality`
+- [x] Add remote-boat coverage after multiplayer boat rendering exists
+- [x] Add focused tests for sailing polar curve and angle edge cases
+- [ ] Add focused tests for mesh subdivision if future changes destabilize tuning
 
 ---
 
 ## B. Boat Wake & Spray Effects
 
-**Status**: Not implemented. The graphics settings field exists but no particle system exists.
+**Status**: Implemented locally. `WakeEmitter`, `WakeParticle`, `BowSprayParticle`, and `WakeSource` exist in `src/components/boat_wake.rs`; `boat_wake_system.rs` creates shared particle mesh/material resources, spawns wake/spray, and updates/despawns particles.
+
+**Remaining work**: reduce per-particle material churn, add support for remote boats, and tune budgets once multiple boats can be visible at once.
 
 ### B.1 Goal
 
@@ -277,17 +379,21 @@ When `boat.speed > 0.5 * boat.max_speed`:
 
 ### B.8 Deliverables
 
-- [ ] `WakeParticle` and `WakeEmitter` components in `src/components/boat_wake.rs`
-- [ ] `boat_wake_spawn_system` — spawns wake + spray particles
-- [ ] `boat_wake_update_system` — updates position/alpha/scale, despawns expired
-- [ ] Register systems in [`lib.rs`](../src/lib.rs)
-- [ ] White billboard quad mesh + unlit material shared across all wake particles
+- [x] `WakeParticle`, `WakeEmitter`, `BowSprayParticle`, and `WakeSource` components in `src/components/boat_wake.rs`
+- [x] `boat_wake_spawn_system` spawns wake and spray particles
+- [x] `boat_wake_update_system` updates position/alpha/scale and despawns expired particles
+- [x] Register setup/spawn/update systems in [`lib.rs`](../src/lib.rs)
+- [x] Shared billboard quad mesh and base materials for wake/spray particles
+- [x] Replace per-particle alpha material cloning with pooled alpha-bucket materials before supporting many remote boats
+- [x] Confirm wake/spray can be driven by remote replicated boat speed and heading
 
 ---
 
 ## C. Sailing HUD (Wind Compass + Speed Gauge)
 
-**Status**: A `ui_sailing_hud_system.rs` file exists but may be minimal. Needs full egui implementation.
+**Status**: Implemented locally. `ui_sailing_hud_system.rs` draws the wind compass, speed gauge, trim indicator, and prompt window while `BoatState.active` is true.
+
+**Remaining work**: production UI styling, prompt conditions, localization-ready text, and layout checks against chat/debug windows.
 
 ### C.1 Goal
 
@@ -392,22 +498,56 @@ When current trim matches optimal within ±0.2 rad, the indicator glows green. O
 
 ### C.6 Deliverables
 
-- [ ] Full egui implementation of wind compass in [`ui_sailing_hud_system.rs`](../src/ui/ui_sailing_hud_system.rs)
-- [ ] Speed gauge bar with color coding
-- [ ] Sail trim arc indicator
-- [ ] Contextual prompt text
-- [ ] Only render when `BoatState.active == true`
-- [ ] Hide when egui debug windows are focused
+- [x] Full egui implementation of wind compass in [`ui_sailing_hud_system.rs`](../src/ui/ui_sailing_hud_system.rs)
+- [x] Speed gauge bar with color coding
+- [x] Sail trim arc indicator
+- [x] Contextual prompt text
+- [x] Only render when `BoatState.active == true`
+- [x] Convert always-visible disembark prompt into contextual shore-availability prompt
+- [ ] Verify layout with chat, debug, and settings windows open
 
 ---
 
 ## D. Ocean Zone Map Creation
 
-**Status**: Not started. No zone data files exist.
+**Status**: Client scaffold started. Zone `200` applies ocean water tuning in the client, and `3DDATA/MAPS/OCEAN` exists as an authoring scaffold. Real exported zone data and server registration are not implemented.
 
 ### D.1 Goal
 
 Create a dedicated ocean zone (e.g. `ZoneId(200)`) with ~6.4 km² of ocean and 6–8 islands.
+
+### D.1.1 Minimum Viable Ocean Zone
+
+The first playable zone does not need all island content. It does need enough data to exercise every existing sailing system:
+
+| Required data | Why it matters |
+|---------------|----------------|
+| `OCEAN.ZON` loading successfully as zone `200` | Lets normal zone loading, fog, sky, and map metadata paths run. |
+| At least one active water block with an IFO water plane | `UnderwaterVolumes` must exist so boat height sampling uses real map water. |
+| One island or dock with walkable terrain above water | Required for `find_nearest_shore_position` and E-key disembark testing. |
+| A clear launch point near water | Required for production boarding validation and QA. |
+| Server zone registration | Required for normal in-game travel instead of only zone viewer/editor testing. |
+
+Suggested MVP layout:
+
+1. Use a small active block range first, such as `24..28` by `24..28`.
+2. Put flat water at height `0 cm` across all active blocks.
+3. Put one dock/island that rises above water by at least `50 cm` so shore detection succeeds.
+4. Register a warp from an existing mainland dock to the ocean island.
+5. Only after this loads reliably, expand to the full `40 x 40` active ocean area.
+
+### D.1.2 Client Validation Checklist
+
+After exporting the first map data, validate these client behaviors:
+
+- Zone `200` loads and `game_zone_change_system` applies ocean water settings.
+- The water volume height matches the visible water plane and the boat sits at that height.
+- `/boat` can be used for dev testing near the water.
+- `E` disembark finds the island/dock terrain and places the player above water.
+- The boat cannot sail through island terrain or wall/collision objects.
+- Returning to a non-ocean zone resets default `WaterSettings`.
+
+Do not consider the zone ready for server work until the water plane creates runtime water volume data. The current movement system can fall back to global water height, but that fallback hides map authoring mistakes.
 
 ### D.2 Detailed Block Layout
 
@@ -560,6 +700,31 @@ if zone_id == ZoneId(200) {
 
 **Status**: Not started. No server-side changes exist.
 
+### E.0 Implementation Strategy From Current Client Code
+
+The current client is the reference implementation for feel, but not for authority. The server work should preserve the same input vocabulary and physics tuning while moving trust out of the client.
+
+Current client responsibilities that must move or be mirrored server-side:
+
+| Current client behavior | Production server behavior |
+|-------------------------|----------------------------|
+| `/boat` writes `BoardBoatEvent` locally. | Client sends a board request; server validates zone/water/dock/combat/inventory and replies with success/failure state. |
+| `sailing_movement_system` mutates `Position` directly from local input. | Client sends compressed rudder/trim input; server simulates or validates the boat position. |
+| `WindState` is generated locally. | Server owns wind state per zone and broadcasts angle/speed/gust. Client can predict between broadcasts. |
+| Collision branch blocks land/walls locally. | Server validates island/terrain/water collision and corrects illegal boat positions. |
+| `BoatState` exists only on the local player. | Network state must represent either a `MoveMode::Sail` player or a standalone boat entity. |
+| Wake/sail/HUD read local `BoatState`. | Remote visuals should read replicated boat state and never local keyboard input. |
+
+Recommended first milestone:
+
+1. Keep local `BoatState` and input code, but add a `SailingAuthorityMode` or equivalent resource flag: `LocalPrototype`, `ClientPredicted`, `RemoteReplicated`.
+2. Add server wind packets and make the client accept authoritative wind while preserving local fallback for offline/dev use.
+3. Add sail input packets at 10 Hz. Inputs should be small: rudder axis, trim axis/current trim, and a client tick/time if the protocol already has prediction support.
+4. Server simulates movement using the same polar curve and sends authoritative boat/player updates at 10 Hz.
+5. Client reconciles local `Position`, `BoatState.heading`, `BoatState.speed`, and `BoatState.sail_trim` from server updates.
+
+Do not begin by deleting the current local sailing movement. Keep it as prediction/offline fallback until server updates are stable.
+
 ### E.1 MoveMode Extension
 
 **File: `rose-game-common/src/components/move_mode.rs`**
@@ -652,6 +817,22 @@ pub struct PacketClientSailInput {
 }
 ```
 
+Protocol note: verify unused opcodes in `rose-network-irose` before selecting final values. If older clients or tools assume only `Walk/Run/Drive`, adding `MoveMode::Sail` changes the shared enum contract and must be handled in every packet read/write path that serializes movement mode.
+
+### E.2.1 Client Packet Handler Touchpoints
+
+Start in the existing network message handling path rather than adding a parallel networking loop. The client-side implementation should touch:
+
+| Client area | Work |
+|-------------|------|
+| `game_connection_system.rs` or existing packet dispatch | Decode boat spawn/update/wind packets and write Bevy messages/resources. |
+| `WindState` resource | Add an authoritative override path from server packets. Keep local generation as fallback when offline or when no authoritative wind has arrived. |
+| `BoatState` on local player | Apply correction data: heading, speed, trim, active state, water height if sent. |
+| Remote player/boat lookup | Resolve server entity ids to client entities before spawning/updating remote visuals. |
+| Chat/system messages | Surface server rejection reasons for board/disembark requests. |
+
+Implementation rule: packet handlers should not directly spawn complicated boat hierarchies inline. Convert packets into a small internal message or function call that reuses the existing visual spawn helper, so local and remote boat visuals stay visually identical.
+
 ### E.3 Server-Side Sailing Physics
 
 **New file: `rose-offline-server/src/game/systems/sailing_system.rs`**
@@ -725,6 +906,46 @@ Server validates:
 3. **Terrain collision**: Boat cannot be at a position where terrain height > water surface
 4. **Zone boundaries**: Boat cannot leave the active zone area
 
+Add these validation details to make the implementation unambiguous:
+
+| Validation | Detail |
+|------------|--------|
+| Water availability | Reject or correct positions where no water plane/volume exists near the boat unless the zone is explicitly configured as open ocean fallback. |
+| Land margin | Use the same conceptual rule as the client: terrain height must remain below water height for the hull footprint, with a small tolerance for beaches/docks. |
+| Tick-rate independence | Server physics must use actual delta time, clamped to a maximum catch-up step, so lag spikes do not create oversized movement deltas. |
+| Input clamping | Clamp rudder to `[-1, 1]`, trim to `[0, PI]`, and reject NaN/infinite values before simulation. |
+| Correction threshold | Send a correction when the client diverges beyond a small distance threshold; avoid correcting every frame for tiny floating-point drift. |
+| Boarding state | Reject sail inputs from clients that are not currently in server sailing mode. |
+
+### E.6.1 Shared Physics Extraction
+
+To prevent client/server drift, extract the pure sailing math into a small shared module if workspace boundaries allow it:
+
+```rust
+pub struct SailingInput {
+    pub rudder: f32,
+    pub sail_trim_delta: f32,
+}
+
+pub struct SailingStepInput {
+    pub heading: f32,
+    pub speed: f32,
+    pub sail_trim: f32,
+    pub wind_angle: f32,
+    pub wind_speed: f32,
+    pub dt: f32,
+}
+
+pub struct SailingStepOutput {
+    pub heading: f32,
+    pub speed: f32,
+    pub sail_trim: f32,
+    pub forward_cm: Vec2,
+}
+```
+
+Keep the shared function free of Bevy queries, assets, commands, and UI. The client system can call it after reading Bevy resources; the server system can call it after decoding network input. Unit-test this pure function with no Bevy app setup.
+
 ### E.7 Zone Transition While Sailing
 
 When a sailing player hits a warp gate:
@@ -735,14 +956,15 @@ When a sailing player hits a warp gate:
 
 ### E.8 Deliverables
 
-- [ ] `MoveMode::Sail` variant in `rose-game-common`
-- [ ] Packet encoding/decoding for new opcodes
+- [x] `MoveMode::Sail` variant in `rose-game-common`
+- [x] Packet encoding/decoding for `MoveMode::Sail` in the existing move-mode byte path
+- [ ] Packet encoding/decoding for standalone boat opcodes if that design is selected
 - [ ] `ServerBoatState` component and `ServerWindState` resource
 - [ ] `server_sailing_system` — validates client sailing
 - [ ] `server_wind_update_system` — server-authoritative wind
 - [ ] `wind_broadcast_system` — sends wind to clients at 1 Hz
-- [ ] Client packet handlers in [`game_connection_system.rs`](../src/systems/game_connection_system.rs)
-- [ ] Remote boat entity spawn/update on other clients
+- [x] Client handling for remote player-mode sailing through existing move-mode messages
+- [x] Remote boat entity spawn/update on other clients for player-mode sailing
 - [ ] Anti-cheat validation (speed, position, terrain)
 - [ ] Zone transition handling for boats
 
@@ -750,7 +972,20 @@ When a sailing player hits a warp gate:
 
 ## F. Audio System
 
-**Status**: Not started.
+**Status**: Implemented locally. `src/audio/boat_sound.rs` now creates generated in-memory placeholder `AudioSource` handles for wind, creak, flap, splash, rope, board, and disembark sounds; loop entities are spawned when sailing starts, gains are updated while active, and cleanup/one-shots are handled through the existing Oddio `SpatialSound` path.
+
+### F.0 Existing Audio Patterns To Reuse
+
+The client already has a custom Oddio-backed audio layer. Sailing audio should reuse it rather than introducing a second audio system.
+
+| Existing code | Reuse pattern |
+|---------------|---------------|
+| `src/audio/spatial_sound.rs` | Attach `SpatialSound::new_repeating(handle)` to child entities for looping boat-local sounds. Use `SoundGain` and `SoundRadius` components for volume/radius control. |
+| `src/audio/global_sound.rs` | Use `GlobalSound::new_repeating(handle)` for zone-wide ocean ambience if it should not attenuate with distance. |
+| `src/resources/sound_cache.rs` | Use `SoundCache::load` when sound ids are available through `GameData`; avoid repeated `asset_server.load` calls every frame. |
+| `src/systems/vehicle_sound_system.rs` | Good reference for adding/removing looped spatial sounds as movement state changes. |
+
+Implementation rule: do not spawn or load sounds every frame. Create loop entities when sailing starts, update gain/state while active, and remove or stop them when sailing ends.
 
 ### F.1 Sound Design Specification
 
@@ -806,20 +1041,66 @@ pub fn boat_sound_system(
 }
 ```
 
+### F.2.1 Component Shape
+
+Prefer a component attached to the player or boat visual root:
+
+```rust
+#[derive(Component)]
+pub struct BoatSoundState {
+    pub wind_loop: Option<Entity>,
+    pub creak_loop: Option<Entity>,
+    pub flap_loop: Option<Entity>,
+    pub splash_timer: Timer,
+    pub last_sail_trim: f32,
+    pub last_luffing: bool,
+}
+```
+
+Child sound entities should contain:
+
+```rust
+(
+    SpatialSound::new_repeating(handle),
+    SoundGain::Ratio(initial_gain),
+    SoundRadius(12.0),
+    Transform::default(),
+    GlobalTransform::default(),
+)
+```
+
+Attach these sound entities to the boat model root or player entity so `SpatialSound` receives a valid `GlobalTransform`.
+
+### F.2.2 System Split
+
+Use three small systems instead of one large state machine:
+
+| System | Responsibility |
+|--------|----------------|
+| `ensure_boat_sound_state_system` | Add `BoatSoundState` when a player has `BoatState`; create/cleanup loop entities when `active` changes. |
+| `boat_loop_sound_update_system` | Adjust gain for wind, creak, and flap loops based on speed, luffing, and wave motion. |
+| `boat_one_shot_sound_system` | Spawn splash, rope, board, and disembark one-shots from timers/messages. |
+
+Schedule these after `boat_toggle_system` and after `sailing_movement_system`, so active state and speed are current.
+
 ### F.3 Deliverables
 
-- [ ] Sound asset files (WAV/OGG) — can use placeholder sounds initially
-- [ ] `BoatSoundState` component
-- [ ] `boat_sound_system` — manages looping + one-shot sounds
-- [ ] `boat_sound_spawn_system` — creates sound entities when boat activates
-- [ ] `boat_sound_cleanup_system` — removes sound entities on disembark
-- [ ] Register in [`lib.rs`](../src/lib.rs)
+- [x] Placeholder sound assets generated in memory until final WAV/OGG files or catalogued sound IDs exist
+- [x] `BoatSoundState` component
+- [x] Loop sound update system for wind, hull creak, and sail flap gain
+- [x] Spawn/cleanup system creates loop entities on board and removes them on disembark
+- [x] One-shot system creates splash, rope, board, and disembark sounds
+- [x] Register in [`lib.rs`](../src/lib.rs)
+- [x] Avoid repeated per-frame `asset_server.load` calls
+- [ ] Replace generated placeholders with `SoundCache`/`GameData` catalogued sounds when production sound IDs are added
 
 ---
 
 ## G. Enhanced Sail Camera
 
-**Status**: Basic implementation exists (clamps orbit distance). Needs expansion.
+**Status**: Implemented locally. The current sail camera clamps sailing zoom, smoothly tracks behind the boat, supports right-mouse free-look, and adjusts pitch/follow distance for sailing.
+
+**Remaining work**: tune comfort, decide whether to add speed-based FOV, and make sure camera smoothing follows the stable player position rather than visible boat heave when wave effects become larger.
 
 ### G.1 Improvements Needed
 
@@ -868,20 +1149,35 @@ pub fn sail_camera_system(
 
 ### G.3 Deliverables
 
-- [ ] Expand [`sail_camera_system.rs`](../src/systems/sail_camera_system.rs) with smooth tracking
-- [ ] Free-look override with right mouse button
-- [ ] Pitch adjustment for horizon visibility
-- [ ] Wave-compensation (camera follows smoothed position, not raw buoyancy)
+- [x] Expand [`sail_camera_system.rs`](../src/systems/sail_camera_system.rs) with smooth tracking
+- [x] Free-look override with right mouse button
+- [x] Pitch adjustment for horizon visibility
+- [ ] Optional speed-based FOV tuning
+- [ ] Wave-compensation review if larger ocean swells make camera motion uncomfortable
 
 ---
 
 ## H. Multiplayer Boat Rendering
 
-**Status**: Not started. Only local player boat exists.
+**Status**: Client render path implemented for server/player-mode sailing. The client now supports `MoveMode::Sail` decoding/encoding, `RemoteBoatState`, remote boat visual spawning/despawning, remote sail animation, and remote wake/spray through the same `BoatState` path used by local sailing. Custom standalone `SpawnBoatEntity` / `UpdateBoatState` packet opcodes are still server-protocol work.
 
 ### H.1 Goal
 
 When another player is sailing in the same zone, their boat should be visible to all nearby clients.
+
+### H.1.1 Integration Points In Current Client
+
+Remote rendering should build on the existing entity lookup and visual systems:
+
+| Existing piece | Use for multiplayer sailing |
+|----------------|-----------------------------|
+| `ClientEntityList` | Map server `ClientEntityId` values to Bevy `Entity` values before attaching boat visuals. |
+| `ClientEntity` component | Identify remote players and despawn/update visuals when server entities leave scope. |
+| `spawn_boat_visual` logic in `boat_spawn_system.rs` | Extract or expose a reusable helper so local and remote boats share the same model construction. |
+| `SailMesh` and `sail_animation_system` | Remote boat sails should animate from replicated heading/speed/wind, not local keyboard state. |
+| `WakeEmitter` and `boat_wake_system` | Remote boats can receive wake emitters once their replicated speed is available. |
+
+Do not reuse the local `PlayerCharacter` filters for remote boats. Local systems that read keyboard, mouse, or camera input must only operate on the local player.
 
 ### H.2 Remote Boat Entity
 
@@ -944,24 +1240,74 @@ pub fn remote_boat_interpolation_system(
 }
 ```
 
+### H.3.1 Remote State Design
+
+Use a remote component that is explicit about source-of-truth:
+
+```rust
+#[derive(Component)]
+pub struct RemoteBoatState {
+    pub server_entity_id: ClientEntityId,
+    pub visual_root: Entity,
+    pub prev_position: Vec3,
+    pub target_position: Vec3,
+    pub prev_heading: f32,
+    pub target_heading: f32,
+    pub target_speed: f32,
+    pub sail_trim: f32,
+    pub update_age: f32,
+    pub update_interval: f32,
+}
+```
+
+Attach `RemoteBoatState` to the remote player entity if using player movement mode. If using standalone boat entities, attach it to the boat entity and store the rider/player entity id separately.
+
+### H.3.2 Spawn/Update/Despawn Flow
+
+1. `SpawnBoatEntity` packet arrives.
+2. Resolve `rider_entity_id` with `ClientEntityList`.
+3. Spawn boat visual root using the shared visual helper.
+4. Parent visual root to the remote player or standalone boat entity.
+5. Insert `RemoteBoatState` and a non-local `BoatState`-like render state.
+6. On `UpdateBoatState`, update interpolation targets and render state.
+7. On player leaves zone, boat despawn packet, or mode changes away from sailing, despawn the visual root and remove remote boat components.
+
+Failure handling: if a packet references a remote player that has not spawned yet, store a short-lived pending boat spawn keyed by `ClientEntityId` and retry for a few frames. Drop it if the player never appears.
+
 ### H.4 Deliverables
 
-- [ ] `RemoteBoatState` component
-- [ ] Handle `SpawnBoatEntity` packet — spawn remote boat visual
-- [ ] Handle `UpdateBoatState` packet — update interpolation targets
-- [ ] `remote_boat_interpolation_system`
-- [ ] Despawn remote boat when player leaves sailing mode
-- [ ] Sail animation works for remote boats too
+- [x] `RemoteBoatState` component
+- [x] Handle server/player-mode sailing via `MoveMode::Sail` on remote client entities
+- [x] Spawn remote boat visual with the shared `spawn_boat_visual()` helper
+- [x] Update remote boat render state from replicated movement/facing data
+- [x] Despawn remote boat when player leaves sailing mode
+- [x] Sail animation works for remote boats too
+- [x] Wake/spray works for remote boats, behind graphics settings and distance culling
+- [x] Remote boat systems do not consume local keyboard/mouse/camera input
+- [ ] Add custom standalone `SpawnBoatEntity` / `UpdateBoatState` packet handling if the server chooses standalone boat entities instead of player movement mode
 
 ---
 
 ## I. Disembark Mechanics
 
-**Status**: Partially implemented (event exists, toggle logic exists). Needs proper dock detection and shore placement.
+**Status**: Partially implemented. `E` key disembark, nearest-shore placement, boat visual cleanup, and character model visibility toggling exist. In the current source, several boarding validations are commented out for prototype testing, so production validation is still required.
 
 ### I.1 Current State
 
-Currently `/boat` toggles sailing on/off at any location. This needs refinement:
+Currently `/boat` is a permissive dev/prototype entry point in the source. Earlier client validation work exists in this file's history, but several checks are currently commented out in `boat_spawn_system.rs` to keep sailing easy to test. Treat local checks as user feedback only; final rules belong on the server.
+
+Implemented locally:
+
+- `E` while sailing writes `DisembarkBoatEvent`.
+- Shore search samples terrain in 8 directions and picks nearby terrain above water.
+- Boat visual root is despawned on disembark.
+- Character model parts are hidden while boarded and restored on disembark.
+
+Still required:
+
+- Server must reject invalid board/disembark attempts.
+- Client should display the server rejection reason in chat/system UI.
+- `/boat` should eventually become a debug-only command or call the same request path as the production interaction.
 
 ### I.2 Boarding Rules
 
@@ -1000,63 +1346,50 @@ fn find_nearest_shore_position(
 
 ### I.5 Deliverables
 
-- [ ] `E` key binding for disembark
-- [ ] Shore detection algorithm
-- [ ] Player teleport to nearest shore on disembark
-- [ ] Boarding validation (near water, correct zone, not in combat)
-- [ ] Character model visibility toggle on board/disembark
+- [x] `E` key binding for disembark
+- [x] Shore detection algorithm
+- [x] Player teleport to nearest shore on disembark
+- [x] Character model visibility toggle on board/disembark
+- [ ] Restore client-side validation for user feedback after production rules are agreed
+- [ ] Add server-authoritative boarding validation: correct zone, near water/dock, alive, not in combat, has/owns boat
 
 ---
 
 ## Implementation Priority & Dependencies
 
 ```
-                    ┌─────────────────────┐
-                    │  D. Ocean Zone Map   │ ◄── Can start immediately
-                    │  (Level Design)      │     No code dependency
-                    └────────┬────────────┘
-                             │
-    ┌────────────────────────┼────────────────────────┐
-    │                        │                         │
-    ▼                        ▼                         ▼
-┌───────────┐   ┌────────────────────┐   ┌──────────────────┐
-│ A. Sail   │   │ E. Server Auth     │   │ F. Audio System  │
-│ Animation │   │ & Networking       │   │                  │
-└─────┬─────┘   └────────┬───────────┘   └────────┬─────────┘
-      │                  │                          │
-      ▼                  ▼                          │
-┌───────────┐   ┌────────────────────┐              │
-│ B. Wake & │   │ H. Multiplayer     │              │
-│ Spray VFX │   │ Boat Rendering     │              │
-└─────┬─────┘   └────────────────────┘              │
-      │                                              │
-      ▼                                              │
-┌───────────┐                                        │
-│ C. HUD    │ ◄─────────────────────────────────────┘
-│ (compass, │
-│  gauges)  │
-└─────┬─────┘
-      │
-      ▼
-┌───────────┐
-│ G. Camera │
-│ Enhance   │
-└─────┬─────┘
-      │
-      ▼
-┌───────────┐
-│ I. Dis-   │
-│ embark    │
-└───────────┘
+             ┌───────────────────────────┐
+             │ D. Ocean Zone Data         │
+             │ real ZON/HIM/TIL/IFO       │
+             └────────────┬──────────────┘
+                          │
+                          ▼
+             ┌───────────────────────────┐
+             │ E. Server Authority        │
+             │ wind, input, validation    │
+             └────────────┬──────────────┘
+                          │
+                          ▼
+             ┌───────────────────────────┐
+             │ H. Multiplayer Rendering   │
+             │ remote boats/interp/VFX    │
+             └────────────┬──────────────┘
+                          │
+        ┌─────────────────┼─────────────────┐
+        ▼                 ▼                 ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│ I. Production │ │ F. Audio       │ │ A/B/C/G       │
+│ boarding rules│ │ loops/one-shot │ │ polish/tuning │
+└───────────────┘ └───────────────┘ └───────────────┘
 ```
 
 ### Parallel Work Streams
 
 | Stream | Items | Estimated Time |
 |--------|-------|---------------|
-| **Art/Level Design** | D (Ocean Zone) | 2–3 weeks |
-| **Client VFX** | A → B → C | 2 weeks |
-| **Server Networking** | E → H | 2–3 weeks |
-| **Client Polish** | F, G, I | 1–2 weeks |
+| **Art/Level Design** | D (Ocean Zone data and island content) | 2–3 weeks |
+| **Server Networking** | E, then H packet support | 2–3 weeks |
+| **Client Multiplayer** | H remote visuals/interpolation, remote VFX | 1–2 weeks after packet contract |
+| **Client Polish** | F audio, I production interaction, A/B/C/G tuning | 1–2 weeks |
 
-All streams can run in parallel. Total estimated time: **3–4 weeks** with 2–3 developers.
+The current client prototype means A, B, C, and G are no longer blockers for server work. The critical path is now D -> E -> H. Audio and polish can run in parallel once boat active state and replicated speed/heading are stable.

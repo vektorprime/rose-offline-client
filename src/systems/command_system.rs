@@ -122,7 +122,7 @@ fn get_move_animation(
         let action = match move_mode {
             MoveMode::Walk => CharacterMotionAction::Walk,
             MoveMode::Run => CharacterMotionAction::Run,
-            MoveMode::Drive => return None,
+            MoveMode::Drive | MoveMode::Sail => return None,
         };
 
         if character_model.action_motions[action].is_strong() {
@@ -135,6 +135,7 @@ fn get_move_animation(
             MoveMode::Walk => NpcMotionAction::Move,
             MoveMode::Run => NpcMotionAction::Run,
             MoveMode::Drive => unreachable!("NPC cannot drive!"),
+            MoveMode::Sail => return None,
         };
 
         if npc_model.action_motions[action].is_strong() {

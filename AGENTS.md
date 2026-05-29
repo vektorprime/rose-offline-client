@@ -23,10 +23,12 @@ If any instruction conflicts with these rules, **these rules take priority**.
 
 ### When to run `cargo build`
 
-You MUST run `cargo build`:
+You MUST run `cargo build` only when code files were changed:
 
 - After making code changes
-- Before declaring a task complete
+- Before declaring a task complete when code files were changed
+
+Do NOT run `cargo build` for documentation-only changes, including changes limited to `.md` files.
 
 ### How to run `cargo build`
 
@@ -65,13 +67,15 @@ Before starting any task, you MUST complete all of the following:
 Check these folders first:
 
 1. `pitfalls` folder — identify known issues and previous fixes
-2. `system-architecture` folder — understand the relevant architecture
+2. `system-architecture` folder — understand the relevant architecture for features and components we will interact with
 
 ### Step 2 - Identify affected features
 
 - Explicitly identify which systems, features, or subsystems are involved in the current task
 
 ### Step 3 - Validate behavior from source
+
+IF YOU ARE UNSURE ABOUT THE BEVY 0.18 DOCUMENTATION:
 
 For each relevant feature:
 
@@ -181,9 +185,10 @@ After the issue is confirmed fixed, clean up the issue-tracking file if appropri
 
 Before considering a task resolved:
 
-- Confirm that `cargo build` succeeds
+- If code files were changed, confirm that `cargo build` succeeds
 - This confirmation MUST come from the required separate subtask
-- Do NOT declare the task complete until that build succeeds
+- Do NOT declare a code-change task complete until that build succeeds
+- If changes are limited to documentation files such as `.md`, do NOT run `cargo build`; state that the build was skipped because no code files changed
 
 ### Final required subtask prompt
 

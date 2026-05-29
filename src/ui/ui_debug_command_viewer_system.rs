@@ -31,6 +31,7 @@ pub fn format_command(ui: &mut egui::Ui, command: &Command) {
                     Some(MoveMode::Run) => "Run",
                     Some(MoveMode::Walk) => "Walk",
                     Some(MoveMode::Drive) => "Drive",
+                    Some(MoveMode::Sail) => "Sail",
                     None => "Move",
                 },
                 command_move.destination.x,

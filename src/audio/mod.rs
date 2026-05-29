@@ -1,6 +1,7 @@
 use bevy::prelude::{App, AssetApp, Component, IntoScheduleConfigs, Last, Plugin, Resource};
 
 mod audio_source;
+mod boat_sound;
 mod global_sound;
 mod monster_sound_cap;
 mod ogg;
@@ -45,7 +46,11 @@ use spatial_sound::spatial_sound_system;
 use streaming_sound::StreamingSound;
 use wav::WavLoader;
 
-pub use audio_source::{AudioSource, StreamingAudioSource};
+pub use audio_source::{AudioSource, AudioSourceDecoded, StreamingAudioSource};
+pub use boat_sound::{
+    boat_loop_sound_update_system, boat_one_shot_sound_system, ensure_boat_sound_state_system,
+    setup_boat_sound_assets, BoatSoundAssets, BoatSoundState,
+};
 pub use global_sound::GlobalSound;
 pub use monster_sound_cap::{
     queue_monster_sound, MonsterSoundQueue, PendingMonsterSound, PendingMonsterSoundData,

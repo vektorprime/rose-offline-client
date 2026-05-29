@@ -15,7 +15,7 @@ use crate::render::underwater_effect::{UnderwaterVolumes, WaterVolume};
 use crate::resources::CurrentZone;
 use crate::zone_loader::ZoneLoaderAsset;
 
-const OCEAN_ZONE_ID: u16 = 200;
+pub(crate) const OCEAN_ZONE_ID: u16 = 200;
 const BOARD_NEAR_WATER_DISTANCE_M: f32 = 10.0;
 const SHORE_HEIGHT_MARGIN_CM: f32 = 50.0;
 const SHORE_SEARCH_STEP_CM: f32 = 200.0;
@@ -32,7 +32,7 @@ fn distance_to_volume_horizontal_m(position_cm: Vec3, volume: &WaterVolume) -> f
     (dx * dx + dz * dz).sqrt()
 }
 
-fn nearest_water_surface_height_cm(
+pub(crate) fn nearest_water_surface_height_cm(
     position_cm: Vec3,
     underwater_volumes: &UnderwaterVolumes,
 ) -> Option<f32> {
@@ -60,7 +60,7 @@ fn is_near_water_plane(
         .any(|volume| distance_to_volume_horizontal_m(position_cm, volume) <= max_distance_m)
 }
 
-fn find_nearest_shore_position(
+pub(crate) fn find_nearest_shore_position(
     current_position_cm: Vec3,
     zone_data: &ZoneLoaderAsset,
     water_height_cm: f32,
@@ -101,7 +101,7 @@ fn find_nearest_shore_position(
     best.map(|(_, position)| position)
 }
 
-fn set_character_model_visibility(
+pub(crate) fn set_character_model_visibility(
     commands: &mut Commands,
     character_model: Option<&CharacterModel>,
     hidden: bool,
@@ -238,51 +238,53 @@ pub fn boat_toggle_system(
                     continue;
                 }
 
-                // REMOVED: Dead check - players can now use /boat while dead
-                // if dead.is_some() {
-                //     chatbox_events.write(ChatboxEvent::System(
-                //         "Cannot board while dead.".to_string(),
-                //     ));
-                //     continue;
-                // }
+                // Dead check — prevent boarding while dead
+                if dead.is_some() {
+                    chatbox_events
+                        .write(ChatboxEvent::System("Cannot board while dead.".to_string()));
+                    continue;
+                }
 
-                // REMOVED: Combat check - players can now use /boat while in combat
-                // if command.map_or(false, |command| {
-                //     matches!(command, Command::Attack(_) | Command::CastSkill(_))
-                // }) {
-                //     chatbox_events.write(ChatboxEvent::System(
-                //         "Cannot board while in combat.".to_string(),
-                //     ));
-                //     continue;
-                // }
+                // Combat check — prevent boarding while in combat
+                if command.map_or(false, |command| {
+                    matches!(command, Command::Attack(_) | Command::CastSkill(_))
+                }) {
+                    chatbox_events.write(ChatboxEvent::System(
+                        "Cannot board while in combat.".to_string(),
+                    ));
+                    continue;
+                }
 
-                // REMOVED: Zone restriction - players can now use /boat in any zone
-                // if !matches!(zone_id, Some(id) if id == OCEAN_ZONE_ID) {
-                //     chatbox_events.write(ChatboxEvent::System(
-                //         "Cannot board here: sailing is only available in the ocean zone.".to_string(),
-                //     ));
-                //     continue;
-                // }
+                // Zone restriction — sailing is only available in the ocean zone
+                if !matches!(zone_id, Some(id) if id == OCEAN_ZONE_ID) {
+                    chatbox_events.write(ChatboxEvent::System(
+                        "Cannot board here: sailing is only available in the ocean zone."
+                            .to_string(),
+                    ));
+                    continue;
+                }
 
-                // REMOVED: Driving check - players can now use /boat while driving
-                // if move_mode.map_or(false, |move_mode| matches!(move_mode, MoveMode::Drive)) {
-                //     chatbox_events.write(ChatboxEvent::System(
-                //         "Cannot board while driving.".to_string(),
-                //     ));
-                //     continue;
-                // }
+                // Driving check — prevent boarding while driving a vehicle
+                if move_mode.map_or(false, |move_mode| {
+                    matches!(move_mode, MoveMode::Drive | MoveMode::Sail)
+                }) {
+                    chatbox_events.write(ChatboxEvent::System(
+                        "Cannot board while driving.".to_string(),
+                    ));
+                    continue;
+                }
 
-                // REMOVED: Water proximity check - players can now use /boat anywhere
-                // if !is_near_water_plane(
-                //     position.position,
-                //     &underwater_volumes,
-                //     BOARD_NEAR_WATER_DISTANCE_M,
-                // ) {
-                //     chatbox_events.write(ChatboxEvent::System(
-                //         "Cannot board: move closer to water.".to_string(),
-                //     ));
-                //     continue;
-                // }
+                // Water proximity check — must be near a water plane
+                if !is_near_water_plane(
+                    position.position,
+                    &underwater_volumes,
+                    BOARD_NEAR_WATER_DISTANCE_M,
+                ) {
+                    chatbox_events.write(ChatboxEvent::System(
+                        "Cannot board: move closer to water.".to_string(),
+                    ));
+                    continue;
+                }
 
                 boat_state.active = true;
                 boat_state.rider_entity = Some(entity);
@@ -312,7 +314,7 @@ pub fn boat_toggle_system(
     }
 }
 
-fn create_subdivided_sail_mesh(
+fn create_triangular_sail_mesh(
     width: f32,
     height: f32,
     subdivisions: u32,
@@ -322,11 +324,10 @@ fn create_subdivided_sail_mesh(
             [-0.5 * width, 0.0, 0.0],
             [0.5 * width, 0.0, 0.0],
             [-0.5 * width, height, 0.0],
-            [0.5 * width, height, 0.0],
         ];
-        let normals = vec![[0.0, 0.0, 1.0]; 4];
-        let uvs = vec![[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]];
-        let indices = vec![0u32, 2, 1, 1, 2, 3];
+        let normals = vec![[0.0, 0.0, 1.0]; 3];
+        let uvs = vec![[0.0, 1.0], [1.0, 1.0], [0.0, 0.0]];
+        let indices = vec![0u32, 2, 1];
 
         let mut mesh = Mesh::new(
             PrimitiveTopology::TriangleList,
@@ -350,8 +351,9 @@ fn create_subdivided_sail_mesh(
         for col in 0..cols {
             let u = col as f32 / subdivisions as f32;
             let v = row as f32 / subdivisions as f32;
+            let row_width = width * (1.0 - v);
 
-            positions.push([(u - 0.5) * width, v * height, 0.0]);
+            positions.push([-0.5 * width + u * row_width, v * height, 0.0]);
             normals.push([0.0, 0.0, 1.0]);
             uvs.push([u, 1.0 - v]);
         }
@@ -386,77 +388,213 @@ fn create_sail_mesh_for_quality(
 ) -> (Mesh, Vec<[f32; 3]>, u32) {
     match quality {
         SailQuality::Low => {
-            let (mesh, base_positions) = create_subdivided_sail_mesh(width, height, 0);
+            let (mesh, base_positions) = create_triangular_sail_mesh(width, height, 0);
             (mesh, base_positions, 0)
         }
         SailQuality::Medium => {
-            let (mesh, base_positions) = create_subdivided_sail_mesh(width, height, 4);
+            let (mesh, base_positions) = create_triangular_sail_mesh(width, height, 4);
             (mesh, base_positions, 4)
         }
         SailQuality::High => {
-            let (mesh, base_positions) = create_subdivided_sail_mesh(width, height, 8);
+            let (mesh, base_positions) = create_triangular_sail_mesh(width, height, 8);
             (mesh, base_positions, 8)
         }
     }
 }
 
-fn spawn_boat_visual(
+fn create_flat_shaded_mesh(vertices: &[[f32; 3]], faces: &[[usize; 3]]) -> Mesh {
+    let mut positions = Vec::with_capacity(faces.len() * 3);
+    let mut normals = Vec::with_capacity(faces.len() * 3);
+    let mut uvs: Vec<[f32; 2]> = Vec::with_capacity(faces.len() * 3);
+    let mut indices = Vec::with_capacity(faces.len() * 3);
+
+    for face in faces {
+        let base_index = positions.len() as u32;
+        let a = Vec3::from_array(vertices[face[0]]);
+        let b = Vec3::from_array(vertices[face[1]]);
+        let c = Vec3::from_array(vertices[face[2]]);
+        let normal = (b - a).cross(c - a).normalize_or_zero();
+
+        positions.push(a.to_array());
+        positions.push(b.to_array());
+        positions.push(c.to_array());
+        normals.extend_from_slice(&[normal.to_array(); 3]);
+        uvs.extend_from_slice(&[[0.0, 0.0], [1.0, 0.0], [0.5, 1.0]]);
+        indices.extend_from_slice(&[base_index, base_index + 1, base_index + 2]);
+    }
+
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_indices(Indices::U32(indices));
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh
+}
+
+fn create_hull_mesh() -> Mesh {
+    let stations = [
+        (1.95, 0.44, 0.58, -0.25, -0.50),
+        (0.75, 0.74, 0.84, -0.31, -0.64),
+        (-0.75, 0.68, 0.78, -0.30, -0.59),
+        (-2.10, 0.10, 0.18, -0.22, -0.36),
+    ];
+
+    let mut vertices = Vec::with_capacity(stations.len() * 5);
+    for (z, top_half, chine_half, chine_y, keel_y) in stations {
+        vertices.push([-top_half, 0.12, z]);
+        vertices.push([top_half, 0.12, z]);
+        vertices.push([-chine_half, chine_y, z]);
+        vertices.push([chine_half, chine_y, z]);
+        vertices.push([0.0, keel_y, z]);
+    }
+
+    let mut faces: Vec<[usize; 3]> = Vec::new();
+    for station in 0..(stations.len() - 1) {
+        let current = station * 5;
+        let next = (station + 1) * 5;
+
+        let tl0 = current;
+        let tr0 = current + 1;
+        let cl0 = current + 2;
+        let cr0 = current + 3;
+        let k0 = current + 4;
+
+        let tl1 = next;
+        let tr1 = next + 1;
+        let cl1 = next + 2;
+        let cr1 = next + 3;
+        let k1 = next + 4;
+
+        faces.extend_from_slice(&[
+            [tl0, cl0, tl1],
+            [tl1, cl0, cl1],
+            [tr0, tr1, cr0],
+            [cr0, tr1, cr1],
+            [cl0, k0, cl1],
+            [cl1, k0, k1],
+            [k0, cr0, k1],
+            [k1, cr0, cr1],
+        ]);
+    }
+
+    faces.extend_from_slice(&[
+        [0, 4, 2],
+        [0, 1, 4],
+        [1, 3, 4],
+        [15, 17, 19],
+        [15, 19, 16],
+        [16, 19, 18],
+    ]);
+
+    create_flat_shaded_mesh(&vertices, &faces)
+}
+
+fn spawn_visual_part(
+    commands: &mut Commands,
+    mesh: Handle<Mesh>,
+    material: Handle<StandardMaterial>,
+    transform: Transform,
+) -> Entity {
+    commands
+        .spawn((
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            transform,
+            GlobalTransform::default(),
+            Visibility::Inherited,
+            InheritedVisibility::default(),
+            ViewVisibility::default(),
+        ))
+        .id()
+}
+
+pub(crate) fn spawn_boat_visual(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
-    position: &Position,
+    _position: &Position,
     sail_quality: SailQuality,
 ) -> Entity {
-    let hull_core_mesh = meshes.add(Mesh::from(Cuboid::new(0.9, 0.45, 3.0)));
-    let hull_side_mesh = meshes.add(Mesh::from(Cuboid::new(0.08, 0.42, 2.6)));
-    let bow_stem_mesh = meshes.add(Mesh::from(Cuboid::new(0.22, 0.55, 0.95)));
-    let deck_mesh = meshes.add(Mesh::from(Cuboid::new(1.0, 0.08, 2.5)));
-    let cabin_mesh = meshes.add(Mesh::from(Cuboid::new(0.55, 0.28, 0.75)));
-    let mast_mesh = meshes.add(Mesh::from(Cuboid::new(0.08, 2.9, 0.08)));
-    let fore_mast_mesh = meshes.add(Mesh::from(Cuboid::new(0.06, 1.9, 0.06)));
-    let boom_mesh = meshes.add(Mesh::from(Cuboid::new(0.06, 0.06, 1.35)));
-    let bowsprit_mesh = meshes.add(Mesh::from(Cuboid::new(0.05, 0.05, 0.9)));
+    let hull_mesh = meshes.add(create_hull_mesh());
+    let deck_mesh = meshes.add(Mesh::from(Cuboid::new(1.22, 0.08, 2.65)));
+    let cockpit_mesh = meshes.add(Mesh::from(Cuboid::new(0.74, 0.07, 0.70)));
+    let cabin_mesh = meshes.add(Mesh::from(Cuboid::new(0.64, 0.32, 0.68)));
+    let cabin_roof_mesh = meshes.add(Mesh::from(Cuboid::new(0.78, 0.08, 0.82)));
+    let windshield_mesh = meshes.add(Mesh::from(Cuboid::new(0.56, 0.18, 0.035)));
+    let mast_mesh = meshes.add(Mesh::from(Cuboid::new(0.07, 3.25, 0.07)));
+    let boom_mesh = meshes.add(Mesh::from(Cuboid::new(0.055, 0.055, 1.78)));
+    let bowsprit_mesh = meshes.add(Mesh::from(Cuboid::new(0.055, 0.055, 1.05)));
+    let stay_front_mesh = meshes.add(Mesh::from(Cuboid::new(0.024, 0.024, 3.0)));
+    let stay_back_mesh = meshes.add(Mesh::from(Cuboid::new(0.024, 0.024, 3.35)));
+    let keel_mesh = meshes.add(Mesh::from(Cuboid::new(0.16, 0.72, 1.62)));
+    let rail_mesh = meshes.add(Mesh::from(Cuboid::new(0.045, 0.08, 2.55)));
+    let batten_mesh = meshes.add(Mesh::from(Cuboid::new(0.028, 0.028, 0.80)));
     let (main_sail_mesh_data, main_sail_base_positions, main_sail_subdivisions) =
-        create_sail_mesh_for_quality(2.25, 2.9, sail_quality);
+        create_sail_mesh_for_quality(1.75, 2.65, sail_quality);
     let main_sail_mesh = meshes.add(main_sail_mesh_data);
     let (jib_sail_mesh_data, jib_sail_base_positions, jib_sail_subdivisions) =
-        create_sail_mesh_for_quality(1.2, 1.8, sail_quality);
+        create_sail_mesh_for_quality(1.15, 1.85, sail_quality);
     let jib_sail_mesh = meshes.add(jib_sail_mesh_data);
-    let rudder_mesh = meshes.add(Mesh::from(Cuboid::new(0.06, 0.75, 0.45)));
+    let rudder_mesh = meshes.add(Mesh::from(Cuboid::new(0.08, 0.82, 0.42)));
 
     let hull_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.38, 0.23, 0.11),
-        perceptual_roughness: 0.86,
+        base_color: Color::srgb(0.13, 0.16, 0.18),
+        perceptual_roughness: 0.82,
         metallic: 0.05,
         ..default()
     });
     let hull_trim_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.62, 0.47, 0.30),
-        perceptual_roughness: 0.72,
+        base_color: Color::srgb(0.58, 0.37, 0.18),
+        perceptual_roughness: 0.74,
         metallic: 0.03,
         ..default()
     });
+    let deck_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.74, 0.61, 0.42),
+        perceptual_roughness: 0.86,
+        metallic: 0.0,
+        ..default()
+    });
+    let cockpit_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.055, 0.065, 0.07),
+        perceptual_roughness: 0.9,
+        ..default()
+    });
     let mast_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.58, 0.40, 0.21),
+        base_color: Color::srgb(0.46, 0.28, 0.12),
         perceptual_roughness: 0.78,
         ..default()
     });
     let sail_mat = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.94, 0.93, 0.88, 0.9),
-        alpha_mode: AlphaMode::Blend,
+        base_color: Color::srgb(0.90, 0.88, 0.78),
+        alpha_mode: AlphaMode::Opaque,
         cull_mode: None,
-        perceptual_roughness: 0.55,
+        perceptual_roughness: 0.92,
         ..default()
     });
     let sail_trim_mat = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.78, 0.24, 0.18, 0.92),
-        alpha_mode: AlphaMode::Blend,
+        base_color: Color::srgb(0.83, 0.80, 0.68),
+        alpha_mode: AlphaMode::Opaque,
         cull_mode: None,
-        perceptual_roughness: 0.5,
+        perceptual_roughness: 0.94,
+        ..default()
+    });
+    let sail_detail_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.62, 0.58, 0.48),
+        perceptual_roughness: 0.92,
+        ..default()
+    });
+    let glass_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.10, 0.18, 0.22),
+        perceptual_roughness: 0.35,
+        reflectance: 0.35,
         ..default()
     });
     let rudder_mat = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.30, 0.20, 0.10),
+        base_color: Color::srgb(0.20, 0.13, 0.07),
         perceptual_roughness: 0.9,
         ..default()
     });
@@ -471,158 +609,90 @@ fn spawn_boat_visual(
         ))
         .id();
 
-    let hull_entity = commands
-        .spawn((
-            Mesh3d(hull_core_mesh.clone()),
-            MeshMaterial3d(hull_mat.clone()),
-            Transform::from_xyz(0.0, -0.12, 0.0),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    // Port hull side
-    let hull_side_port = commands
-        .spawn((
-            Mesh3d(hull_side_mesh.clone()),
-            MeshMaterial3d(hull_mat.clone()),
-            Transform::from_xyz(-0.48, 0.0, -0.12)
-                .with_rotation(Quat::from_rotation_z(0.22) * Quat::from_rotation_y(0.05)),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    // Starboard hull side
-    let hull_side_starboard = commands
-        .spawn((
-            Mesh3d(hull_side_mesh),
-            MeshMaterial3d(hull_mat),
-            Transform::from_xyz(0.48, 0.0, -0.12)
-                .with_rotation(Quat::from_rotation_z(-0.22) * Quat::from_rotation_y(-0.05)),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    // Bow stem pieces to taper the front and avoid a raft silhouette
-    let bow_center = commands
-        .spawn((
-            Mesh3d(bow_stem_mesh.clone()),
-            MeshMaterial3d(hull_trim_mat.clone()),
-            Transform::from_xyz(0.0, 0.05, -1.6).with_rotation(
-                Quat::from_rotation_x(-0.12) * Quat::from_rotation_y(std::f32::consts::PI),
-            ),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    let bow_port = commands
-        .spawn((
-            Mesh3d(bow_stem_mesh.clone()),
-            MeshMaterial3d(hull_trim_mat.clone()),
-            Transform::from_xyz(-0.22, 0.02, -1.52)
-                .with_rotation(Quat::from_rotation_y(2.35) * Quat::from_rotation_x(-0.08)),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    let bow_starboard = commands
-        .spawn((
-            Mesh3d(bow_stem_mesh),
-            MeshMaterial3d(hull_trim_mat.clone()),
-            Transform::from_xyz(0.22, 0.02, -1.52)
-                .with_rotation(Quat::from_rotation_y(-2.35) * Quat::from_rotation_x(-0.08)),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    let deck_entity = commands
-        .spawn((
-            Mesh3d(deck_mesh),
-            MeshMaterial3d(hull_trim_mat.clone()),
-            Transform::from_xyz(0.0, 0.13, -0.1),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    let cabin_entity = commands
-        .spawn((
-            Mesh3d(cabin_mesh),
-            MeshMaterial3d(hull_trim_mat.clone()),
-            Transform::from_xyz(0.0, 0.30, 0.45),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    let mast_entity = commands
-        .spawn((
-            Mesh3d(mast_mesh),
-            MeshMaterial3d(mast_mat),
-            Transform::from_xyz(0.0, 1.35, -0.25),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    let fore_mast_entity = commands
-        .spawn((
-            Mesh3d(fore_mast_mesh),
-            MeshMaterial3d(hull_trim_mat.clone()),
-            Transform::from_xyz(0.0, 1.0, -1.1),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    let boom_entity = commands
-        .spawn((
-            Mesh3d(boom_mesh),
-            MeshMaterial3d(hull_trim_mat.clone()),
-            Transform::from_xyz(0.0, 0.95, 0.22).with_rotation(Quat::from_rotation_x(-0.35)),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
-
-    let bowsprit_entity = commands
-        .spawn((
-            Mesh3d(bowsprit_mesh),
-            MeshMaterial3d(hull_trim_mat.clone()),
-            Transform::from_xyz(0.0, 0.45, -1.9).with_rotation(Quat::from_rotation_x(-0.18)),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
+    let hull_entity = spawn_visual_part(
+        commands,
+        hull_mesh,
+        hull_mat.clone(),
+        Transform::from_xyz(0.0, -0.02, 0.0),
+    );
+    let deck_entity = spawn_visual_part(
+        commands,
+        deck_mesh,
+        deck_mat.clone(),
+        Transform::from_xyz(0.0, 0.16, 0.04),
+    );
+    let cockpit_entity = spawn_visual_part(
+        commands,
+        cockpit_mesh,
+        cockpit_mat,
+        Transform::from_xyz(0.0, 0.22, 0.76),
+    );
+    let cabin_entity = spawn_visual_part(
+        commands,
+        cabin_mesh,
+        deck_mat.clone(),
+        Transform::from_xyz(0.0, 0.37, 0.12),
+    );
+    let cabin_roof_entity = spawn_visual_part(
+        commands,
+        cabin_roof_mesh,
+        hull_trim_mat.clone(),
+        Transform::from_xyz(0.0, 0.56, 0.12),
+    );
+    let windshield_entity = spawn_visual_part(
+        commands,
+        windshield_mesh,
+        glass_mat,
+        Transform::from_xyz(0.0, 0.47, -0.24),
+    );
+    let mast_entity = spawn_visual_part(
+        commands,
+        mast_mesh,
+        mast_mat.clone(),
+        Transform::from_xyz(0.0, 1.58, -0.28),
+    );
+    let boom_entity = spawn_visual_part(
+        commands,
+        boom_mesh,
+        mast_mat.clone(),
+        Transform::from_xyz(0.0, 0.96, 0.60).with_rotation(Quat::from_rotation_x(-0.05)),
+    );
+    let bowsprit_entity = spawn_visual_part(
+        commands,
+        bowsprit_mesh,
+        mast_mat.clone(),
+        Transform::from_xyz(0.0, 0.42, -2.10).with_rotation(Quat::from_rotation_x(-0.16)),
+    );
+    let fore_stay_entity = spawn_visual_part(
+        commands,
+        stay_front_mesh,
+        mast_mat.clone(),
+        Transform::from_xyz(0.0, 1.84, -1.18).with_rotation(Quat::from_rotation_x(2.22)),
+    );
+    let back_stay_entity = spawn_visual_part(
+        commands,
+        stay_back_mesh,
+        mast_mat.clone(),
+        Transform::from_xyz(0.0, 1.82, 0.84).with_rotation(Quat::from_rotation_x(0.86)),
+    );
+    let keel_entity = spawn_visual_part(
+        commands,
+        keel_mesh,
+        hull_mat,
+        Transform::from_xyz(0.0, -0.50, 0.18),
+    );
+    let rail_port_entity = spawn_visual_part(
+        commands,
+        rail_mesh.clone(),
+        hull_trim_mat.clone(),
+        Transform::from_xyz(-0.58, 0.28, 0.16),
+    );
+    let rail_starboard_entity = spawn_visual_part(
+        commands,
+        rail_mesh,
+        hull_trim_mat.clone(),
+        Transform::from_xyz(0.58, 0.28, 0.16),
+    );
 
     let sail_entity = commands
         .spawn((
@@ -630,14 +700,14 @@ fn spawn_boat_visual(
                 billow: 0.35,
                 side: SailSide::Center,
                 base_positions: main_sail_base_positions,
-                width: 2.25,
-                height: 2.9,
+                width: 1.75,
+                height: 2.65,
                 subdivisions: main_sail_subdivisions,
             },
             Mesh3d(main_sail_mesh),
             MeshMaterial3d(sail_mat.clone()),
-            Transform::from_xyz(0.0, 1.28, -0.30)
-                .with_rotation(Quat::from_axis_angle(Vec3::Y, std::f32::consts::FRAC_PI_2)),
+            Transform::from_xyz(0.0, 0.78, 0.60)
+                .with_rotation(Quat::from_axis_angle(Vec3::Y, -std::f32::consts::FRAC_PI_2)),
             GlobalTransform::default(),
             Visibility::Inherited,
             InheritedVisibility::default(),
@@ -651,16 +721,14 @@ fn spawn_boat_visual(
                 billow: 0.25,
                 side: SailSide::Center,
                 base_positions: jib_sail_base_positions,
-                width: 1.2,
-                height: 1.8,
+                width: 1.15,
+                height: 1.85,
                 subdivisions: jib_sail_subdivisions,
             },
             Mesh3d(jib_sail_mesh),
             MeshMaterial3d(sail_trim_mat),
-            Transform::from_xyz(0.0, 1.35, -1.25).with_rotation(
-                Quat::from_axis_angle(Vec3::Y, std::f32::consts::FRAC_PI_2)
-                    * Quat::from_axis_angle(Vec3::Y, 0.25),
-            ),
+            Transform::from_xyz(0.0, 0.78, -1.78)
+                .with_rotation(Quat::from_axis_angle(Vec3::Y, std::f32::consts::FRAC_PI_2)),
             GlobalTransform::default(),
             Visibility::Inherited,
             InheritedVisibility::default(),
@@ -668,17 +736,31 @@ fn spawn_boat_visual(
         ))
         .id();
 
-    let rudder_entity = commands
-        .spawn((
-            Mesh3d(rudder_mesh),
-            MeshMaterial3d(rudder_mat),
-            Transform::from_xyz(0.0, -0.22, 1.62),
-            GlobalTransform::default(),
-            Visibility::Inherited,
-            InheritedVisibility::default(),
-            ViewVisibility::default(),
-        ))
-        .id();
+    let batten_low_entity = spawn_visual_part(
+        commands,
+        batten_mesh.clone(),
+        sail_detail_mat.clone(),
+        Transform::from_xyz(0.0, 1.30, 0.88).with_rotation(Quat::from_rotation_x(1.32)),
+    );
+    let batten_mid_entity = spawn_visual_part(
+        commands,
+        batten_mesh.clone(),
+        sail_detail_mat.clone(),
+        Transform::from_xyz(0.0, 1.75, 0.66).with_rotation(Quat::from_rotation_x(1.32)),
+    );
+    let batten_high_entity = spawn_visual_part(
+        commands,
+        batten_mesh,
+        sail_detail_mat,
+        Transform::from_xyz(0.0, 2.18, 0.42).with_rotation(Quat::from_rotation_x(1.32)),
+    );
+
+    let rudder_entity = spawn_visual_part(
+        commands,
+        rudder_mesh,
+        rudder_mat,
+        Transform::from_xyz(0.0, -0.20, 2.05),
+    );
 
     let rider_seat_entity = commands
         .spawn((
@@ -691,19 +773,24 @@ fn spawn_boat_visual(
         .id();
 
     commands.entity(root).add_child(hull_entity);
-    commands.entity(root).add_child(hull_side_port);
-    commands.entity(root).add_child(hull_side_starboard);
-    commands.entity(root).add_child(bow_center);
-    commands.entity(root).add_child(bow_port);
-    commands.entity(root).add_child(bow_starboard);
     commands.entity(root).add_child(deck_entity);
+    commands.entity(root).add_child(cockpit_entity);
     commands.entity(root).add_child(cabin_entity);
+    commands.entity(root).add_child(cabin_roof_entity);
+    commands.entity(root).add_child(windshield_entity);
     commands.entity(root).add_child(mast_entity);
-    commands.entity(root).add_child(fore_mast_entity);
     commands.entity(root).add_child(boom_entity);
     commands.entity(root).add_child(bowsprit_entity);
+    commands.entity(root).add_child(fore_stay_entity);
+    commands.entity(root).add_child(back_stay_entity);
+    commands.entity(root).add_child(keel_entity);
+    commands.entity(root).add_child(rail_port_entity);
+    commands.entity(root).add_child(rail_starboard_entity);
     commands.entity(root).add_child(sail_entity);
     commands.entity(root).add_child(jib_sail_entity);
+    commands.entity(root).add_child(batten_low_entity);
+    commands.entity(root).add_child(batten_mid_entity);
+    commands.entity(root).add_child(batten_high_entity);
     commands.entity(root).add_child(rudder_entity);
     commands.entity(root).add_child(rider_seat_entity);
     commands.entity(root).insert(BoatModel {

@@ -86,6 +86,7 @@ pub use render::DamageDigitMaterial;
 pub mod blood_effect_plugin;
 pub mod dds_image_loader;
 pub mod resources;
+pub mod sailing;
 pub mod scripting;
 pub mod systems;
 pub mod terrain;
@@ -95,6 +96,10 @@ pub mod zms_asset_loader;
 pub mod zone_loader;
 
 use audio::OddioPlugin;
+use audio::{
+    boat_loop_sound_update_system, boat_one_shot_sound_system, ensure_boat_sound_state_system,
+    setup_boat_sound_assets,
+};
 use dds_image_loader::DdsImageLoader;
 use diagnostics::RenderDiagnosticsPlugin;
 use events::{
@@ -239,6 +244,7 @@ use systems::{
     player_command_system,
     projectile_system,
     quest_trigger_system,
+    remote_boat_sync_system,
     sail_animation_system,
     sail_camera_system,
     sailing_movement_system,
@@ -1732,9 +1738,17 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     );
     app.add_systems(
         Update,
+        remote_boat_sync_system
+            .run_if(in_state(AppState::Game))
+            .after(boat_toggle_system)
+            .after(update_position_system),
+    );
+    app.add_systems(
+        Update,
         ensure_boat_wake_emitter_system
             .run_if(in_state(AppState::Game))
-            .after(boat_toggle_system),
+            .after(boat_toggle_system)
+            .after(remote_boat_sync_system),
     );
     app.add_systems(
         Update,
@@ -1747,13 +1761,15 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         Update,
         sail_animation_system
             .run_if(in_state(AppState::Game))
-            .after(sailing_movement_system),
+            .after(sailing_movement_system)
+            .after(remote_boat_sync_system),
     );
     app.add_systems(
         Update,
         boat_buoyancy_system
             .run_if(in_state(AppState::Game))
             .after(sailing_movement_system)
+            .after(remote_boat_sync_system)
             .after(facing_direction_system),
     );
     app.add_systems(
@@ -1766,13 +1782,32 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         Update,
         boat_wake_spawn_system
             .run_if(in_state(AppState::Game))
-            .after(sailing_movement_system),
+            .after(sailing_movement_system)
+            .after(remote_boat_sync_system),
     );
     app.add_systems(
         Update,
         boat_wake_update_system
             .run_if(in_state(AppState::Game))
             .after(boat_wake_spawn_system),
+    );
+    app.add_systems(
+        Update,
+        ensure_boat_sound_state_system
+            .run_if(in_state(AppState::Game))
+            .after(boat_toggle_system),
+    );
+    app.add_systems(
+        Update,
+        boat_loop_sound_update_system
+            .run_if(in_state(AppState::Game))
+            .after(sailing_movement_system),
+    );
+    app.add_systems(
+        Update,
+        boat_one_shot_sound_system
+            .run_if(in_state(AppState::Game))
+            .after(sailing_movement_system),
     );
 
     // Game systems - part 2
@@ -1947,6 +1982,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // Create default particle texture before particle systems run
     app.add_systems(PostStartup, create_default_particle_texture);
     app.add_systems(PostStartup, setup_boat_wake_assets);
+    app.add_systems(PostStartup, setup_boat_sound_assets);
 
     // TEST: Add StandardMaterial cube for rendering isolation test
     app.add_systems(PostStartup, spawn_test_cube);

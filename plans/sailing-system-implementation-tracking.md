@@ -232,10 +232,82 @@ Implement client-side sailing based on `plans/sailing-system-plan.md` in `rose-o
 - Result: **no compilation errors**.
 
 ### Attempt 10 - Usage Documentation for Ocean Map
-- Added end-user run instructions for zone 200 in:
-  - [`docs/how-to-run-game.md`](../docs/how-to-run-game.md)
+- Added end-user run instructions for zone 200 in `docs/how-to-run-game.md`.
+- That standalone guide was later removed during markdown cleanup after it became stale; current ocean-zone status lives in [`3DDATA/MAPS/OCEAN/OCEAN-zone-scaffold.md`](../3DDATA/MAPS/OCEAN/OCEAN-zone-scaffold.md).
 - Documentation includes:
   - current scaffold status
   - prerequisites (exported `ZON/HIM/TIL/IFO` + server registration)
   - zone viewer and map editor launch examples for zone 200
   - notes on server integration requirements for in-game travel.
+
+### Attempt 11 - Sailing Plan Documentation Expansion
+- User request: analyze the sailing plan and expand the planning documents with enough implementation detail for a mid-level engineer to implement remaining work.
+- Reviewed project-specific context before editing:
+  - `pitfalls` notes for water, terrain/physics, hierarchy/asset readiness, rendering/camera, networking, and zone loading lessons.
+  - `system-architecture` documentation, especially ECS scheduling, movement/input/camera, physics coordinates, and the flying-system pattern.
+  - Current sailing source files for components, resources, events, systems, UI, graphics settings, zone water behavior, input gating, collision behavior, and implementation history.
+- Validated relevant Bevy 0.18.1 behavior from source:
+  - `ChildOf`/`Children` hierarchy relationship and recursive despawn behavior.
+  - `Message`/`MessageReader`/`MessageWriter` APIs.
+  - `ButtonInput<KeyCode>` held/pressed input behavior.
+  - `Time::delta_secs`, `Timer`, and schedule registration APIs.
+  - `Mesh`, `Mesh3d`, and mutable mesh asset usage requirements.
+  - Runtime query disjointness constraints that caused the prior wake/spray B0001 fix.
+- Updated planning docs:
+  - [`plans/sailing-system-plan.md`](sailing-system-plan.md): added current client baseline, handoff order, updated file inventory, updated risks, and revised priority order.
+  - [`plans/sailing-system-detailed-expansion.md`](sailing-system-detailed-expansion.md): added current architecture snapshot, source-validated Bevy rules, updated section statuses, concrete server/networking plan, ocean-zone MVP checklist, audio integration details, remote boat rendering plan, and production disembark/boarding notes.
+
+### Build Validation
+- Executed required separate `cargo build` subtask after documentation edits.
+- Result: **no compilation errors**.
+
+### Attempt 12 - Full Sailing Plan Client Pass
+- User request: analyze the sailing system plan and implement everything feasible in the Bevy 0.18.1 Rust client.
+- Affected systems identified:
+  - Sailing/boat components and reusable boat visual spawning.
+  - Local sailing movement and sail mesh deformation.
+  - Remote/player-mode sailing rendering and interpolation readiness.
+  - Wake and bow-spray particle material lifecycle.
+  - Sailing HUD prompt conditions.
+  - Boat audio lifecycle and placeholder sound assets.
+  - Shared `MoveMode`/network move-mode encoding needed for server-driven sailing state.
+- Planned implementation:
+  - Extract duplicated sailing math into a shared pure module with focused unit tests.
+  - Add remote boat state/components/systems and make sail animation/wake systems work for non-local boats.
+  - Pool wake/spray alpha materials instead of cloning a material per particle.
+  - Replace placeholder boat audio entities with generated in-memory `AudioSource` handles.
+  - Update HUD disembark prompts to reflect actual shore availability.
+  - Run formatting and the required separate `cargo build` validation subtask.
+- Implemented:
+  - Added `src/sailing.rs` with shared pure sailing math and unit tests.
+  - Added `RemoteBoatState` and `remote_boat_sync_system` for remote `MoveMode::Sail` visual spawning/despawning.
+  - Exposed the procedural boat visual helper so local and remote boats share the same mesh construction.
+  - Updated sail animation, buoyancy, wake emitter, and wake particles so they operate on remote boats as well as the local player boat.
+  - Replaced per-particle wake/spray material cloning with pooled alpha-bucket materials.
+  - Replaced placeholder no-op boat audio entities with generated in-memory placeholder `AudioSource` handles using existing `SpatialSound` systems.
+  - Updated the HUD disembark prompt to show "Press E" only when terrain shore placement is available.
+  - Added `MoveMode::Sail` to `rose-game-common` and existing move-mode byte encoding/decoding in `rose-network-irose`.
+- Build validation:
+  - Executed required separate `cargo build` subtask after implementation.
+  - Result: **no compilation errors**.
+
+## Latest Status
+- Client-side sailing plan work is complete for the player-mode/server-ready path.
+- Remaining plan items that cannot be completed purely in this client repository:
+  - Actual ocean zone data files, server zone registration, NPC/vendor/quest data, and warp connections.
+  - Server-authoritative sailing simulation and anti-cheat validation.
+  - Optional standalone boat entity packets if the server chooses that design instead of `MoveMode::Sail` player-mode sailing.
+  - Replacement of generated placeholder boat sounds with production catalogued sound files/IDs.
+
+### Attempt 13 - Server Build Follow-up
+- User request: make sure the server builds too.
+- Initial required separate server build subtask found `MoveMode::Sail` non-exhaustive match errors in:
+  - `C:\Users\vicha\RustroverProjects\rose-offline\rose-offline-server\src\game\systems\game_server_system.rs`
+- Applied fixes:
+  - Server run/drive toggle handling now explicitly rejects toggles while in `MoveMode::Sail`.
+  - Added `PacketServerMoveToggleType::Sail` to `rose-network-irose`.
+  - Server protocol now maps `MoveMode::Sail` to the new move-toggle packet type.
+  - Client protocol now accepts server `Sail` move-toggle packets and applies `MoveMode::Sail`.
+- Build validation:
+  - Required separate server `cargo build` subtask in `C:\Users\vicha\RustroverProjects\rose-offline`: **no compilation errors**.
+  - Required separate client `cargo build` subtask after the client protocol patch: **no compilation errors**.

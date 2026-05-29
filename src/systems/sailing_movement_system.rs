@@ -4,6 +4,7 @@ use crate::components::{BoatState, FacingDirection, PlayerCharacter, Position};
 use crate::render::underwater_effect::UnderwaterVolumes;
 use crate::resources::WaterSettings;
 use crate::resources::WindState;
+use crate::sailing::{sailing_step, SailingStepInput};
 
 fn sample_water_surface_height_cm(
     position_cm: Vec3,
@@ -45,22 +46,6 @@ fn sample_water_surface_height_cm(
     }
 }
 
-fn sail_speed_factor(angle_to_wind: f32) -> f32 {
-    let angle = angle_to_wind.abs();
-    if angle < 0.78 {
-        (angle / 0.78).powf(2.0) * 0.3
-    } else if angle < 1.57 {
-        let t = (angle - 0.78) / (1.57 - 0.78);
-        0.3 + t * 0.7
-    } else if angle < 2.36 {
-        let t = (angle - 1.57) / (2.36 - 1.57);
-        1.0 - t * 0.2
-    } else {
-        let t = (angle - 2.36) / (std::f32::consts::PI - 2.36);
-        0.8 - t * 0.3
-    }
-}
-
 pub fn sailing_movement_system(
     time: Res<Time>,
     wind: Res<WindState>,
@@ -87,41 +72,31 @@ pub fn sailing_movement_system(
         } else {
             0.0
         };
-        boat.rudder = steer_input;
-
-        let turn_rate = 1.0 * (boat.speed / boat.max_speed).clamp(0.1, 1.0);
-        boat.heading += steer_input * turn_rate * dt;
-        boat.heading = boat.heading.rem_euclid(std::f32::consts::TAU);
-
-        if keyboard.pressed(KeyCode::KeyW) {
-            boat.sail_trim = (boat.sail_trim - 0.5 * dt).max(0.0);
-        }
-        if keyboard.pressed(KeyCode::KeyS) {
-            boat.sail_trim = (boat.sail_trim + 0.5 * dt).min(std::f32::consts::PI);
-        }
-
-        let angle_to_wind = (boat.heading - wind.angle).rem_euclid(std::f32::consts::TAU);
-        let angle_to_wind_abs = if angle_to_wind > std::f32::consts::PI {
-            std::f32::consts::TAU - angle_to_wind
+        let trim_input = if keyboard.pressed(KeyCode::KeyW) {
+            -1.0
+        } else if keyboard.pressed(KeyCode::KeyS) {
+            1.0
         } else {
-            angle_to_wind
+            0.0
         };
 
-        let speed_factor = sail_speed_factor(angle_to_wind_abs);
-        let target_speed_base = boat.max_speed * speed_factor * (wind.speed / 5.0).clamp(0.0, 2.0);
-
-        let optimal_trim = angle_to_wind_abs * 0.5;
-        let trim_efficiency = 1.0 - ((boat.sail_trim - optimal_trim).abs() / std::f32::consts::PI);
-        let target_speed = target_speed_base * trim_efficiency.clamp(0.1, 1.0);
-
-        let accel = if target_speed > boat.speed { 2.0 } else { 1.5 };
-        boat.speed += (target_speed - boat.speed) * accel * dt;
-        boat.speed = boat.speed.clamp(0.0, boat.max_speed);
-
-        let forward = Vec3::new(boat.heading.sin(), boat.heading.cos(), 0.0);
-        let movement = forward * boat.speed * dt * 100.0;
-        position.position.x += movement.x;
-        position.position.y += movement.y;
+        let step = sailing_step(SailingStepInput {
+            heading: boat.heading,
+            speed: boat.speed,
+            sail_trim: boat.sail_trim,
+            rudder: steer_input,
+            trim_input,
+            max_speed: boat.max_speed,
+            wind_angle: wind.angle,
+            wind_speed: wind.speed,
+            dt,
+        });
+        boat.rudder = steer_input;
+        boat.heading = step.heading;
+        boat.speed = step.speed;
+        boat.sail_trim = step.sail_trim;
+        position.position.x += step.forward_cm.x;
+        position.position.y += step.forward_cm.y;
 
         let water_height_cm = sample_water_surface_height_cm(
             position.position,

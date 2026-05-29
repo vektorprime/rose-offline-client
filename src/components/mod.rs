@@ -42,6 +42,7 @@ mod personal_store;
 mod player_character;
 mod position;
 mod projectile;
+mod remote_boat;
 mod season;
 mod skinned_mesh_target_bone;
 mod skinning_target;
@@ -121,6 +122,7 @@ pub use personal_store::{PersonalStore, PersonalStoreModel};
 pub use player_character::PlayerCharacter;
 pub use position::Position;
 pub use projectile::{Projectile, ProjectileParabola, ProjectileTarget};
+pub use remote_boat::RemoteBoatState;
 pub use season::{
     GrassBlade, Season, SeasonMarker, SpringFlower, SummerFlower, TerrainMeshForGrass,
     WeatherParticle,

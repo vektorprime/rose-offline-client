@@ -74,6 +74,7 @@ mod player_command_system;
 mod projectile_system;
 mod quest_scroll_event_system;
 mod quest_trigger_system;
+mod remote_boat_system;
 mod sail_animation_system;
 mod sail_camera_system;
 mod sailing_movement_system;
@@ -112,6 +113,9 @@ pub use blood_spatter_system::{
 };
 pub use boat_buoyancy_system::boat_buoyancy_system;
 pub use boat_spawn_system::{boat_toggle_system, ensure_boat_state_system, is_boat_command};
+pub(crate) use boat_spawn_system::{
+    find_nearest_shore_position, set_character_model_visibility, spawn_boat_visual,
+};
 pub use boat_wake_system::{
     boat_wake_spawn_system, boat_wake_update_system, ensure_boat_wake_emitter_system,
     setup_boat_wake_assets,
@@ -207,6 +211,7 @@ pub use ping_command_system::{is_ping_command, ping_command_system, ping_respons
 pub use player_command_system::player_command_system;
 pub use projectile_system::projectile_system;
 pub use quest_trigger_system::quest_trigger_system;
+pub use remote_boat_system::remote_boat_sync_system;
 pub use sail_animation_system::sail_animation_system;
 pub use sail_camera_system::sail_camera_system;
 pub use sailing_movement_system::sailing_movement_system;

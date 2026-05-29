@@ -1,8 +1,10 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 
-use crate::components::{BoatState, PlayerCharacter};
-use crate::resources::WindState;
+use crate::components::{BoatState, PlayerCharacter, Position};
+use crate::resources::{CurrentZone, WindState};
+use crate::systems::find_nearest_shore_position;
+use crate::zone_loader::ZoneLoaderAsset;
 
 fn normalize_angle_pi(angle: f32) -> f32 {
     let wrapped = angle.rem_euclid(std::f32::consts::TAU);
@@ -205,9 +207,11 @@ fn draw_trim_indicator(ui: &mut egui::Ui, current_trim: f32, optimal_trim: f32) 
 pub fn ui_sailing_hud_system(
     mut egui_ctx: EguiContexts,
     wind: Res<WindState>,
-    boat_query: Query<&BoatState, With<PlayerCharacter>>,
+    current_zone: Option<Res<CurrentZone>>,
+    zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
+    boat_query: Query<(&BoatState, &Position), With<PlayerCharacter>>,
 ) {
-    let Ok(boat) = boat_query.single() else {
+    let Ok((boat, position)) = boat_query.single() else {
         return;
     };
 
@@ -254,7 +258,18 @@ pub fn ui_sailing_hud_system(
     if angle_to_wind_abs < 0.78 {
         prompts.push("Luffing! Turn away from wind".to_string());
     }
-    prompts.push("Press E to disembark".to_string());
+    let near_shore = current_zone
+        .as_ref()
+        .and_then(|zone| zone_loader_assets.get(&zone.handle))
+        .and_then(|zone_data| {
+            find_nearest_shore_position(position.position, zone_data, boat.water_height_cm)
+        })
+        .is_some();
+    if near_shore {
+        prompts.push("Press E to disembark".to_string());
+    } else {
+        prompts.push("Sail closer to shore to disembark".to_string());
+    }
 
     egui::Window::new("Sailing Prompts")
         .anchor(egui::Align2::LEFT_TOP, [12.0, 12.0])

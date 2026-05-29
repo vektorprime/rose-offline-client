@@ -1,10 +1,10 @@
 use bevy::prelude::*;
 
-use crate::components::{BoatState, PlayerCharacter, Position};
+use crate::components::{BoatState, Position};
 
 pub fn boat_buoyancy_system(
     time: Res<Time>,
-    mut query: Query<(&mut BoatState, &mut Transform, &mut Position), With<PlayerCharacter>>,
+    mut query: Query<(&mut BoatState, &mut Transform, &mut Position)>,
 ) {
     let t = time.elapsed_secs();
 

@@ -4,7 +4,6 @@ use bevy::{
     prelude::{
         Camera3d, Entity, KeyCode, Local, MessageWriter, Query, Res, State, Time, Transform, With,
     },
-    window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
 use bevy_egui::EguiContexts;
 use rose_game_common::components::MoveSpeed;
@@ -25,7 +24,6 @@ const WASD_MOVE_COMMAND_LEAD_TIME_SECS: f32 = 0.25;
 pub fn game_keyboard_input_system(
     app_state: Res<State<AppState>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    query_window: Query<&CursorOptions, With<PrimaryWindow>>,
     query_camera: Query<&Transform, With<Camera3d>>,
     query_player: Query<
         (
@@ -49,15 +47,6 @@ pub fn game_keyboard_input_system(
     }
 
     if egui_ctx.ctx_mut().unwrap().wants_keyboard_input() {
-        return;
-    }
-
-    let Ok(cursor_options) = query_window.single() else {
-        return;
-    };
-
-    if !matches!(cursor_options.grab_mode, CursorGrabMode::None) {
-        // Cursor is currently grabbed
         return;
     }
 

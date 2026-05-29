@@ -807,6 +807,15 @@ impl GameClient {
                             })
                             .ok();
                     }
+                    PacketServerMoveToggleType::Sail => {
+                        self.server_message_tx
+                            .send(ServerMessage::MoveToggle {
+                                entity_id: message.entity_id,
+                                move_mode: MoveMode::Sail,
+                                run_speed: message.run_speed,
+                            })
+                            .ok();
+                    }
                     PacketServerMoveToggleType::Sit => {
                         self.server_message_tx
                             .send(ServerMessage::SitToggle {

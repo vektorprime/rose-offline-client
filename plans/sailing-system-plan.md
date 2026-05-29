@@ -18,6 +18,60 @@ Each section below is self-contained enough to be assigned as a separate work it
 
 ---
 
+## Current Client Baseline (as of 2026-05-29)
+
+The client already contains a functional local sailing prototype. Treat the rest of this document as a production roadmap layered on top of that baseline, not as a greenfield feature spec.
+
+Implemented client-side pieces:
+
+| Area | Current implementation | Handoff notes |
+|------|------------------------|---------------|
+| Boat mode | `BoatState` is attached to the local player entity. `BoatState.active` switches the player into sailing mode. | This is a player-attached prototype, not a standalone replicated boat entity yet. Server/network work should decide whether boats become separate network entities or remain a movement mode with an attached visual. |
+| Visual boat | `boat_spawn_system.rs` builds a procedural hull, mast, sails, rudder, rider seat, and stores entity refs in `BoatModel`. | The model root is parented to the player. In Bevy 0.18.1, despawning the parent/root also recursively despawns children through hierarchy relationships. |
+| Wind | `WindState` and `WindSettings` exist. `wind_update_system` updates direction, speed, gusts, and syncs vegetation wind intensity. | Current wind is local client state. Server-authoritative sailing must move this to the server or broadcast server wind to clients. |
+| Movement | `sailing_movement_system` reads `ButtonInput<KeyCode>`, wind, water volumes, and mutates the player's `Position` while sailing. | This is client-local movement. Production movement must be server validated and reconciled. |
+| Water height | Movement samples `UnderwaterVolumes` and falls back to `WaterSettings.water_surface_y`. | Ocean map authoring must include water planes so the runtime has water volumes; otherwise boats fall back to generic water height. |
+| Collision | `collision_system` keeps wall/object shape-casts active for sailing and blocks land where terrain is above water. | Keep this behavior on the client for feel, but duplicate the rules server-side for authority. |
+| Camera/input | Keyboard/mouse systems lock normal walk/click movement while sailing. `E` disembarks. `sail_camera_system` adjusts orbit behavior. | Do not route sailing through normal ground commands once active. |
+| HUD | `ui_sailing_hud_system` renders compass, speed, trim, and prompt overlays with egui. | Future work is mostly presentation polish and prompt gating, not first implementation. |
+| VFX | Sail deformation, wake, and bow spray systems exist and honor sailing graphics settings. | Wake particles currently create per-particle material instances for alpha fading; optimize before scaling to many boats. |
+| Ocean zone | Zone `200` has client-side water setting behavior and a `3DDATA/MAPS/OCEAN` scaffold. | Actual exported `ZON/HIM/TIL/IFO` data and server zone registration are still required. |
+
+Important current prototype caveat: some client-side boarding validations in `boat_spawn_system.rs` are commented out in the current source. At the moment `/boat` is intentionally permissive for testing. Production work must restore the rules as server-authoritative checks and keep the client checks as fast user feedback only.
+
+---
+
+## Implementation Handoff
+
+Use this order when handing the remaining work to a mid-level engineer. Each step has a clear boundary and can be reviewed independently.
+
+1. **Document and lock the current prototype contract**
+   - Confirm the current file inventory listed in this plan matches the source tree.
+   - Keep `/boat` as a debug/dev entry point until server packets and NPC boarding exist.
+   - Add comments or tests around any intentionally permissive validation so it is not mistaken for final gameplay.
+
+2. **Author the ocean zone data**
+   - Export real `3DDATA/MAPS/OCEAN` files: `OCEAN.ZON`, active block `HIM/TIL/IFO` files, water planes, islands, docks, warp objects, NPC placements.
+   - Ensure every sailing water area creates an underwater/water volume at the intended water height.
+   - Register zone `200` on the server and add a mainland-to-ocean travel path for testing.
+
+3. **Move authority to the server**
+   - Decide the network model first: standalone boat entity versus player movement mode.
+   - Add server-side wind state, sailing inputs, boat state, movement validation, terrain/water validation, and periodic replication.
+   - Keep client prediction close to the existing `sailing_movement_system`, then add reconciliation when authoritative updates arrive.
+
+4. **Add remote boat rendering**
+   - Split reusable visual spawning out of the local boarding path if needed.
+   - Add remote boat state/interpolation components and packet handlers.
+   - Ensure remote boats animate sails and wake using replicated speed/heading/wind data, without reading local input.
+
+5. **Polish UX, audio, and performance**
+   - Add boat audio through the existing sound cache and Oddio spatial/global sound patterns.
+   - Reduce wake material churn with pooled materials or shader-driven alpha.
+   - Add HUD prompt conditions, production error messages, and tuning values exposed through settings/resources.
+
+---
+
 ## Table of Contents
 
 1. [Architecture Overview](#1-architecture-overview)
@@ -938,34 +992,47 @@ pub struct SailingGraphicsSettings {
 
 ## 13. File Inventory
 
-### New Client Files
+### Client Files Already Present
 
 | File | Phase | Description |
 |------|-------|-------------|
-| `src/components/boat.rs` | 2 | BoatState, BoatModel, SailMesh components |
-| `src/resources/wind_state.rs` | 3 | WindState, WindSettings resources |
-| `src/systems/wind_system.rs` | 3 | Wind update system |
-| `src/systems/sailing_movement_system.rs` | 4 | Core sailing physics |
-| `src/systems/boat_buoyancy_system.rs` | 4 | Wave bob/roll |
-| `src/systems/boat_spawn_system.rs` | 2 | Spawn/despawn boat entities |
-| `src/systems/sail_animation_system.rs` | 8 | Sail mesh deformation |
-| `src/systems/boat_wake_system.rs` | 8 | Wake particle effects |
-| `src/systems/sail_camera_system.rs` | 6 | Camera follow for sailing |
-| `src/ui/ui_sailing_hud_system.rs` | 7 | Wind compass, speed gauge UI |
-| `src/events/boat_event.rs` | 2 | BoardBoatEvent, DisembarkEvent |
-| `src/audio/boat_sound.rs` | 9 | Boat sound management |
+| `src/components/boat.rs` | 2 | `BoatState`, `BoatModel`, `SailMesh`, `SailSide` |
+| `src/components/boat_wake.rs` | 8 | `WakeEmitter`, `WakeParticle`, `BowSprayParticle`, `WakeSource` |
+| `src/resources/wind_state.rs` | 3 | `WindState`, `WindSettings` |
+| `src/events/boat_event.rs` | 2 | `BoardBoatEvent`, `DisembarkBoatEvent` |
+| `src/systems/wind_system.rs` | 3 | Wind update and vegetation wind sync |
+| `src/systems/boat_spawn_system.rs` | 2 | Board/disembark handling, procedural visual spawn, shore search |
+| `src/systems/sailing_movement_system.rs` | 4 | Local prototype sailing physics and water-height sampling |
+| `src/systems/boat_buoyancy_system.rs` | 4 | Wave roll/pitch/heave |
+| `src/systems/sail_animation_system.rs` | 8 | Runtime sail mesh deformation |
+| `src/systems/boat_wake_system.rs` | 8 | Wake and bow-spray particles |
+| `src/systems/sail_camera_system.rs` | 6 | Sailing orbit camera behavior |
+| `src/ui/ui_sailing_hud_system.rs` | 7 | Wind compass, speed gauge, trim UI, prompts |
+
+### Client Files Still Needed
+
+| File | Phase | Description |
+|------|-------|-------------|
+| `src/audio/boat_sound.rs` | 9 | Boat loop/one-shot sound management |
+| `src/components/remote_boat.rs` or equivalent | 5/8 | Remote boat interpolation/render state |
+| `src/systems/remote_boat_system.rs` or equivalent | 5/8 | Remote boat packet application and interpolation |
 
 ### Modified Client Files
 
 | File | Phase | Changes |
 |------|-------|---------|
-| [`src/components/mod.rs`](src/components/mod.rs) | 2 | Add boat module |
-| [`src/resources/mod.rs`](src/resources/) | 3 | Add wind_state module |
-| [`src/systems/mod.rs`](src/systems/) | 3–4 | Add new system modules |
-| [`src/events/mod.rs`](src/events/mod.rs) | 2 | Add boat events |
-| [`src/lib.rs`](src/lib.rs) | All | Register plugin, systems, resources |
-| [`src/components/wind_effect.rs`](src/components/wind_effect.rs) | 3 | Integrate with WindState |
-| [`src/graphics/graphics_settings.rs`](src/graphics/graphics_settings.rs) | 11 | Add SailingGraphicsSettings |
+| [`src/components/mod.rs`](src/components/mod.rs) | 2/8 | Exports boat and wake components |
+| [`src/resources/mod.rs`](src/resources/) | 3 | Exports wind resources |
+| [`src/systems/mod.rs`](src/systems/) | 3/4/6/8 | Exports sailing systems |
+| [`src/events/mod.rs`](src/events/mod.rs) | 2 | Exports boat events |
+| [`src/ui/mod.rs`](src/ui/mod.rs) | 7 | Exports sailing HUD system |
+| [`src/lib.rs`](src/lib.rs) | All | Registers messages, resources, setup, and update systems |
+| [`src/ui/ui_chatbox_system.rs`](src/ui/ui_chatbox_system.rs) | 2 | Routes `/boat` dev command into board message |
+| [`src/systems/game_keyboard_input_system.rs`](src/systems/game_keyboard_input_system.rs) | 4/6/I | Blocks normal keyboard movement and handles `E` disembark while sailing |
+| [`src/systems/game_mouse_input_system.rs`](src/systems/game_mouse_input_system.rs) | 4/6 | Blocks terrain click movement while sailing |
+| [`src/systems/collision_system.rs`](src/systems/collision_system.rs) | 4 | Keeps wall collision and land blocking active for sailing |
+| [`src/systems/game_system.rs`](src/systems/game_system.rs) | 1 | Applies ocean water tuning for zone `200` |
+| [`src/graphics/graphics_settings.rs`](src/graphics/graphics_settings.rs) | 11 | Adds `SailingGraphicsSettings` |
 
 ### New Server Files
 
@@ -1005,6 +1072,11 @@ pub struct SailingGraphicsSettings {
 | Sail mesh deformation is expensive | Low | Low | LOD system; skip when off-screen |
 | Network bandwidth for boat sync | Medium | Low | 10 Hz update rate; delta compression |
 | Zone transitions while on boat | High | Medium | Special handling: despawn boat, respawn at new dock |
+| Local prototype behavior leaks into production | High | Medium | Keep `/boat` and permissive validation clearly marked as dev-only; move final rules server-side |
+| Client/server sailing physics drift | High | Medium | Extract pure sailing math or maintain mirrored tests for polar curve, trim, and rudder integration |
+| Water planes missing from ocean map data | High | Medium | Validate `UnderwaterVolumes` are created for sailing blocks before accepting zone content |
+| Wake particles scale poorly with multiplayer | Medium | Medium | Pool materials or move alpha/fade to shader data before enabling many remote boats |
+| Bevy hierarchy or mesh APIs are used with older assumptions | Medium | Low | Follow Bevy 0.18.1 source-validated rules: `ChildOf`/`add_child`, recursive `despawn`, mutable meshes with `MAIN_WORLD` asset usage |
 
 ---
 
@@ -1030,17 +1102,15 @@ pub struct SailingGraphicsSettings {
 ## Implementation Priority Order
 
 ```
-Phase 1: Ocean Zone Map ──────────────── [Week 1–2]  Level Designer + Server Dev
-Phase 2: Boat Entity & Model ─────────── [Week 1–2]  Client Dev
-Phase 3: Wind System ─────────────────── [Week 2]    Client Dev
-Phase 4: Sailing Movement ────────────── [Week 2–3]  Client Dev
-Phase 5: Server Authority & Networking ── [Week 3–4]  Server Dev + Client Dev
-Phase 6: Camera & Controls ───────────── [Week 3]    Client Dev
-Phase 7: Sail Trim UI ────────────────── [Week 4]    UI Dev
-Phase 8: Visual Effects ──────────────── [Week 4–5]  Client Dev
-Phase 9: Audio ────────────────────────── [Week 5]    Audio Dev
-Phase 10: Island Content & NPCs ──────── [Week 5–6]  Level Designer + Server Dev
-Phase 11: Polish & Optimisation ──────── [Week 6+]   All
+Done prototype: Boat entity/model, wind, local movement, camera, HUD, sail deformation, wake/spray
+
+Next 1: Ocean Zone Map Data ───────────── [Week 1–2]  Level Designer + Server Dev
+Next 2: Server Authority & Networking ─── [Week 2–4]  Server Dev + Client Dev
+Next 3: Remote Boat Rendering ─────────── [Week 3–5]  Client Dev
+Next 4: Production Boarding/Disembark ─── [Week 4–5]  Server Dev + Client Dev
+Next 5: Audio ─────────────────────────── [Week 4–5]  Client/Audio Dev
+Next 6: Island Content & NPCs ─────────── [Week 5–6]  Level Designer + Server Dev
+Next 7: Polish & Optimisation ─────────── [Week 6+]   All
 ```
 
-Phases 1–2 and Phase 3 can run in parallel. Phase 4 depends on 2+3. Phase 5 depends on 4. Phases 6–9 can mostly run in parallel after Phase 4.
+The current client prototype means the critical path is now real ocean data, server authority, then remote boat rendering. Audio and polish can run in parallel, but production interaction rules should be finalized before replacing the `/boat` debug flow.

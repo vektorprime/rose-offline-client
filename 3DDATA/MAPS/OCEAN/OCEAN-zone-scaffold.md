@@ -5,23 +5,18 @@ This folder is the initial scaffold for the ocean sailing zone described in:
 
 ## Current status
 
-- Directory scaffold created.
-- Runtime client behavior for zone `200` is now implemented in code:
+- Zone `200` now has a larger playable loose-file map:
+  - `OCEAN.ZON`
+  - `OCEAN_CNST.ZSC`
+  - `OCEAN_DECO.ZSC`
+  - A 17x17 active terrain block region around the spawn marina/islands
+  - A large water plane in block `32_32`
+- Runtime client behavior for zone `200` is implemented in code:
   - `src/systems/game_system.rs` applies ocean-specific water settings when zone `200` loads.
-
-## Planned data files (to be authored/exported)
-
-The following files should be generated via map editor export pipeline and/or existing ROSE map tooling:
-
-- `OCEAN.ZON`
-- Block files (`HIM`, `TIL`, `IFO`) for active ocean/island blocks
-- Optional map metadata/minimap assets as needed by existing zone list/content data
+- Shared game data registers zone `200` when `3DDATA/MAPS/OCEAN/OCEAN.ZON` exists.
 
 ## Authoring notes
 
-1. Build ocean + island blocks in map editor.
-2. Export zone data to this folder.
-3. Register zone metadata/server-side links in the server repository.
-4. Validate zone load path in client.
-
-This scaffold intentionally avoids placeholder binary assets and keeps source control clean until exported map data is ready.
+1. The current files are intentionally lightweight but cover a much larger sailing area than the original four-block test patch.
+2. Future map-editor exports can replace these files with a richer ocean/island layout.
+3. Keep `OCEAN.ZON`, at least one parseable `.IFO`, and the two empty ZSC tables unless the zone-list registration is updated.

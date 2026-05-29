@@ -90,22 +90,11 @@ pub fn blood_overlay_generate_system(
     atlas: Res<BloodOverlayAtlas>,
     config: Res<BloodEffectConfig>,
 ) {
-    // DIAGNOSTIC: Log BloodEffectConfig values for troubleshooting
-    bevy::log::info!(
-        "[BloodOverlay] Config: enable_blood={}, show_wounds={}, intensity={}, max_wounds_per_entity={}",
-        config.enable_blood,
-        config.show_wounds,
-        config.intensity,
-        config.max_wounds_per_entity
-    );
-
     if !config.enable_blood {
-        bevy::log::warn!("[BloodOverlay] Blood effects are disabled in config");
         return;
     }
 
     if !config.show_wounds {
-        bevy::log::warn!("[BloodOverlay] Wounds are hidden in config");
         return;
     }
 
@@ -288,45 +277,6 @@ pub fn blood_overlay_force_enable_system(
     );
 }
 
-/// DIAGNOSTIC: Debug query system that logs blood overlay component state.
-/// This helps identify runtime issues with blood rendering by logging:
-/// - Entity IDs with blood overlay components
-/// - Stain counts per entity
-/// - Texture handle counts per entity
-/// - Material dirty flags
-pub fn blood_overlay_debug_query_system(
-    query: Query<(Entity, &BloodOverlay, Option<&BloodOverlayTextures>)>,
-) {
-    let mut entities_with_blood: Vec<Entity> = Vec::new();
-
-    for (entity, blood_overlay, textures) in query.iter() {
-        let stain_count = blood_overlay.stain_count();
-        let texture_count = textures.map(|t| t.textures.len()).unwrap_or(0);
-
-        // Only log entities that have stains or textures
-        if stain_count > 0 || texture_count > 0 {
-            entities_with_blood.push(entity);
-            bevy::log::info!(
-                "[BloodOverlay Debug] Entity {:?}: stains={}, texture_count={}, is_bloodied={}, texture_dirty={}",
-                entity,
-                stain_count,
-                texture_count,
-                blood_overlay.is_bloodied,
-                blood_overlay.texture_dirty
-            );
-        }
-    }
-
-    if entities_with_blood.is_empty() {
-        bevy::log::warn!("[BloodOverlay Debug] No entities with blood stains found!");
-    } else {
-        bevy::log::info!(
-            "[BloodOverlay Debug] Total entities with blood: {}",
-            entities_with_blood.len()
-        );
-    }
-}
-
 /// Generates a blood overlay texture from the list of stains for a specific material.
 fn generate_overlay_texture(
     images: &mut Assets<Image>,
@@ -447,8 +397,6 @@ impl Plugin for BloodOverlayPlugin {
             (
                 blood_overlay_generate_system,
                 blood_overlay_update_system,
-                // DIAGNOSTIC: Debug query system for troubleshooting blood rendering issues
-                blood_overlay_debug_query_system,
                 // DIAGNOSTIC: Force enable blood on all materials when DEBUG_FORCE_BLOOD=1
                 blood_overlay_force_enable_system,
             ),
