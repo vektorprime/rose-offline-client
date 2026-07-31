@@ -78,7 +78,9 @@ pub struct UiStateWindows {
 use bevy::prelude::Resource;
 pub use dialog_loader::{load_dialog_sprites_system, DialogInstance, DialogLoader};
 pub use drag_and_drop_slot::{DragAndDropId, DragAndDropSlot};
-pub use tooltips::{get_item_name_color, ui_add_item_tooltip, ui_add_skill_tooltip};
+pub use tooltips::{
+    get_item_name_color, tooltip_on_hover, ui_add_item_tooltip, ui_add_skill_tooltip,
+};
 pub use ui_admin_menu_system::{
     admin_menu_keyboard_system, ui_admin_menu_system, UiStateAdminMenu,
 };

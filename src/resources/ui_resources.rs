@@ -2,10 +2,7 @@ use std::collections::HashMap;
 
 use bevy::{
     asset::LoadState,
-    prelude::{
-        AssetServer, Assets, Commands, Handle, Image, Query, Res, ResMut, Resource, Vec2, With,
-    },
-    window::{CursorGrabMode, PrimaryWindow, Window},
+    prelude::{AssetServer, Assets, Commands, Handle, Image, Res, ResMut, Resource, Vec2},
 };
 use bevy_egui::{egui, EguiContexts};
 use enum_map::{enum_map, Enum, EnumMap};
@@ -161,31 +158,11 @@ impl UiResources {
             7 => UiSpriteSheetType::ClanMarkBackground,
             8 => UiSpriteSheetType::ClanMarkForeground,
             9 => UiSpriteSheetType::TargetMark,
-            _ => {
-                return None;
-            }
+            _ => return None,
         };
 
-        let sprite_sheet = match self.sprite_sheets[sprite_sheet_type].as_ref() {
-            Some(sheet) => sheet,
-            None => {
-                return None;
-            }
-        };
-
-        let sprites_by_name = match sprite_sheet.sprites_by_name.as_ref() {
-            Some(map) => map,
-            None => {
-                return None;
-            }
-        };
-
-        let sprite_index = match sprites_by_name.get(sprite_name) {
-            Some(idx) => idx,
-            None => {
-                return None;
-            }
-        };
+        let sprite_sheet = self.sprite_sheets[sprite_sheet_type].as_ref()?;
+        let sprite_index = sprite_sheet.sprites_by_name.as_ref()?.get(sprite_name)?;
 
         self.get_sprite_by_index(sprite_sheet_type, *sprite_index as usize)
     }
@@ -195,32 +172,12 @@ impl UiResources {
         sprite_sheet_type: UiSpriteSheetType,
         sprite_index: usize,
     ) -> Option<UiSprite> {
-        let sprite_sheet = match self.sprite_sheets[sprite_sheet_type].as_ref() {
-            Some(sheet) => sheet,
-            None => {
-                return None;
-            }
-        };
-
-        let sprite = match sprite_sheet.sprites.get(sprite_index) {
-            Some(s) => s,
-            None => {
-                return None;
-            }
-        };
-
-        let texture = match sprite_sheet.loaded_textures.get(sprite.texture_id as usize) {
-            Some(t) => t,
-            None => {
-                return None;
-            }
-        };
-
+        let sprite_sheet = self.sprite_sheets[sprite_sheet_type].as_ref()?;
+        let sprite = sprite_sheet.sprites.get(sprite_index)?;
+        let texture = sprite_sheet.loaded_textures.get(sprite.texture_id as usize)?;
         let texture_size = match texture.size {
             Some(size) if size.x > 0.0 && size.y > 0.0 => size,
-            Some(_) | None => {
-                return None;
-            }
+            _ => return None,
         };
 
         Some(UiSprite {
@@ -252,11 +209,7 @@ impl UiResources {
             _ => return None,
         };
         let sprite_sheet = self.sprite_sheets[sprite_sheet_type].as_ref()?;
-        let sprite_index = sprite_sheet
-            .sprites_by_name
-            .as_ref()
-            .unwrap()
-            .get(sprite_name)?;
+        let sprite_index = sprite_sheet.sprites_by_name.as_ref()?.get(sprite_name)?;
 
         self.get_sprite_image_by_index(sprite_sheet_type, *sprite_index as usize)
     }
@@ -324,7 +277,7 @@ fn load_ui_spritesheet(
     };
 
     let mut loaded_textures = Vec::new();
-    for (tsi_texture_index, tsi_texture) in tsi_file.textures.iter().enumerate() {
+    for (_, tsi_texture) in tsi_file.textures.iter().enumerate() {
         let texture_path = format!("3ddata/control/res/{}", tsi_texture.filename).to_lowercase();
         let handle = asset_server.load(&texture_path);
         let texture_id =
@@ -518,6 +471,15 @@ pub fn update_ui_resources(
     ui_resources.loaded_required_textures = loaded_required;
 }
 
+fn load_or_log(sheet: Result<UiSpriteSheet, anyhow::Error>) -> Option<UiSpriteSheet> {
+    sheet
+        .map_err(|e| {
+            log::warn!("Error loading ui resource: {}", e);
+            e
+        })
+        .ok()
+}
+
 pub fn load_ui_resources(
     mut commands: Commands,
     vfs_resource: Res<VfsResource>,
@@ -604,15 +566,15 @@ pub fn load_ui_resources(
         loaded_all_textures: false,
         loaded_required_textures: false,
         sprite_sheets: enum_map! {
-            UiSpriteSheetType::Ui => load_ui_spritesheet(vfs, &asset_server, &mut egui_context, "3ddata/control/res/ui.tsi", "3ddata/control/xml/ui_strid.id").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::ExUi => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/exui.tsi", "3ddata/control/xml/exui_strid.id").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::StateIcon => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/stateicon.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::Skill => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/skillicon.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::Item => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/item1.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::ItemSocketGem => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/soketjam.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::TargetMark => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/targetmark.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::ClanMarkForeground => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/clancenter.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
-            UiSpriteSheetType::ClanMarkBackground => load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/clanback.tsi", "").map_err(|e| { log::warn!("Error loading ui resource: {}", e); e }).ok(),
+            UiSpriteSheetType::Ui => load_or_log(load_ui_spritesheet(vfs, &asset_server, &mut egui_context, "3ddata/control/res/ui.tsi", "3ddata/control/xml/ui_strid.id")),
+            UiSpriteSheetType::ExUi => load_or_log(load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/exui.tsi", "3ddata/control/xml/exui_strid.id")),
+            UiSpriteSheetType::StateIcon => load_or_log(load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/stateicon.tsi", "")),
+            UiSpriteSheetType::Skill => load_or_log(load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/skillicon.tsi", "")),
+            UiSpriteSheetType::Item => load_or_log(load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/item1.tsi", "")),
+            UiSpriteSheetType::ItemSocketGem => load_or_log(load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/soketjam.tsi", "")),
+            UiSpriteSheetType::TargetMark => load_or_log(load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/targetmark.tsi", "")),
+            UiSpriteSheetType::ClanMarkForeground => load_or_log(load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/clancenter.tsi", "")),
+            UiSpriteSheetType::ClanMarkBackground => load_or_log(load_ui_spritesheet(vfs, &asset_server, &mut egui_context,  "3ddata/control/res/clanback.tsi", "")),
             UiSpriteSheetType::MinimapArrow => {
                 let handle = asset_server.load("3ddata/control/res/minimap_arrow.tga");
                 let texture_id = egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(handle.clone()));
@@ -684,26 +646,4 @@ pub fn load_ui_resources(
             UiCursorType::Appraisal =>  UiCursor::new(asset_server.load("trose.exe#cursor_206")),
         },
     });
-}
-
-/// System to apply the requested cursor to the primary window.
-///
-/// In Bevy 0.16+, custom cursors are set via the CursorIcon component on the window entity.
-/// The custom_cursor feature must be enabled for this to work.
-///
-/// Note: This system currently uses egui's cursor management. To implement custom cursors
-/// using Bevy's CustomCursorImage API:
-/// 1. Enable the "custom_cursor" feature in Cargo.toml
-/// 2. Load cursor images as Bevy Image assets
-/// 3. Create CustomCursorImage structs with the image handles
-/// 4. Insert CursorIcon::Custom(CustomCursor::Image(...)) on window entities
-pub fn ui_requested_cursor_apply_system(
-    _query_window: Query<&mut Window, With<PrimaryWindow>>,
-    _ui_requested_cursor: Res<UiRequestedCursor>,
-    _ui_resources: Res<UiResources>,
-    _egui_ctx: EguiContexts,
-) {
-    // egui manages cursor input automatically when it wants pointer input
-    // Custom cursor implementation using Bevy 0.16's CustomCursorImage API would go here
-    // when cursor images are properly loaded
 }

@@ -290,21 +290,3 @@ pub fn wind_particle_update_system(
         particle.velocity *= 0.98;
     }
 }
-
-/// Cleanup system to despawn all wind particles when leaving flight mode
-pub fn cleanup_wind_particles_on_flight_end(
-    mut commands: Commands,
-    flight_states: Query<&FlightState, With<PlayerCharacter>>,
-    particles: Query<Entity, With<WindEffectParticle>>,
-) {
-    // Check if any player is not flying
-    for flight_state in flight_states.iter() {
-        if !flight_state.is_flying {
-            // Despawn all wind particles
-            for entity in particles.iter() {
-                commands.entity(entity).despawn();
-            }
-            break;
-        }
-    }
-}

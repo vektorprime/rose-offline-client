@@ -572,8 +572,6 @@ pub fn queue_world_ui_meshes(
         // );
 
         let pipeline = pipelines.specialize(&pipeline_cache, &world_ui_pipeline, view_key);
-        let pipeline = pipelines.specialize(&pipeline_cache, &world_ui_pipeline, view_key);
-        //// log::info!("[WORLD_UI_QUEUE] Pipeline specialized: {:?}", pipeline);
         let view_matrix = view.world_from_view.to_matrix();
         let inverse_view_transform = view_matrix.inverse();
         let inverse_view_row_2 = inverse_view_transform.row(2);

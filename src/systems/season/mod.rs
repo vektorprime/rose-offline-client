@@ -1,16 +1,10 @@
 use bevy::prelude::*;
 
-mod fall_system;
 mod season_manager;
-mod spring_system;
-mod summer_system;
-mod winter_system;
+mod weather_system;
 
-pub use fall_system::*;
 pub use season_manager::*;
-pub use spring_system::*;
-pub use summer_system::*;
-pub use winter_system::*;
+pub use weather_system::*;
 
 pub struct SeasonPlugin;
 
@@ -26,32 +20,8 @@ impl Plugin for SeasonPlugin {
                 Update,
                 (
                     season_manager::season_cleanup_system,
-                    fall_system::fall_particle_system,
-                    spring_system::spring_rain_system,
-                    // DEPRECATED: CPU-based grass systems - replaced by GPU-based procedural grass
-                    // summer_system::summer_vegetation_system,  // Deprecated: CPU grass spawning
-                    // summer_system::vegetation_sway_system,    // Deprecated: CPU grass animation
-                    // DISABLED: bevy_procedural_grass not compatible with Bevy 0.18
-                    // summer_system::spawn_procedural_grass_system, // Polls for terrain entities
-                    // summer_system::sync_grass_wind_system,        // Sync wind settings to procedural grass
-                    // summer_system::grass_visibility_system,       // Control grass visibility based on season
-                ),
-            )
-            .add_systems(
-                Update,
-                (
-                    // DISABLED: bevy_procedural_grass not compatible with Bevy 0.18
-                    // summer_system::cleanup_grass_on_season_change, // Remove grass when season changes
-                    // summer_system::cleanup_grass_on_zone_change,   // Remove grass when zone changes
-                    winter_system::winter_snow_system,
+                    weather_system::weather_particle_system,
                 ),
             );
     }
-}
-
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub enum SeasonSystemSet {
-    Spawn,
-    Update,
-    Cleanup,
 }

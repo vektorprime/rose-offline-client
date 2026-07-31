@@ -4,7 +4,6 @@ pub(super) fn spawn_object(
     commands: &mut Commands,
     asset_server: &AssetServer,
     zone_loading_assets: &mut Vec<UntypedHandle>,
-    vfs_resource: &VfsResource,
     object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
     specular_texture: &SpecularTexture,
     zsc: &ZscFile,
@@ -17,8 +16,6 @@ pub(super) fn spawn_object(
     part_object_type: fn(ZoneObjectPart) -> ZoneObject,
     collision_group: bevy_rapier3d::prelude::Group,
 ) -> Entity {
-    // log::info!("[SPAWN OBJECT] Spawning object: IFO id={}, ZSC id={}, parts={}",
-    //     ifo_object_id, zsc_object_id, zsc.objects[zsc_object_id].parts.len());
     let object = &zsc.objects[zsc_object_id];
     let object_transform = Transform::default()
         .with_translation(
@@ -42,8 +39,7 @@ pub(super) fn spawn_object(
 
     let mut mesh_cache: Vec<Option<Handle<Mesh>>> = vec![None; zsc.meshes.len()];
 
-    let mut part_entities: ArrayVec<Entity, 256> = ArrayVec::new();
-    let mut object_entity_commands = commands.spawn((
+    let object_entity_commands = commands.spawn((
         EditorSelectable,
         object_type(ZoneObjectId {
             ifo_object_id,
@@ -86,26 +82,19 @@ pub(super) fn spawn_object(
 
         // VALIDATION FIX: Check mesh_id bounds before using
         if mesh_id >= zsc.meshes.len() {
-            // log::warn!("[SPAWN OBJECT] Object {} part {} has invalid mesh_id {} (max: {}), skipping part",
-            //     zsc_object_id, part_index, mesh_id, zsc.meshes.len().saturating_sub(1));
             continue;
         }
 
         // VALIDATION FIX: Check material_id bounds
         let material_id = object_part.material_id as usize;
         if material_id >= zsc.materials.len() {
-            // log::warn!("[SPAWN OBJECT] Object {} part {} has invalid material_id {} (max: {}), skipping part",
-            //     zsc_object_id, part_index, material_id, zsc.materials.len().saturating_sub(1));
             continue;
         }
 
         let mesh = mesh_cache[mesh_id].clone().unwrap_or_else(|| {
             let mesh_path = zsc.meshes[mesh_id].path().to_string_lossy().into_owned();
-            let mesh_path_log = mesh_path.clone();
-            // log::info!("[SPAWN OBJECT] Loading mesh: {}", mesh_path_log);
             let handle = asset_server.load(&mesh_path);
             mesh_cache.insert(mesh_id, Some(handle.clone()));
-            //info!("[MEMORY TRACKING] Mesh handle created: {}", mesh_path_log);
             handle
         });
         zone_loading_assets.push(UntypedHandle::from(mesh.clone()));
@@ -121,9 +110,7 @@ pub(super) fn spawn_object(
         let lightmap_texture = lit_part.map(|lit_part| {
             let path = lightmap_path.join(&lit_part.filename);
             let path_str = path.to_string_lossy().into_owned();
-            let handle = asset_server.load::<bevy::prelude::Image>(&path_str);
-            //info!("[MEMORY TRACKING] Lightmap texture handle created: {}", path_str);
-            handle
+            asset_server.load::<bevy::prelude::Image>(&path_str)
         });
         let (lightmap_uv_offset, lightmap_uv_scale) = lit_part
             .map(|lit_part| {
@@ -144,13 +131,8 @@ pub(super) fn spawn_object(
 
         let zsc_material = zsc.materials[material_id].clone();
         let material_path = zsc_material.path.path().to_string_lossy().into_owned();
-        let material_path_log = material_path.clone();
 
-        //log::info!("[SPAWN OBJECT] Creating material: {}", material_path_log);
         let base_texture_handle = asset_server.load(&material_path);
-        //info!("[MEMORY TRACKING] Object material base texture handle created: {}", material_path_log);
-
-        let lightmap_count = lightmap_texture.as_ref().is_some() as usize;
 
         // Create ExtendedMaterial with RoseObjectExtension for zone lighting support
         // This applies zone lighting ambient color to darken objects to match the original game
@@ -216,17 +198,6 @@ pub(super) fn spawn_object(
                 }
             }
         }
-
-        // CRITICAL FIX: Validate material handle before spawning
-        // Note: is_weak() was removed in Bevy 0.17, removing this check
-        // let material_id = material.id();
-        // let is_material_weak = material.is_weak();
-
-        // Verify material is strong
-        // if material.is_weak() {
-        //     log::error!("[SPAWN OBJECT] CRITICAL: Material is weak! Object {} part {} will not render!",
-        //         zsc_object_id, part_index);
-        // }
 
         // Determine if this part should cast shadows based on material transparency
         // Opaque and alpha-masked materials cast shadows, alpha-blended materials don't
@@ -356,70 +327,6 @@ pub(super) fn spawn_object(
         }
 
         commands.entity(object_entity).add_child(part_entity);
-        part_entities.push(part_entity);
-    }
-
-    // log::info!("[SPAWN OBJECT] Object entity created: {:?} with {} parts",
-    //     object_entity, part_entities.len());
-    let mesh_count = mesh_cache.iter().filter(|m| m.is_some()).count();
-    //info!("[MEMORY TRACKING] Object entity created with {} mesh handles",
-    //mesh_count);
-    // log::info!("[MEMORY] Object entity created with {} mesh handles",
-    //mesh_count);
-
-    for object_effect in object.effects.iter() {
-        let effect_transform = Transform::default()
-            .with_translation(
-                Vec3::new(
-                    object_effect.position.x,
-                    object_effect.position.z,
-                    -object_effect.position.y,
-                ) / 100.0,
-            )
-            .with_rotation(Quat::from_xyzw(
-                object_effect.rotation.x,
-                object_effect.rotation.z,
-                -object_effect.rotation.y,
-                object_effect.rotation.w,
-            ))
-            .with_scale(Vec3::new(
-                object_effect.scale.x,
-                object_effect.scale.z,
-                object_effect.scale.y,
-            ));
-
-        // Effect spawning temporarily disabled (use custom materials)
-        /*
-        if let Some(effect_path) = zsc.effects.get(object_effect.effect_id as usize) {
-            if let Some(effect_entity) = spawn_effect(
-                &vfs_resource.vfs,
-                commands,
-                asset_server,
-                particle_materials,
-                effect_mesh_materials,
-                effect_path.into(),
-                false,
-                None,
-            ) {
-                if let Some(parent_part_entity) = object_effect
-                    .parent
-                    .and_then(|parent_part_index| part_entities.get(parent_part_index as usize))
-                {
-                    commands
-                        .entity(*parent_part_entity)
-                        .add_child(effect_entity);
-                } else {
-                    commands.entity(object_entity).add_child(effect_entity);
-                }
-
-                commands.entity(effect_entity).insert(effect_transform);
-
-                if matches!(object_effect.effect_type, ZscEffectType::DayNight) {
-                    commands.entity(effect_entity).insert(NightTimeEffect);
-                }
-            }
-        }
-        */
     }
 
     object_entity
@@ -440,12 +347,6 @@ pub(super) fn spawn_animated_object(
     let alpha_enabled = stb_morph_object.get_int(object_id, 4) != 0;
     let two_sided = stb_morph_object.get_int(object_id, 5) != 0;
     let alpha_test_enabled = stb_morph_object.get_int(object_id, 6) != 0;
-    let z_test_enabled = stb_morph_object.get_int(object_id, 7) != 0;
-    let z_write_enabled = stb_morph_object.get_int(object_id, 8) != 0;
-
-    let src_blend_factor = stb_morph_object.get_int(object_id, 9) as u32;
-    let dst_blend_factor = stb_morph_object.get_int(object_id, 10) as u32;
-    let blend_op = stb_morph_object.get_int(object_id, 11) as u32;
 
     let object_transform = Transform::default()
         .with_translation(
@@ -467,10 +368,6 @@ pub(super) fn spawn_animated_object(
             object_instance.scale.y,
         ));
 
-    let mesh_path_str = mesh_path.clone();
-    let texture_path_str = texture_path.clone();
-    let motion_path_str = motion_path.clone();
-
     let mesh: Handle<Mesh> = asset_server.load(&mesh_path);
 
     // Handle NULL texture paths for animated objects
@@ -485,14 +382,6 @@ pub(super) fn spawn_animated_object(
     let motion_texture_handle =
         asset_server.load(ZmoTextureAssetLoader::convert_path_texture(&motion_path));
     let motion_handle = asset_server.load(motion_path_buf.to_string_lossy().into_owned());
-
-    // Log asset creation
-    //info!("[MEMORY TRACKING] Animated object mesh handle created: {}", mesh_path_str);
-    //info!("[MEMORY TRACKING] Animated object texture handle created: {}", texture_path_str);
-    //info!("[MEMORY TRACKING] Animated object motion texture handle created: {}",
-    // ZmoTextureAssetLoader::convert_path_texture(&motion_path));
-    //info!("[MEMORY TRACKING] Animated object motion handle created: {}",
-    //motion_path_buf.display());
 
     let material = effect_mesh_materials.add(ExtendedMaterial {
         base: StandardMaterial {
@@ -513,8 +402,6 @@ pub(super) fn spawn_animated_object(
             animation_state: crate::render::EffectMeshAnimationUniform::default(),
         },
     });
-
-    //info!("[MEMORY TRACKING] Animated object material created with 3 textures (base, motion texture, motion)");
 
     // Determine if this animated object should cast shadows based on material transparency
     // Opaque and alpha-masked materials cast shadows, alpha-blended materials don't
@@ -551,7 +438,6 @@ pub(super) fn spawn_animated_object(
         commands.entity(animated_entity).insert(NotShadowCaster);
     }
 
-    // info!("[ASSET LIFECYCLE] Animated object entity spawned: {:?}", animated_entity);
     animated_entity
 }
 
@@ -580,13 +466,6 @@ pub(super) fn spawn_effect_object(
         ))
         .with_scale(Vec3::new(object.scale.x, object.scale.z, object.scale.y));
 
-    let effect_path_str = effect_object
-        .effect_path
-        .path()
-        .to_string_lossy()
-        .to_string();
-    // info!("[ASSET LIFECYCLE] Spawning effect object: {}", effect_path_str);
-
     let effect_object_entity = commands
         .spawn((
             EditorSelectable,
@@ -607,8 +486,6 @@ pub(super) fn spawn_effect_object(
             RenderLayers::layer(0),
         ))
         .id();
-
-    // info!("[ASSET LIFECYCLE] Effect object entity spawned: {:?}", effect_object_entity);
 
     spawn_effect(
         &vfs_resource.vfs,
@@ -648,7 +525,6 @@ pub(super) fn spawn_sound_object(
         .with_scale(Vec3::new(object.scale.x, object.scale.z, object.scale.y));
 
     let sound_path_str = sound_object.sound_path.path().to_string_lossy().to_string();
-    // info!("[ASSET LIFECYCLE] Spawning sound object: {}", sound_path_str);
 
     // Handle NULL sound paths - skip loading if path is NULL or empty
     if sound_path_str.is_empty() || sound_path_str == "NULL" {
@@ -691,6 +567,5 @@ pub(super) fn spawn_sound_object(
         ))
         .id();
 
-    // info!("[ASSET LIFECYCLE] Sound object entity spawned: {:?}", effect_object_entity);
     effect_object_entity
 }

@@ -24,19 +24,23 @@ pub struct ParsedChatInput {
 /// Prefixes for each chat type - both ASCII and full-width Unicode variants
 const SHOUT_PREFIXES: &[char] = &['!', '！'];
 const WHISPER_PREFIXES: &[char] = &['@', '＠'];
-const PARTY_PREFIXES: &[char] = &['#', '#'];
+const PARTY_PREFIXES: &[char] = &['#', '＃'];
 const CLAN_PREFIXES: &[char] = &['&', '＆'];
 const ALLIED_PREFIXES: &[char] = &['~', '〜', '～'];
-const TRADE_PREFIXES: &[char] = &['$', '$'];
+const TRADE_PREFIXES: &[char] = &['$', '＄'];
 const HELP_PREFIXES: &[char] = &['?', '？', '/'];
 
 /// Space characters for separating whisper target from message
-const SPACE_CHARS: &[char] = &[' ', '\t', ' ', '\u{3000}'];
+const SPACE_CHARS: &[char] = &[' ', '\t', '\u{3000}'];
 
-/// Calculate the byte width of a character for slicing strings
-fn char_byte_width(c: char) -> usize {
-    c.len_utf8()
-}
+/// Chat types with simple prefixes, matched via table lookup
+const PREFIX_TABLE: &[(ChatType, &[char])] = &[
+    (ChatType::Shout, SHOUT_PREFIXES),
+    (ChatType::Party, PARTY_PREFIXES),
+    (ChatType::Clan, CLAN_PREFIXES),
+    (ChatType::Allied, ALLIED_PREFIXES),
+    (ChatType::Trade, TRADE_PREFIXES),
+];
 
 /// Checks if a message is a help command (starts with / or ?)
 pub fn is_help_command(message: &str) -> bool {
@@ -89,24 +93,9 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
     let first_char = chars.first().copied();
 
     match first_char {
-        Some(prefix) if SHOUT_PREFIXES.contains(&prefix) => {
-            // Shout: !message or !message
-            let prefix_width = char_byte_width(prefix);
-            let message = if chars.len() > 1 {
-                trimmed[prefix_width..].trim().to_string()
-            } else {
-                String::new()
-            };
-
-            ParsedChatInput {
-                chat_type: ChatType::Shout,
-                target: None,
-                message,
-            }
-        }
         Some(prefix) if WHISPER_PREFIXES.contains(&prefix) => {
-            // Whisper: @name message or @name message
-            let prefix_width = char_byte_width(prefix);
+            // Whisper: @name message or ＠name message
+            let prefix_width = prefix.len_utf8();
 
             if chars.len() <= 1 {
                 // No target or message, return as normal chat
@@ -149,66 +138,6 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
                 message,
             }
         }
-        Some(prefix) if PARTY_PREFIXES.contains(&prefix) => {
-            // Party: #message or #message
-            let prefix_width = char_byte_width(prefix);
-            let message = if chars.len() > 1 {
-                trimmed[prefix_width..].trim().to_string()
-            } else {
-                String::new()
-            };
-
-            ParsedChatInput {
-                chat_type: ChatType::Party,
-                target: None,
-                message,
-            }
-        }
-        Some(prefix) if CLAN_PREFIXES.contains(&prefix) => {
-            // Clan: &message or ＆message
-            let prefix_width = char_byte_width(prefix);
-            let message = if chars.len() > 1 {
-                trimmed[prefix_width..].trim().to_string()
-            } else {
-                String::new()
-            };
-
-            ParsedChatInput {
-                chat_type: ChatType::Clan,
-                target: None,
-                message,
-            }
-        }
-        Some(prefix) if ALLIED_PREFIXES.contains(&prefix) => {
-            // Allied/Shout: ~message or 〜message or ～message
-            let prefix_width = char_byte_width(prefix);
-            let message = if chars.len() > 1 {
-                trimmed[prefix_width..].trim().to_string()
-            } else {
-                String::new()
-            };
-
-            ParsedChatInput {
-                chat_type: ChatType::Allied,
-                target: None,
-                message,
-            }
-        }
-        Some(prefix) if TRADE_PREFIXES.contains(&prefix) => {
-            // Trade: $message or $message
-            let prefix_width = char_byte_width(prefix);
-            let message = if chars.len() > 1 {
-                trimmed[prefix_width..].trim().to_string()
-            } else {
-                String::new()
-            };
-
-            ParsedChatInput {
-                chat_type: ChatType::Trade,
-                target: None,
-                message,
-            }
-        }
         Some(prefix) if HELP_PREFIXES.contains(&prefix) => {
             // Help command: /help or ?help
             // These are server commands, return as normal chat
@@ -216,6 +145,24 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
                 chat_type: ChatType::Help,
                 target: None,
                 message: trimmed.to_string(),
+            }
+        }
+        Some(prefix) if PREFIX_TABLE.iter().any(|(_, prefixes)| prefixes.contains(&prefix)) => {
+            let (chat_type, _) = PREFIX_TABLE
+                .iter()
+                .find(|(_, prefixes)| prefixes.contains(&prefix))
+                .unwrap();
+            let prefix_width = prefix.len_utf8();
+            let message = if chars.len() > 1 {
+                trimmed[prefix_width..].trim().to_string()
+            } else {
+                String::new()
+            };
+
+            ParsedChatInput {
+                chat_type: *chat_type,
+                target: None,
+                message,
             }
         }
         _ => {
@@ -229,21 +176,7 @@ pub fn parse_chat_input(input: &str) -> ParsedChatInput {
     }
 }
 
-/// Converts a ParsedChatInput to a ClientMessage for sending to the server
-///
-/// # Arguments
-/// * `parsed` - The parsed chat input
-/// * `username` - The username of the sender (for whispers)
-///
-/// # Returns
-/// A ClientMessage that can be sent to the server
 impl ParsedChatInput {
-    pub fn as_client_message(&self) -> &'static str {
-        // This is a placeholder - the actual message should be built by the caller
-        // The chat_command_system just parses, the ui_chatbox_system handles sending
-        ""
-    }
-
     /// Check if this is a client-side only command
     pub fn is_client_command(&self) -> bool {
         matches!(self.chat_type, ChatType::Help) && {

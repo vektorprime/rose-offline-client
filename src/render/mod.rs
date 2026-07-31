@@ -26,9 +26,6 @@ pub use particle_material::*;
 pub mod particle_render_data;
 pub use particle_render_data::*;
 
-pub mod particle_debug;
-pub use particle_debug::{debug_particle_rendering, particle_performance_monitor};
-
 pub mod zone_lighting;
 pub use zone_lighting::SkyMode;
 pub use zone_lighting::SkySettings;
@@ -37,8 +34,7 @@ pub use zone_lighting::ZoneLighting;
 pub use zone_lighting::ZoneLightingPlugin;
 
 pub mod trail_effect;
-pub use trail_effect::TrailEffectRenderPlugin;
-pub use trail_effect::*;
+pub use trail_effect::TrailEffect;
 
 pub mod damage_digit_material;
 pub use damage_digit_material::*;
@@ -53,21 +49,8 @@ pub use wing_material::{WingMaterial, WingMaterialPlugin};
 pub mod object_material_extension;
 pub use object_material_extension::*;
 
-pub mod terrain_material_extension;
-pub use terrain_material_extension::*;
-
-pub mod water_material_extension;
-pub use water_material_extension::*;
-
 pub mod effect_mesh_extension;
 pub use effect_mesh_extension::*;
-
-// Blood overlay material extension for model texture blood effects
-pub mod blood_overlay_material;
-pub use blood_overlay_material::{BloodOverlayExtension, BloodOverlayUniform};
-
-pub mod blood_overlay_shader;
-pub use blood_overlay_shader::BLOOD_OVERLAY_SHADER_PATH;
 
 pub mod extension_material_plugin;
 pub use extension_material_plugin::ExtensionMaterialPlugin;
@@ -84,10 +67,9 @@ pub use underwater_effect::{CameraUnderwaterState, UnderwaterEffectPlugin, Under
 // Procedural starry sky material
 pub mod starry_sky_material;
 pub use starry_sky_material::{
-    create_starry_sky_mesh, moon_light_follow_camera_system, sky_sphere_follow_camera_system,
-    toggle_atmosphere_based_on_time, update_starry_sky_night_factor, update_starry_sky_system,
-    AtmosphereState, MoonLight, StarrySky, StarrySkyMaterial, StarrySkyMaterialPlugin,
-    StarrySkySettings,
+    create_starry_sky_mesh, moon_light_follow_camera_system, toggle_atmosphere_based_on_time,
+    update_starry_sky_night_factor, update_starry_sky_system, AtmosphereState, MoonLight, StarrySky,
+    StarrySkyMaterial, StarrySkyMaterialPlugin, StarrySkySettings,
 };
 
 // Procedural cloud material (2D plane-based)

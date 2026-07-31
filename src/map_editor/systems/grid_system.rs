@@ -3,16 +3,9 @@
 //! This module provides a visual grid for the map editor at y=0.
 //! The grid helps with positioning and alignment of objects.
 
-use bevy::prelude::{
-    App, Assets, Color, Commands, Component, Entity, Gizmos, Handle, InheritedVisibility,
-    IntoScheduleConfigs, Mesh, MeshMaterial3d, Plugin, Query, Res, ResMut, StandardMaterial,
-    Transform, Update, Vec3, With, Without,
-};
+use bevy::prelude::{App, Color, Gizmos, Plugin, Res, Update, Vec3};
 
-use crate::map_editor::{
-    components::{EditorGrid, EditorOnly},
-    resources::{EditorGridSettings, MapEditorState},
-};
+use crate::map_editor::resources::{EditorGridSettings, MapEditorState};
 
 /// Plugin for the editor grid system
 pub struct EditorGridPlugin;
@@ -119,41 +112,6 @@ pub fn grid_render_system(
         Vec3::Z * axis_length,
         Color::srgba(0.0, 0.0, 1.0, 1.0),
     );
-}
-
-/// System to spawn a mesh-based grid (alternative to gizmo grid)
-///
-/// This is useful if you want a more permanent grid that doesn't
-/// rely on gizmos. Currently not used, but available for future use.
-#[allow(dead_code)]
-pub fn grid_spawn_system(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    grid_settings: Res<EditorGridSettings>,
-    query_grid: Query<Entity, With<EditorGrid>>,
-) {
-    // Check if grid already exists
-    if !query_grid.is_empty() {
-        return;
-    }
-
-    // Create a grid mesh
-    // For now, we use gizmos instead, but this could be used for a mesh-based grid
-    let _ = (commands, meshes, materials, grid_settings);
-}
-
-/// System to update grid visibility based on settings
-pub fn grid_visibility_system(
-    grid_settings: Res<EditorGridSettings>,
-    mut query_grid: Query<&mut InheritedVisibility, With<EditorGrid>>,
-) {
-    // Update visibility of mesh-based grid entities
-    for mut visibility in query_grid.iter_mut() {
-        // Note: InheritedVisibility is read-only, we would need Visibility component
-        // to change visibility. This is a placeholder for mesh-based grid.
-        let _ = visibility;
-    }
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@
 //! and allows users to select models for placement.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::egui;
 
 use crate::map_editor::resources::{
     AvailableModels, EditorMode, MapEditorState, ModelCategory, SelectedModel,
@@ -209,23 +209,6 @@ pub fn editor_model_browser_panel(
                 }
             });
         });
-}
-
-/// System to render the model browser panel
-pub fn model_browser_panel_system(
-    mut contexts: EguiContexts,
-    map_editor_state: Res<MapEditorState>,
-    available_models: Res<AvailableModels>,
-    mut selected_model: ResMut<SelectedModel>,
-) {
-    let ctx = contexts.ctx_mut().unwrap();
-
-    editor_model_browser_panel(
-        &*ctx,
-        &map_editor_state,
-        &available_models,
-        &mut selected_model,
-    );
 }
 
 /// Toggle model browser visibility

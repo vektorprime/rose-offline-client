@@ -55,14 +55,10 @@ pub fn ui_game_menu_system(
     let mut response_button_help = None;
     let mut response_button_info = None;
 
-    let response = egui::Window::new("Game Menu")
-        .frame(egui::Frame::none())
+    let response = dialog
+        .window("Game Menu")
         .open(&mut ui_state_windows.menu_open)
-        .title_bar(false)
-        .resizable(false)
         .fixed_pos([dialog.adjust_x, dialog.adjust_y])
-        .default_width(dialog.width)
-        .default_height(dialog.height)
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,

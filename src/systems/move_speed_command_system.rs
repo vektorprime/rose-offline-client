@@ -1,8 +1,3 @@
-use bevy::prelude::*;
-
-use crate::components::PlayerCharacter;
-use crate::events::MoveSpeedSetEvent;
-
 /// Checks if a chat message is a move speed command (case-insensitive)
 /// Returns Some(speed) if the message is a "/mspeed <value>" command, None otherwise
 pub fn parse_move_speed_command(message: &str) -> Option<f32> {
@@ -21,24 +16,6 @@ pub fn parse_move_speed_command(message: &str) -> Option<f32> {
     }
 
     rest.parse::<f32>().ok()
-}
-
-/// System that handles move speed command detection from chat messages.
-///
-/// This system is designed to work alongside the chatbox system.
-/// The chatbox system should check messages before sending to the server
-/// using the [`parse_move_speed_command`] helper function, and if it returns Some,
-/// send a [`MoveSpeedSetEvent`] instead of sending the chat message.
-///
-/// This system provides a standalone way to process move speed commands
-/// if needed for other input methods.
-pub fn move_speed_command_system(
-    mut move_speed_events: MessageWriter<MoveSpeedSetEvent>,
-    player_query: Query<Entity, With<PlayerCharacter>>,
-) {
-    // This system can be used for alternative command input methods
-    // The primary detection happens in ui_chatbox_system.rs
-    let _ = (move_speed_events, player_query);
 }
 
 #[cfg(test)]

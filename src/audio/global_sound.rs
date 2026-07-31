@@ -12,7 +12,6 @@ enum ControlHandle {
     Mono(oddio::Handle<oddio::Stop<oddio::MonoToStereo<oddio::Gain<oddio::Stream<f32>>>>>),
 }
 
-#[allow(dead_code)]
 impl ControlHandle {
     pub fn gain_control(&mut self) -> oddio::GainControl {
         match self {
@@ -37,7 +36,6 @@ pub struct GlobalSound {
     streaming_sound: Option<StreamingSound>,
 }
 
-#[allow(dead_code)]
 impl GlobalSound {
     pub fn new(audio_source: Handle<AudioSource>) -> Self {
         Self {
@@ -63,10 +61,8 @@ pub fn global_sound_gain_changed_system(
 ) {
     for (mut global_sound, gain) in query.iter_mut() {
         if let Some(handle) = global_sound.control_handle.as_mut() {
-            match *gain {
-                SoundGain::Decibel(db) => handle.gain_control().set_gain(db),
-                SoundGain::Ratio(factor) => handle.gain_control().set_amplitude_ratio(factor),
-            }
+            let SoundGain::Ratio(factor) = *gain;
+            handle.gain_control().set_amplitude_ratio(factor);
         }
     }
 }
@@ -124,10 +120,8 @@ pub fn global_sound_system(
                 // Set initial gain based on sound_gain
                 if let Some(gain) = sound_gain {
                     let mut gain_control = handle.control::<oddio::Gain<_>, _>();
-                    match *gain {
-                        SoundGain::Decibel(db) => gain_control.set_gain(db),
-                        SoundGain::Ratio(factor) => gain_control.set_amplitude_ratio(factor),
-                    }
+                    let SoundGain::Ratio(factor) = *gain;
+                    gain_control.set_amplitude_ratio(factor);
                 }
 
                 streaming_sound
@@ -143,10 +137,8 @@ pub fn global_sound_system(
                 // Set initial gain based on sound_gain
                 if let Some(gain) = sound_gain {
                     let mut gain_control = handle.control::<oddio::Gain<_>, _>();
-                    match *gain {
-                        SoundGain::Decibel(db) => gain_control.set_gain(db),
-                        SoundGain::Ratio(factor) => gain_control.set_amplitude_ratio(factor),
-                    }
+                    let SoundGain::Ratio(factor) = *gain;
+                    gain_control.set_amplitude_ratio(factor);
                 }
 
                 streaming_sound.fill_mono(&mut handle.control::<oddio::Stream<_>, _>(), repeating);

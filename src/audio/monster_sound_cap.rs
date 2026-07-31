@@ -2,28 +2,16 @@ use bevy::{
     asset::Handle,
     ecs::system::ResMut,
     math::Vec3,
-    prelude::{
-        Commands, Component, Entity, GlobalTransform, Query, Res, Resource, Transform, With,
-    },
+    prelude::{Commands, Resource},
 };
 
 use crate::{
-    audio::{AudioSource, SoundGain, SoundRadius, SpatialSound},
-    components::{PlayerCharacter, SoundCategory},
+    audio::{spawn_spatial_sound, AudioSource, SoundGain},
+    components::SoundCategory,
 };
 
 /// Maximum number of concurrent monster sounds allowed
 const MAX_CONCURRENT_MONSTER_SOUNDS: usize = 3;
-
-/// A pending monster sound request that will be evaluated for playing
-#[derive(Component)]
-pub struct PendingMonsterSound {
-    pub audio_source: Handle<AudioSource>,
-    pub position: Vec3,
-    pub sound_radius: Option<f32>,
-    pub gain: SoundGain,
-    pub category: SoundCategory,
-}
 
 /// Resource to track active monster sounds in the current frame
 #[derive(Resource, Default)]
@@ -46,14 +34,7 @@ pub struct PendingMonsterSoundData {
 pub fn process_monster_sound_queue_system(
     mut commands: Commands,
     mut sound_queue: ResMut<MonsterSoundQueue>,
-    query_player: Query<&GlobalTransform, With<PlayerCharacter>>,
 ) {
-    // Get player position
-    let player_position = query_player
-        .single()
-        .map(|transform| transform.translation())
-        .unwrap_or(Vec3::ZERO);
-
     // Sort by distance to player (closest first)
     sound_queue.pending_sounds.sort_by(|a, b| {
         a.distance_to_player
@@ -67,17 +48,16 @@ pub fn process_monster_sound_queue_system(
         .drain(..)
         .take(MAX_CONCURRENT_MONSTER_SOUNDS)
     {
-        let mut entity_commands = commands.spawn((
+        let SoundGain::Ratio(gain) = sound_data.gain;
+        spawn_spatial_sound(
+            &mut commands,
+            sound_data.audio_source,
+            sound_data.position,
+            gain,
+            sound_data.sound_radius,
             sound_data.category,
-            sound_data.gain,
-            SpatialSound::new(sound_data.audio_source),
-            Transform::from_translation(sound_data.position),
-            GlobalTransform::from_translation(sound_data.position),
-        ));
-
-        if let Some(radius) = sound_data.sound_radius {
-            entity_commands.insert(SoundRadius::new(radius));
-        }
+            false,
+        );
     }
 
     // Clear any remaining sounds that didn't make the cut

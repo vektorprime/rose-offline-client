@@ -14,7 +14,7 @@
 use bevy::{
     asset::{load_internal_asset, weak_handle, Handle},
     math::Vec3,
-    pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin, MeshPipelineKey},
+    pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin},
     prelude::*,
     reflect::TypePath,
     render::{alpha::AlphaMode, render_resource::*, renderer::RenderDevice},
@@ -31,57 +31,21 @@ pub struct StarrySkyMaterialPlugin;
 
 impl Plugin for StarrySkyMaterialPlugin {
     fn build(&self, app: &mut App) {
-        log::info!("[STARRY SKY PLUGIN] ========== PLUGIN BUILD START ==========");
-
         load_internal_asset!(
             app,
             STARRY_SKY_SHADER_HANDLE,
             "shaders/starry_sky.wgsl",
             Shader::from_wgsl
         );
-        log::info!(
-            "[STARRY SKY PLUGIN] Internal shader asset loaded: {:?}",
-            STARRY_SKY_SHADER_HANDLE
-        );
 
         // Register the material plugin for rendering
         // AlphaMode::Add will place this in Transparent3d phase which runs AFTER atmosphere
         // Note: prepass and shadows are controlled via enable_prepass() and enable_shadows() methods on Material trait
         app.add_plugins(MaterialPlugin::<StarrySkyMaterial>::default());
-        log::info!("[STARRY SKY PLUGIN] MaterialPlugin<StarrySkyMaterial> registered");
 
         // Insert default starry sky settings resource
         app.init_resource::<StarrySkySettings>();
-        log::info!("[STARRY SKY PLUGIN] StarrySkySettings resource initialized");
-
-        // Add diagnostic prepare system
-        app.add_systems(Update, diagnose_starry_sky_materials);
-        log::info!("[STARRY SKY PLUGIN] Diagnostic system added");
-
-        log::info!("[STARRY SKY PLUGIN] ========== PLUGIN BUILD COMPLETE ==========");
     }
-}
-
-/// Diagnostic system to log material preparation status and visibility
-/// DISABLED: All logging has been disabled to reduce console noise
-#[allow(dead_code)]
-fn diagnose_starry_sky_materials(
-    _materials: Res<Assets<StarrySkyMaterial>>,
-    _query: Query<
-        (
-            &MeshMaterial3d<StarrySkyMaterial>,
-            Entity,
-            &Visibility,
-            Option<&ViewVisibility>,
-            Option<&InheritedVisibility>,
-            &Transform,
-        ),
-        With<StarrySky>,
-    >,
-    _camera_query: Query<&GlobalTransform, With<Camera>>,
-) {
-    // All [STARRY SKY PREPARE] logging disabled
-    // To re-enable, replace this function body with the original diagnostic code
 }
 
 /// Resource for starry sky settings
@@ -275,14 +239,11 @@ impl Material for StarrySkyMaterial {
         layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        log::info!("[STARRY SKY SPECIALIZE] Specializing pipeline for StarrySkyMaterial");
-
         // Set up vertex buffer layout - we only need positions for a sky sphere
         let vertex_layout = layout
             .0
             .get_layout(&[Mesh::ATTRIBUTE_POSITION.at_shader_location(0)])?;
         descriptor.vertex.buffers = vec![vertex_layout];
-        log::info!("[STARRY SKY SPECIALIZE] Vertex buffer layout configured");
 
         // Configure blending for standard alpha blending (Solution 2 for ghosting fix)
         // Standard alpha blending prevents color accumulation that causes ghosting
@@ -301,9 +262,6 @@ impl Material for StarrySkyMaterial {
                     },
                 });
             }
-            log::info!(
-                "[STARRY SKY SPECIALIZE] Blend state configured for standard alpha rendering"
-            );
         }
 
         // CRITICAL: Disable depth writes and use GreaterEqual comparison for sky
@@ -313,12 +271,8 @@ impl Material for StarrySkyMaterial {
             depth_stencil.depth_write_enabled = false;
             // Only render sky where no opaque objects are in front
             depth_stencil.depth_compare = CompareFunction::GreaterEqual;
-            log::info!(
-                "[STARRY SKY SPECIALIZE] Depth writes DISABLED, depth_compare = GreaterEqual"
-            );
         }
 
-        log::info!("[STARRY SKY SPECIALIZE] Pipeline specialization complete");
         Ok(())
     }
 }
@@ -389,41 +343,11 @@ pub fn update_starry_sky_system(
     // Count entities with StarrySky component
     let entity_count = query.iter().count();
 
-    // Log every 60 frames (~1 second at 60fps) to avoid log spam
-    //static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    //let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let should_log = false; // Disabled: frame % 60 == 0;
-
-    if should_log {
-        log::info!("[STARRY SKY UPDATE] ========== UPDATE SYSTEM RUNNING ==========");
-        log::info!("[STARRY SKY UPDATE] Elapsed time: {}s", time.elapsed_secs());
-        log::info!("[STARRY SKY UPDATE] Delta secs: {}", time.delta_secs());
-        log::info!(
-            "[STARRY SKY UPDATE] Settings changed: {}",
-            starry_sky_settings.is_changed()
-        );
-        log::info!(
-            "[STARRY SKY UPDATE] StarrySky entities found: {}",
-            entity_count
-        );
-        log::info!("[STARRY SKY UPDATE] Settings - night_factor: {}, star_density: {}, star_brightness: {}",
-            starry_sky_settings.night_factor,
-            starry_sky_settings.star_density,
-            starry_sky_settings.star_brightness
-        );
-    }
-
     if entity_count == 0 {
-        if should_log {
-            log::warn!(
-                "[STARRY SKY UPDATE] No StarrySky entities found! Sky may not have been spawned."
-            );
-        }
         return;
     }
 
     if starry_sky_settings.is_changed() || time.delta_secs() > 0.0 {
-        let mut updated_count = 0;
         for material_handle in query.iter() {
             if let Some(material) = materials.get_mut(&material_handle.0) {
                 material.time = time.elapsed_secs();
@@ -432,79 +356,9 @@ pub fn update_starry_sky_system(
                 material.night_factor = starry_sky_settings.night_factor;
                 material.moon_phase = starry_sky_settings.moon_phase;
                 material.moon_direction = starry_sky_settings.moon_direction;
-                updated_count += 1;
-            } else {
-                if should_log {
-                    log::warn!(
-                        "[STARRY SKY UPDATE] Material handle {:?} not found in assets!",
-                        material_handle.0
-                    );
-                }
-            }
-        }
-
-        if should_log {
-            log::info!("[STARRY SKY UPDATE] Updated {} material(s)", updated_count);
-            log::info!("[STARRY SKY UPDATE] ================================================");
-        }
-    } else {
-        if should_log {
-            log::info!("[STARRY SKY UPDATE] No update needed (settings unchanged, delta=0)");
-        }
-    }
-}
-
-/// System to make the sky sphere follow the camera
-///
-/// IMPORTANT: This system is now DISABLED because it causes star rendering issues.
-/// The shader calculates `dir = normalize(world_position)` which expects the sphere
-/// to be at world origin. Moving the sphere causes incorrect star directions.
-///
-/// The sphere has radius 50000 and the camera is at ~5120, 100, -5120 (~7242 units
-/// from origin), so the camera is well inside the sphere and this system is not needed.
-///
-/// NOTE: If the game world expands beyond radius 50000, re-enable this system and
-/// fix the shader to calculate direction relative to sphere center.
-pub fn sky_sphere_follow_camera_system(
-    camera_query: Query<&GlobalTransform, With<Camera>>,
-    sky_query: Query<&Transform, With<StarrySky>>,
-) {
-    // DIAGNOSTIC: Log once per second to verify sphere is at origin
-    static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-    if frame % 60 == 0 {
-        if let Ok(camera_transform) = camera_query.single() {
-            let camera_pos = camera_transform.translation();
-            let camera_distance = camera_pos.length();
-
-            for sky_transform in sky_query.iter() {
-                let sphere_pos = sky_transform.translation;
-                let sphere_radius = 50000.0;
-
-                // log::info!(
-                //     "[SKY SPHERE] Camera at {:?} (distance: {:.0} from origin), Sphere at {:?}, radius: {}",
-                //     camera_pos, camera_distance, sphere_pos, sphere_radius
-                // );
-
-                if camera_distance > sphere_radius * 0.9 {
-                    log::warn!(
-                        "[SKY SPHERE] Camera is near sphere edge! Distance: {:.0}, Radius: {}",
-                        camera_distance,
-                        sphere_radius
-                    );
-                }
             }
         }
     }
-
-    // DISABLED: Moving the sphere breaks star rendering because the shader
-    // uses normalize(world_position) which expects sphere at origin.
-    // The sphere radius (50000) is large enough to contain the entire game world.
-    //
-    // for mut sky_transform in sky_query.iter_mut() {
-    //     sky_transform.translation = camera_pos;
-    // }
 }
 
 /// System to make the moon light follow the camera and point in the moon direction
@@ -546,155 +400,36 @@ pub fn update_starry_sky_night_factor(
 ) {
     use crate::resources::ZoneTimeState;
 
-    // Set to true to force night mode for testing stars
-    const FORCE_NIGHT_MODE: bool = false;
-
-    // Frame counter for throttling logs
-    static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let _frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let should_log = false; // Disabled - was: frame % 60 == 0
-
-    // DEBUG: Force night mode for testing
-    if FORCE_NIGHT_MODE {
-        if should_log {
-            log::warn!("[NIGHT_FACTOR_UPDATE] ========== DEBUG MODE: FORCING NIGHT ==========");
-            log::warn!(
-                "[NIGHT_FACTOR_UPDATE] FORCE_NIGHT_MODE is enabled - stars should be visible!"
-            );
-        }
-        starry_sky_settings.night_factor = 1.0;
-        return;
-    }
-
-    if should_log {
-        log::info!("[NIGHT_FACTOR_UPDATE] ========== SYSTEM RUNNING ==========");
-        // Frame logging disabled
-    }
-
     // Check if ZoneTime resource exists
     let Some(zone_time) = zone_time else {
-        if should_log {
-            log::error!("[NIGHT_FACTOR_UPDATE] ZoneTime resource DOES NOT EXIST!");
-            log::error!("[NIGHT_FACTOR_UPDATE] This means zone_time_system hasn't run or hasn't inserted the resource.");
-            log::error!(
-                "[NIGHT_FACTOR_UPDATE] Current night_factor in settings: {}",
-                starry_sky_settings.night_factor
-            );
-        }
         return;
     };
 
-    if should_log {
-        log::info!("[NIGHT_FACTOR_UPDATE] ZoneTime resource EXISTS");
-        log::info!("[NIGHT_FACTOR_UPDATE] ZoneTime details:");
-        log::info!("[NIGHT_FACTOR_UPDATE]   state: {:?}", zone_time.state);
-        log::info!(
-            "[NIGHT_FACTOR_UPDATE]   state_percent_complete: {:.2}",
-            zone_time.state_percent_complete
-        );
-        log::info!("[NIGHT_FACTOR_UPDATE]   time: {:.2}", zone_time.time);
-        log::info!(
-            "[NIGHT_FACTOR_UPDATE]   debug_overwrite_time: {:?}",
-            zone_time.debug_overwrite_time
-        );
-        log::info!(
-            "[NIGHT_FACTOR_UPDATE]   is_changed: {}",
-            zone_time.is_changed()
-        );
-    }
-
-    // Store old value for comparison
-    let old_night_factor = starry_sky_settings.night_factor;
-
     // Calculate new night factor based on time state
     let new_night_factor = match zone_time.state {
-        ZoneTimeState::Night => {
-            if should_log {
-                log::info!("[NIGHT_FACTOR_UPDATE] State is NIGHT -> night_factor = 1.0");
-            }
-            1.0
-        }
+        ZoneTimeState::Night => 1.0,
         ZoneTimeState::Evening => {
             // Fade in during second half of evening
             if zone_time.state_percent_complete > 0.5 {
-                let factor = (zone_time.state_percent_complete - 0.5) * 2.0;
-                if should_log {
-                    log::info!("[NIGHT_FACTOR_UPDATE] State is EVENING (2nd half, {:.2}%) -> night_factor = {:.2}",
-                        zone_time.state_percent_complete * 100.0, factor);
-                }
-                factor
+                (zone_time.state_percent_complete - 0.5) * 2.0
             } else {
-                if should_log {
-                    log::info!("[NIGHT_FACTOR_UPDATE] State is EVENING (1st half, {:.2}%) -> night_factor = 0.0",
-                        zone_time.state_percent_complete * 100.0);
-                }
                 0.0
             }
         }
         ZoneTimeState::Morning => {
             // Fade out during first half of morning
             if zone_time.state_percent_complete < 0.5 {
-                let factor = 1.0 - zone_time.state_percent_complete * 2.0;
-                if should_log {
-                    log::info!("[NIGHT_FACTOR_UPDATE] State is MORNING (1st half, {:.2}%) -> night_factor = {:.2}",
-                        zone_time.state_percent_complete * 100.0, factor);
-                }
-                factor
+                1.0 - zone_time.state_percent_complete * 2.0
             } else {
-                if should_log {
-                    log::info!("[NIGHT_FACTOR_UPDATE] State is MORNING (2nd half, {:.2}%) -> night_factor = 0.0",
-                        zone_time.state_percent_complete * 100.0);
-                }
                 0.0
             }
         }
-        ZoneTimeState::Day => {
-            if should_log {
-                log::info!("[NIGHT_FACTOR_UPDATE] State is DAY -> night_factor = 0.0");
-            }
-            0.0
-        }
+        ZoneTimeState::Day => 0.0,
     };
-
-    if should_log {
-        log::info!("[NIGHT_FACTOR_UPDATE] Calculation result:");
-        log::info!(
-            "[NIGHT_FACTOR_UPDATE]   old_night_factor: {:.2}",
-            old_night_factor
-        );
-        log::info!(
-            "[NIGHT_FACTOR_UPDATE]   new_night_factor: {:.2}",
-            new_night_factor
-        );
-        log::info!(
-            "[NIGHT_FACTOR_UPDATE]   values_different: {}",
-            old_night_factor != new_night_factor
-        );
-    }
 
     // Only update if changed (avoids unnecessary change detection)
     if starry_sky_settings.night_factor != new_night_factor {
         starry_sky_settings.night_factor = new_night_factor;
-
-        // Always log when value actually changes
-        // log::info!(
-        //     "[NIGHT_FACTOR_UPDATE] UPDATED: night_factor {:.2} -> {:.2} (state: {:?}, progress: {:.2})",
-        //     old_night_factor,
-        //     new_night_factor,
-        //     zone_time.state,
-        //     zone_time.state_percent_complete
-        // );
-    } else {
-        if should_log {
-            log::info!(
-                "[NIGHT_FACTOR_UPDATE] No change needed (value already {:.2})",
-                new_night_factor
-            );
-        }
-    }
-
-    if should_log {
-        log::info!("[NIGHT_FACTOR_UPDATE] ================================================");
     }
 }
 
@@ -731,39 +466,10 @@ pub fn toggle_atmosphere_based_on_time(
     use crate::resources::ZoneTimeState;
     use bevy::pbr::{Atmosphere, AtmosphereSettings};
 
-    // DEBUG OVERRIDE: Must match FORCE_NIGHT_MODE in update_starry_sky_night_factor
-    // When forcing night mode, also force atmosphere OFF
-    const FORCE_NIGHT_MODE: bool = false;
-
-    // Frame counter for throttling diagnostic logs
-    static FRAME_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let _frame = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let should_log = false; // Disabled - was: frame % 60 == 0
-
-    // DEBUG: Force atmosphere OFF when forcing night mode
-    if FORCE_NIGHT_MODE {
-        if atmosphere_state.enabled {
-            if let Ok(camera_entity) = camera_query.single() {
-                atmosphere_state.enabled = false;
-                commands.entity(camera_entity).remove::<Atmosphere>();
-                commands
-                    .entity(camera_entity)
-                    .remove::<AtmosphereSettings>();
-                log::warn!("[ATMOSPHERE] DEBUG: Forcing atmosphere OFF for night mode testing");
-            }
-        }
-        return;
-    }
-
     // Check if ZoneTime resource exists
     let Some(zone_time) = zone_time else {
         // ZoneTime doesn't exist yet - keep atmosphere ENABLED (default daytime sky)
         // This happens during loading screen before zone is fully loaded
-        if should_log {
-            log::warn!(
-                "[ATMOSPHERE] ZoneTime resource DOES NOT EXIST - keeping atmosphere ENABLED"
-            );
-        }
 
         // Ensure atmosphere is enabled if it was disabled
         if !atmosphere_state.enabled {
@@ -775,7 +481,6 @@ pub fn toggle_atmosphere_based_on_time(
                     ),
                     AtmosphereSettings::default(),
                 ));
-                log::info!("[ATMOSPHERE] Re-enabled atmosphere (ZoneTime was missing)");
             }
         }
         return;
@@ -789,38 +494,8 @@ pub fn toggle_atmosphere_based_on_time(
         ZoneTimeState::Day => true,    // Enable atmosphere during day
     };
 
-    // Diagnostic logging
-    if should_log {
-        log::info!("[ATMOSPHERE] ========== TOGGLE SYSTEM RUNNING ==========");
-        // Frame logging disabled
-        log::info!("[ATMOSPHERE] ZoneTime state: {:?}", zone_time.state);
-        log::info!(
-            "[ATMOSPHERE] ZoneTime progress: {:.2}%",
-            zone_time.state_percent_complete * 100.0
-        );
-        log::info!(
-            "[ATMOSPHERE] Current atmosphere_state.enabled: {}",
-            atmosphere_state.enabled
-        );
-        log::info!(
-            "[ATMOSPHERE] should_enable_atmosphere: {}",
-            should_enable_atmosphere
-        );
-        log::info!(
-            "[ATMOSPHERE] Change needed: {}",
-            atmosphere_state.enabled != should_enable_atmosphere
-        );
-
-        if let Ok(_camera_entity) = camera_query.single() {
-            log::info!("[ATMOSPHERE] Camera entity found");
-        } else {
-            log::warn!("[ATMOSPHERE] No Camera3d entity found!");
-        }
-    }
-
     // Only make changes if state has changed
     if atmosphere_state.enabled != should_enable_atmosphere {
-        let old_state = atmosphere_state.enabled;
         atmosphere_state.enabled = should_enable_atmosphere;
 
         // Find the camera entity and toggle atmosphere components
@@ -833,40 +508,13 @@ pub fn toggle_atmosphere_based_on_time(
                     ),
                     AtmosphereSettings::default(),
                 ));
-                log::info!(
-                    "[ATMOSPHERE] ✓ ENABLED atmosphere: {:?} -> true (state: {:?}, progress: {:.2}%)",
-                    old_state,
-                    zone_time.state,
-                    zone_time.state_percent_complete * 100.0
-                );
             } else {
                 // Remove atmosphere components to show stars
                 commands.entity(camera_entity).remove::<Atmosphere>();
                 commands
                     .entity(camera_entity)
                     .remove::<AtmosphereSettings>();
-                log::info!(
-                    "[ATMOSPHERE] ✗ DISABLED atmosphere: {:?} -> false (state: {:?}, progress: {:.2}%)",
-                    old_state,
-                    zone_time.state,
-                    zone_time.state_percent_complete * 100.0
-                );
             }
-        } else {
-            log::warn!("[ATMOSPHERE] Cannot toggle - no Camera3d entity found!");
         }
-    } else if should_log {
-        log::info!(
-            "[ATMOSPHERE] No change needed (atmosphere already {})",
-            if should_enable_atmosphere {
-                "ENABLED"
-            } else {
-                "DISABLED"
-            }
-        );
-    }
-
-    if should_log {
-        log::info!("[ATMOSPHERE] ================================================");
     }
 }

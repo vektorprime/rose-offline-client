@@ -60,8 +60,6 @@ fn quest_reward_add_item(
                 })
                 .is_some()
             {
-                // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
-                // Need to find alternative approach for sending chatbox events from script functions
                 return true;
             }
         }
@@ -130,7 +128,7 @@ fn quest_reward_select_quest(
 }
 
 fn quest_reward_remove_selected_quest(
-    script_resources: &ScriptFunctionResources,
+    _script_resources: &ScriptFunctionResources,
     script_context: &mut ScriptFunctionContext,
     quest_context: &mut QuestFunctionContext,
 ) -> bool {
@@ -140,9 +138,6 @@ fn quest_reward_remove_selected_quest(
 
     if let Some(quest_index) = quest_context.selected_quest_index {
         if let Some(quest_slot) = quest_state.get_quest_slot_mut(quest_index) {
-            // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
-            // Need to find alternative approach for sending chatbox events from script functions
-
             *quest_slot = None;
             return true;
         }
@@ -169,9 +164,6 @@ fn quest_reward_add_quest(
             quest_context.selected_quest_index = Some(quest_index);
         }
 
-        // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
-        // Need to find alternative approach for sending chatbox events from script functions
-
         return true;
     }
 
@@ -197,9 +189,6 @@ fn quest_reward_change_selected_quest_id(
                 *active_quest =
                     ActiveQuest::new(quest_id, quest_get_expire_time(script_resources, quest_id));
             }
-
-            // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
-            // Need to find alternative approach for sending chatbox events from script functions
 
             return true;
         }
@@ -286,17 +275,6 @@ fn quest_reward_set_next_trigger(
     name: String,
 ) -> bool {
     quest_context.next_quest_trigger = Some(name);
-    true
-}
-
-fn quest_reward_call_lua_function(
-    _script_resources: &ScriptFunctionResources,
-    script_context: &mut ScriptFunctionContext,
-    _quest_context: &mut QuestFunctionContext,
-    name: String,
-) -> bool {
-    // TODO: Event writers removed from ScriptFunctionContext due to lifetime constraints
-    // Need to find alternative approach for sending system func events from script functions
     true
 }
 
@@ -398,12 +376,7 @@ pub fn quest_triggers_apply_rewards(
                 quest_context,
                 name.clone(),
             ),
-            QsdReward::CallLuaFunction { ref name } => quest_reward_call_lua_function(
-                script_resources,
-                script_context,
-                quest_context,
-                name.clone(),
-            ),
+            QsdReward::CallLuaFunction { .. } => true,
             // Server side only rewards:
             QsdReward::AbilityValue { .. }
             | QsdReward::CalculatedExperiencePoints { .. }

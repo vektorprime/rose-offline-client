@@ -6,8 +6,8 @@
 use bevy::{
     input::ButtonInput,
     prelude::{
-        Added, App, Camera, Camera3d, Commands, Entity, GlobalTransform, IntoScheduleConfigs,
-        KeyCode, MouseButton, Or, Plugin, Query, Res, ResMut, Update, With, Without,
+        App, Camera, Camera3d, Commands, Entity, GlobalTransform, IntoScheduleConfigs, KeyCode,
+        MouseButton, Plugin, Query, Res, ResMut, Update, With,
     },
     window::{PrimaryWindow, Window},
 };
@@ -18,7 +18,7 @@ use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter};
 use crate::{
     components::{ColliderParent, COLLISION_FILTER_INSPECTABLE},
     map_editor::{
-        components::{EditorSelectable, SelectedInEditor},
+        components::SelectedInEditor,
         resources::MapEditorState,
     },
 };
@@ -54,7 +54,6 @@ pub fn editor_picking_system(
     query_window: Query<&Window, With<PrimaryWindow>>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     query_collider_parent: Query<&ColliderParent>,
-    query_selectable: Query<&EditorSelectable>,
     query_selected: Query<Entity, With<SelectedInEditor>>,
 ) {
     // Only run when map editor is enabled
@@ -119,13 +118,6 @@ pub fn editor_picking_system(
                         hit_entity
                     };
 
-                // Check if the entity is selectable in the editor
-                let is_selectable = query_selectable.get(target_entity).is_ok();
-
-                // For now, allow selection of all entities with colliders
-                // The EditorSelectable component can be used to filter if needed
-                let _ = is_selectable; // Acknowledge the variable
-
                 // Handle multi-select with Ctrl
                 let ctrl_pressed = keyboard.pressed(KeyCode::ControlLeft)
                     || keyboard.pressed(KeyCode::ControlRight);
@@ -179,15 +171,6 @@ pub fn editor_picking_system(
             // Only process the first camera
             break;
         }
-    }
-
-    // Handle Escape key to deselect all
-    if keyboard.just_pressed(KeyCode::Escape) {
-        for entity in query_selected.iter() {
-            commands.entity(entity).remove::<SelectedInEditor>();
-        }
-        map_editor_state.clear_selection();
-        log::debug!("[MapEditor] Selection cleared via Escape");
     }
 }
 

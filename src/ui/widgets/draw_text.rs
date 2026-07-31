@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::resources::UiResources;
 
-use super::{DataBindings, DrawWidget, GetWidget, LoadWidget, Widget};
+use super::{DataBindings, DrawWidget, LoadWidget};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename = "DRAWTEXT")]
@@ -58,15 +58,5 @@ impl DrawWidget for DrawText {
         ui.allocate_ui_at_rect(rect, |ui| {
             ui.add(egui::Label::new(&self.text));
         });
-    }
-}
-
-impl GetWidget for DrawText {
-    fn get_widget(&self, _id: i32) -> Option<&Widget> {
-        None
-    }
-
-    fn get_widget_mut(&mut self, _id: i32) -> Option<&mut Widget> {
-        None
     }
 }

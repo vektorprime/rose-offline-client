@@ -14,28 +14,13 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
 use crate::components::ZoneObject;
+use crate::map_editor::coords::world_to_block_coords;
 use crate::map_editor::components::SelectedInEditor;
 use crate::map_editor::resources::{
     DeletedZoneObjects, DuplicateSelectedEvent, EditorAction, EditorMode, MapEditorState,
     ZoneObjectType,
 };
 use crate::systems::{FreeCamera, OrbitCamera};
-
-const ZONE_CENTER_X: f32 = 5200.0;
-const ZONE_CENTER_Z: f32 = -5200.0;
-const BLOCK_SIZE_METERS: f32 = 160.0;
-const ZONE_BLOCK_COUNT: u32 = 64;
-
-fn world_to_block_coords(world_translation: Vec3) -> (u32, u32) {
-    let local_x = world_translation.x - ZONE_CENTER_X;
-    let local_z = world_translation.z - ZONE_CENTER_Z;
-    let block_x = ((local_x + ZONE_CENTER_X) / BLOCK_SIZE_METERS).floor() as u32;
-    let block_y = ((local_z + ZONE_CENTER_X) / BLOCK_SIZE_METERS).floor() as u32;
-    (
-        block_x.clamp(0, ZONE_BLOCK_COUNT - 1),
-        block_y.clamp(0, ZONE_BLOCK_COUNT - 1),
-    )
-}
 
 /// System to handle keyboard shortcuts for the map editor
 pub fn keyboard_shortcuts_system(
@@ -96,22 +81,12 @@ pub fn keyboard_shortcuts_system(
         log::info!("[KeyboardShortcuts] Duplicate event sent via Ctrl+D");
     }
 
-    // Handle Ctrl+A - Select all
-    if keyboard.just_pressed(KeyCode::KeyA) && is_ctrl_pressed(&keyboard) {
-        handle_select_all(&mut map_editor_state);
-    }
-
     // Handle Ctrl+Shift+A - Deselect all (alternative)
     if keyboard.just_pressed(KeyCode::KeyA)
         && is_ctrl_pressed(&keyboard)
         && is_shift_pressed(&keyboard)
     {
         handle_deselect_all(&mut map_editor_state, &mut commands, &selected_entities);
-    }
-
-    // Handle F - Focus on selected entity
-    if keyboard.just_pressed(KeyCode::KeyF) {
-        handle_focus_selected(&map_editor_state);
     }
 
     // Handle G - Toggle snap to grid
@@ -174,12 +149,6 @@ fn is_ctrl_pressed(keyboard: &ButtonInput<KeyCode>) -> bool {
 /// Check if Shift is pressed (either left or right)
 fn is_shift_pressed(keyboard: &ButtonInput<KeyCode>) -> bool {
     keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight)
-}
-
-/// Check if Alt is pressed (either left or right)
-#[allow(dead_code)]
-fn is_alt_pressed(keyboard: &ButtonInput<KeyCode>) -> bool {
-    keyboard.pressed(KeyCode::AltLeft) || keyboard.pressed(KeyCode::AltRight)
 }
 
 /// Handle mode switching with E/R/Q/V/X keys
@@ -348,81 +317,6 @@ fn handle_delete_selected(
         entities.len(),
         deleted_zone_objects.len()
     );
-}
-
-/// Handle Ctrl+A - Select all entities
-fn handle_select_all(map_editor_state: &mut MapEditorState) {
-    // For a full implementation, we would:
-    // 1. Query all selectable entities (with EditorSelectable component)
-    // 2. Add SelectedInEditor component to all
-    // 3. Add all to map_editor_state.selected_entities
-
-    log::info!("[KeyboardShortcuts] Select all (not fully implemented)");
-}
-
-/// Handle F - Focus on selected entity
-fn handle_focus_selected(map_editor_state: &MapEditorState) {
-    if map_editor_state.selection_count() == 0 {
-        return;
-    }
-
-    // For a full implementation, we would:
-    // 1. Get the first selected entity's transform
-    // 2. Move the editor camera to focus on it
-
-    if let Some(_entity) = map_editor_state.first_selected() {
-        log::info!("[KeyboardShortcuts] Focus on selected entity (not fully implemented)");
-    }
-}
-
-/// System to display keyboard shortcuts help overlay
-#[allow(dead_code)]
-pub fn keyboard_shortcuts_help_system(
-    map_editor_state: Res<MapEditorState>,
-    mut egui_contexts: EguiContexts,
-) {
-    if !map_editor_state.enabled {
-        return;
-    }
-
-    let binding = egui_contexts.ctx_mut();
-    let ctx = binding.as_ref().unwrap();
-
-    // Show help when H is pressed (would need keyboard input)
-    // For now, this is a placeholder for a help overlay
-
-    egui::Window::new("Keyboard Shortcuts")
-        .collapsible(true)
-        .default_open(false)
-        .show(ctx, |ui| {
-            ui.label("Selection:");
-            ui.label("  Click - Select object");
-            ui.label("  Ctrl+Click - Add to selection");
-            ui.label("  Ctrl+A - Select all");
-            ui.label("  Escape - Deselect all");
-            ui.label("");
-            ui.label("Transform Modes:");
-            ui.label("  Q - Select mode");
-            ui.label("  W - Translate mode");
-            ui.label("  E - Rotate mode");
-            ui.label("  R - Scale mode");
-            ui.label("");
-            ui.label("Camera:");
-            ui.label("  Tab - Toggle free/orbit camera");
-            ui.label("");
-            ui.label("Actions:");
-            ui.label("  Delete - Delete selected");
-            ui.label("  Ctrl+D - Duplicate selected");
-            ui.label("  Ctrl+Z - Undo");
-            ui.label("  Ctrl+Y - Redo");
-            ui.label("  G - Toggle snap to grid");
-            ui.label("  F - Focus on selected");
-            ui.label("");
-            ui.label("File:");
-            ui.label("  Ctrl+S - Save");
-            ui.label("  Ctrl+O - Open");
-            ui.label("  Ctrl+N - New");
-        });
 }
 
 /// Plugin for keyboard shortcuts system

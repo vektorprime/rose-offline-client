@@ -30,20 +30,19 @@ use bevy::{
     ecs::{schedule::IntoScheduleConfigs, system::SystemParam},
     prelude::*,
 };
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::EguiContexts;
 use bevy_rapier3d::prelude::{Collider, CollisionGroups, RigidBody};
-use std::io::Write;
 use std::path::PathBuf;
 
 use crate::components::{
-    EventObject, MapEditorTerrainBlock, MapEditorWaterPlane, WarpObject, Zone, ZoneObject,
-    COLLISION_FILTER_INSPECTABLE, COLLISION_GROUP_ZONE_WATER,
+    MapEditorTerrainBlock, MapEditorWaterPlane, Zone, ZoneObject, COLLISION_FILTER_INSPECTABLE,
+    COLLISION_GROUP_ZONE_WATER,
 };
 use crate::events::LoadZoneEvent;
+use crate::map_editor::coords::{write_him_file, write_til_file};
 use crate::map_editor::components::SelectedInEditor;
 use crate::map_editor::resources::{
-    AvailableModels, DuplicateSelectedEvent, EditorMode, HierarchyFilter, MapEditorState,
-    SelectedModel,
+    AvailableModels, DuplicateSelectedEvent, MapEditorState, SelectedModel,
 };
 use crate::map_editor::save::ifo_export::export_ifo_block;
 use crate::map_editor::save::ifo_types::IfoBlock;
@@ -51,7 +50,6 @@ use crate::map_editor::save::{SaveStatus, SaveZoneEvent};
 use crate::map_editor::systems::property_update_system::PropertyChangeEvent;
 use crate::render::WaterMaterial;
 use crate::resources::{CurrentZone, GameData};
-use crate::zone_loader::ZoneLoaderAsset;
 use crate::VfsResource;
 use rose_data::ZoneId;
 
@@ -206,7 +204,6 @@ pub fn editor_ui_system(
     // Menu Bar (top)
     editor_menu_bar(
         &*ctx,
-        &map_editor_state,
         &save_status,
         current_zone_id,
         next_zone_id_hint,
@@ -537,15 +534,17 @@ fn bootstrap_default_zone_blocks(zone_path: &PathBuf) -> Result<(), anyhow::Erro
     // a full editable terrain surface for the new custom zone path.
     for block_y in 0..64u32 {
         for block_x in 0..64u32 {
-            write_default_him(
+            write_him_file(
                 &zone_path.join(format!("{}_{}.HIM", block_x, block_y)),
                 65,
                 65,
+                &vec![0.0f32; 65 * 65],
             )?;
-            write_default_til(
+            write_til_file(
                 &zone_path.join(format!("{}_{}.TIL", block_x, block_y)),
                 16,
                 16,
+                &vec![0u32; 16 * 16],
             )?;
 
             let mut ifo_block = IfoBlock::new(block_x, block_y);
@@ -557,41 +556,5 @@ fn bootstrap_default_zone_blocks(zone_path: &PathBuf) -> Result<(), anyhow::Erro
         }
     }
 
-    Ok(())
-}
-
-fn write_default_him(path: &PathBuf, width: u32, height: u32) -> Result<(), anyhow::Error> {
-    let mut data = Vec::new();
-    data.extend_from_slice(&width.to_le_bytes());
-    data.extend_from_slice(&height.to_le_bytes());
-    data.extend_from_slice(&0u32.to_le_bytes());
-    data.extend_from_slice(&0u32.to_le_bytes());
-
-    let count = (width * height) as usize;
-    for _ in 0..count {
-        data.extend_from_slice(&0.0f32.to_le_bytes());
-    }
-
-    let mut file = std::fs::File::create(path)?;
-    file.write_all(&data)?;
-    Ok(())
-}
-
-fn write_default_til(path: &PathBuf, width: u32, height: u32) -> Result<(), anyhow::Error> {
-    let mut data = Vec::new();
-    data.extend_from_slice(&width.to_le_bytes());
-    data.extend_from_slice(&height.to_le_bytes());
-
-    let count = (width * height) as usize;
-    // Use tile index 0 for all tiles - this references the first tile definition in the ZON file
-    // which typically has valid texture references (layer1=0, layer2=0, offset1=0, offset2=0)
-    // The 3 bytes before the tile index are reserved/unused in the TIL format
-    for _ in 0..count {
-        data.extend_from_slice(&[0u8; 3]);
-        data.extend_from_slice(&0u32.to_le_bytes()); // Use tile index 0 (first tile, 0-indexed)
-    }
-
-    let mut file = std::fs::File::create(path)?;
-    file.write_all(&data)?;
     Ok(())
 }

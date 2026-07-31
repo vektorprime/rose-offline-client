@@ -307,10 +307,73 @@ fn get_vehicle_move_animation_speed(move_speed: &MoveSpeed) -> f32 {
     (move_speed.speed + 500.0) / 1000.0
 }
 
-pub struct QueryAttackTarget {
-    entity: Entity,
-    position: Position,
-    dead: Option<Dead>,
+fn update_stop_motion(
+    commands: &mut Commands,
+    active_motion_entity: Entity,
+    active_motion: &mut Option<Mut<SkeletalAnimation>>,
+    character_model: Option<&CharacterModel>,
+    npc_model: Option<&NpcModel>,
+    vehicle: Option<&Vehicle>,
+    vehicle_model: Option<&VehicleModel>,
+    vehicle_active_motion_entity: Entity,
+    vehicle_active_motion: &mut Option<Mut<SkeletalAnimation>>,
+) {
+    if let Some(motion) = get_stop_animation(character_model, npc_model, vehicle) {
+        update_active_motion(
+            &mut commands.entity(active_motion_entity),
+            active_motion,
+            motion,
+            1.0,
+            true,
+        );
+    }
+
+    if let Some(motion) = get_vehicle_action_animation(vehicle_model, VehicleMotionAction::Stop) {
+        update_active_motion(
+            &mut commands.entity(vehicle_active_motion_entity),
+            vehicle_active_motion,
+            motion,
+            1.0,
+            true,
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_move_motion(
+    commands: &mut Commands,
+    active_motion_entity: Entity,
+    active_motion: &mut Option<Mut<SkeletalAnimation>>,
+    move_mode: &MoveMode,
+    character_model: Option<&CharacterModel>,
+    npc_model: Option<&NpcModel>,
+    vehicle: Option<&Vehicle>,
+    move_speed: &MoveSpeed,
+    vehicle_model: Option<&VehicleModel>,
+    vehicle_active_motion_entity: Entity,
+    vehicle_active_motion: &mut Option<Mut<SkeletalAnimation>>,
+) {
+    if let Some(motion) = get_move_animation(move_mode, character_model, npc_model, vehicle) {
+        update_active_motion(
+            &mut commands.entity(active_motion_entity),
+            active_motion,
+            motion,
+            get_move_animation_speed(move_speed),
+            true,
+        );
+
+        if let Some(motion) =
+            get_vehicle_action_animation(vehicle_model, VehicleMotionAction::Move)
+        {
+            update_active_motion(
+                &mut commands.entity(vehicle_active_motion_entity),
+                vehicle_active_motion,
+                motion,
+                get_vehicle_move_animation_speed(move_speed),
+                true,
+            )
+        }
+    }
 }
 
 pub fn command_system(
@@ -408,14 +471,6 @@ pub fn command_system(
         let vehicle_active_motion_completed = vehicle_active_motion
             .as_ref()
             .map_or(true, |animation| animation.completed());
-
-        // DIAGNOSTIC: Disabled - Log animation state for player characters
-        // if player_character.is_some() {
-        //     log::info!("[RESPAWN_CMD_DIAG] Player command: {:?}, next_command: {:?}, dead: {:?}",
-        //         command.as_ref(), next_command.as_ref(), dead.is_some());
-        //     log::info!("[RESPAWN_CMD_DIAG] Animation completed: {}, requires_anim_complete: {}",
-        //         active_motion_completed, requires_animation_complete);
-        // }
 
         if !next_command.is_die()
             && requires_animation_complete
@@ -572,27 +627,17 @@ pub fn command_system(
                     }
                 } else {
                     // Nothing to do, ensure we are using correct idle animation
-                    if let Some(motion) = get_stop_animation(character_model, npc_model, vehicle) {
-                        update_active_motion(
-                            &mut commands.entity(active_motion_entity),
-                            &mut active_motion,
-                            motion,
-                            1.0,
-                            true,
-                        );
-                    }
-
-                    if let Some(motion) =
-                        get_vehicle_action_animation(vehicle_model, VehicleMotionAction::Stop)
-                    {
-                        update_active_motion(
-                            &mut commands.entity(vehicle_active_motion_entity),
-                            &mut vehicle_active_motion,
-                            motion,
-                            1.0,
-                            true,
-                        )
-                    }
+                    update_stop_motion(
+                        &mut commands,
+                        active_motion_entity,
+                        &mut active_motion,
+                        character_model,
+                        npc_model,
+                        vehicle,
+                        vehicle_model,
+                        vehicle_active_motion_entity,
+                        &mut vehicle_active_motion,
+                    );
 
                     continue;
                 }
@@ -617,27 +662,17 @@ pub fn command_system(
 
         match (*next_command).as_mut().unwrap() {
             Command::Stop => {
-                if let Some(motion) = get_stop_animation(character_model, npc_model, vehicle) {
-                    update_active_motion(
-                        &mut commands.entity(active_motion_entity),
-                        &mut active_motion,
-                        motion,
-                        1.0,
-                        true,
-                    );
-                }
-
-                if let Some(motion) =
-                    get_vehicle_action_animation(vehicle_model, VehicleMotionAction::Stop)
-                {
-                    update_active_motion(
-                        &mut commands.entity(vehicle_active_motion_entity),
-                        &mut vehicle_active_motion,
-                        motion,
-                        1.0,
-                        true,
-                    )
-                }
+                update_stop_motion(
+                    &mut commands,
+                    active_motion_entity,
+                    &mut active_motion,
+                    character_model,
+                    npc_model,
+                    vehicle,
+                    vehicle_model,
+                    vehicle_active_motion_entity,
+                    &mut vehicle_active_motion,
+                );
 
                 *command = Command::with_stop();
                 *next_command = NextCommand::default();
@@ -780,30 +815,19 @@ pub fn command_system(
                     // Move towards destination
                     *command = Command::with_move(*destination, *target, *command_move_mode);
 
-                    if let Some(motion) =
-                        get_move_animation(move_mode, character_model, npc_model, vehicle)
-                    {
-                        update_active_motion(
-                            &mut commands.entity(active_motion_entity),
-                            &mut active_motion,
-                            motion,
-                            get_move_animation_speed(move_speed),
-                            true,
-                        );
-                    }
-
-                    // Update vehicle motion
-                    if let Some(motion) =
-                        get_vehicle_action_animation(vehicle_model, VehicleMotionAction::Move)
-                    {
-                        update_active_motion(
-                            &mut commands.entity(vehicle_active_motion_entity),
-                            &mut vehicle_active_motion,
-                            motion,
-                            get_vehicle_move_animation_speed(move_speed),
-                            true,
-                        )
-                    }
+                    update_move_motion(
+                        &mut commands,
+                        active_motion_entity,
+                        &mut active_motion,
+                        move_mode,
+                        character_model,
+                        npc_model,
+                        vehicle,
+                        move_speed,
+                        vehicle_model,
+                        vehicle_active_motion_entity,
+                        &mut vehicle_active_motion,
+                    );
                 }
             }
             &mut Command::Attack(CommandAttack {
@@ -871,8 +895,8 @@ pub fn command_system(
                     }
                 } else {
                     // Not in range, move towards target
-                    let motion = get_move_animation(move_mode, character_model, npc_model, vehicle);
-                    if let Some(motion) = motion {
+                    if get_move_animation(move_mode, character_model, npc_model, vehicle).is_some()
+                    {
                         let direction_to_target = target.1.position.xy() - position.position.xy();
                         let move_destination = if direction_to_target.length_squared() > 0.0 {
                             let offset = direction_to_target.normalize() * attack_range;
@@ -891,25 +915,19 @@ pub fn command_system(
                             Some(MoveMode::Run),
                         );
 
-                        update_active_motion(
-                            &mut commands.entity(active_motion_entity),
+                        update_move_motion(
+                            &mut commands,
+                            active_motion_entity,
                             &mut active_motion,
-                            motion,
-                            get_move_animation_speed(move_speed),
-                            true,
+                            move_mode,
+                            character_model,
+                            npc_model,
+                            vehicle,
+                            move_speed,
+                            vehicle_model,
+                            vehicle_active_motion_entity,
+                            &mut vehicle_active_motion,
                         );
-
-                        if let Some(motion) =
-                            get_vehicle_action_animation(vehicle_model, VehicleMotionAction::Move)
-                        {
-                            update_active_motion(
-                                &mut commands.entity(vehicle_active_motion_entity),
-                                &mut vehicle_active_motion,
-                                motion,
-                                get_vehicle_move_animation_speed(move_speed),
-                                true,
-                            )
-                        }
                     } else {
                         // No move animation, stop attack
                         *next_command = NextCommand::default();

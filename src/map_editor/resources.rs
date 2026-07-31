@@ -76,24 +76,6 @@ pub struct MapEditorState {
 }
 
 impl MapEditorState {
-    /// Create a new MapEditorState with default values
-    pub fn new() -> Self {
-        Self {
-            enabled: true,
-            selected_entities: HashSet::new(),
-            editor_mode: EditorMode::default(),
-            transform_space: TransformSpace::default(),
-            snap_to_grid: true,
-            grid_size: 1.0,
-            show_grid: true,
-            is_modified: false,
-            model_browser_search: String::new(),
-            hierarchy_filter: String::new(),
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
-        }
-    }
-
     /// Clear all selected entities
     pub fn clear_selection(&mut self) {
         self.selected_entities.clear();
@@ -267,47 +249,6 @@ impl TransformSpace {
     }
 }
 
-/// Selection mode for the map editor
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SelectionMode {
-    #[default]
-    Single,
-    Multi,
-    Area,
-}
-
-/// Hierarchy filter options
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HierarchyFilter {
-    #[default]
-    All,
-    DecoObjects,
-    CnstObjects,
-    EventObjects,
-    WarpObjects,
-    Terrain,
-    Water,
-    Effects,
-    Sounds,
-}
-
-impl HierarchyFilter {
-    /// Get a display name for the filter
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            HierarchyFilter::All => "All",
-            HierarchyFilter::DecoObjects => "Deco Objects",
-            HierarchyFilter::CnstObjects => "Cnst Objects",
-            HierarchyFilter::EventObjects => "Event Objects",
-            HierarchyFilter::WarpObjects => "Warp Objects",
-            HierarchyFilter::Terrain => "Terrain",
-            HierarchyFilter::Water => "Water",
-            HierarchyFilter::Effects => "Effects",
-            HierarchyFilter::Sounds => "Sounds",
-        }
-    }
-}
-
 /// Model category for the model browser
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelCategory {
@@ -408,17 +349,6 @@ impl AvailableModels {
             ModelCategory::Event => &self.event_models,
             ModelCategory::Special => &self.special_models,
             ModelCategory::All => &[], // Use all_models() iterator instead
-        }
-    }
-
-    /// Get mutable models for a specific category
-    pub fn get_models_mut(&mut self, category: ModelCategory) -> &mut Vec<ModelInfo> {
-        match category {
-            ModelCategory::Deco => &mut self.deco_models,
-            ModelCategory::Cnst => &mut self.cnst_models,
-            ModelCategory::Event => &mut self.event_models,
-            ModelCategory::Special => &mut self.special_models,
-            ModelCategory::All => &mut self.deco_models, // Fallback
         }
     }
 

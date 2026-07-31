@@ -108,40 +108,10 @@ impl Default for WinterSettings {
 /// Summer-specific settings
 #[derive(Resource, Debug, Clone, Reflect)]
 pub struct SummerSettings {
-    /// Maximum number of grass blades to spawn (CPU-based, deprecated)
-    #[deprecated(
-        since = "0.2.0",
-        note = "CPU-based grass is deprecated. Use GPU-based procedural grass instead."
-    )]
-    pub max_grass_blades: usize,
     /// Maximum number of flowers to spawn
     pub max_flowers: usize,
     /// Spawn radius around player for vegetation
     pub spawn_radius: f32,
-    /// Grass blade height range (CPU-based, deprecated)
-    #[deprecated(
-        since = "0.2.0",
-        note = "CPU-based grass is deprecated. Use blade_length for GPU grass instead."
-    )]
-    pub grass_height_range: (f32, f32),
-    /// Grass blade width (CPU-based, deprecated)
-    #[deprecated(
-        since = "0.2.0",
-        note = "CPU-based grass is deprecated. Use blade_width for GPU grass instead."
-    )]
-    pub grass_width: f32,
-    /// Grass sway speed (CPU-based, deprecated)
-    #[deprecated(
-        since = "0.2.0",
-        note = "CPU-based grass animation is deprecated. GPU grass uses GrassWind resource."
-    )]
-    pub grass_sway_speed: f32,
-    /// Grass sway amplitude (radians) (CPU-based, deprecated)
-    #[deprecated(
-        since = "0.2.0",
-        note = "CPU-based grass animation is deprecated. GPU grass uses GrassWind resource."
-    )]
-    pub grass_sway_amplitude: f32,
     /// Flower spawn chance per frame
     pub flower_spawn_chance: f32,
     /// Flower colors
@@ -174,13 +144,8 @@ pub struct SummerSettings {
 impl Default for SummerSettings {
     fn default() -> Self {
         Self {
-            max_grass_blades: 50000, // Increased to 50000
             max_flowers: 1000,       // Increased 10x from 100 for visibility
             spawn_radius: 50.0,
-            grass_height_range: (0.6, 1.6), // 2x original (0.3, 0.8)
-            grass_width: 0.2,               // 2x original (0.1)
-            grass_sway_speed: 1.5,
-            grass_sway_amplitude: 0.1,
             flower_spawn_chance: 0.02,
             flower_colors: vec![
                 Color::srgb(1.0, 0.9, 0.3), // Yellow (sunflower-like)

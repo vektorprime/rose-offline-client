@@ -4,12 +4,12 @@
 //! It draws selection outlines/highlights using Bevy's gizmo system.
 
 use bevy::prelude::{
-    App, Color, Entity, Gizmos, GlobalTransform, InheritedVisibility, IntoScheduleConfigs, Plugin,
-    Query, Res, Transform, Update, Vec3, With, Without,
+    App, Color, Gizmos, GlobalTransform, InheritedVisibility, Plugin, Query, Res, Transform,
+    Update, Vec3, With,
 };
 
 use crate::map_editor::{
-    components::{EditorSelectable, SelectedInEditor},
+    components::SelectedInEditor,
     resources::MapEditorState,
 };
 
@@ -32,10 +32,9 @@ pub fn selection_highlight_system(
     map_editor_state: Res<MapEditorState>,
     mut gizmos: Gizmos,
     query_selected: Query<
-        (Entity, &GlobalTransform, Option<&InheritedVisibility>),
+        (&GlobalTransform, Option<&InheritedVisibility>),
         With<SelectedInEditor>,
     >,
-    query_selectable: Query<&GlobalTransform, (With<EditorSelectable>, Without<SelectedInEditor>)>,
 ) {
     // Only run when map editor is enabled
     if !map_editor_state.enabled {
@@ -45,11 +44,8 @@ pub fn selection_highlight_system(
     // Selection highlight color (bright cyan)
     let selection_color = Color::srgba(0.0, 1.0, 1.0, 0.8);
 
-    // Hover color for selectable but not selected entities
-    let _hover_color = Color::srgba(1.0, 1.0, 0.0, 0.4);
-
     // Draw selection boxes around all selected entities
-    for (entity, transform, visibility) in query_selected.iter() {
+    for (transform, visibility) in query_selected.iter() {
         // Skip invisible entities
         if let Some(vis) = visibility {
             if !vis.get() {
@@ -77,19 +73,12 @@ pub fn selection_highlight_system(
         // Draw a wireframe cube around the selected entity using cube
         gizmos.cube(cube_transform, selection_color);
 
-        // Draw entity index indicator
-        let _ = entity; // Acknowledge entity variable
-
         // Note: In a full implementation, you might want to:
         // - Get actual mesh bounding boxes for more accurate outlines
         // - Draw entity names/IDs above selected entities
         // - Use different colors for different selection states
         // - Apply outline post-processing effects
     }
-
-    // Optionally draw indicators for selectable entities (when hovering)
-    // This would require mouse hover detection which can be added later
-    let _ = query_selectable; // Acknowledge the query for future use
 }
 
 #[cfg(test)]

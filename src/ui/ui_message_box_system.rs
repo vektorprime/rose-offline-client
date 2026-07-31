@@ -36,6 +36,24 @@ pub struct UiStateMessageBox {
     window_ids: Vec<(bool, egui::Id)>,
 }
 
+pub fn draw_modal_blocker(ctx: &egui::Context, id: &str) {
+    egui::Area::new(egui::Id::new(id))
+        .interactable(true)
+        .fixed_pos(egui::Pos2::ZERO)
+        .show(ctx, |ui| {
+            let interceptor_rect = ui.ctx().input(|input| input.screen_rect());
+
+            ui.allocate_response(interceptor_rect.size(), egui::Sense::click_and_drag());
+            ui.allocate_ui_at_rect(interceptor_rect, |ui| {
+                ui.painter().add(egui::epaint::Shape::rect_filled(
+                    interceptor_rect,
+                    0.0,
+                    egui::Color32::from_rgba_unmultiplied(0, 0, 0, 144),
+                ));
+            });
+        });
+}
+
 pub fn ui_message_box_system(
     mut commands: Commands,
     mut ui_state: Local<UiStateMessageBox>,
@@ -110,21 +128,7 @@ pub fn ui_message_box_system(
     }
 
     if ui_state.active.iter().any(|x| x.modal) {
-        egui::Area::new(egui::Id::new("modal_msgbox"))
-            .interactable(true)
-            .fixed_pos(egui::Pos2::ZERO)
-            .show(egui_context.ctx_mut().unwrap(), |ui| {
-                let interceptor_rect = ui.ctx().input(|input| input.screen_rect());
-
-                ui.allocate_response(interceptor_rect.size(), egui::Sense::click_and_drag());
-                ui.allocate_ui_at_rect(interceptor_rect, |ui| {
-                    ui.painter().add(egui::epaint::Shape::rect_filled(
-                        interceptor_rect,
-                        0.0,
-                        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 144),
-                    ));
-                });
-            });
+        draw_modal_blocker(egui_context.ctx_mut().unwrap(), "modal_msgbox");
     }
 
     let mut i = 0;

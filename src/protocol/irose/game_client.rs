@@ -91,6 +91,17 @@ impl GameClient {
     }
 
     async fn handle_packet(&self, packet: &Packet) -> Result<(), anyhow::Error> {
+        macro_rules! server_message {
+            ($packet_type:ident, $message:ident { $( $field:ident ),+ $(,)? }) => {
+                let message = $packet_type::try_from(packet)?;
+                self.server_message_tx
+                    .send(ServerMessage::$message {
+                        $( $field: message.$field ),+
+                    })
+                    .ok();
+            };
+        }
+
         match FromPrimitive::from_u16(packet.command) {
             Some(ServerPackets::ConnectReply) => {
                 let response = PacketConnectionReply::try_from(packet)?;
@@ -168,42 +179,19 @@ impl GameClient {
                     .ok();
             }
             Some(ServerPackets::MoveEntity) | Some(ServerPackets::MoveEntityWithMoveMode) => {
-                let response = PacketServerMoveEntity::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::MoveEntity {
-                        entity_id: response.entity_id,
-                        target_entity_id: response.target_entity_id,
-                        distance: response.distance,
-                        x: response.x,
-                        y: response.y,
-                        z: response.z,
-                        move_mode: response.move_mode,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerMoveEntity,
+                    MoveEntity { entity_id, target_entity_id, distance, x, y, z, move_mode }
+                );
             }
             Some(ServerPackets::StopMoveEntity) => {
-                let response = PacketServerStopMoveEntity::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::StopMoveEntity {
-                        entity_id: response.entity_id,
-                        x: response.x,
-                        y: response.y,
-                        z: response.z,
-                    })
-                    .ok();
+                server_message!(PacketServerStopMoveEntity, StopMoveEntity { entity_id, x, y, z });
             }
             Some(ServerPackets::AttackEntity) => {
-                let response = PacketServerAttackEntity::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::AttackEntity {
-                        entity_id: response.entity_id,
-                        target_entity_id: response.target_entity_id,
-                        distance: response.distance,
-                        x: response.x,
-                        y: response.y,
-                        z: response.z,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerAttackEntity,
+                    AttackEntity { entity_id, target_entity_id, distance, x, y, z }
+                );
             }
             Some(ServerPackets::PickupItemDropResult) => {
                 let message = match PacketServerPickupItemDropResult::try_from(packet)? {
@@ -257,47 +245,47 @@ impl GameClient {
                     .ok();
             }
             Some(ServerPackets::SpawnEntityNpc) => {
-                let message = PacketServerSpawnEntityNpc::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::SpawnEntityNpc {
-                        entity_id: message.entity_id,
-                        npc: message.npc,
-                        direction: message.direction,
-                        position: message.position,
-                        team: message.team,
-                        health: message.health,
-                        spawn_command_state: message.spawn_command_state,
-                        move_mode: message.move_mode,
-                        status_effects: message.status_effects,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerSpawnEntityNpc,
+                    SpawnEntityNpc {
+                        entity_id,
+                        npc,
+                        direction,
+                        position,
+                        team,
+                        health,
+                        spawn_command_state,
+                        move_mode,
+                        status_effects
+                    }
+                );
             }
             Some(ServerPackets::SpawnEntityMonster) => {
-                let message = PacketServerSpawnEntityMonster::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::SpawnEntityMonster {
-                        entity_id: message.entity_id,
-                        npc: message.npc,
-                        position: message.position,
-                        team: message.team,
-                        health: message.health,
-                        spawn_command_state: message.spawn_command_state,
-                        move_mode: message.move_mode,
-                        status_effects: message.status_effects,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerSpawnEntityMonster,
+                    SpawnEntityMonster {
+                        entity_id,
+                        npc,
+                        position,
+                        team,
+                        health,
+                        spawn_command_state,
+                        move_mode,
+                        status_effects
+                    }
+                );
             }
             Some(ServerPackets::SpawnEntityItemDrop) => {
-                let message = PacketServerSpawnEntityItemDrop::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::SpawnEntityItemDrop {
-                        entity_id: message.entity_id,
-                        position: message.position,
-                        dropped_item: message.dropped_item,
-                        remaining_time: message.remaining_time,
-                        owner_entity_id: message.owner_entity_id,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerSpawnEntityItemDrop,
+                    SpawnEntityItemDrop {
+                        entity_id,
+                        position,
+                        dropped_item,
+                        remaining_time,
+                        owner_entity_id
+                    }
+                );
             }
             Some(ServerPackets::DamageEntity) => {
                 let message = PacketServerDamageEntity::try_from(packet)?;
@@ -313,25 +301,13 @@ impl GameClient {
                     .ok();
             }
             Some(ServerPackets::RemoveEntities) => {
-                let message = PacketServerRemoveEntities::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::RemoveEntities {
-                        entity_ids: message.entity_ids,
-                    })
-                    .ok();
+                server_message!(PacketServerRemoveEntities, RemoveEntities { entity_ids });
             }
             Some(ServerPackets::Teleport) => {
-                let message = PacketServerTeleport::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::Teleport {
-                        entity_id: message.entity_id,
-                        zone_id: message.zone_id,
-                        x: message.x,
-                        y: message.y,
-                        run_mode: message.run_mode,
-                        ride_mode: message.ride_mode,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerTeleport,
+                    Teleport { entity_id, zone_id, x, y, run_mode, ride_mode }
+                );
             }
             Some(ServerPackets::LocalChat) => {
                 let message = PacketServerLocalChat::try_from(packet)?;
@@ -370,33 +346,16 @@ impl GameClient {
                     .ok();
             }
             Some(ServerPackets::UpdateAmmo) => {
-                let PacketServerUpdateAmmo {
-                    entity_id,
-                    ammo_index,
-                    item,
-                } = packet.try_into()?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateAmmo {
-                        entity_id,
-                        ammo_index,
-                        item,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerUpdateAmmo,
+                    UpdateAmmo { entity_id, ammo_index, item }
+                );
             }
             Some(ServerPackets::UpdateEquipment) => {
-                let PacketServerUpdateEquipment {
-                    entity_id,
-                    equipment_index,
-                    item,
-                    ..
-                } = packet.try_into()?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateEquipment {
-                        entity_id,
-                        equipment_index,
-                        item,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerUpdateEquipment,
+                    UpdateEquipment { entity_id, equipment_index, item }
+                );
             }
             Some(ServerPackets::UpdateInventory) | Some(ServerPackets::UpdateMoneyAndInventory) => {
                 let PacketServerUpdateInventory {
@@ -408,45 +367,22 @@ impl GameClient {
                     .ok();
             }
             Some(ServerPackets::UpdateMoney) => {
-                let message = PacketServerUpdateMoney::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateMoney {
-                        money: message.money,
-                    })
-                    .ok();
+                server_message!(PacketServerUpdateMoney, UpdateMoney { money });
             }
             Some(ServerPackets::UpdateVehiclePart) => {
-                let PacketServerUpdateVehiclePart {
-                    entity_id,
-                    vehicle_part_index,
-                    item,
-                    ..
-                } = packet.try_into()?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateVehiclePart {
-                        entity_id,
-                        vehicle_part_index,
-                        item,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerUpdateVehiclePart,
+                    UpdateVehiclePart { entity_id, vehicle_part_index, item }
+                );
             }
             Some(ServerPackets::UpdateItemLife) => {
-                let message = PacketServerUpdateItemLife::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateItemLife {
-                        item_slot: message.item_slot,
-                        life: message.life,
-                    })
-                    .ok();
+                server_message!(PacketServerUpdateItemLife, UpdateItemLife { item_slot, life });
             }
             Some(ServerPackets::UpdateBasicStat) => {
-                let message = PacketServerUpdateBasicStat::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateBasicStat {
-                        basic_stat_type: message.basic_stat_type,
-                        value: message.value,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerUpdateBasicStat,
+                    UpdateBasicStat { basic_stat_type, value }
+                );
             }
             Some(ServerPackets::UpdateAbilityValueRewardAdd)
             | Some(ServerPackets::UpdateAbilityValueRewardSet) => {
@@ -490,14 +426,14 @@ impl GameClient {
                 }
             }
             Some(ServerPackets::UpdateSpeed) => {
-                let message = PacketServerUpdateSpeed::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateSpeed {
-                        entity_id: message.entity_id,
-                        run_speed: message.run_speed,
-                        passive_attack_speed: message.passive_attack_speed,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerUpdateSpeed,
+                    UpdateSpeed {
+                        entity_id,
+                        run_speed,
+                        passive_attack_speed
+                    }
+                );
             }
             Some(ServerPackets::UpdateStatusEffects) => {
                 let message = PacketServerUpdateStatusEffects::try_from(packet)?;
@@ -511,14 +447,10 @@ impl GameClient {
                     .ok();
             }
             Some(ServerPackets::UpdateXpStamina) => {
-                let message = PacketServerUpdateXpStamina::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateXpStamina {
-                        xp: message.xp,
-                        stamina: message.stamina,
-                        source_entity_id: message.source_entity_id,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerUpdateXpStamina,
+                    UpdateXpStamina { xp, stamina, source_entity_id }
+                );
             }
             Some(ServerPackets::QuestResult) => {
                 let message = PacketServerQuestResult::try_from(packet)?;
@@ -565,38 +497,19 @@ impl GameClient {
                 }
             }
             Some(ServerPackets::RunNpcDeathTrigger) => {
-                let message = PacketServerRunNpcDeathTrigger::try_from(packet)?;
-
-                self.server_message_tx
-                    .send(ServerMessage::RunNpcDeathTrigger {
-                        npc_id: message.npc_id,
-                    })
-                    .ok();
+                server_message!(PacketServerRunNpcDeathTrigger, RunNpcDeathTrigger { npc_id });
             }
             Some(ServerPackets::RewardMoney) => {
-                let message = PacketServerRewardMoney::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::RewardMoney {
-                        money: message.money,
-                    })
-                    .ok();
+                server_message!(PacketServerRewardMoney, RewardMoney { money });
             }
             Some(ServerPackets::RewardItems) => {
-                let message = PacketServerRewardItems::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::RewardItems {
-                        items: message.items,
-                    })
-                    .ok();
+                server_message!(PacketServerRewardItems, RewardItems { items });
             }
             Some(ServerPackets::SetHotbarSlot) => {
-                let message = PacketServerSetHotbarSlot::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::SetHotbarSlot {
-                        slot_index: message.slot_index,
-                        slot: message.slot,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerSetHotbarSlot,
+                    SetHotbarSlot { slot_index, slot }
+                );
             }
             Some(ServerPackets::LearnSkillResult) => {
                 let message = match PacketServerLearnSkillResult::try_from(packet)? {
@@ -637,14 +550,10 @@ impl GameClient {
                 self.server_message_tx.send(message).ok();
             }
             Some(ServerPackets::UseEmote) => {
-                let message = PacketServerUseEmote::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::UseEmote {
-                        entity_id: message.entity_id,
-                        motion_id: message.motion_id,
-                        is_stop: message.is_stop,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerUseEmote,
+                    UseEmote { entity_id, motion_id, is_stop }
+                );
             }
             Some(ServerPackets::UseItem) => {
                 let message = PacketServerUseItem::try_from(packet)?;
@@ -666,103 +575,80 @@ impl GameClient {
                 }
             }
             Some(ServerPackets::ChangeNpcId) => {
-                let message = PacketServerChangeNpcId::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::ChangeNpcId {
-                        entity_id: message.entity_id,
-                        npc_id: message.npc_id,
-                    })
-                    .ok();
+                server_message!(PacketServerChangeNpcId, ChangeNpcId { entity_id, npc_id });
             }
             Some(ServerPackets::CastSkillSelf) => {
-                let message = PacketServerCastSkillSelf::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::CastSkillSelf {
-                        entity_id: message.entity_id,
-                        skill_id: message.skill_id,
-                        cast_motion_id: message.cast_motion_id,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerCastSkillSelf,
+                    CastSkillSelf {
+                        entity_id,
+                        skill_id,
+                        cast_motion_id
+                    }
+                );
             }
             Some(ServerPackets::CastSkillTargetEntity) => {
-                let message = PacketServerCastSkillTargetEntity::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::CastSkillTargetEntity {
-                        entity_id: message.entity_id,
-                        skill_id: message.skill_id,
-                        cast_motion_id: message.cast_motion_id,
-                        target_entity_id: message.target_entity_id,
-                        target_distance: message.target_distance,
-                        target_position: message.target_position,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerCastSkillTargetEntity,
+                    CastSkillTargetEntity {
+                        entity_id,
+                        skill_id,
+                        cast_motion_id,
+                        target_entity_id,
+                        target_distance,
+                        target_position
+                    }
+                );
             }
             Some(ServerPackets::CastSkillTargetPosition) => {
-                let message = PacketServerCastSkillTargetPosition::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::CastSkillTargetPosition {
-                        entity_id: message.entity_id,
-                        skill_id: message.skill_id,
-                        cast_motion_id: message.cast_motion_id,
-                        target_position: message.target_position,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerCastSkillTargetPosition,
+                    CastSkillTargetPosition {
+                        entity_id,
+                        skill_id,
+                        cast_motion_id,
+                        target_position
+                    }
+                );
             }
             Some(ServerPackets::StartCastingSkill) => {
-                let message = PacketServerStartCastingSkill::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::StartCastingSkill {
-                        entity_id: message.entity_id,
-                    })
-                    .ok();
+                server_message!(PacketServerStartCastingSkill, StartCastingSkill { entity_id });
             }
             Some(ServerPackets::CancelCastingSkill) => {
-                let message = PacketServerCancelCastingSkill::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::CancelCastingSkill {
-                        entity_id: message.entity_id,
-                        reason: message.reason,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerCancelCastingSkill,
+                    CancelCastingSkill { entity_id, reason }
+                );
             }
             Some(ServerPackets::FinishCastingSkill) => {
-                let message = PacketServerFinishCastingSkill::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::FinishCastingSkill {
-                        entity_id: message.entity_id,
-                        skill_id: message.skill_id,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerFinishCastingSkill,
+                    FinishCastingSkill { entity_id, skill_id }
+                );
             }
             Some(ServerPackets::UpdateCooldown) => {
-                let message = PacketServerUpdateCooldown::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateCooldown {
-                        skill_id: message.skill_id,
-                        duration: message.duration,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerUpdateCooldown,
+                    UpdateCooldown { skill_id, duration }
+                );
             }
             Some(ServerPackets::UpdateConsumableCooldown) => {
-                let message = PacketServerUpdateConsumableCooldown::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateConsumableCooldown {
-                        cooldown_group: message.cooldown_group,
-                        duration: message.duration,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerUpdateConsumableCooldown,
+                    UpdateConsumableCooldown { cooldown_group, duration }
+                );
             }
             Some(ServerPackets::ApplySkillEffect) => {
-                let message = PacketServerApplySkillEffect::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::ApplySkillEffect {
-                        entity_id: message.entity_id,
-                        caster_entity_id: message.caster_entity_id,
-                        caster_intelligence: message.caster_intelligence,
-                        skill_id: message.skill_id,
-                        effect_success: message.effect_success,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerApplySkillEffect,
+                    ApplySkillEffect {
+                        entity_id,
+                        caster_entity_id,
+                        caster_intelligence,
+                        skill_id,
+                        effect_success
+                    }
+                );
             }
             Some(ServerPackets::ApplySkillDamage) => {
                 let message = PacketServerApplySkillDamage::try_from(packet)?;
@@ -826,12 +712,10 @@ impl GameClient {
                 }
             }
             Some(ServerPackets::NpcStoreTransactionError) => {
-                let message = PacketServerNpcStoreTransactionError::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::NpcStoreTransactionError {
-                        error: message.error,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerNpcStoreTransactionError,
+                    NpcStoreTransactionError { error }
+                );
             }
             Some(ServerPackets::PartyRequest) => {
                 let message = match PacketServerPartyRequest::try_from(packet)? {
@@ -892,12 +776,10 @@ impl GameClient {
                 self.server_message_tx.send(message).ok();
             }
             Some(ServerPackets::PartyMemberUpdateInfo) => {
-                let message = PacketServerPartyMemberUpdateInfo::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::PartyMemberUpdateInfo {
-                        member_info: message.member_info,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerPartyMemberUpdateInfo,
+                    PartyMemberUpdateInfo { member_info }
+                );
             }
             Some(ServerPackets::PartyMemberRewardItem) => {
                 let message = PacketServerPartyMemberRewardItem::try_from(packet)?;
@@ -909,31 +791,22 @@ impl GameClient {
                     .ok();
             }
             Some(ServerPackets::PartyUpdateRules) => {
-                let message = PacketServerPartyUpdateRules::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::PartyUpdateRules {
-                        item_sharing: message.item_sharing,
-                        xp_sharing: message.xp_sharing,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerPartyUpdateRules,
+                    PartyUpdateRules { item_sharing, xp_sharing }
+                );
             }
             Some(ServerPackets::AdjustPosition) => {
-                let message = PacketServerAdjustPosition::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::AdjustPosition {
-                        entity_id: message.entity_id,
-                        position: message.position,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerAdjustPosition,
+                    AdjustPosition { entity_id, position }
+                );
             }
             Some(ServerPackets::PersonalStoreItemList) => {
-                let message = PacketServerPersonalStoreItemList::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::PersonalStoreItemList {
-                        sell_items: message.sell_items,
-                        buy_items: message.buy_items,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerPersonalStoreItemList,
+                    PersonalStoreItemList { sell_items, buy_items }
+                );
             }
             Some(ServerPackets::PersonalStoreTransactionResult) => {
                 let message = PacketServerPersonalStoreTransactionResult::try_from(packet)?;
@@ -946,14 +819,10 @@ impl GameClient {
                     .ok();
             }
             Some(ServerPackets::PersonalStoreTransactionUpdateMoneyAndInventory) => {
-                let message =
-                    PacketServerPersonalStoreTransactionUpdateMoneyAndInventory::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::PersonalStoreTransactionUpdateInventory {
-                        items: message.items,
-                        money: message.money,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerPersonalStoreTransactionUpdateMoneyAndInventory,
+                    PersonalStoreTransactionUpdateInventory { items, money }
+                );
             }
             Some(ServerPackets::BankOpen) => match PacketServerBankOpen::try_from(packet)? {
                 PacketServerBankOpen::Open => {
@@ -1008,12 +877,7 @@ impl GameClient {
                     .ok();
             }
             Some(ServerPackets::ClosePersonalStore) => {
-                let packet = PacketServerClosePersonalStore::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::ClosePersonalStore {
-                        entity_id: packet.entity_id,
-                    })
-                    .ok();
+                server_message!(PacketServerClosePersonalStore, ClosePersonalStore { entity_id });
             }
             Some(ServerPackets::CraftItem) => {
                 let packet = PacketServerCraftItem::try_from(packet)?;
@@ -1033,14 +897,14 @@ impl GameClient {
                 }
             }
             Some(ServerPackets::RepairedItemUsingNpc) => {
-                let packet = PacketServerRepairedItemUsingNpc::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::RepairedItemUsingNpc {
-                        item_slot: packet.item_slot,
-                        item: packet.item,
-                        updated_money: packet.updated_money,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerRepairedItemUsingNpc,
+                    RepairedItemUsingNpc {
+                        item_slot,
+                        item,
+                        updated_money
+                    }
+                );
             }
             Some(ServerPackets::ClanCommand) => {
                 let packet = PacketServerClanCommand::try_from(packet)?;
@@ -1133,22 +997,22 @@ impl GameClient {
                 }
             }
             Some(ServerPackets::UpdateAbilityValues) => {
-                let packet = PacketServerUpdateAbilityValues::try_from(packet)?;
-                self.server_message_tx
-                    .send(ServerMessage::UpdateAbilityValues {
-                        entity_id: packet.entity_id,
-                        attack_power: packet.attack_power,
-                        defence: packet.defence,
-                        hit: packet.hit,
-                        resistance: packet.resistance,
-                        avoid: packet.avoid,
-                        attack_speed: packet.attack_speed,
-                        critical: packet.critical,
-                        max_health: packet.max_health,
-                        max_mana: packet.max_mana,
-                        move_speed: packet.move_speed,
-                    })
-                    .ok();
+                server_message!(
+                    PacketServerUpdateAbilityValues,
+                    UpdateAbilityValues {
+                        entity_id,
+                        attack_power,
+                        defence,
+                        hit,
+                        resistance,
+                        avoid,
+                        attack_speed,
+                        critical,
+                        max_health,
+                        max_mana,
+                        move_speed
+                    }
+                );
             }
             Some(ServerPackets::RepairedItemUsingItem) => {
                 log::info!(
@@ -1167,25 +1031,24 @@ impl GameClient {
         connection: &mut Connection<'_>,
         message: ClientMessage,
     ) -> Result<(), anyhow::Error> {
+        macro_rules! send_packet {
+            ($packet:expr) => {
+                connection.write_packet(Packet::from(&$packet)).await?;
+            };
+        }
+
         match message {
             ClientMessage::ConnectionRequest {
                 login_token,
                 ref password,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientConnectRequest {
-                        login_token,
-                        password_md5: &password.to_md5(),
-                    }))
-                    .await?
+                send_packet!(PacketClientConnectRequest {
+                    login_token,
+                    password_md5: &password.to_md5()
+                });
             }
             ClientMessage::JoinZoneRequest => {
-                connection
-                    .write_packet(Packet::from(&PacketClientJoinZone {
-                        weight_rate: 0,
-                        z: 0,
-                    }))
-                    .await?
+                send_packet!(PacketClientJoinZone { weight_rate: 0, z: 0 });
             }
             ClientMessage::Move {
                 target_entity_id,
@@ -1193,439 +1056,255 @@ impl GameClient {
                 y,
                 z,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientMove {
-                        target_entity_id,
-                        x,
-                        y,
-                        z,
-                    }))
-                    .await?
+                send_packet!(PacketClientMove {
+                    target_entity_id,
+                    x,
+                    y,
+                    z
+                });
             }
             ClientMessage::Attack { target_entity_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientAttack { target_entity_id }))
-                    .await?
+                send_packet!(PacketClientAttack { target_entity_id });
             }
             ClientMessage::PickupItemDrop { target_entity_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPickupItemDrop {
-                        target_entity_id,
-                    }))
-                    .await?
+                send_packet!(PacketClientPickupItemDrop { target_entity_id });
             }
             ClientMessage::Chat { ref text } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientChat { text }))
-                    .await?
+                send_packet!(PacketClientChat { text });
             }
             ClientMessage::ChangeAmmo {
                 ammo_index,
                 item_slot,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientChangeAmmo {
-                        ammo_index,
-                        item_slot,
-                    }))
-                    .await?
+                send_packet!(PacketClientChangeAmmo { ammo_index, item_slot });
             }
             ClientMessage::ChangeEquipment {
                 equipment_index,
                 item_slot,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientChangeEquipment {
-                        equipment_index,
-                        item_slot,
-                    }))
-                    .await?
+                send_packet!(PacketClientChangeEquipment { equipment_index, item_slot });
             }
             ClientMessage::ChangeVehiclePart {
                 vehicle_part_index,
                 item_slot,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientChangeVehiclePart {
-                        vehicle_part_index,
-                        item_slot,
-                    }))
-                    .await?
+                send_packet!(PacketClientChangeVehiclePart { vehicle_part_index, item_slot });
             }
             ClientMessage::QuestDelete { slot, quest_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientQuestRequest {
-                        request_type: PacketClientQuestRequestType::DeleteQuest,
-                        quest_slot: slot as u8,
-                        quest_id: quest_id as u32,
-                    }))
-                    .await?
+                send_packet!(PacketClientQuestRequest {
+                    request_type: PacketClientQuestRequestType::DeleteQuest,
+                    quest_slot: slot as u8,
+                    quest_id: quest_id as u32
+                });
             }
             ClientMessage::QuestTrigger { trigger } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientQuestRequest {
-                        request_type: PacketClientQuestRequestType::DoTrigger,
-                        quest_slot: 0,
-                        quest_id: trigger.hash,
-                    }))
-                    .await?
+                send_packet!(PacketClientQuestRequest {
+                    request_type: PacketClientQuestRequestType::DoTrigger,
+                    quest_slot: 0,
+                    quest_id: trigger.hash
+                });
             }
             ClientMessage::SetHotbarSlot { slot_index, slot } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientSetHotbarSlot {
-                        slot_index,
-                        slot,
-                    }))
-                    .await?
+                send_packet!(PacketClientSetHotbarSlot { slot_index, slot });
             }
             ClientMessage::IncreaseBasicStat { basic_stat_type } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientIncreaseBasicStat {
-                        basic_stat_type,
-                    }))
-                    .await?
+                send_packet!(PacketClientIncreaseBasicStat { basic_stat_type });
             }
             ClientMessage::ReviveCurrentZone => {
-                connection
-                    .write_packet(Packet::from(&PacketClientReviveRequest::CurrentZone))
-                    .await?
+                send_packet!(PacketClientReviveRequest::CurrentZone);
             }
             ClientMessage::ReviveSaveZone => {
-                connection
-                    .write_packet(Packet::from(&PacketClientReviveRequest::SaveZone))
-                    .await?
+                send_packet!(PacketClientReviveRequest::SaveZone);
             }
             ClientMessage::PersonalStoreListItems { store_entity_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPersonalStoreListItems {
-                        target_entity_id: store_entity_id,
-                    }))
-                    .await?
+                send_packet!(PacketClientPersonalStoreListItems {
+                    target_entity_id: store_entity_id
+                });
             }
             ClientMessage::DropItem {
                 item_slot,
                 quantity,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientDropItemFromInventory::Item(
-                        item_slot,
-                        quantity as u32,
-                    )))
-                    .await?
+                send_packet!(PacketClientDropItemFromInventory::Item(
+                    item_slot,
+                    quantity as u32
+                ));
             }
             ClientMessage::DropMoney { quantity } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientDropItemFromInventory::Money(
-                        quantity as u32,
-                    )))
-                    .await?
+                send_packet!(PacketClientDropItemFromInventory::Money(quantity as u32));
             }
             ClientMessage::UseItem {
                 item_slot,
                 target_entity_id,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientUseItem {
-                        item_slot,
-                        target_entity_id,
-                    }))
-                    .await?
+                send_packet!(PacketClientUseItem { item_slot, target_entity_id });
             }
             ClientMessage::WarpGateRequest { warp_gate_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientWarpGateRequest { warp_gate_id }))
-                    .await?
+                send_packet!(PacketClientWarpGateRequest { warp_gate_id });
             }
             ClientMessage::LevelUpSkill { skill_slot } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientLevelUpSkill {
-                        skill_slot,
-                        next_skill_idx: SkillId::new(0).unwrap(), // 0 means server will use current_skill_idx + 1
-                    }))
-                    .await?
+                send_packet!(PacketClientLevelUpSkill {
+                    skill_slot,
+                    next_skill_idx: SkillId::new(0).unwrap() // 0 means server will use current_skill_idx + 1
+                });
             }
             ClientMessage::UseEmote { motion_id, is_stop } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientEmote { motion_id, is_stop }))
-                    .await?
+                send_packet!(PacketClientEmote { motion_id, is_stop });
             }
             ClientMessage::CastSkillSelf { skill_slot } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientCastSkillSelf { skill_slot }))
-                    .await?
+                send_packet!(PacketClientCastSkillSelf { skill_slot });
             }
             ClientMessage::CastSkillTargetEntity {
                 skill_slot,
                 target_entity_id,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientCastSkillTargetEntity {
-                        skill_slot,
-                        target_entity_id,
-                    }))
-                    .await?
+                send_packet!(PacketClientCastSkillTargetEntity { skill_slot, target_entity_id });
             }
             ClientMessage::CastSkillTargetPosition {
                 skill_slot,
                 position,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientCastSkillTargetPosition {
-                        skill_slot,
-                        position,
-                    }))
-                    .await?
+                send_packet!(PacketClientCastSkillTargetPosition { skill_slot, position });
             }
             ClientMessage::RunToggle => {
-                connection
-                    .write_packet(Packet::from(&PacketClientMoveToggle {
-                        toggle_type: PacketClientMoveToggleType::Run,
-                    }))
-                    .await?
+                send_packet!(PacketClientMoveToggle {
+                    toggle_type: PacketClientMoveToggleType::Run
+                });
             }
             ClientMessage::SitToggle => {
-                connection
-                    .write_packet(Packet::from(&PacketClientMoveToggle {
-                        toggle_type: PacketClientMoveToggleType::Sit,
-                    }))
-                    .await?
+                send_packet!(PacketClientMoveToggle {
+                    toggle_type: PacketClientMoveToggleType::Sit
+                });
             }
             ClientMessage::DriveToggle => {
-                connection
-                    .write_packet(Packet::from(&PacketClientMoveToggle {
-                        toggle_type: PacketClientMoveToggleType::Drive,
-                    }))
-                    .await?
+                send_packet!(PacketClientMoveToggle {
+                    toggle_type: PacketClientMoveToggleType::Drive
+                });
             }
             ClientMessage::NpcStoreTransaction {
                 npc_entity_id,
                 buy_items,
                 sell_items,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientNpcStoreTransaction {
-                        npc_entity_id,
-                        buy_items,
-                        sell_items,
-                    }))
-                    .await?
+                send_packet!(PacketClientNpcStoreTransaction { npc_entity_id, buy_items, sell_items });
             }
             ClientMessage::PartyCreate { invited_entity_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPartyRequest::Create(
-                        invited_entity_id,
-                    )))
-                    .await?
+                send_packet!(PacketClientPartyRequest::Create(invited_entity_id));
             }
             ClientMessage::PartyInvite { invited_entity_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPartyRequest::Invite(
-                        invited_entity_id,
-                    )))
-                    .await?
+                send_packet!(PacketClientPartyRequest::Invite(invited_entity_id));
             }
             ClientMessage::PartyLeave => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPartyRequest::Leave))
-                    .await?
+                send_packet!(PacketClientPartyRequest::Leave);
             }
-            ClientMessage::PartyChangeOwner {
-                new_owner_entity_id,
-            } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPartyRequest::ChangeOwner(
-                        new_owner_entity_id,
-                    )))
-                    .await?
+            ClientMessage::PartyChangeOwner { new_owner_entity_id } => {
+                send_packet!(PacketClientPartyRequest::ChangeOwner(new_owner_entity_id));
             }
             ClientMessage::PartyKick { character_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPartyRequest::Kick(character_id)))
-                    .await?
+                send_packet!(PacketClientPartyRequest::Kick(character_id));
             }
             ClientMessage::PartyAcceptCreateInvite { owner_entity_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPartyReply::AcceptCreate(
-                        owner_entity_id,
-                    )))
-                    .await?
+                send_packet!(PacketClientPartyReply::AcceptCreate(owner_entity_id));
             }
             ClientMessage::PartyAcceptJoinInvite { owner_entity_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPartyReply::AcceptJoin(
-                        owner_entity_id,
-                    )))
-                    .await?
+                send_packet!(PacketClientPartyReply::AcceptJoin(owner_entity_id));
             }
             ClientMessage::PartyRejectInvite {
                 reason,
                 owner_entity_id,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPartyReply::Reject(
-                        reason,
-                        owner_entity_id,
-                    )))
-                    .await?
+                send_packet!(PacketClientPartyReply::Reject(reason, owner_entity_id));
             }
             ClientMessage::PartyUpdateRules {
                 item_sharing,
                 xp_sharing,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPartyUpdateRules {
-                        item_sharing,
-                        xp_sharing,
-                    }))
-                    .await?
+                send_packet!(PacketClientPartyUpdateRules { item_sharing, xp_sharing });
             }
             ClientMessage::MoveCollision { position } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientMoveCollision { position }))
-                    .await?
+                send_packet!(PacketClientMoveCollision { position });
             }
             ClientMessage::PersonalStoreBuyItem {
                 store_entity_id,
                 store_slot_index,
                 buy_item,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientPersonalStoreBuyItem {
-                        store_entity_id,
-                        store_slot_index,
-                        buy_item,
-                    }))
-                    .await?
+                send_packet!(PacketClientPersonalStoreBuyItem {
+                    store_entity_id,
+                    store_slot_index,
+                    buy_item
+                });
             }
             ClientMessage::BankOpen => {
-                connection
-                    .write_packet(Packet::from(&PacketClientBankOpen {}))
-                    .await?
+                send_packet!(PacketClientBankOpen {});
             }
             ClientMessage::BankDepositItem {
                 item_slot,
                 item,
                 is_premium,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientBankMoveItem::Deposit {
-                        item_slot,
-                        item,
-                        is_premium,
-                    }))
-                    .await?
+                send_packet!(PacketClientBankMoveItem::Deposit { item_slot, item, is_premium });
             }
             ClientMessage::BankWithdrawItem {
                 bank_slot,
                 item,
                 is_premium,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientBankMoveItem::Withdraw {
-                        bank_slot,
-                        item,
-                        is_premium,
-                    }))
-                    .await?
+                send_packet!(PacketClientBankMoveItem::Withdraw { bank_slot, item, is_premium });
             }
             ClientMessage::SetReviveSaveZone => {
-                connection
-                    .write_packet(Packet::from(&PacketClientSetReviveZone))
-                    .await?
+                send_packet!(PacketClientSetReviveZone);
             }
             ClientMessage::ClanCreate {
                 name,
                 description,
                 mark,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientClanCommand::Create {
-                        name,
-                        description,
-                        mark,
-                    }))
-                    .await?;
+                send_packet!(PacketClientClanCommand::Create { name, description, mark });
             }
             ClientMessage::CraftInsertGem {
                 equipment_index,
                 item_slot,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientCraftItem::InsertGem {
-                        equipment_index,
-                        item_slot,
-                    }))
-                    .await?;
+                send_packet!(PacketClientCraftItem::InsertGem { equipment_index, item_slot });
             }
             ClientMessage::CraftSkillDisassemble {
                 skill_slot,
                 item_slot,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientCraftItem::SkillDisassemble {
-                        skill_slot,
-                        item_slot,
-                    }))
-                    .await?;
+                send_packet!(PacketClientCraftItem::SkillDisassemble { skill_slot, item_slot });
             }
             ClientMessage::CraftNpcDisassemble {
                 npc_entity_id,
                 item_slot,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientCraftItem::NpcDisassemble {
-                        npc_entity_id,
-                        item_slot,
-                    }))
-                    .await?;
+                send_packet!(PacketClientCraftItem::NpcDisassemble { npc_entity_id, item_slot });
             }
             ClientMessage::CraftSkillUpgradeItem {
                 skill_slot,
                 item_slot,
                 ingredients,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientCraftItem::SkillUpgradeItem {
-                        skill_slot,
-                        item_slot,
-                        ingredients,
-                    }))
-                    .await?;
+                send_packet!(PacketClientCraftItem::SkillUpgradeItem { skill_slot, item_slot, ingredients });
             }
             ClientMessage::CraftNpcUpgradeItem {
                 npc_entity_id,
                 item_slot,
                 ingredients,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientCraftItem::NpcUpgradeItem {
-                        npc_entity_id,
-                        item_slot,
-                        ingredients,
-                    }))
-                    .await?;
+                send_packet!(PacketClientCraftItem::NpcUpgradeItem { npc_entity_id, item_slot, ingredients });
             }
             ClientMessage::RepairItemUsingItem {
                 use_item_slot,
                 item_slot,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientRepairItemUsingItem {
-                        use_item_slot,
-                        item_slot,
-                    }))
-                    .await?;
+                send_packet!(PacketClientRepairItemUsingItem { use_item_slot, item_slot });
             }
             ClientMessage::RepairItemUsingNpc {
                 npc_entity_id,
                 item_slot,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientRepairItemUsingNpc {
-                        npc_entity_id,
-                        item_slot,
-                    }))
-                    .await?;
+                send_packet!(PacketClientRepairItemUsingNpc { npc_entity_id, item_slot });
             }
             unimplemented => {
                 log::info!("Unimplemented GameClient ClientMessage {:?}", unimplemented);

@@ -17,7 +17,7 @@ use rose_game_common::components::{CharacterInfo, Npc, Team};
 
 use crate::{
     components::{ClientEntity, ClientEntityType, PartyInfo, PlayerCharacter, Position},
-    resources::{CurrentZone, GameData, UiResources, UiSpriteSheetType},
+    resources::{CurrentZone, GameData, UiResources, UiSprite, UiSpriteSheetType},
     ui::{
         widgets::{DataBindings, Dialog, Widget},
         UiSoundEvent,
@@ -33,12 +33,10 @@ const ZONE_NAME_WIDTH: f32 = 102.0;
 const ZONE_NAME_EXPANDED_WIDTH: f32 = 172.0;
 
 const IID_PANE_BIG: i32 = 50;
-// const IID_CAPTION_BIG: i32 = 51;
 const IID_BTN_NORMAL: i32 = 52;
 const IID_BTN_MINIMIZE_BIG: i32 = 53;
 const IID_PANE_BIG_CHILDPANE: i32 = 60;
 const IID_PANE_SMALL: i32 = 100;
-// const IID_CAPTION_SMALL: i32 = 101;
 const IID_BTN_EXPAND: i32 = 102;
 const IID_BTN_MINIMIZE_SMALL: i32 = 103;
 const IID_PANE_SMALL_CHILDPANE: i32 = 110;
@@ -150,6 +148,44 @@ fn is_monster_entity(client_entity: &ClientEntity, team: &Team, player_team: &Te
         || (client_entity.entity_type == ClientEntityType::Npc
             && team.id != player_team.id
             && team.id != Team::DEFAULT_NPC_TEAM_ID)
+}
+
+fn draw_minimap_icon(
+    ui: &mut egui::Ui,
+    minimap_rect: egui::Rect,
+    zoom: f32,
+    position: Vec2,
+    icon: &UiSprite,
+    tint: Option<egui::Color32>,
+    hover: Option<(f32, &str)>,
+) {
+    let icon_scale = zoom.clamp(0.75, 1.5);
+    let icon_size = Vec2::new(icon.width, icon.height) * icon_scale;
+    let icon_rect = egui::Rect::from_min_size(
+        (position - icon_size / 2.0).to_array().into(),
+        icon_size.to_array().into(),
+    );
+
+    if minimap_rect.contains_rect(icon_rect) {
+        if let Some(tint) = tint {
+            let mut mesh = egui::epaint::Mesh::with_texture(icon.texture_id);
+            mesh.add_rect_with_uv(icon_rect, icon.uv, tint);
+            ui.painter().add(egui::epaint::Shape::mesh(mesh));
+        } else {
+            icon.draw(ui, icon_rect.min);
+        }
+
+        if let Some((hover_offset, hover_text)) = hover {
+            let response = ui.allocate_rect(
+                egui::Rect::from_min_size(
+                    icon_rect.min + egui::vec2(hover_offset, hover_offset),
+                    egui::vec2(8.0, 8.0),
+                ),
+                egui::Sense::hover(),
+            );
+            response.on_hover_text(hover_text);
+        }
+    }
 }
 
 pub fn ui_minimap_system(
@@ -608,19 +644,15 @@ pub fn ui_minimap_system(
                         let character_minimap_position =
                             map_absolute_position(ui_state, character_position.position);
 
-                        // Scale icon size with zoom (but clamp to reasonable bounds)
-                        let icon_scale = zoom.clamp(0.75, 1.5);
-                        let icon_size = Vec2::new(icon_image.width, icon_image.height) * icon_scale;
-                        let icon_rect = egui::Rect::from_min_size(
-                            (character_minimap_position - icon_size / 2.0)
-                                .to_array()
-                                .into(),
-                            icon_size.to_array().into(),
+                        draw_minimap_icon(
+                            ui,
+                            minimap_rect,
+                            zoom,
+                            character_minimap_position,
+                            icon_image,
+                            None,
+                            None,
                         );
-
-                        if minimap_rect.contains_rect(icon_rect) {
-                            icon_image.draw(ui, icon_rect.min);
-                        }
                     }
                 }
 
@@ -642,25 +674,15 @@ pub fn ui_minimap_system(
                         };
 
                         let npc_minimap_position = map_absolute_position(ui_state, npc_position);
-                        let icon_scale = zoom.clamp(0.75, 1.5);
-                        let icon_size = Vec2::new(icon_image.width, icon_image.height) * icon_scale;
-                        let icon_rect = egui::Rect::from_min_size(
-                            (npc_minimap_position - icon_size / 2.0).to_array().into(),
-                            icon_size.to_array().into(),
+                        draw_minimap_icon(
+                            ui,
+                            minimap_rect,
+                            zoom,
+                            npc_minimap_position,
+                            &icon_image,
+                            None,
+                            Some((6.0, npc_data.name.as_str())),
                         );
-
-                        if minimap_rect.contains_rect(icon_rect) {
-                            icon_image.draw(ui, icon_rect.min);
-
-                            let response = ui.allocate_rect(
-                                egui::Rect::from_min_size(
-                                    icon_rect.min + egui::vec2(6.0, 6.0),
-                                    egui::vec2(8.0, 8.0),
-                                ),
-                                egui::Sense::hover(),
-                            );
-                            response.on_hover_text(npc_data.name.as_str());
-                        }
                     }
                 }
 
@@ -681,43 +703,15 @@ pub fn ui_minimap_system(
 
                             let monster_minimap_position =
                                 map_absolute_position(ui_state, monster_position.position);
-                            let icon_scale = zoom.clamp(0.75, 1.5);
-                            let icon_size =
-                                Vec2::new(icon_image.width, icon_image.height) * icon_scale;
-                            let icon_rect = egui::Rect::from_min_size(
-                                (monster_minimap_position - icon_size / 2.0)
-                                    .to_array()
-                                    .into(),
-                                icon_size.to_array().into(),
+                            draw_minimap_icon(
+                                ui,
+                                minimap_rect,
+                                zoom,
+                                monster_minimap_position,
+                                icon_image,
+                                Some(egui::Color32::from_rgb(255, 100, 100)),
+                                entity_name.map(|n| (4.0, n.name.as_str())),
                             );
-
-                            if minimap_rect.contains_rect(icon_rect) {
-                                // Draw with red tint for hostile monsters
-                                let rect = egui::Rect::from_min_size(
-                                    icon_rect.min,
-                                    icon_size.to_array().into(),
-                                );
-                                let mut mesh =
-                                    egui::epaint::Mesh::with_texture(icon_image.texture_id);
-                                mesh.add_rect_with_uv(
-                                    rect,
-                                    icon_image.uv,
-                                    egui::Color32::from_rgb(255, 100, 100),
-                                );
-                                ui.painter().add(egui::epaint::Shape::mesh(mesh));
-
-                                // Show monster name on hover
-                                let response = ui.allocate_rect(
-                                    egui::Rect::from_min_size(
-                                        icon_rect.min + egui::vec2(4.0, 4.0),
-                                        egui::vec2(8.0, 8.0),
-                                    ),
-                                    egui::Sense::hover(),
-                                );
-                                if let Some(name) = entity_name {
-                                    response.on_hover_text(&name.name);
-                                }
-                            }
                         }
                     }
                 }
@@ -745,61 +739,47 @@ pub fn ui_minimap_system(
                                     egui::Sense::hover(),
                                 );
 
-                                // Calculate rotated rectangle from camera angle
-                                let sin_a = camera_angle.sin();
-                                let cos_a = camera_angle.cos();
-
-                                let mut corners = [
-                                    [-player_icon_size.x / 2.0, -player_icon_size.y / 2.0],
-                                    [player_icon_size.x / 2.0, -player_icon_size.y / 2.0],
-                                    [-player_icon_size.x / 2.0, player_icon_size.y / 2.0],
-                                    [player_icon_size.x / 2.0, player_icon_size.y / 2.0],
-                                ];
-
-                                for corner in corners.iter_mut() {
-                                    let rotated_x = corner[0] * cos_a - corner[1] * sin_a;
-                                    let rotated_y = corner[0] * sin_a + corner[1] * cos_a;
-                                    *corner = [rotated_x, rotated_y];
-                                }
-
                                 if ui.is_rect_visible(rect) {
-                                    let mut mesh =
-                                        egui::Mesh::with_texture(minimap_player_sprite.texture_id);
-                                    let uv = minimap_player_sprite.uv;
+                                    // Calculate rotated rectangle from camera angle
+                                    let sin_a = camera_angle.sin();
+                                    let cos_a = camera_angle.cos();
+                                    let rotate = |offset: [f32; 2]| -> [f32; 2] {
+                                        [
+                                            offset[0] * cos_a - offset[1] * sin_a,
+                                            offset[0] * sin_a + offset[1] * cos_a,
+                                        ]
+                                    };
+                                    let half = player_icon_size / 2.0;
+                                    let corners = [
+                                        rotate([-half.x, -half.y]),
+                                        rotate([half.x, -half.y]),
+                                        rotate([-half.x, half.y]),
+                                        rotate([half.x, half.y]),
+                                    ];
 
+                                    let mut mesh = egui::Mesh::with_texture(
+                                        minimap_player_sprite.texture_id,
+                                    );
+                                    let uv = minimap_player_sprite.uv;
                                     let color = egui::Color32::WHITE;
                                     let idx = mesh.vertices.len() as u32;
                                     mesh.add_triangle(idx, idx + 1, idx + 2);
                                     mesh.add_triangle(idx + 2, idx + 1, idx + 3);
-
-                                    mesh.vertices.push(egui::epaint::Vertex {
-                                        pos: (minimap_player_pos_screen + Vec2::from(corners[0]))
-                                            .to_array()
-                                            .into(),
-                                        uv: uv.left_top(),
-                                        color,
-                                    });
-                                    mesh.vertices.push(egui::epaint::Vertex {
-                                        pos: (minimap_player_pos_screen + Vec2::from(corners[1]))
-                                            .to_array()
-                                            .into(),
-                                        uv: uv.right_top(),
-                                        color,
-                                    });
-                                    mesh.vertices.push(egui::epaint::Vertex {
-                                        pos: (minimap_player_pos_screen + Vec2::from(corners[2]))
-                                            .to_array()
-                                            .into(),
-                                        uv: uv.left_bottom(),
-                                        color,
-                                    });
-                                    mesh.vertices.push(egui::epaint::Vertex {
-                                        pos: (minimap_player_pos_screen + Vec2::from(corners[3]))
-                                            .to_array()
-                                            .into(),
-                                        uv: uv.right_bottom(),
-                                        color,
-                                    });
+                                    for (corner, uv_corner) in corners.iter().zip([
+                                        uv.left_top(),
+                                        uv.right_top(),
+                                        uv.left_bottom(),
+                                        uv.right_bottom(),
+                                    ]) {
+                                        mesh.vertices.push(egui::epaint::Vertex {
+                                            pos: (minimap_player_pos_screen
+                                                + Vec2::from(*corner))
+                                                .to_array()
+                                                .into(),
+                                            uv: uv_corner,
+                                            color,
+                                        });
+                                    }
 
                                     ui.painter().add(egui::Shape::mesh(mesh));
                                 }

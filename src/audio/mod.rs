@@ -18,11 +18,9 @@ impl SoundRadius {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Component, PartialEq, Copy, Clone)]
 pub enum SoundGain {
-    Decibel(f32), // -n .. +n
-    Ratio(f32),   // 0..1
+    Ratio(f32), // 0..1
 }
 
 impl Default for SoundGain {
@@ -53,9 +51,45 @@ pub use boat_sound::{
 };
 pub use global_sound::GlobalSound;
 pub use monster_sound_cap::{
-    queue_monster_sound, MonsterSoundQueue, PendingMonsterSound, PendingMonsterSoundData,
+    queue_monster_sound, MonsterSoundQueue, PendingMonsterSoundData,
 };
 pub use spatial_sound::SpatialSound;
+
+use bevy::math::Vec3;
+use bevy::prelude::{Commands, Entity, GlobalTransform, Handle, Transform};
+use crate::components::SoundCategory;
+
+/// Spawns the standard spatial sound bundle:
+/// (SoundCategory, SoundGain, SpatialSound, Transform, GlobalTransform, Option<SoundRadius>)
+pub fn spawn_spatial_sound(
+    commands: &mut Commands,
+    handle: Handle<AudioSource>,
+    position: Vec3,
+    gain: f32,
+    radius: Option<f32>,
+    category: SoundCategory,
+    repeating: bool,
+) -> Entity {
+    let sound = if repeating {
+        SpatialSound::new_repeating(handle)
+    } else {
+        SpatialSound::new(handle)
+    };
+
+    let mut entity_commands = commands.spawn((
+        category,
+        SoundGain::Ratio(gain),
+        sound,
+        Transform::from_translation(position),
+        GlobalTransform::from_translation(position),
+    ));
+
+    if let Some(radius) = radius {
+        entity_commands.insert(SoundRadius::new(radius));
+    }
+
+    entity_commands.id()
+}
 
 use self::{
     global_sound::global_sound_gain_changed_system,

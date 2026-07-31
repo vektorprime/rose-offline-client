@@ -10,6 +10,7 @@ use crate::{
     events::NumberInputDialogEvent,
     resources::UiResources,
     ui::{
+        ui_message_box_system::draw_modal_blocker,
         UiSoundEvent,
         {widgets::Dialog, DataBindings},
     },
@@ -85,21 +86,7 @@ pub fn ui_number_input_dialog_system(
     }
 
     if ui_state.active.as_ref().map_or(false, |x| x.modal) {
-        egui::Area::new(egui::Id::new("modal_ninput"))
-            .interactable(true)
-            .fixed_pos(egui::Pos2::ZERO)
-            .show(egui_context.ctx_mut().unwrap(), |ui| {
-                let interceptor_rect = ui.ctx().input(|input| input.screen_rect());
-
-                ui.allocate_response(interceptor_rect.size(), egui::Sense::click_and_drag());
-                ui.allocate_ui_at_rect(interceptor_rect, |ui| {
-                    ui.painter().add(egui::epaint::Shape::rect_filled(
-                        interceptor_rect,
-                        0.0,
-                        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 144),
-                    ));
-                });
-            });
+        draw_modal_blocker(egui_context.ctx_mut().unwrap(), "modal_ninput");
     }
 
     let active_dialog = if let Some(active_dialog) = ui_state.active.as_mut() {
@@ -203,54 +190,22 @@ pub fn ui_number_input_dialog_system(
         }
     };
 
-    if response_button_0.map_or(false, |x| x.clicked()) {
-        active_dialog.current_value.push('0');
-        move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
-    }
-
-    if response_button_1.map_or(false, |x| x.clicked()) {
-        active_dialog.current_value.push('1');
-        move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
-    }
-
-    if response_button_2.map_or(false, |x| x.clicked()) {
-        active_dialog.current_value.push('2');
-        move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
-    }
-
-    if response_button_3.map_or(false, |x| x.clicked()) {
-        active_dialog.current_value.push('3');
-        move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
-    }
-
-    if response_button_4.map_or(false, |x| x.clicked()) {
-        active_dialog.current_value.push('4');
-        move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
-    }
-
-    if response_button_5.map_or(false, |x| x.clicked()) {
-        active_dialog.current_value.push('5');
-        move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
-    }
-
-    if response_button_6.map_or(false, |x| x.clicked()) {
-        active_dialog.current_value.push('6');
-        move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
-    }
-
-    if response_button_7.map_or(false, |x| x.clicked()) {
-        active_dialog.current_value.push('7');
-        move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
-    }
-
-    if response_button_8.map_or(false, |x| x.clicked()) {
-        active_dialog.current_value.push('8');
-        move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
-    }
-
-    if response_button_9.map_or(false, |x| x.clicked()) {
-        active_dialog.current_value.push('9');
-        move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
+    for (digit_button, digit) in [
+        (&mut response_button_0, '0'),
+        (&mut response_button_1, '1'),
+        (&mut response_button_2, '2'),
+        (&mut response_button_3, '3'),
+        (&mut response_button_4, '4'),
+        (&mut response_button_5, '5'),
+        (&mut response_button_6, '6'),
+        (&mut response_button_7, '7'),
+        (&mut response_button_8, '8'),
+        (&mut response_button_9, '9'),
+    ] {
+        if digit_button.as_ref().map_or(false, |x| x.clicked()) {
+            active_dialog.current_value.push(digit);
+            move_cursor_to_position(response_editbox.as_ref(), active_dialog.current_value.len());
+        }
     }
 
     if response_button_del.map_or(false, |x| x.clicked()) && !active_dialog.current_value.is_empty()

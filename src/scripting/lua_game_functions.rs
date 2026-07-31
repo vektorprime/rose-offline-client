@@ -7,96 +7,28 @@ use crate::{
     events::{BankEvent, ClanDialogEvent, NpcStoreEvent},
     scripting::{
         lua4::Lua4Value,
+        lua_closures,
         lua_game_constants::{
             SV_BIRTH, SV_CHA, SV_CLASS, SV_CON, SV_DEX, SV_EXP, SV_FAME, SV_INT, SV_LEVEL, SV_RANK,
             SV_SEN, SV_SEX, SV_STR, SV_UNION,
         },
-        ScriptFunctionContext, ScriptFunctionResources,
+        LuaClosure, ScriptFunctionContext, ScriptFunctionResources,
     },
 };
 
 #[derive(Resource)]
 pub struct LuaGameFunctions {
-    pub closures: HashMap<
-        String,
-        fn(&ScriptFunctionResources, &mut ScriptFunctionContext, Vec<Lua4Value>) -> Vec<Lua4Value>,
-    >,
+    pub closures: HashMap<String, LuaClosure>,
 }
 
 impl Default for LuaGameFunctions {
     fn default() -> Self {
-        let mut closures: HashMap<
-            String,
-            fn(
-                &ScriptFunctionResources,
-                &mut ScriptFunctionContext,
-                Vec<Lua4Value>,
-            ) -> Vec<Lua4Value>,
-        > = HashMap::new();
-
-        closures.insert("GF_getVariable".into(), GF_getVariable);
-        closures.insert("GF_openBank".into(), GF_openBank);
-        closures.insert("GF_openStore".into(), GF_openStore);
-        closures.insert("GF_organizeClan".into(), GF_organizeClan);
-
-        /*
-        GF_addUserMoney
-        GF_appraisal
-        GF_ChangeState
-        GF_checkNumOfInvItem
-        GF_checkTownItem
-        GF_checkUserMoney
-        GF_DeleteEffectFromObject
-        GF_disorganizeClan
-        GF_EffectOnObject
-        GF_error
-        GF_getDate
-        GF_GetEffectUseFile
-        GF_GetEffectUseIndex
-        GF_getGameVersion
-        GF_getIDXOfInvItem
-        GF_getItemRate
-        GF_GetMotionUseFile
-        GF_getName
-        GF_getReviveZoneName
-        GF_GetTarget
-        GF_getTownRate
-        GF_getTownVar
-        GF_getWorldRate
-        GF_getZone
-        GF_giveEquipItemIntoInv
-        GF_giveUsableItemIntoInv
-        GF_log
-        GF_LogString
-        GF_movableXY
-        GF_moveEvent
-        GF_moveXY
-        GF_openDeliveryStore
-        GF_openSeparate
-        GF_openUpgrade
-        GF_playEffect
-        GF_playSound
-        GF_putoffItem
-        GF_putonItem
-        GF_Random
-        GF_repair
-        GF_rotateCamera
-        GF_setEquipedItem
-        GF_SetMotion
-        GF_setRevivePosition
-        GF_setTownRate
-        GF_setVariable
-        GF_setWorldRate
-        GF_spawnMonAtEvent
-        GF_spawnMonXY
-        GF_takeItemFromInv
-        GF_takeUserMoney
-        GF_warp
-        GF_WeatherEffectOnObject
-        GF_zoomCamera
-        */
-
-        Self { closures }
+        lua_closures!(
+            "GF_getVariable" => GF_getVariable,
+            "GF_openBank" => GF_openBank,
+            "GF_openStore" => GF_openStore,
+            "GF_organizeClan" => GF_organizeClan,
+        )
     }
 }
 

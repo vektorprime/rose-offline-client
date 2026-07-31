@@ -4,69 +4,51 @@ use std::collections::HashMap;
 use rose_game_common::messages::client::ClientMessage;
 
 use crate::scripting::{
-    lua4::Lua4Value, quest::quest_check_conditions, LuaUserValueEntity, ScriptFunctionContext,
-    ScriptFunctionResources,
+    lua4::Lua4Value, lua_closures, quest::quest_check_conditions, LuaClosure, LuaUserValueEntity,
+    ScriptFunctionContext, ScriptFunctionResources,
 };
+
+macro_rules! lua_i32_closure {
+    ($name:ident, $default:expr, |$context:ident, $parameters:ident| $body:expr) => {
+        #[allow(non_snake_case, unused_variables)]
+        fn $name(
+            _resources: &ScriptFunctionResources,
+            $context: &mut ScriptFunctionContext,
+            $parameters: Vec<Lua4Value>,
+        ) -> Vec<Lua4Value> {
+            let result = (|| -> Option<i32> {
+                $body
+            })()
+            .unwrap_or($default);
+
+            vec![result.into()]
+        }
+    };
+}
 
 #[derive(Resource)]
 pub struct LuaQuestFunctions {
-    pub closures: HashMap<
-        String,
-        fn(&ScriptFunctionResources, &mut ScriptFunctionContext, Vec<Lua4Value>) -> Vec<Lua4Value>,
-    >,
+    pub closures: HashMap<String, LuaClosure>,
 }
 
 impl Default for LuaQuestFunctions {
     fn default() -> Self {
-        let mut closures: HashMap<
-            String,
-            fn(
-                &ScriptFunctionResources,
-                &mut ScriptFunctionContext,
-                Vec<Lua4Value>,
-            ) -> Vec<Lua4Value>,
-        > = HashMap::new();
-
-        closures.insert("QF_checkQuestCondition".into(), QF_checkQuestCondition);
-        closures.insert("QF_doQuestTrigger".into(), QF_doQuestTrigger);
-        closures.insert("QF_findQuest".into(), QF_findQuest);
-        closures.insert("QF_getEventOwner".into(), QF_getEventOwner);
-        closures.insert("QF_getEpisodeVAR".into(), QF_getEpisodeVAR);
-        closures.insert("QF_getJobVAR".into(), QF_getJobVAR);
-        closures.insert("QF_getPlanetVAR".into(), QF_getPlanetVAR);
-        closures.insert("QF_getQuestCount".into(), QF_getQuestCount);
-        closures.insert("QF_getQuestID".into(), QF_getQuestID);
-        closures.insert("QF_getQuestItemQuantity".into(), QF_getQuestItemQuantity);
-        closures.insert("QF_getQuestSwitch".into(), QF_getQuestSwitch);
-        closures.insert("QF_getQuestVar".into(), QF_getQuestVar);
-        closures.insert("QF_getUserSwitch".into(), QF_getUserSwitch);
-        closures.insert("QF_getNpcQuestZeroVal".into(), QF_getNpcQuestZeroVal);
-
-        /*
-        QF_appendQuest
-        QF_beginCon
-        QF_CameraworkingNpc
-        QF_CameraworkingPoint
-        QF_CameraworkingSelf
-        QF_ChangetalkImage
-        QF_ChangetalkName
-        QF_closeCon
-        QF_deleteQuest
-        QF_EffectCallNpc
-        QF_EffectCallSelf
-        QF_getSkillLevel
-        QF_getUnionVAR
-        QF_givePoint
-        QF_gotoCon
-        QF_MotionCallNpc
-        QF_MotionCallSelf
-        QF_NpcHide
-        QF_NpcTalkinterfaceHide
-        QF_NpcTalkinterfaceView
-        QF_NpcView
-        */
-
-        Self { closures }
+        lua_closures!(
+            "QF_checkQuestCondition" => QF_checkQuestCondition,
+            "QF_doQuestTrigger" => QF_doQuestTrigger,
+            "QF_findQuest" => QF_findQuest,
+            "QF_getEventOwner" => QF_getEventOwner,
+            "QF_getEpisodeVAR" => QF_getEpisodeVAR,
+            "QF_getJobVAR" => QF_getJobVAR,
+            "QF_getPlanetVAR" => QF_getPlanetVAR,
+            "QF_getQuestCount" => QF_getQuestCount,
+            "QF_getQuestID" => QF_getQuestID,
+            "QF_getQuestItemQuantity" => QF_getQuestItemQuantity,
+            "QF_getQuestSwitch" => QF_getQuestSwitch,
+            "QF_getQuestVar" => QF_getQuestVar,
+            "QF_getUserSwitch" => QF_getUserSwitch,
+            "QF_getNpcQuestZeroVal" => QF_getNpcQuestZeroVal,
+        )
     }
 }
 
@@ -117,24 +99,14 @@ fn QF_doQuestTrigger(
     vec![result.into()]
 }
 
-#[allow(non_snake_case)]
-fn QF_findQuest(
-    _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
-) -> Vec<Lua4Value> {
-    let result = || -> Option<i32> {
-        let quest_id = parameters.get(0)?.to_usize().ok()?;
+lua_i32_closure!(QF_findQuest, -1, |context, parameters| {
+    let quest_id = parameters.get(0)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.single().ok()?;
-        quest_state
-            .find_active_quest_index(quest_id)
-            .map(|x| x as i32)
-    }()
-    .unwrap_or(-1);
-
-    vec![result.into()]
-}
+    let quest_state = context.query_quest.single().ok()?;
+    quest_state
+        .find_active_quest_index(quest_id)
+        .map(|x| x as i32)
+});
 
 #[allow(non_snake_case)]
 fn QF_getEventOwner(
@@ -153,95 +125,45 @@ fn QF_getEventOwner(
     vec![0.into()]
 }
 
-#[allow(non_snake_case)]
-fn QF_getEpisodeVAR(
-    _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
-) -> Vec<Lua4Value> {
-    let result = || -> Option<i32> {
-        let var_id = parameters.get(0)?.to_usize().ok()?;
+lua_i32_closure!(QF_getEpisodeVAR, -1, |context, parameters| {
+    let var_id = parameters.get(0)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.single().ok()?;
-        Some(*quest_state.episode_variables.get(var_id)? as i32)
-    }()
-    .unwrap_or(-1);
+    let quest_state = context.query_quest.single().ok()?;
+    Some(*quest_state.episode_variables.get(var_id)? as i32)
+});
 
-    vec![result.into()]
-}
+lua_i32_closure!(QF_getJobVAR, -1, |context, parameters| {
+    let var_id = parameters.get(0)?.to_usize().ok()?;
 
-#[allow(non_snake_case)]
-fn QF_getJobVAR(
-    _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
-) -> Vec<Lua4Value> {
-    let result = || -> Option<i32> {
-        let var_id = parameters.get(0)?.to_usize().ok()?;
+    let quest_state = context.query_quest.single().ok()?;
+    Some(*quest_state.job_variables.get(var_id)? as i32)
+});
 
-        let quest_state = context.query_quest.single().ok()?;
-        Some(*quest_state.job_variables.get(var_id)? as i32)
-    }()
-    .unwrap_or(-1);
+lua_i32_closure!(QF_getPlanetVAR, -1, |context, parameters| {
+    let var_id = parameters.get(0)?.to_usize().ok()?;
 
-    vec![result.into()]
-}
+    let quest_state = context.query_quest.single().ok()?;
+    Some(*quest_state.planet_variables.get(var_id)? as i32)
+});
 
-#[allow(non_snake_case)]
-fn QF_getPlanetVAR(
-    _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
-) -> Vec<Lua4Value> {
-    let result = || -> Option<i32> {
-        let var_id = parameters.get(0)?.to_usize().ok()?;
+lua_i32_closure!(QF_getQuestCount, 0, |context, _parameters| {
+    let quest_state = context.query_quest.single().ok()?;
+    Some(
+        quest_state
+            .active_quests
+            .iter()
+            .filter(|x| x.is_some())
+            .count() as i32,
+    )
+});
 
-        let quest_state = context.query_quest.single().ok()?;
-        Some(*quest_state.planet_variables.get(var_id)? as i32)
-    }()
-    .unwrap_or(-1);
+lua_i32_closure!(QF_getQuestID, -1, |context, parameters| {
+    let quest_index = parameters.get(0)?.to_usize().ok()?;
 
-    vec![result.into()]
-}
-
-#[allow(non_snake_case)]
-fn QF_getQuestCount(
-    _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    _parameters: Vec<Lua4Value>,
-) -> Vec<Lua4Value> {
-    let result = || -> Option<i32> {
-        let quest_state = context.query_quest.single().ok()?;
-        Some(
-            quest_state
-                .active_quests
-                .iter()
-                .filter(|x| x.is_some())
-                .count() as i32,
-        )
-    }()
-    .unwrap_or(0);
-
-    vec![result.into()]
-}
-
-#[allow(non_snake_case)]
-fn QF_getQuestID(
-    _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
-) -> Vec<Lua4Value> {
-    let result = || -> Option<i32> {
-        let quest_index = parameters.get(0)?.to_usize().ok()?;
-
-        let quest_state = context.query_quest.single().ok()?;
-        let quest = quest_state.get_quest(quest_index)?;
-        Some(quest.quest_id as i32)
-    }()
-    .unwrap_or(-1);
-
-    vec![result.into()]
-}
+    let quest_state = context.query_quest.single().ok()?;
+    let quest = quest_state.get_quest(quest_index)?;
+    Some(quest.quest_id as i32)
+});
 
 #[allow(non_snake_case)]
 fn QF_getQuestItemQuantity(
@@ -272,79 +194,39 @@ fn QF_getQuestItemQuantity(
     vec![result.into()]
 }
 
-#[allow(non_snake_case)]
-fn QF_getQuestSwitch(
-    _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
-) -> Vec<Lua4Value> {
-    let result = || -> Option<i32> {
-        let quest_index = parameters.get(0)?.to_usize().ok()?;
-        let quest_switch_id = parameters.get(1)?.to_usize().ok()?;
+lua_i32_closure!(QF_getQuestSwitch, -1, |context, parameters| {
+    let quest_index = parameters.get(0)?.to_usize().ok()?;
+    let quest_switch_id = parameters.get(1)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.single().ok()?;
-        let quest = quest_state.get_quest(quest_index)?;
-        Some(*quest.switches.get(quest_switch_id)? as i32)
-    }()
-    .unwrap_or(-1);
+    let quest_state = context.query_quest.single().ok()?;
+    let quest = quest_state.get_quest(quest_index)?;
+    Some(*quest.switches.get(quest_switch_id)? as i32)
+});
 
-    vec![result.into()]
-}
+lua_i32_closure!(QF_getQuestVar, -1, |context, parameters| {
+    let quest_index = parameters.get(0)?.to_usize().ok()?;
+    let quest_var_id = parameters.get(1)?.to_usize().ok()?;
 
-#[allow(non_snake_case)]
-fn QF_getQuestVar(
-    _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
-) -> Vec<Lua4Value> {
-    let result = || -> Option<i32> {
-        let quest_index = parameters.get(0)?.to_usize().ok()?;
-        let quest_var_id = parameters.get(1)?.to_usize().ok()?;
+    let quest_state = context.query_quest.single().ok()?;
+    let quest = quest_state.get_quest(quest_index)?;
+    Some(*quest.variables.get(quest_var_id)? as i32)
+});
 
-        let quest_state = context.query_quest.single().ok()?;
-        let quest = quest_state.get_quest(quest_index)?;
-        Some(*quest.variables.get(quest_var_id)? as i32)
-    }()
-    .unwrap_or(-1);
+lua_i32_closure!(QF_getUserSwitch, -1, |context, parameters| {
+    let switch_id = parameters.get(0)?.to_usize().ok()?;
 
-    vec![result.into()]
-}
+    let quest_state = context.query_quest.single().ok()?;
+    Some(*quest_state.quest_switches.get(switch_id)? as i32)
+});
 
-#[allow(non_snake_case)]
-fn QF_getUserSwitch(
-    _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
-) -> Vec<Lua4Value> {
-    let result = || -> Option<i32> {
-        let switch_id = parameters.get(0)?.to_usize().ok()?;
+lua_i32_closure!(QF_getNpcQuestZeroVal, 0, |context, parameters| {
+    let npc_id = parameters.get(0)?.to_usize().ok()?;
 
-        let quest_state = context.query_quest.single().ok()?;
-        Some(*quest_state.quest_switches.get(switch_id)? as i32)
-    }()
-    .unwrap_or(-1);
-
-    vec![result.into()]
-}
-
-#[allow(non_snake_case)]
-fn QF_getNpcQuestZeroVal(
-    _resources: &ScriptFunctionResources,
-    context: &mut ScriptFunctionContext,
-    parameters: Vec<Lua4Value>,
-) -> Vec<Lua4Value> {
-    let result = || -> Option<i32> {
-        let npc_id = parameters.get(0)?.to_usize().ok()?;
-
-        for npc in context.query_npc.iter() {
-            if npc.id.get() as usize == npc_id {
-                return Some(npc.quest_index as i32);
-            }
+    for npc in context.query_npc.iter() {
+        if npc.id.get() as usize == npc_id {
+            return Some(npc.quest_index as i32);
         }
+    }
 
-        None
-    }()
-    .unwrap_or(0);
-
-    vec![result.into()]
-}
+    None
+});

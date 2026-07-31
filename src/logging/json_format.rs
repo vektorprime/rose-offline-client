@@ -7,7 +7,7 @@ use serde_json::json;
 use tracing::{field::Visit, Event, Level, Subscriber};
 use tracing_subscriber::{
     fmt::{
-        format::{FmtSpan, FormatEvent, FormatFields, Writer},
+        format::{FormatEvent, FormatFields, Writer},
         FmtContext, FormattedFields,
     },
     registry::LookupSpan,
@@ -51,61 +51,13 @@ pub fn remove_tag_prefix(message: &str) -> &str {
 /// ```json
 /// {"ts":"2026-03-02T11:24:11.123-06:00","level":"INFO","tag":"ZONE LOADER","msg":"Loading zone 1...","kvs":{}}
 /// ```
-#[derive(Debug)]
-pub struct TagExtractingJsonFormat {
-    span_events: FmtSpan,
-    ansi: bool,
-    display_target: bool,
-    display_filename: bool,
-    display_line_number: bool,
-}
-
-impl Default for TagExtractingJsonFormat {
-    fn default() -> Self {
-        Self {
-            span_events: FmtSpan::NONE,
-            ansi: false,
-            display_target: true,
-            display_filename: false,
-            display_line_number: false,
-        }
-    }
-}
+#[derive(Debug, Default)]
+pub struct TagExtractingJsonFormat;
 
 impl TagExtractingJsonFormat {
     /// Create a new JSON format with tag extraction.
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Enable or disable ANSI terminal colors.
-    pub fn with_ansi(mut self, ansi: bool) -> Self {
-        self.ansi = ansi;
-        self
-    }
-
-    /// Enable or disable the target (module path) in the output.
-    pub fn with_target(mut self, display_target: bool) -> Self {
-        self.display_target = display_target;
-        self
-    }
-
-    /// Enable or disable the filename in the output.
-    pub fn with_file(mut self, display_filename: bool) -> Self {
-        self.display_filename = display_filename;
-        self
-    }
-
-    /// Enable or disable the line number in the output.
-    pub fn with_line_number(mut self, display_line_number: bool) -> Self {
-        self.display_line_number = display_line_number;
-        self
-    }
-
-    /// Configure which span events to include.
-    pub fn with_span_events(mut self, span_events: FmtSpan) -> Self {
-        self.span_events = span_events;
-        self
+        Self
     }
 }
 
@@ -158,25 +110,7 @@ where
         json_obj.insert("level".to_string(), json!(level));
         json_obj.insert("tag".to_string(), json!(tag));
         json_obj.insert("msg".to_string(), json!(message));
-
-        // Add target (module path) if enabled
-        if self.display_target {
-            json_obj.insert("target".to_string(), json!(metadata.target()));
-        }
-
-        // Add filename if enabled
-        if self.display_filename {
-            if let Some(filename) = metadata.file() {
-                json_obj.insert("file".to_string(), json!(filename));
-            }
-        }
-
-        // Add line number if enabled
-        if self.display_line_number {
-            if let Some(line) = metadata.line() {
-                json_obj.insert("line".to_string(), json!(line));
-            }
-        }
+        json_obj.insert("target".to_string(), json!(metadata.target()));
 
         // Add span context if available
         if let Some(span) = ctx.lookup_current() {

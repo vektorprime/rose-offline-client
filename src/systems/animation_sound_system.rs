@@ -9,9 +9,7 @@ use bevy::{
 };
 use bevy_mesh::skinning::SkinnedMesh;
 
-use rose_data::{
-    AmmoIndex, AnimationEventFlags, EquipmentIndex, ItemClass, SoundId, VehiclePartIndex,
-};
+use rose_data::{AnimationEventFlags, EquipmentIndex, SoundId, VehiclePartIndex};
 use rose_game_common::components::{Equipment, MoveMode, Npc};
 
 use crate::components::{Command, DummyBoneOffset, PlayerCharacter};
@@ -21,6 +19,7 @@ use crate::{
     audio::{queue_monster_sound, MonsterSoundQueue, SpatialSound},
     components::SoundCategory,
     resources::{CurrentZone, GameData, SoundCache, SoundSettings},
+    systems::effect_resolution::{resolve_vehicle_arms_bullet_effect_id, resolve_weapon_bullet_effect_id},
     zone_loader::ZoneLoaderAsset,
 };
 
@@ -362,43 +361,16 @@ pub fn animation_sound_system(
                 {
                     event_entity_full
                         .equipment
-                        .and_then(|equipment| equipment.get_vehicle_item(VehiclePartIndex::Arms))
-                        .and_then(|legs| game_data.items.get_vehicle_item(legs.item.item_number))
-                        .and_then(|vehicle_item_data| vehicle_item_data.bullet_effect_id)
+                        .and_then(|equipment| {
+                            resolve_vehicle_arms_bullet_effect_id(equipment, &game_data)
+                        })
                         .and_then(|id| game_data.effect_database.get_effect(id))
                         .and_then(|projectile_effect_data| projectile_effect_data.fire_sound_id)
                 } else {
                     event_entity_full
                         .equipment
                         .and_then(|equipment| {
-                            game_data
-                                .items
-                                .get_weapon_item(
-                                    equipment
-                                        .get_equipment_item(EquipmentIndex::Weapon)
-                                        .map(|weapon| weapon.item.item_number)
-                                        .unwrap_or(0),
-                                )
-                                .and_then(|weapon_item_data| {
-                                    match weapon_item_data.item_data.class {
-                                        ItemClass::Bow | ItemClass::Crossbow => {
-                                            Some(AmmoIndex::Arrow)
-                                        }
-                                        ItemClass::Gun | ItemClass::DualGuns => {
-                                            Some(AmmoIndex::Bullet)
-                                        }
-                                        ItemClass::Launcher => Some(AmmoIndex::Throw),
-                                        _ => None,
-                                    }
-                                    .and_then(|ammo_index| equipment.get_ammo_item(ammo_index))
-                                    .and_then(|ammo_item| {
-                                        game_data
-                                            .items
-                                            .get_material_item(ammo_item.item.item_number)
-                                    })
-                                    .and_then(|ammo_item_data| ammo_item_data.bullet_effect_id)
-                                    .or(weapon_item_data.bullet_effect_id)
-                                })
+                            resolve_weapon_bullet_effect_id(equipment, &game_data)
                         })
                         .and_then(|id| game_data.effect_database.get_effect(id))
                         .and_then(|projectile_effect_data| projectile_effect_data.fire_sound_id)

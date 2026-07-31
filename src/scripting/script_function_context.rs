@@ -1,5 +1,5 @@
 use bevy::{
-    ecs::system::SystemParam,
+    ecs::{message::Message, system::SystemParam},
     prelude::{Commands, Query, With},
 };
 
@@ -11,7 +11,7 @@ use rose_game_common::components::{
 
 use crate::{
     components::{ClanMembership, ClientEntity, PlayerCharacter},
-    events::{BankEvent, ChatboxEvent, ClanDialogEvent, NpcStoreEvent, SystemFuncEvent},
+    events::{BankEvent, ClanDialogEvent, NpcStoreEvent},
 };
 
 // NOTE: ScriptFunctionContext contains all of the queries and Commands needed by script functions.
@@ -58,38 +58,25 @@ pub struct ScriptFunctionContext<'w, 's> {
 }
 
 impl<'w, 's> ScriptFunctionContext<'w, 's> {
-    /// Queue a BankEvent to be dispatched later
-    pub fn queue_bank_event(&mut self, event: BankEvent) {
+    /// Queue a message to be dispatched later
+    fn queue_message<M: Message>(&mut self, message: M) {
         self.commands.queue(|w: &mut bevy::prelude::World| {
-            w.write_message(event);
+            w.write_message(message);
         });
     }
 
-    /// Queue a ChatboxEvent to be dispatched later
-    pub fn queue_chatbox_event(&mut self, event: ChatboxEvent) {
-        self.commands.queue(|w: &mut bevy::prelude::World| {
-            w.write_message(event);
-        });
+    /// Queue a BankEvent to be dispatched later
+    pub fn queue_bank_event(&mut self, event: BankEvent) {
+        self.queue_message(event);
     }
 
     /// Queue a ClanDialogEvent to be dispatched later
     pub fn queue_clan_dialog_event(&mut self, event: ClanDialogEvent) {
-        self.commands.queue(|w: &mut bevy::prelude::World| {
-            w.write_message(event);
-        });
+        self.queue_message(event);
     }
 
     /// Queue a NpcStoreEvent to be dispatched later
     pub fn queue_npc_store_event(&mut self, event: NpcStoreEvent) {
-        self.commands.queue(|w: &mut bevy::prelude::World| {
-            w.write_message(event);
-        });
-    }
-
-    /// Queue a SystemFuncEvent to be dispatched later
-    pub fn queue_system_func_event(&mut self, event: SystemFuncEvent) {
-        self.commands.queue(|w: &mut bevy::prelude::World| {
-            w.write_message(event);
-        });
+        self.queue_message(event);
     }
 }

@@ -79,6 +79,15 @@ pub struct Dialog {
 }
 
 impl Dialog {
+    pub fn window<'open>(&self, title: &str) -> egui::Window<'open> {
+        egui::Window::new(title)
+            .frame(egui::Frame::none())
+            .title_bar(false)
+            .resizable(false)
+            .default_width(self.width)
+            .default_height(self.height)
+    }
+
     pub fn draw<R>(
         &self,
         ui: &mut egui::Ui,

@@ -1,36 +1,19 @@
 //! Plugin to register all material extension shaders and custom material plugins
 //!
-//! This plugin registers the shaders for RoseObjectExtension, RoseTerrainExtension,
-//! RoseWaterExtension, and RoseEffectExtension using Bevy's load_internal_asset! macro.
-//!
-//! Note: Zone lighting has been temporarily removed to simplify the rendering pipeline.
-//! The RoseObjectMaterialPlugin now uses the standard MaterialPlugin without custom
-//! draw commands. Zone lighting can be added back later once basic rendering is
-//! confirmed working.
+//! This plugin registers the shaders for RoseObjectExtension and RoseEffectExtension
+//! using Bevy's load_internal_asset! macro.
 
 use bevy::{
     asset::{load_internal_asset, weak_handle},
-    pbr::{
-        ExtendedMaterial, MaterialExtension, MaterialPipeline, MaterialPipelineKey, MaterialPlugin,
-        StandardMaterial,
-    },
+    pbr::{ExtendedMaterial, MaterialPlugin, StandardMaterial},
     prelude::*,
-    render::render_resource::{RenderPipelineDescriptor, SpecializedMeshPipelineError},
 };
-use bevy_mesh::MeshVertexBufferLayoutRef;
-use bevy_shader::ShaderRef;
 
 use crate::render::object_material_extension::RoseObjectExtension;
 
 // Shader handles for material extensions
 pub const ROSE_OBJECT_EXTENSION_SHADER_HANDLE: Handle<Shader> =
     weak_handle!("8a1b2c3d-4e5f-6789-0000-000000000000");
-
-pub const ROSE_TERRAIN_EXTENSION_SHADER_HANDLE: Handle<Shader> =
-    weak_handle!("9b2c3d4e-5f6a-7890-0000-000000000000");
-
-pub const ROSE_WATER_EXTENSION_SHADER_HANDLE: Handle<Shader> =
-    weak_handle!("ac3d4e5f-6a7b-89c1-0000-000000000000");
 
 pub const ROSE_EFFECT_EXTENSION_SHADER_HANDLE: Handle<Shader> =
     weak_handle!("bd4e5f6a-7b8c-9d2e-0000-000000000000");
@@ -77,22 +60,6 @@ impl Plugin for ExtensionMaterialPlugin {
             app,
             ROSE_OBJECT_EXTENSION_SHADER_HANDLE,
             "shaders/rose_object_extension.wgsl",
-            Shader::from_wgsl
-        );
-
-        // Register RoseTerrainExtension shader
-        load_internal_asset!(
-            app,
-            ROSE_TERRAIN_EXTENSION_SHADER_HANDLE,
-            "shaders/rose_terrain_extension.wgsl",
-            Shader::from_wgsl
-        );
-
-        // Register RoseWaterExtension shader
-        load_internal_asset!(
-            app,
-            ROSE_WATER_EXTENSION_SHADER_HANDLE,
-            "shaders/rose_water_extension.wgsl",
             Shader::from_wgsl
         );
 

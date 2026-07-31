@@ -120,7 +120,6 @@ impl WorldClient {
                 };
                 self.server_message_tx.send(message).ok();
             }
-            // ServerPackets::ReturnToCharacterSelect -> ServerMessage::ReturnToCharacterSelect
             _ => log::info!("Unhandled WorldClient packet {:?}", packet),
         }
 
@@ -132,27 +131,27 @@ impl WorldClient {
         connection: &mut Connection<'_>,
         message: ClientMessage,
     ) -> Result<(), anyhow::Error> {
+        macro_rules! send_packet {
+            ($packet:expr) => {
+                connection.write_packet(Packet::from(&$packet)).await?;
+            };
+        }
+
         match message {
             ClientMessage::ConnectionRequest {
                 login_token,
                 ref password,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientConnectRequest {
-                        login_token,
-                        password_md5: &password.to_md5(),
-                    }))
-                    .await?
+                send_packet!(PacketClientConnectRequest {
+                    login_token,
+                    password_md5: &password.to_md5()
+                });
             }
             ClientMessage::GetCharacterList => {
-                connection
-                    .write_packet(Packet::from(&PacketClientCharacterList {}))
-                    .await?
+                send_packet!(PacketClientCharacterList {});
             }
             ClientMessage::SelectCharacter { slot, ref name } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientSelectCharacter { slot, name }))
-                    .await?
+                send_packet!(PacketClientSelectCharacter { slot, name });
             }
             ClientMessage::CreateCharacter {
                 gender,
@@ -163,42 +162,31 @@ impl WorldClient {
                 birth_stone,
                 ..
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientCreateCharacter {
-                        gender,
-                        birth_stone: birth_stone as u8,
-                        hair: hair as u8,
-                        face: face as u8,
-                        name: &name,
-                        start_point: start_point as u16,
-                    }))
-                    .await?
+                send_packet!(PacketClientCreateCharacter {
+                    gender,
+                    birth_stone: birth_stone as u8,
+                    hair: hair as u8,
+                    face: face as u8,
+                    name: &name,
+                    start_point: start_point as u16
+                });
             }
             ClientMessage::DeleteCharacter {
                 slot,
                 name,
                 is_delete,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientDeleteCharacter {
-                        slot,
-                        name: &name,
-                        is_delete,
-                    }))
-                    .await?
+                send_packet!(PacketClientDeleteCharacter {
+                    slot,
+                    name: &name,
+                    is_delete
+                });
             }
             ClientMessage::ClanGetMemberList => {
-                connection
-                    .write_packet(Packet::from(&PacketClientClanCommand::GetMemberList))
-                    .await?
+                send_packet!(PacketClientClanCommand::GetMemberList);
             }
             ClientMessage::ClanUpdateCharacterInfo { job, level } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientClanCommand::UpdateLevelAndJob {
-                        level,
-                        job,
-                    }))
-                    .await?
+                send_packet!(PacketClientClanCommand::UpdateLevelAndJob { level, job });
             }
             unimplemented => {
                 log::info!(

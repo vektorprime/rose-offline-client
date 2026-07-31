@@ -2,29 +2,22 @@ use crate::graphics::{GraphicsSettings, ShadowQuality};
 use crate::render::starry_sky_material::MoonLight;
 use crate::resources::{ZoneTime, ZoneTimeState};
 use bevy::camera::visibility::RenderLayers;
-use bevy::camera::Exposure;
 use bevy::{
     asset::{load_internal_asset, weak_handle, Handle},
-    ecs::{
-        component::Component,
-        query::ROQueryItem,
-        system::{lifetimeless::SRes, SystemParamItem},
-    },
+    ecs::component::Component,
     light::{CascadeShadowConfig, FogVolume, VolumetricLight},
     math::{Vec3, Vec4},
     prelude::{
-        AmbientLight, App, Color, ColorToComponents, Commands, DetectChanges, Dir3,
-        DirectionalLight, EulerRot, FromWorld, GlobalAmbientLight, GlobalTransform,
-        IntoScheduleConfigs, LinearRgba, Local, Plugin, Quat, Query, ReflectResource, Res, ResMut,
-        Resource, Shader, Startup, Transform, Update, With, Without, World,
+        App, Color, ColorToComponents, Commands, DetectChanges, Dir3, DirectionalLight, EulerRot,
+        FromWorld, GlobalAmbientLight, GlobalTransform, IntoScheduleConfigs, LinearRgba, Plugin,
+        Quat, Query, ReflectResource, Res, ResMut, Resource, Shader, Startup, Transform, Update,
+        With, Without, World,
     },
     reflect::{Reflect, TypePath},
     render::{
-        render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
         render_resource::{
-            encase, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
-            BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, Buffer,
-            BufferBindingType, BufferDescriptor, BufferUsages, ShaderSize, ShaderStages,
+            encase, BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry, BindingType,
+            Buffer, BufferBindingType, BufferDescriptor, BufferUsages, ShaderSize, ShaderStages,
             ShaderType,
         },
         renderer::{RenderDevice, RenderQueue},
@@ -36,7 +29,6 @@ use bevy::{
 /// Used to query the fog volume for modifications or removal.
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct VolumetricFogVolume;
-use std::sync::OnceLock;
 
 /// Mode for controlling how the time of day is determined.
 #[derive(Reflect, Clone, Copy, PartialEq, Debug, Default)]
@@ -71,10 +63,6 @@ impl Default for SkySettings {
         }
     }
 }
-
-/// Global storage for the zone lighting bind group layout.
-/// This allows the specialize method to access the layout without needing direct resource access.
-pub static ZONE_LIGHTING_BIND_GROUP_LAYOUT: OnceLock<BindGroupLayout> = OnceLock::new();
 
 pub const ZONE_LIGHTING_SHADER_HANDLE_TYPED: Handle<Shader> =
     weak_handle!("444949d3-2b35-d5d9-0000-000000000000");
@@ -640,13 +628,10 @@ pub struct ZoneLightingUniformMeta {
     buffer: Buffer,
     bind_group: BindGroup,
     pub bind_group_layout: BindGroupLayout,
-    pub bind_group_layout_descriptor: BindGroupLayoutDescriptor,
 }
 
 impl FromWorld for ZoneLightingUniformMeta {
     fn from_world(world: &mut World) -> Self {
-        //bevy::log::info!("[ZONE LIGHTING] Creating ZoneLightingUniformMeta render resources");
-
         let render_device = world.resource::<RenderDevice>();
 
         let buffer = render_device.create_buffer(&BufferDescriptor {
@@ -655,22 +640,6 @@ impl FromWorld for ZoneLightingUniformMeta {
             mapped_at_creation: false,
             label: Some("zone_lighting_uniform_buffer"),
         });
-        //bevy::log::info!("[ZONE LIGHTING] Uniform buffer created: size={} bytes",
-        //ZoneLightingUniformData::min_size().get());
-
-        let bind_group_layout_descriptor = BindGroupLayoutDescriptor::new(
-            "zone_lighting_uniform_layout",
-            &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX_FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(ZoneLightingUniformData::min_size()),
-                },
-                count: None,
-            }],
-        );
 
         let bind_group_layout = render_device.create_bind_group_layout(
             Some("zone_lighting_uniform_layout"),
@@ -685,7 +654,6 @@ impl FromWorld for ZoneLightingUniformMeta {
                 count: None,
             }],
         );
-        //bevy::log::info!("[ZONE LIGHTING] Bind group layout created");
 
         let bind_group = render_device.create_bind_group(
             "zone_lighting_uniform_bind_group",
@@ -695,36 +663,16 @@ impl FromWorld for ZoneLightingUniformMeta {
                 resource: buffer.as_entire_binding(),
             }],
         );
-        //bevy::log::info!("[ZONE LIGHTING] Bind group created - ZoneLightingUniformMeta ready");
-
-        // Store the bind group layout in the global static for access during pipeline specialization
-        let _ = ZONE_LIGHTING_BIND_GROUP_LAYOUT.set(bind_group_layout.clone());
 
         ZoneLightingUniformMeta {
             buffer,
             bind_group,
             bind_group_layout,
-            bind_group_layout_descriptor,
         }
     }
 }
 
-fn extract_uniform_data(
-    mut commands: Commands,
-    zone_lighting: Extract<Res<ZoneLighting>>,
-    mut frame_count: Local<u32>,
-) {
-    *frame_count += 1;
-
-    // // Log every 60 frames to avoid spam
-    // if *frame_count % 60 == 1 {
-    //     bevy::log::info!("[ZONE LIGHTING] Extracting uniform data (frame {})", *frame_count);
-    //     bevy::log::info!("[ZONE LIGHTING]   Map ambient: {:?}", zone_lighting.map_ambient_color);
-    //     bevy::log::info!("[ZONE LIGHTING]   Light direction: {:?}", zone_lighting.light_direction);
-    //     bevy::log::info!("[ZONE LIGHTING]   Fog enabled: {}, density: {}",
-    //         zone_lighting.color_fog_enabled, zone_lighting.fog_density);
-    // }
-
+fn extract_uniform_data(mut commands: Commands, zone_lighting: Extract<Res<ZoneLighting>>) {
     commands.insert_resource(ZoneLightingUniformData {
         map_ambient_color: zone_lighting.map_ambient_color.extend(1.0),
         character_ambient_color: zone_lighting.character_ambient_color.extend(1.0),
@@ -790,25 +738,78 @@ fn prepare_uniform_data(
     render_queue.write_buffer(&uniform_meta.buffer, 0, buffer.as_ref());
 }
 
-pub struct SetZoneLightingBindGroup<const I: usize>;
-impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetZoneLightingBindGroup<I> {
-    type Param = SRes<ZoneLightingUniformMeta>;
-    type ItemQuery = ();
-    type ViewQuery = ();
+/// Calculate cloud lighting parameters based on time of day
+pub(crate) fn calculate_cloud_lighting(
+    zone_time: &crate::resources::ZoneTime,
+    zone_lighting: &crate::render::ZoneLighting,
+) -> (Vec3, Vec3, Vec3, f32) {
+    use crate::resources::ZoneTimeState;
 
-    fn render<'w>(
-        _: &P,
-        _: ROQueryItem<'w, '_, Self::ViewQuery>,
-        _: Option<ROQueryItem<'w, '_, Self::ItemQuery>>,
-        meta: SystemParamItem<'w, '_, Self::Param>,
-        pass: &mut TrackedRenderPass<'w>,
-    ) -> RenderCommandResult {
-        log::debug!(
-            "[SetZoneLightingBindGroup] Setting bind group {} for render pass",
-            I
-        );
-        pass.set_bind_group(I, &meta.into_inner().bind_group, &[]);
+    // Sun direction varies with time of day
+    // Morning: East (low angle), Noon: Up, Evening: West (low angle), Night: Below horizon
+    let time_of_day = match zone_time.state {
+        ZoneTimeState::Morning => {
+            // Sun rises in the east, moves upward
+            let t = zone_time.state_percent_complete;
+            0.0 + t * 0.5 // 0.0 to 0.5 (sunrise to noon approach)
+        }
+        ZoneTimeState::Day => {
+            // Sun at highest point, slowly descending
+            let t = zone_time.state_percent_complete;
+            0.5 + t * 0.25 // 0.5 to 0.75 (noon to afternoon)
+        }
+        ZoneTimeState::Evening => {
+            // Sun sets in the west
+            let t = zone_time.state_percent_complete;
+            0.75 + t * 0.25 // 0.75 to 1.0 (sunset)
+        }
+        ZoneTimeState::Night => {
+            // Sun below horizon
+            0.0
+        }
+    };
 
-        RenderCommandResult::Success
-    }
+    // Calculate sun direction from time
+    let sun_angle = time_of_day * std::f32::consts::PI;
+    let sun_direction = Vec3::new(
+        -sun_angle.cos(), // X: east-west
+        sun_angle.sin(),  // Y: up-down
+        0.3,              // Z: slight northward tilt
+    )
+    .normalize();
+
+    // Sun color varies with time of day
+    let sun_color = match zone_time.state {
+        ZoneTimeState::Morning => {
+            // Warm orange/pink sunrise
+            let t = zone_time.state_percent_complete;
+            Vec3::new(1.0, 0.7 + t * 0.2, 0.5 + t * 0.4) // Orange -> whiter
+        }
+        ZoneTimeState::Day => {
+            // Bright white/yellow daylight
+            Vec3::new(1.0, 0.98, 0.95)
+        }
+        ZoneTimeState::Evening => {
+            // Warm orange/red sunset
+            let t = zone_time.state_percent_complete;
+            Vec3::new(1.0, 0.9 - t * 0.4, 0.8 - t * 0.5) // White -> orange/red
+        }
+        ZoneTimeState::Night => {
+            // Dim moonlight
+            Vec3::new(0.2, 0.25, 0.4)
+        }
+    };
+
+    // Ambient color from zone lighting
+    let ambient_color = zone_lighting.map_ambient_color;
+
+    // Time-of-day factor for cloud visibility
+    let tod_factor = match zone_time.state {
+        ZoneTimeState::Morning => 0.5 + zone_time.state_percent_complete * 0.5,
+        ZoneTimeState::Day => 1.0,
+        ZoneTimeState::Evening => 1.0 - zone_time.state_percent_complete * 0.5,
+        ZoneTimeState::Night => 0.3, // Clouds still slightly visible at night
+    };
+
+    (sun_direction, sun_color, ambient_color, tod_factor)
 }

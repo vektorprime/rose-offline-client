@@ -73,7 +73,7 @@ pub fn spawn_zone(
         render_config.use_new_terrain
     );
 
-    let zone_list_entry = game_data
+    game_data
         .zone_list
         .get_zone(zone_data.zone_id)
         .ok_or(ZoneLoadError::InvalidZoneId)?;
@@ -122,8 +122,7 @@ pub fn spawn_zone(
         "[ZONE LOADER DEBUG] Spawned Zone entity {:?} with Visibility::Visible and large Aabb",
         zone_entity
     );
-    // info!("[ASSET LIFECYCLE] Zone entity spawned: {:?} (zone_id: {})", zone_entity, zone_data.zone_id.get());
-    memory_tracking.log_entity_spawned("Zone", 0);
+    memory_tracking.log_entity_spawned();
     log::info!("[SPAWN ZONE] Zone entity spawned: {:?}", zone_entity);
     log::info!("[MEMORY] Zone entity created: {:?}", zone_entity);
 
@@ -173,7 +172,6 @@ pub fn spawn_zone(
                     } else {
                         spawn_terrain(
                             commands,
-                            asset_server,
                             meshes,
                             terrain_materials,
                             &tile_textures,
@@ -204,9 +202,6 @@ pub fn spawn_zone(
                         commands.entity(zone_entity).add_child(water_entity);
                         water_count += 1;
 
-                        // Send event to spawn fish in this water
-                        // log::info!("[FISH DEBUG] Sending WaterSpawnedEvent from zone_loader: water_entity={:?}, zone_entity={:?}, center={:?}, extents={:?}",
-                        //     water_entity, zone_entity, water_center, water_half_extents);
                         water_spawned_events.write(WaterSpawnedEvent {
                             water_entity,
                             zone_entity,
@@ -220,7 +215,6 @@ pub fn spawn_zone(
                             commands,
                             asset_server,
                             &mut zone_loading_assets,
-                            vfs_resource,
                             object_materials.as_mut(),
                             specular_texture,
                             &game_data.zsc_event_object,
@@ -247,7 +241,6 @@ pub fn spawn_zone(
                             commands,
                             asset_server,
                             &mut zone_loading_assets,
-                            vfs_resource,
                             object_materials.as_mut(),
                             specular_texture,
                             &game_data.zsc_special_object,
@@ -279,7 +272,6 @@ pub fn spawn_zone(
                             commands,
                             asset_server,
                             &mut zone_loading_assets,
-                            vfs_resource,
                             object_materials.as_mut(),
                             specular_texture,
                             &zone_data.zsc_cnst,
@@ -307,7 +299,6 @@ pub fn spawn_zone(
                             commands,
                             asset_server,
                             &mut zone_loading_assets,
-                            vfs_resource,
                             object_materials.as_mut(),
                             specular_texture,
                             &zone_data.zsc_deco,
@@ -421,55 +412,3 @@ pub fn spawn_zone(
 
     Ok((zone_entity, zone_loading_assets))
 }
-
-// REMOVED: CartoonSky - using Bevy 0.16 Atmosphere instead
-// const SKY_DOME_RADIUS: f32 = 500.0;
-
-// /// Spawns a cartoon procedural sky entity and returns the entity along with asset handles.
-// /// Uses CartoonSkyMaterial for procedural sky rendering with day/night cycle support.
-// fn spawn_cartoon_sky(
-//     commands: &mut Commands,
-//     meshes: &mut Assets<Mesh>,
-//     cartoon_sky_materials: &mut Assets<CartoonSkyMaterial>,
-// ) -> (Entity, Vec<UntypedHandle>) {
-//     log::info!("[SPAWN CARTOON SKY] Creating procedural cartoon sky dome");
-//
-//     // Create a UV sphere mesh for the sky dome
-//     // The sphere is inverted (rendered from inside) for sky rendering
-//     let sky_dome_mesh = Mesh::from(bevy::math::primitives::Sphere {
-//         radius: SKY_DOME_RADIUS,
-//     });
-//
-//     let mesh_handle = meshes.add(sky_dome_mesh);
-//     log::info!("[SPAWN CARTOON SKY] Created sky dome mesh with radius {}", SKY_DOME_RADIUS);
-//
-//     // Create the cartoon sky material with default settings
-//     // The material will be updated by cartoon_sky_material_system based on ZoneTime
-//     let material = cartoon_sky_materials.add(CartoonSkyMaterial::default());
-//
-//     log::info!("[SPAWN CARTOON SKY] Created cartoon sky material");
-//
-//     // Spawn the sky dome entity
-//     // Note: No asset loading needed - everything is procedural
-//     // CRITICAL: Include NotShadowCaster - sky should never cast shadows
-//     let entity = commands
-//         .spawn((
-//             Mesh3d(mesh_handle),
-//             MeshMaterial3d(material),
-//             Transform::from_xyz(0.0, 0.0, 0.0),
-//             GlobalTransform::default(),
-//             ViewVisibility::default(),
-//             Visibility::Visible,
-//             InheritedVisibility::default(),
-//             NoFrustumCulling,
-//             Aabb::from_min_max(Vec3::splat(-SKY_DOME_RADIUS * 1.1), Vec3::splat(SKY_DOME_RADIUS * 1.1)),
-//             RenderLayers::layer(0),
-//             NotShadowCaster,  // Sky should never cast shadows
-//         ))
-//         .id();
-//
-//     log::info!("[SPAWN CARTOON SKY] Cartoon sky entity spawned: {:?}", entity);
-//
-//     // No external assets to load - everything is procedural
-//     (entity, Vec::new())
-// }

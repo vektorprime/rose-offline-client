@@ -2,7 +2,6 @@ use bevy::prelude::{Handle, Message};
 
 use rose_data::ZoneId;
 
-// Import ZoneLoaderAsset for use in event
 use crate::zone_loader::ZoneLoaderAsset;
 
 #[derive(Message)]

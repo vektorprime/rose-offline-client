@@ -108,12 +108,8 @@ pub fn ui_login_system(
     // );
 
     ////log::info!("[UI LOGIN] Calling egui::Window::show");
-    egui::Window::new("Login")
-        .frame(egui::Frame::none())
-        .title_bar(false)
-        .resizable(false)
-        .default_width(dialog.width)
-        .default_height(dialog.height)
+    dialog
+        .window("Login")
         .fixed_pos(position)
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             ////log::info!("[UI LOGIN] Window opened, starting dialog.draw() with {} widgets", dialog.widgets.len());

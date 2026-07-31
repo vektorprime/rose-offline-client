@@ -17,6 +17,7 @@ use crate::{
         BloodDecalAtlas, BloodEffectConfig, BloodEffectDiagnostics, BloodEffectRuntime,
         ClientEntityList,
     },
+    systems::damage_effects::normalize_or,
 };
 
 const SPATTER_TEXTURE_VARIANTS: usize = 8;
@@ -24,15 +25,6 @@ const SPATTER_TEXTURE_VARIANTS: usize = 8;
 fn hash01(x: f32, y: f32, seed: f32) -> f32 {
     let v = (x * 12.9898 + y * 78.233 + seed * 37.719).sin() * 43_758.5453;
     v - v.floor()
-}
-
-fn normalize_or(value: Vec3, fallback: Vec3) -> Vec3 {
-    let len_sq = value.length_squared();
-    if len_sq > 1e-6 {
-        value / len_sq.sqrt()
-    } else {
-        fallback
-    }
 }
 
 fn build_spatter_transform(position: Vec3, normal: Vec3, size: f32, rotation: f32) -> Transform {

@@ -495,15 +495,12 @@ pub fn ui_npc_store_system(
     let mut response_cancel = None;
     let mut response_ok = None;
 
-    egui::Window::new("NPC Store")
-        .frame(egui::Frame::none())
-        .title_bar(false)
-        .resizable(false)
+    store_dialog
+        .window("NPC Store")
         .default_pos([
             screen_size.x / 2.0 + 5.0,
             (screen_size.y - store_dialog.height) / 2.0,
         ])
-        .default_size([store_dialog.width, store_dialog.height])
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             store_dialog.draw(
                 ui,
@@ -579,15 +576,12 @@ pub fn ui_npc_store_system(
 
     let mut transaction_cost = 0;
 
-    egui::Window::new("NPC Transaction")
-        .frame(egui::Frame::none())
-        .title_bar(false)
-        .resizable(false)
+    transaction_dialog
+        .window("NPC Transaction")
         .default_pos([
             screen_size.x / 2.0 - 5.0 - transaction_dialog.width,
             (screen_size.y - store_dialog.height) / 2.0,
         ])
-        .default_size([transaction_dialog.width, transaction_dialog.height])
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             transaction_dialog.draw(
                 ui,

@@ -138,8 +138,8 @@ fn spawn_birds(
 
     // Create bird mesh parts
     let body_mesh = create_bird_body_mesh(meshes);
-    let left_wing_mesh = create_bird_wing_left_mesh(meshes);
-    let right_wing_mesh = create_bird_wing_right_mesh(meshes);
+    let left_wing_mesh = create_bird_wing_mesh(meshes, false);
+    let right_wing_mesh = create_bird_wing_mesh(meshes, true);
 
     // Bird colors for variety - made more vibrant for visibility
     let bird_colors = [
@@ -432,11 +432,11 @@ fn create_bird_body_mesh(meshes: &mut ResMut<Assets<Mesh>>) -> Handle<Mesh> {
     meshes.add(mesh)
 }
 
-/// Creates the left wing mesh (positioned for rotation around body center)
-fn create_bird_wing_left_mesh(meshes: &mut ResMut<Assets<Mesh>>) -> Handle<Mesh> {
-    // Left wing extends in -X direction from body center
+/// Creates a bird wing mesh (left by default, right when mirrored).
+/// Left wing extends in -X direction from body center, the right wing is the
+/// exact mirror (negated X positions/normals, flipped UV X and triangle winding).
+fn create_bird_wing_mesh(meshes: &mut ResMut<Assets<Mesh>>, right_side: bool) -> Handle<Mesh> {
     // Wing pivots at body center (0,0,0) for flapping animation
-
     let vertices: Vec<[f32; 3]> = vec![
         // Wing root (attaches to body)
         [-0.05, 0.05, 0.05],  // Front top
@@ -493,78 +493,31 @@ fn create_bird_wing_left_mesh(meshes: &mut ResMut<Assets<Mesh>>) -> Handle<Mesh>
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
 
-    mesh.insert_indices(Indices::U32(indices));
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    if right_side {
+        let vertices: Vec<[f32; 3]> = vertices
+            .iter()
+            .map(|v| [-v[0], v[1], v[2]])
+            .collect();
+        let normals: Vec<[f32; 3]> = normals
+            .iter()
+            .map(|n| [-n[0], n[1], n[2]])
+            .collect();
+        let uvs: Vec<[f32; 2]> = uvs.iter().map(|u| [1.0 - u[0], u[1]]).collect();
+        let indices: Vec<u32> = indices
+            .chunks(3)
+            .flat_map(|t| [t[2], t[1], t[0]])
+            .collect();
 
-    meshes.add(mesh)
-}
-
-/// Creates the right wing mesh (mirrored from left)
-fn create_bird_wing_right_mesh(meshes: &mut ResMut<Assets<Mesh>>) -> Handle<Mesh> {
-    // Right wing extends in +X direction from body center (mirrored from left)
-
-    let vertices: Vec<[f32; 3]> = vec![
-        // Wing root (attaches to body)
-        [0.05, 0.05, 0.05],  // Front top
-        [0.05, 0.02, 0.05],  // Front bottom
-        [0.05, 0.05, -0.05], // Back top
-        [0.05, 0.02, -0.05], // Back bottom
-        // Wing mid
-        [0.2, 0.06, 0.03],  // Front top
-        [0.2, 0.0, 0.03],   // Front bottom
-        [0.2, 0.05, -0.05], // Back top
-        [0.2, 0.0, -0.05],  // Back bottom
-        // Wing tip (pointed)
-        [0.35, 0.04, -0.02],  // Tip top
-        [0.35, -0.02, -0.02], // Tip bottom
-    ];
-
-    let indices: Vec<u32> = vec![
-        // Top surface
-        2, 0, 4, 6, 2, 4, 6, 4, 8, // Bottom surface
-        5, 1, 3, 7, 5, 3, 9, 5, 7, // Front edge
-        4, 0, 1, 5, 4, 1, // Back edge
-        3, 2, 6, 7, 3, 6, // Tip
-        8, 7, 6, 9, 7, 8,
-    ];
-
-    let normals: Vec<[f32; 3]> = vec![
-        [-0.2, 0.9, 0.1],     // 0
-        [-0.2, -0.9, 0.1],    // 1
-        [-0.2, 0.9, -0.1],    // 2
-        [-0.2, -0.9, -0.1],   // 3
-        [-0.1, 0.95, 0.05],   // 4
-        [-0.1, -0.95, 0.05],  // 5
-        [-0.1, 0.95, -0.05],  // 6
-        [-0.1, -0.95, -0.05], // 7
-        [0.0, 0.95, 0.0],     // 8
-        [0.0, -0.95, 0.0],    // 9
-    ];
-
-    let uvs: Vec<[f32; 2]> = vec![
-        [0.1, 0.6],
-        [0.1, 0.4],
-        [0.3, 0.6],
-        [0.3, 0.4],
-        [0.5, 0.65],
-        [0.5, 0.35],
-        [0.7, 0.6],
-        [0.7, 0.4],
-        [0.9, 0.5],
-        [0.9, 0.5],
-    ];
-
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    );
-
-    mesh.insert_indices(Indices::U32(indices));
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+        mesh.insert_indices(Indices::U32(indices));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    } else {
+        mesh.insert_indices(Indices::U32(indices));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    }
 
     meshes.add(mesh)
 }

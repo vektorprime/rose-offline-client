@@ -24,11 +24,12 @@ mod command_system;
 mod conversation_dialog_system;
 mod cooldown_system;
 mod damage_digit_render_system;
+mod damage_effects;
 mod debug_inspector_system;
-mod debug_rendering_system;
 mod directional_light_system;
 mod dirt_dash_system;
 mod effect_system;
+mod effect_resolution;
 mod facing_direction_system;
 mod fish_system;
 mod flight_command_system;
@@ -104,9 +105,7 @@ pub use animation_sound_system::animation_sound_system;
 pub use auto_login_system::auto_login_system;
 pub use background_music_system::background_music_system;
 pub use bird_system::{spawn_birds_on_zone_system, update_bird_movement_system, BirdPlugin};
-pub use blood_overlay_system::{
-    blood_overlay_generate_system, blood_overlay_update_system, BloodOverlayPlugin,
-};
+pub use blood_overlay_system::{blood_overlay_generate_system, BloodOverlayPlugin};
 pub use blood_spatter_system::{
     blood_spatter_fade_system, blood_spatter_on_death_system, blood_spatter_spawn_system,
     BloodSpatterPlugin,
@@ -145,22 +144,17 @@ pub use cooldown_system::cooldown_system;
 pub use damage_digit_render_system::{
     create_damage_digit_material_system, damage_digit_render_system,
 };
+pub use damage_effects::{emit_blood_and_wounds, normalize_or, random_local_wound_pose, spawn_damage_digits};
 pub use debug_inspector_system::DebugInspectorPlugin;
-pub use debug_rendering_system::{
-    aabb_validation_diagnostics, active_camera_diagnostics, debug_entity_visibility,
-    diagnose_camera_entity_distances, diagnose_render_phase, diagnose_render_world_extraction,
-    frustum_culling_diagnostics, material_transparency_diagnostics,
-    parent_child_visibility_diagnostics, render_diagnostics_system,
-    render_diagnostics_system_lightweight, render_layer_diagnostics, render_pipeline_diagnostics,
-    render_stage_diagnostics, transform_validation_diagnostics, verify_material_plugins,
-    visibility_state_diagnostics, zone_component_lifecycle_diagnostics,
-    zone_entity_visibility_diagnostics,
-};
 pub use directional_light_system::directional_light_system;
 pub use dirt_dash_system::{
     dirt_dash_particle_update_system, dirt_dash_spawn_system, DirtDashPlugin,
 };
 pub use effect_system::effect_system;
+pub use effect_resolution::{
+    resolve_vehicle_arms_bullet_effect_id, resolve_weapon_bullet_effect_id,
+    resolve_weapon_hit_effect_id, weapon_blood_profile, weapon_to_blood_profile,
+};
 pub use facing_direction_system::facing_direction_system;
 pub use fish_system::{spawn_fish_on_water_system, update_fish_movement_system, FishPlugin};
 pub use flight_command_system::{flight_command_system, is_fly_command};
@@ -187,7 +181,7 @@ pub use model_viewer_system::{
 pub use monster_chatter_system::{add_monster_chatter_system, monster_chatter_system};
 pub use monster_separation_system::monster_separation_system;
 pub use move_destination_effect_system::move_destination_effect_system;
-pub use move_speed_command_system::{move_speed_command_system, parse_move_speed_command};
+pub use move_speed_command_system::parse_move_speed_command;
 pub use move_speed_set_system::move_speed_set_system;
 pub use name_tag_system::name_tag_system;
 pub use name_tag_update_color_system::name_tag_update_color_system;
@@ -219,9 +213,6 @@ pub use spawn_effect_system::spawn_effect_system;
 pub use spawn_projectile_system::spawn_projectile_system;
 pub use status_effect_system::status_effect_system;
 pub use systemfunc_event_system::system_func_event_system;
-pub use transform_propagation_diagnostics::{
-    post_update_systems_diagnostics, transform_propagation_diagnostics,
-};
 pub use update_position_system::update_position_system;
 pub use use_item_event_system::use_item_event_system;
 pub use vehicle_model_system::vehicle_model_system;
@@ -232,20 +223,8 @@ pub use wind_effect_system::{
     WindEffectPlugin,
 };
 pub use wind_system::{sync_vegetation_wind_system, wind_update_system};
-pub use wing_spawn_system::{wing_animation_system, wing_spawn_system, WingSpawnPlugin};
+pub use wing_spawn_system::{wing_spawn_system, WingSpawnPlugin};
 pub use world_connection_system::world_connection_system;
 pub use world_time_system::world_time_system;
-pub use zone_time_system::{color_grading_time_of_day_system, zone_time_system};
+pub use zone_time_system::zone_time_system;
 pub use zone_viewer_system::zone_viewer_enter_system;
-
-// Zone render validation systems for diagnosing black screen issues
-pub mod zone_render_validation_system;
-
-// Zone memory profiler systems for leak detection
-pub mod zone_memory_profiler_system;
-
-// Zone memory protection system for emergency detection
-pub mod zone_memory_protection_system;
-
-// Transform propagation diagnostics for debugging transform issues
-pub mod transform_propagation_diagnostics;

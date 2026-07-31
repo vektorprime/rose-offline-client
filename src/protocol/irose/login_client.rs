@@ -132,35 +132,30 @@ impl LoginClient {
         connection: &mut Connection<'_>,
         message: ClientMessage,
     ) -> Result<(), anyhow::Error> {
+        macro_rules! send_packet {
+            ($packet:expr) => {
+                connection.write_packet(Packet::from(&$packet)).await?;
+            };
+        }
+
         match message {
             ClientMessage::ConnectionRequest { .. } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientConnect {}))
-                    .await?
+                send_packet!(PacketClientConnect {});
             }
             ClientMessage::LoginRequest { username, password } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientLoginRequest {
-                        username: &username,
-                        password_md5: &password.to_md5(),
-                    }))
-                    .await?
+                send_packet!(PacketClientLoginRequest {
+                    username: &username,
+                    password_md5: &password.to_md5()
+                });
             }
             ClientMessage::GetChannelList { server_id } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientChannelList { server_id }))
-                    .await?
+                send_packet!(PacketClientChannelList { server_id });
             }
             ClientMessage::JoinServer {
                 server_id,
                 channel_id,
             } => {
-                connection
-                    .write_packet(Packet::from(&PacketClientSelectServer {
-                        server_id,
-                        channel_id,
-                    }))
-                    .await?
+                send_packet!(PacketClientSelectServer { server_id, channel_id });
             }
             unimplemented => {
                 log::info!(

@@ -1,12 +1,9 @@
-use std::time::{Duration, Instant};
-
 use bevy::prelude::{
     AssetServer, Commands, Entity, GlobalTransform, MessageReader, MessageWriter, Query, Res,
     Transform,
 };
 
 use rose_data::ItemType;
-use rose_game_common::components::{StatusEffects, StatusEffectsRegen};
 
 use crate::{
     audio::SpatialSound,
@@ -19,30 +16,19 @@ pub fn use_item_event_system(
     mut commands: Commands,
     mut events: MessageReader<UseItemEvent>,
     mut spawn_effect_events: MessageWriter<SpawnEffectEvent>,
-    mut query: Query<(
-        Entity,
-        &GlobalTransform,
-        &mut StatusEffects,
-        &mut StatusEffectsRegen,
-        Option<&PlayerCharacter>,
-    )>,
+    mut query: Query<(Entity, &GlobalTransform, Option<&PlayerCharacter>)>,
     asset_server: Res<AssetServer>,
     game_data: Res<GameData>,
     sound_settings: Res<SoundSettings>,
     sound_cache: Res<SoundCache>,
 ) {
     for UseItemEvent { entity, item } in events.read() {
-        let (
-            user_entity,
-            user_global_transform,
-            mut user_status_effects,
-            mut user_status_effects_regen,
-            user_is_player,
-        ) = if let Ok(user) = query.get_mut(*entity) {
-            user
-        } else {
-            continue;
-        };
+        let (user_entity, user_global_transform, user_is_player) =
+            if let Ok(user) = query.get_mut(*entity) {
+                user
+            } else {
+                continue;
+            };
 
         if item.item_type != ItemType::Consumable {
             continue;
@@ -80,30 +66,6 @@ pub fn use_item_event_system(
                 Transform::from_translation(user_global_transform.translation()),
                 GlobalTransform::from_translation(user_global_transform.translation()),
             ));
-        }
-
-        if let Some((base_status_effect_id, total_potion_value)) = item_data.apply_status_effect {
-            // Authority migrated to server. Client now only handles visual/audio effects.
-            // Status effects are applied via server messages.
-        } else if let Some((_add_ability_type, _add_ability_value)) = item_data.add_ability {
-            /*
-            TODO:
-            ability_values_add_value(
-                add_ability_type,
-                add_ability_value,
-                Some(user.ability_values),
-                Some(&mut user.basic_stats),
-                Some(&mut user.experience_points),
-                Some(&mut user.health_points),
-                Some(&mut user.inventory),
-                Some(&mut user.mana_points),
-                Some(&mut user.skill_points),
-                Some(&mut user.stamina),
-                Some(&mut user.stat_points),
-                Some(&mut user.union_membership),
-                user.game_client,
-            );
-            */
         }
     }
 }

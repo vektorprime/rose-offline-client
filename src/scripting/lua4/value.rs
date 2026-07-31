@@ -29,19 +29,7 @@ impl Lua4Value {
         }
     }
 
-    pub fn to_f32(&self) -> Result<f32, LuaValueConversionError> {
-        self.try_into()
-    }
-
-    pub fn to_f64(&self) -> Result<f64, LuaValueConversionError> {
-        self.try_into()
-    }
-
     pub fn to_i32(&self) -> Result<i32, LuaValueConversionError> {
-        self.try_into()
-    }
-
-    pub fn to_i64(&self) -> Result<i64, LuaValueConversionError> {
         self.try_into()
     }
 
@@ -155,84 +143,31 @@ impl From<String> for Lua4Value {
     }
 }
 
-impl TryFrom<&Lua4Value> for f32 {
-    type Error = LuaValueConversionError;
+macro_rules! impl_try_from {
+    ($($ty:ty: number = |$num:ident| $num_expr:expr, string = |$str:ident| $str_expr:expr),+ $(,)?) => {
+        $(
+            impl TryFrom<&Lua4Value> for $ty {
+                type Error = LuaValueConversionError;
 
-    fn try_from(value: &Lua4Value) -> Result<Self, Self::Error> {
-        match value {
-            Lua4Value::Number(number) => Ok(*number as f32),
-            Lua4Value::String(string) => string
-                .parse::<f64>()
-                .map_err(|_| LuaValueConversionError::InvalidType)
-                .map(|value| value as f32),
-            _ => Err(LuaValueConversionError::InvalidType),
-        }
-    }
-}
-
-impl TryFrom<&Lua4Value> for f64 {
-    type Error = LuaValueConversionError;
-
-    fn try_from(value: &Lua4Value) -> Result<Self, Self::Error> {
-        match value {
-            Lua4Value::Number(number) => Ok(*number),
-            Lua4Value::String(string) => string
-                .parse::<f64>()
-                .map_err(|_| LuaValueConversionError::InvalidType),
-            _ => Err(LuaValueConversionError::InvalidType),
-        }
-    }
-}
-
-impl TryFrom<&Lua4Value> for i32 {
-    type Error = LuaValueConversionError;
-
-    fn try_from(value: &Lua4Value) -> Result<Self, Self::Error> {
-        match value {
-            Lua4Value::Number(number) => {
-                number.to_i32().ok_or(LuaValueConversionError::InvalidType)
+                fn try_from(value: &Lua4Value) -> Result<Self, Self::Error> {
+                    match value {
+                        Lua4Value::Number($num) => $num_expr,
+                        Lua4Value::String($str) => $str_expr,
+                        _ => Err(LuaValueConversionError::InvalidType),
+                    }
+                }
             }
-            Lua4Value::String(string) => string
-                .parse::<f64>()
-                .map_err(|_| LuaValueConversionError::InvalidType)
-                .map(|value| value as i32),
-            _ => Err(LuaValueConversionError::InvalidType),
-        }
-    }
+        )+
+    };
 }
 
-impl TryFrom<&Lua4Value> for i64 {
-    type Error = LuaValueConversionError;
-
-    fn try_from(value: &Lua4Value) -> Result<Self, Self::Error> {
-        match value {
-            Lua4Value::Number(number) => {
-                number.to_i64().ok_or(LuaValueConversionError::InvalidType)
-            }
-            Lua4Value::String(string) => string
-                .parse::<f64>()
-                .map_err(|_| LuaValueConversionError::InvalidType)
-                .map(|value| value as i64),
-            _ => Err(LuaValueConversionError::InvalidType),
-        }
-    }
-}
-
-impl TryFrom<&Lua4Value> for usize {
-    type Error = LuaValueConversionError;
-
-    fn try_from(value: &Lua4Value) -> Result<Self, Self::Error> {
-        match value {
-            Lua4Value::Number(number) => number
-                .to_usize()
-                .ok_or(LuaValueConversionError::InvalidType),
-            Lua4Value::String(string) => string
-                .parse::<usize>()
-                .map_err(|_| LuaValueConversionError::InvalidType),
-            _ => Err(LuaValueConversionError::InvalidType),
-        }
-    }
-}
+impl_try_from!(
+    f32: number = |number| Ok(*number as f32), string = |string| string.parse::<f64>().map(|value| value as f32).map_err(|_| LuaValueConversionError::InvalidType),
+    f64: number = |number| Ok(*number), string = |string| string.parse::<f64>().map_err(|_| LuaValueConversionError::InvalidType),
+    i32: number = |number| number.to_i32().ok_or(LuaValueConversionError::InvalidType), string = |string| string.parse::<f64>().map(|value| value as i32).map_err(|_| LuaValueConversionError::InvalidType),
+    i64: number = |number| number.to_i64().ok_or(LuaValueConversionError::InvalidType), string = |string| string.parse::<f64>().map(|value| value as i64).map_err(|_| LuaValueConversionError::InvalidType),
+    usize: number = |number| number.to_usize().ok_or(LuaValueConversionError::InvalidType), string = |string| string.parse::<usize>().map_err(|_| LuaValueConversionError::InvalidType),
+);
 
 impl TryFrom<&Lua4Value> for String {
     type Error = LuaValueConversionError;

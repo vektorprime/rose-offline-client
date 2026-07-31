@@ -142,27 +142,6 @@ pub fn spawn_effect_system(
                     }
                 }
             }
-            SpawnEffectEvent::WithTransform(transform, spawn_effect_data) => {
-                if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data)
-                {
-                    if let Some(effect_entity) = spawn_effect(
-                        &vfs_resource.vfs,
-                        &mut commands,
-                        &asset_server,
-                        &mut particle_materials,
-                        &mut effect_mesh_materials,
-                        &mut storage_buffers,
-                        &mut meshes,
-                        effect_file_path,
-                        spawn_effect_data.manual_despawn,
-                        None,
-                        Some(&effect_cache),
-                        Some(transform.translation),
-                    ) {
-                        commands.entity(effect_entity).insert(*transform);
-                    }
-                }
-            }
         }
     }
 }

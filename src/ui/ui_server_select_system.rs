@@ -56,12 +56,8 @@ pub fn ui_server_select_system(
 
     let selected_world_server_index = ui_state.selected_world_server_index as usize;
 
-    egui::Window::new("Select Server")
-        .frame(egui::Frame::none())
-        .title_bar(false)
-        .resizable(false)
-        .default_width(dialog.width)
-        .default_height(dialog.height)
+    dialog
+        .window("Select Server")
         .fixed_pos(position)
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(

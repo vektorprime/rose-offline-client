@@ -142,108 +142,36 @@ pub fn ui_chatbox_system(
             },
         );
 
-        match event {
-            ChatboxEvent::Say(name, text) => {
-                ui_state_chatbox.textbox_layout_job.append(
-                    &format!("{}> {}\n", name, text),
-                    0.0,
-                    egui::TextFormat {
-                        color: CHAT_COLOR_NORMAL,
-                        ..Default::default()
-                    },
-                );
-            }
+        let (text, color) = match event {
+            ChatboxEvent::Say(name, text) => (format!("{}> {}\n", name, text), CHAT_COLOR_NORMAL),
             ChatboxEvent::Shout(name, text) => {
-                ui_state_chatbox.textbox_layout_job.append(
-                    &format!("{}> {}\n", name, text),
-                    0.0,
-                    egui::TextFormat {
-                        color: CHAT_COLOR_SHOUT,
-                        ..Default::default()
-                    },
-                );
+                (format!("{}> {}\n", name, text), CHAT_COLOR_SHOUT)
             }
             ChatboxEvent::Whisper(name, text) => {
-                ui_state_chatbox.textbox_layout_job.append(
-                    &format!("{}> {}\n", name, text),
-                    0.0,
-                    egui::TextFormat {
-                        color: CHAT_COLOR_WHISPER,
-                        ..Default::default()
-                    },
-                );
+                (format!("{}> {}\n", name, text), CHAT_COLOR_WHISPER)
             }
             ChatboxEvent::Party(name, text) => {
-                ui_state_chatbox.textbox_layout_job.append(
-                    &format!("{}> {}\n", name, text),
-                    0.0,
-                    egui::TextFormat {
-                        color: CHAT_COLOR_PARTY,
-                        ..Default::default()
-                    },
-                );
+                (format!("{}> {}\n", name, text), CHAT_COLOR_PARTY)
             }
-            ChatboxEvent::Clan(name, text) => {
-                ui_state_chatbox.textbox_layout_job.append(
-                    &format!("{}> {}\n", name, text),
-                    0.0,
-                    egui::TextFormat {
-                        color: CHAT_COLOR_CLAN,
-                        ..Default::default()
-                    },
-                );
-            }
+            ChatboxEvent::Clan(name, text) => (format!("{}> {}\n", name, text), CHAT_COLOR_CLAN),
             ChatboxEvent::Allied(name, text) => {
-                ui_state_chatbox.textbox_layout_job.append(
-                    &format!("{}> {}\n", name, text),
-                    0.0,
-                    egui::TextFormat {
-                        color: CHAT_COLOR_ALLIED,
-                        ..Default::default()
-                    },
-                );
+                (format!("{}> {}\n", name, text), CHAT_COLOR_ALLIED)
             }
             ChatboxEvent::Announce(Some(name), text) => {
-                ui_state_chatbox.textbox_layout_job.append(
-                    &format!("{}> {}\n", name, text),
-                    0.0,
-                    egui::TextFormat {
-                        color: CHAT_COLOR_ANNOUNCE,
-                        ..Default::default()
-                    },
-                );
+                (format!("{}> {}\n", name, text), CHAT_COLOR_ANNOUNCE)
             }
-            ChatboxEvent::Announce(None, text) => {
-                ui_state_chatbox.textbox_layout_job.append(
-                    &format!("{}\n", text),
-                    0.0,
-                    egui::TextFormat {
-                        color: CHAT_COLOR_ANNOUNCE,
-                        ..Default::default()
-                    },
-                );
-            }
-            ChatboxEvent::System(text) => {
-                ui_state_chatbox.textbox_layout_job.append(
-                    &format!("{}\n", text),
-                    0.0,
-                    egui::TextFormat {
-                        color: CHAT_COLOR_SYSTEM,
-                        ..Default::default()
-                    },
-                );
-            }
-            ChatboxEvent::Quest(text) => {
-                ui_state_chatbox.textbox_layout_job.append(
-                    &format!("{}\n", text),
-                    0.0,
-                    egui::TextFormat {
-                        color: CHAT_COLOR_QUEST,
-                        ..Default::default()
-                    },
-                );
-            }
-        }
+            ChatboxEvent::Announce(None, text) => (format!("{}\n", text), CHAT_COLOR_ANNOUNCE),
+            ChatboxEvent::System(text) => (format!("{}\n", text), CHAT_COLOR_SYSTEM),
+            ChatboxEvent::Quest(text) => (format!("{}\n", text), CHAT_COLOR_QUEST),
+        };
+        ui_state_chatbox.textbox_layout_job.append(
+            &text,
+            0.0,
+            egui::TextFormat {
+                color,
+                ..Default::default()
+            },
+        );
     }
 
     let mut chatbox_style = (*egui_context.ctx_mut().unwrap().style()).clone();
@@ -509,21 +437,6 @@ pub fn ui_chatbox_system(
                                 .ok();
                         }
                         ui_state_chatbox.textbox_text.clear();
-                    } else if is_ping_command(&ui_state_chatbox.textbox_text) {
-                        // Handle /ping command client-side
-                        // Record the timestamp and send a ping request
-                        ping_state.pending_ping_timestamp = Some(Instant::now());
-
-                        // Send a chat message to server to measure RTT
-                        if let Some(game_connection) = game_connection.as_ref() {
-                            game_connection
-                                .client_message_tx
-                                .send(ClientMessage::Chat {
-                                    text: "/ping".to_string(),
-                                })
-                                .ok();
-                        }
-                        ui_state_chatbox.textbox_text.clear();
                     } else {
                         // Check if this is a move speed command
                         if let Some(speed) =
@@ -569,31 +482,19 @@ pub fn ui_chatbox_system(
     }
 
     // TODO: Update filters when changing category
-    if response_all_button.map_or(false, |r| r.clicked()) {
-        ui_state_chatbox.textbox_text.clear();
-    }
-
-    if response_whisper_button.map_or(false, |r| r.clicked()) {
-        ui_state_chatbox.textbox_text.clear();
-        ui_state_chatbox.textbox_text.push('@');
-    }
-
-    if response_trade_button.map_or(false, |r| r.clicked()) {
-        ui_state_chatbox.textbox_text.clear();
-    }
-
-    if response_party_button.map_or(false, |r| r.clicked()) {
-        ui_state_chatbox.textbox_text.clear();
-        ui_state_chatbox.textbox_text.push('#');
-    }
-
-    if response_clan_button.map_or(false, |r| r.clicked()) {
-        ui_state_chatbox.textbox_text.clear();
-        ui_state_chatbox.textbox_text.push('&');
-    }
-
-    if response_allied_button.map_or(false, |r| r.clicked()) {
-        ui_state_chatbox.textbox_text.clear();
-        ui_state_chatbox.textbox_text.push('~');
+    for (response, prefix) in [
+        (response_all_button, None),
+        (response_whisper_button, Some('@')),
+        (response_trade_button, None),
+        (response_party_button, Some('#')),
+        (response_clan_button, Some('&')),
+        (response_allied_button, Some('~')),
+    ] {
+        if response.map_or(false, |r| r.clicked()) {
+            ui_state_chatbox.textbox_text.clear();
+            if let Some(prefix) = prefix {
+                ui_state_chatbox.textbox_text.push(prefix);
+            }
+        }
     }
 }

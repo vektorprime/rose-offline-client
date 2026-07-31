@@ -37,15 +37,7 @@ pub struct BloodStain {
 impl BloodStain {
     /// Creates a new blood stain at the given UV position for a specific material.
     pub fn new(uv_center: Vec2, uv_size: f32, variant: usize) -> Self {
-        Self {
-            uv_center,
-            uv_size: Vec2::splat(uv_size),
-            rotation: rand::random::<f32>() * std::f32::consts::TAU,
-            alpha: 0.92,
-            texture_variant: variant % 8,
-            visible: true,
-            material_entity: None,
-        }
+        Self::new_inner(uv_center, uv_size, variant, None)
     }
 
     /// Creates a new blood stain at the given UV position for a specific material entity.
@@ -55,6 +47,10 @@ impl BloodStain {
         variant: usize,
         material_entity: Entity,
     ) -> Self {
+        Self::new_inner(uv_center, uv_size, variant, Some(material_entity))
+    }
+
+    fn new_inner(uv_center: Vec2, uv_size: f32, variant: usize, material_entity: Option<Entity>) -> Self {
         Self {
             uv_center,
             uv_size: Vec2::splat(uv_size),
@@ -62,7 +58,7 @@ impl BloodStain {
             alpha: 0.92,
             texture_variant: variant % 8,
             visible: true,
-            material_entity: Some(material_entity),
+            material_entity,
         }
     }
 }

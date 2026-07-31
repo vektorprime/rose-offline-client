@@ -265,12 +265,8 @@ pub fn ui_hotbar_system(
         screen_size.y - dialog.height,
     );
 
-    egui::Window::new("Hot Bar")
-        .frame(egui::Frame::none())
-        .title_bar(false)
-        .resizable(false)
-        .default_width(dialog.width)
-        .default_height(dialog.height)
+    dialog
+        .window("Hot Bar")
         .default_pos(default_position)
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(

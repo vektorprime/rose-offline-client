@@ -228,35 +228,22 @@ pub struct BloodOverlayTextures {
     pub textures: HashMap<Entity, Handle<Image>>,
 }
 
-/// Legacy component for backward compatibility — stores a single shared overlay texture.
-#[derive(Component, Clone, Debug)]
-pub struct BloodOverlayTexture {
-    /// The generated blood overlay texture handle.
-    pub texture: Handle<Image>,
-}
-
-/// System that updates blood overlay intensity based on configuration.
-pub fn blood_overlay_update_system(query: Query<&BloodOverlay>, config: Res<BloodEffectConfig>) {
-    if !config.enable_blood || !config.show_wounds {
-        return;
-    }
-
-    for _blood_overlay in query.iter() {
-        // Blood overlay intensity is managed via the texture alpha
-    }
-}
-
 /// DIAGNOSTIC: Force enable blood on all materials with known-good values.
 /// This system sets blood_params to intensity=1.0, enabled=1.0 on all materials
 /// that have a blood overlay texture, regardless of configuration.
 /// Use this to isolate whether the issue is with parameter binding or texture generation.
 pub fn blood_overlay_force_enable_system(
     mut materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
+    mut checked: Local<bool>,
+    mut debug_force_blood: Local<bool>,
 ) {
     // Only run when DEBUG_FORCE_BLOOD environment variable is set to "1"
-    let debug_force_blood = std::env::var("DEBUG_FORCE_BLOOD").unwrap_or_default() == "1";
+    if !*checked {
+        *debug_force_blood = std::env::var("DEBUG_FORCE_BLOOD").unwrap_or_default() == "1";
+        *checked = true;
+    }
 
-    if !debug_force_blood {
+    if !*debug_force_blood {
         return;
     }
 
@@ -396,7 +383,6 @@ impl Plugin for BloodOverlayPlugin {
             PostUpdate,
             (
                 blood_overlay_generate_system,
-                blood_overlay_update_system,
                 // DIAGNOSTIC: Force enable blood on all materials when DEBUG_FORCE_BLOOD=1
                 blood_overlay_force_enable_system,
             ),

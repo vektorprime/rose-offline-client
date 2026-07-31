@@ -43,10 +43,22 @@ impl StreamingSound {
     }
 
     pub fn fill_mono(&mut self, stream: &mut oddio::StreamControl<f32>, repeating: bool) -> bool {
+        self.fill(|samples| stream.write(samples), repeating)
+    }
+
+    pub fn fill_stereo(
+        &mut self,
+        stream: &mut oddio::StreamControl<[f32; 2]>,
+        repeating: bool,
+    ) -> bool {
+        self.fill(|samples| stream.write(stereo_frames(samples)) * 2, repeating)
+    }
+
+    fn fill(&mut self, mut write: impl FnMut(&[f32]) -> usize, repeating: bool) -> bool {
         match self {
             StreamingSound::Streaming { source, buffer } => {
                 if !buffer.is_empty() {
-                    let samples_read = stream.write(buffer);
+                    let samples_read = write(buffer);
                     buffer.drain(0..samples_read);
                 }
 
@@ -69,7 +81,7 @@ impl StreamingSound {
                             }
                         }
 
-                        let samples_read = stream.write(&packet);
+                        let samples_read = write(&packet);
                         if samples_read == packet.len() {
                             continue;
                         } else {
@@ -92,7 +104,7 @@ impl StreamingSound {
                         }
                     }
 
-                    let samples_read = stream.write(&decoded.samples[*position..]);
+                    let samples_read = write(&decoded.samples[*position..]);
                     *position += samples_read;
 
                     if *position < decoded.samples.len() {
@@ -103,74 +115,8 @@ impl StreamingSound {
             }
         }
     }
+}
 
-    pub fn fill_stereo(
-        &mut self,
-        stream: &mut oddio::StreamControl<[f32; 2]>,
-        repeating: bool,
-    ) -> bool {
-        match self {
-            StreamingSound::Streaming { source, buffer } => {
-                if !buffer.is_empty() {
-                    let samples_read = stream.write(oddio::frame_stereo(buffer)) * 2;
-                    buffer.drain(0..samples_read);
-                }
-
-                if buffer.is_empty() {
-                    let mut did_repeat = false;
-
-                    loop {
-                        let mut packet = source.as_mut().read_packet();
-                        if packet.is_empty() {
-                            if repeating {
-                                if !did_repeat {
-                                    source.rewind();
-                                    did_repeat = true;
-                                    continue;
-                                } else {
-                                    return false; // Encountered an error
-                                }
-                            } else {
-                                return false; // Reached end of stream
-                            }
-                        }
-
-                        let samples_read = stream.write(oddio::frame_stereo(&mut packet)) * 2;
-                        if samples_read == packet.len() {
-                            continue;
-                        } else {
-                            buffer.extend_from_slice(&packet[samples_read..]);
-                            break;
-                        }
-                    }
-                }
-
-                true
-            }
-            StreamingSound::Buffered { decoded, position } => {
-                loop {
-                    if *position == decoded.samples.len() {
-                        if repeating {
-                            *position = 0;
-                        } else {
-                            // Reached end of stream
-                            break false;
-                        }
-                    }
-
-                    let samples = &decoded.samples[*position..];
-                    let samples_stereo = unsafe {
-                        core::slice::from_raw_parts(samples.as_ptr() as _, samples.len() / 2)
-                    };
-                    let samples_read = stream.write(samples_stereo) * 2;
-                    *position += samples_read;
-
-                    if *position < decoded.samples.len() {
-                        // stream internal buffer full, read more later
-                        break true;
-                    }
-                }
-            }
-        }
-    }
+fn stereo_frames(samples: &[f32]) -> &[[f32; 2]] {
+    unsafe { core::slice::from_raw_parts(samples.as_ptr() as *const [f32; 2], samples.len() / 2) }
 }

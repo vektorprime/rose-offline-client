@@ -1,7 +1,5 @@
 use std::time::{Duration, Instant};
 
-use log::info;
-
 use bevy::{
     input::ButtonInput,
     prelude::{
@@ -56,7 +54,6 @@ pub fn character_select_enter_system(
     asset_server: Res<AssetServer>,
     game_data: Res<GameData>,
 ) {
-    log::info!("[CHAR_SELECT] Enter system called - setting up character select screen");
     if let Ok(mut cursor_options) = query_cursor_options.single_mut() {
         cursor_options.grab_mode = CursorGrabMode::None;
         cursor_options.visible = true;
@@ -287,13 +284,7 @@ pub fn character_select_system(
             let camera_result = query_camera.single();
             let camera_motion = camera_result.ok().and_then(|(_, _, _, m)| m);
             let camera_completed = camera_motion.map_or(true, |animation| animation.completed());
-            log::info!(
-                "[CHAR_SELECT] Entering state - camera_completed: {}, auto_login: {}",
-                camera_completed,
-                server_configuration.auto_login
-            );
             if camera_completed || server_configuration.auto_login {
-                log::info!("[CHAR_SELECT] Transitioning to CharacterSelect(None)");
                 *character_select_state = CharacterSelectState::CharacterSelect(None);
             }
         }
@@ -484,12 +475,6 @@ pub fn character_select_input_system(
         return;
     };
 
-    log::info!(
-        "[CHAR_SELECT_INPUT] Casting ray from origin {:?} direction {:?}",
-        ray.origin,
-        ray.direction
-    );
-
     // Cast ray and find the closest hit
     let query_filter = QueryFilter::new().groups(CollisionGroups::new(
         COLLISION_FILTER_CLICKABLE,
@@ -499,7 +484,6 @@ pub fn character_select_input_system(
     if let Some((collider_entity, _distance)) =
         rapier_context.cast_ray(ray.origin, *ray.direction, f32::MAX, true, query_filter)
     {
-        log::info!("[CHAR_SELECT_INPUT] Ray hit entity {:?}", collider_entity);
         // The hit entity might be the collider, so we need to find the parent
         if let Ok((Some(collider_parent), _)) = query_entities.get(collider_entity) {
             if let Ok((_, Some(character_select))) = query_entities.get(collider_parent.entity) {
@@ -517,7 +501,5 @@ pub fn character_select_input_system(
             // Send character select event
             character_select_events.write(CharacterSelectEvent::SelectCharacter(selected_index));
         }
-    } else {
-        log::info!("[CHAR_SELECT_INPUT] No ray hit found");
     }
 }

@@ -4,6 +4,39 @@ This document records zone loading-related issues encountered during development
 
 ---
 
+## Crash on Startup: `SpawnZoneParams::zone_loader_assets` Resource Does Not Exist (Fixed 2026-07-31)
+
+### Problem
+After a code-simplification cleanup pass, the game panicked on startup with:
+
+```
+Encountered an error in system `rose_offline_client::zone_loader::systems::zone_loader_system`:
+Parameter `SpawnZoneParams<'_, '_>::zone_loader_assets` failed validation: Resource does not exist
+```
+
+### Root Cause
+The cleanup removed the legacy `ZoneLoader` AssetServer path (the `AssetLoader` impl and `load_zone`), keeping only the direct VFS path (`load_zone_direct` → renamed `load_zone`). Along with the `AssetLoader`, the `app.init_asset::<zone_loader::ZoneLoaderAsset>()` call was removed from `lib.rs`. But `init_asset::<T>()` was the thing that implicitly created the `Assets<T>` resource — and the kept direct path still uses it:
+
+- `systems.rs:51` — `spawn_zone_params.zone_loader_assets.add(zone_asset)`
+- `systems.rs:526` — `zone_loader_assets.remove(&zone_handle)`
+- `systems.rs:538` — `zone_loader_assets.get(&current_zone.handle)`
+
+So `SpawnZoneParams::zone_loader_assets` (a `ResMut<Assets<ZoneLoaderAsset>>`) failed validation at schedule time.
+
+### Solution
+Re-add the resource initialization in `src/lib.rs` (near the zone load channel registration):
+
+```rust
+app.init_resource::<Assets<ZoneLoaderAsset>>();
+```
+
+and import `ZoneLoaderAsset` in the `use zone_loader::{...}` block.
+
+### Lesson Learned
+When deleting a dead `AssetLoader`/asset path, remember that `init_asset::<T>()` (or `register_asset_loader` + `init_asset`) also initializes the `Assets<T>` resource. If a live system still holds `Res<Assets<T>>`/`ResMut<Assets<T>>` (or a `SystemParam` containing one), the resource must be initialized via `init_resource::<Assets<T>>()` — otherwise the system fails validation at runtime with "Resource does not exist", even though the crate compiles fine.
+
+---
+
 ## Login Screen Sky Intermittently Wrong Colors or Missing (Fixed 2026-02-24)
 
 ### Problem

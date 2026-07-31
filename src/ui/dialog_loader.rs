@@ -11,10 +11,6 @@ use crate::{
 #[derive(Default, TypePath)]
 pub struct DialogLoader;
 
-/// Counter to track how many times dialog assets are loaded
-static mut DIALOG_LOAD_COUNT: usize = 0;
-static mut DIALOG_LOAD_BYTES: usize = 0;
-
 impl AssetLoader for DialogLoader {
     type Asset = Dialog;
     type Settings = ();
@@ -29,32 +25,14 @@ impl AssetLoader for DialogLoader {
         async move {
             let path = load_context.path().path().to_string_lossy().to_string();
 
-            // SAFETY: This is only for diagnostic logging during single-threaded asset loading
-            unsafe {
-                DIALOG_LOAD_COUNT += 1;
-                if DIALOG_LOAD_COUNT % 100 == 0 {
-                    log::warn!(
-                        "[DIALOG LOADER] WARNING: DialogLoader invoked {} times, total bytes loaded: {} MB",
-                        DIALOG_LOAD_COUNT,
-                        DIALOG_LOAD_BYTES / 1024 / 1024
-                    );
-                }
-            }
-
             let mut bytes = Vec::new();
             use bevy::tasks::futures_lite::AsyncReadExt;
             reader.read_to_end(&mut bytes).await?;
 
-            // SAFETY: Diagnostic logging
-            unsafe {
-                DIALOG_LOAD_BYTES += bytes.len();
-            }
-
             log::debug!(
-                "[DIALOG LOADER] Loading dialog: {}, size: {} bytes (load count: {})",
+                "[DIALOG LOADER] Loading dialog: {}, size: {} bytes",
                 path,
                 bytes.len(),
-                unsafe { DIALOG_LOAD_COUNT }
             );
 
             let bytes_str = std::str::from_utf8(&bytes)?;
@@ -109,53 +87,20 @@ pub fn load_dialog_sprites_system(
     mut load_state: Local<DialogsLoadState>,
     ui_resources: Res<UiResources>,
 ) {
-    let mut loaded_count = 0;
-    let mut modified_count = 0;
-
     for ev in ev_asset.read() {
         match ev {
-            AssetEvent::LoadedWithDependencies { id } => {
-                // log::debug!("[DIALOG SYSTEM] Dialog loaded: {:?}", id);
+            AssetEvent::LoadedWithDependencies { id } | AssetEvent::Modified { id } => {
                 load_state.pending_dialogs.push(*id);
-                loaded_count += 1;
             }
-            AssetEvent::Modified { id } => {
-                //log::warn!("[DIALOG SYSTEM] Dialog MODIFIED event received: {:?} - this may indicate repeated reloads!", id);
-                load_state.pending_dialogs.push(*id);
-                modified_count += 1;
-            }
-            AssetEvent::Removed { id } => {
-                // log::debug!("[DIALOG SYSTEM] Dialog removed: {:?}", id);
-            }
-            AssetEvent::Added { id } => {
-                // log::debug!("[DIALOG SYSTEM] Dialog added: {:?}", id);
-            }
-            _ => {
-                // Other unused events
-            }
+            _ => {}
         }
     }
 
-    // if loaded_count > 0 || modified_count > 0 {
-    //     log::info!("[DIALOG SYSTEM] Processing {} Loaded and {} Modified dialog events", loaded_count, modified_count);
-    // }
-
     if ui_resources.loaded_required_textures {
-        //log::info!("[DIALOG SYSTEM] loaded_required_textures=true, processing {} pending dialogs", load_state.pending_dialogs.len());
         for handle in load_state.pending_dialogs.drain(..) {
             if let Some(dialog) = assets.get_mut(handle) {
-                // log::info!("[DIALOG SYSTEM] Loading widgets for dialog with {} widgets", dialog.widgets.len());
-
-                // Log each widget type before loading
-                for (index, widget) in dialog.widgets.iter().enumerate() {
-                    let discriminant = std::mem::discriminant(widget);
-                    // log::debug!("[DIALOG SYSTEM]   Widget {}/{}: type={:?}",
-                    //   index + 1, dialog.widgets.len(), discriminant);
-                }
-
                 dialog.widgets.load_widget(&ui_resources);
                 dialog.loaded = true;
-                //log::info!("[DIALOG SYSTEM] Dialog loaded and marked as loaded: {:?}", handle);
             }
         }
     } else {

@@ -44,12 +44,6 @@ impl Default for ZoneListPanelState {
     }
 }
 
-impl ZoneListPanelState {
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
 /// Render the zone list panel
 #[allow(clippy::too_many_arguments)]
 pub fn editor_zone_list_panel(

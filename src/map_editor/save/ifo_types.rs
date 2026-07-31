@@ -6,12 +6,6 @@
 
 use bevy::math::{Quat, Vec3};
 
-/// IFO file header magic bytes
-pub const IFO_MAGIC: &[u8; 3] = b"IFO";
-
-/// IFO file version
-pub const IFO_VERSION: u32 = 0x0101;
-
 /// Represents a single object in an IFO file
 /// Fields are in the exact order they appear in the binary format
 #[derive(Clone, Debug)]
@@ -78,23 +72,6 @@ impl IfoObject {
             ],
             scale: [scale.x, scale.z, scale.y],
         }
-    }
-
-    /// Convert back to Bevy coordinate system
-    pub fn to_bevy_transform(&self) -> (Vec3, Quat, Vec3) {
-        let translation = Vec3::new(
-            self.position[0] / 100.0,
-            self.position[2] / 100.0,
-            -self.position[1] / 100.0,
-        );
-        let rotation = Quat::from_xyzw(
-            self.rotation[0],
-            self.rotation[2],
-            -self.rotation[1],
-            self.rotation[3],
-        );
-        let scale = Vec3::new(self.scale[0], self.scale[2], self.scale[1]);
-        (translation, rotation, scale)
     }
 
     /// Create an IfoObject from rose_file_readers::IfoObject
@@ -301,64 +278,6 @@ impl IfoWaterPlane {
     }
 }
 
-/// Block type identifiers for preserving original block order
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum IfoBlockType {
-    /// Deprecated map info (type 0)
-    DeprecatedMapInfo = 0,
-    /// Decoration objects (type 1)
-    DecoObject = 1,
-    /// NPCs (type 2)
-    Npc = 2,
-    /// Construction objects (type 3)
-    CnstObject = 3,
-    /// Sound objects (type 4)
-    SoundObject = 4,
-    /// Effect objects (type 5)
-    EffectObject = 5,
-    /// Animated objects (type 6)
-    AnimatedObject = 6,
-    /// Deprecated water (type 7)
-    DeprecatedWater = 7,
-    /// Monster spawns (type 8)
-    MonsterSpawn = 8,
-    /// Water planes (type 9)
-    WaterPlanes = 9,
-    /// Warp objects (type 10)
-    Warp = 10,
-    /// Collision objects (type 11)
-    CollisionObject = 11,
-    /// Event objects (type 12)
-    EventObject = 12,
-}
-
-impl IfoBlockType {
-    /// Convert from u32 to IfoBlockType
-    pub fn from_u32(value: u32) -> Option<Self> {
-        match value {
-            0 => Some(Self::DeprecatedMapInfo),
-            1 => Some(Self::DecoObject),
-            2 => Some(Self::Npc),
-            3 => Some(Self::CnstObject),
-            4 => Some(Self::SoundObject),
-            5 => Some(Self::EffectObject),
-            6 => Some(Self::AnimatedObject),
-            7 => Some(Self::DeprecatedWater),
-            8 => Some(Self::MonsterSpawn),
-            9 => Some(Self::WaterPlanes),
-            10 => Some(Self::Warp),
-            11 => Some(Self::CollisionObject),
-            12 => Some(Self::EventObject),
-            _ => None,
-        }
-    }
-
-    /// Convert to u32
-    pub fn to_u32(self) -> u32 {
-        self as u32
-    }
-}
-
 /// Represents a single block in an IFO file
 #[derive(Clone, Debug, Default)]
 pub struct IfoBlock {
@@ -423,8 +342,6 @@ impl IfoBlock {
 /// Complete IFO file data structure
 #[derive(Clone, Debug)]
 pub struct IfoFileData {
-    /// File path (relative to zone directory)
-    pub file_path: String,
     /// Block X coordinate in the zone (0-63)
     pub block_x: u32,
     /// Block Y coordinate in the zone (0-63)
@@ -438,9 +355,7 @@ pub struct IfoFileData {
 impl IfoFileData {
     /// Create a new IfoFileData for a specific block (marked as unmodified)
     pub fn new(block_x: u32, block_y: u32) -> Self {
-        let file_path = format!("{}_{}.IFO", block_x, block_y);
         Self {
-            file_path,
             block_x,
             block_y,
             block: IfoBlock::new(block_x, block_y),
@@ -450,9 +365,7 @@ impl IfoFileData {
 
     /// Create a new IfoFileData for a specific block (marked as modified)
     pub fn new_modified(block_x: u32, block_y: u32) -> Self {
-        let file_path = format!("{}_{}.IFO", block_x, block_y);
         Self {
-            file_path,
             block_x,
             block_y,
             block: IfoBlock::new(block_x, block_y),
@@ -524,11 +437,6 @@ impl ZoneExportData {
             .filter_map(|b| b.as_ref())
             .map(|b| b.block.total_objects())
             .sum()
-    }
-
-    /// Count blocks with data
-    pub fn populated_block_count(&self) -> usize {
-        self.blocks.iter().filter(|b| b.is_some()).count()
     }
 
     /// Create ZoneExportData from existing ZoneLoaderAsset blocks

@@ -7,9 +7,7 @@ use bevy::asset::{
 use bevy::math::{Quat, Vec3};
 use bevy::prelude::{Handle, Reflect, TypePath};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
-use bevy::tasks::futures_lite::AsyncReadExt;
 use bevy_image::Image;
-use log::info;
 
 use rose_file_readers::{RoseFile, ZmoChannel, ZmoFile};
 
@@ -142,21 +140,13 @@ impl AssetLoader for ZmoAssetLoader {
         &self,
         reader: &mut dyn Reader,
         _settings: &Self::Settings,
-        load_context: &mut LoadContext<'_>,
+        _load_context: &mut LoadContext<'_>,
     ) -> impl std::future::Future<Output = Result<Self::Asset, Self::Error>> + Send {
         async move {
-            let asset_path = load_context.path().path().to_string_lossy();
-            // CRITICAL: Use log::error to ensure visibility
-            //log::error!("[ZMO_LOADER] ========== LOAD CALLED ==========");
-            //log::error!("[ZMO_LOADER] Loading ZMO animation asset: {}", asset_path);
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).await?;
-            //log::info!("[ZMO_LOADER] ZMO asset size: {} bytes", bytes.len());
             match <ZmoFile as RoseFile>::read((&bytes).into(), &Default::default()) {
                 Ok(zmo) => {
-                    //log::info!("[ZMO_LOADER] ZMO loaded: num_frames={}, fps={}, channels={}",
-                    //zmo.num_frames, zmo.fps, zmo.channels.len());
-
                     // First count how many transform channels there are
                     let mut max_bone_id = 0;
                     for (bone_id, _) in zmo.channels.iter() {
@@ -166,7 +156,6 @@ impl AssetLoader for ZmoAssetLoader {
                     // Camera / morph target animations have only position channels
                     // but no bone id so we can use bone id as a channel id instead.
                     let assign_bone_id = max_bone_id == 0 && zmo.channels.len() > 2;
-                    //log::info!("[ZMO_LOADER] max_bone_id={}, assign_bone_id={}", max_bone_id, assign_bone_id);
                     if assign_bone_id {
                         max_bone_id = (zmo.channels.len() - 1) as u32;
                     }
@@ -180,8 +169,6 @@ impl AssetLoader for ZmoAssetLoader {
                         };
                         match channel {
                             ZmoChannel::Position(positions) => {
-                                //log::info!("[ZMO_LOADER] Channel {} (bone_id={}): Position channel with {} frames",
-                                //channel_id, bone_id, positions.len());
                                 bone_animation.translation = positions
                                     .iter()
                                     .map(|position| {
@@ -190,8 +177,6 @@ impl AssetLoader for ZmoAssetLoader {
                                     .collect();
                             }
                             ZmoChannel::Rotation(rotations) => {
-                                //log::info!("[ZMO_LOADER] Channel {} (bone_id={}): Rotation channel with {} frames",
-                                //channel_id, bone_id, rotations.len());
                                 bone_animation.rotation = rotations
                                     .iter()
                                     .map(|rotation| {
@@ -205,22 +190,12 @@ impl AssetLoader for ZmoAssetLoader {
                                     .collect();
                             }
                             ZmoChannel::Scale(scales) => {
-                                //log::info!("[ZMO_LOADER] Channel {} (bone_id={}): Scale channel with {} frames",
-                                //channel_id, bone_id, scales.len());
                                 bone_animation.scale = scales.clone();
                             }
-                            other => {
-                                // log::warn!("[ZMO_LOADER] Channel {} (bone_id={}): Unknown channel type: {:?}",
-                                //     channel_id, bone_id, std::mem::discriminant(other));
-                            }
+                            _ => {}
                         }
                     }
 
-                    // Log final bone state
-                    for (i, bone) in bones.iter().enumerate() {
-                        //log::info!("[ZMO_LOADER] Bone {}: translation={}, rotation={}, scale={}",
-                        //i, bone.translation.len(), bone.rotation.len(), bone.scale.len());
-                    }
                     let asset = ZmoAsset {
                         num_frames: zmo.num_frames,
                         fps: zmo.fps,

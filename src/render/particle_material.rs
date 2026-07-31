@@ -94,33 +94,6 @@ impl Material for ParticleMaterial {
         _layout: &MeshVertexBufferLayoutRef,
         _key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        // DIAGNOSTIC: Log when specialize is called
-        info!("[ParticleMaterial::specialize] Called for pipeline");
-        info!(
-            "[ParticleMaterial::specialize] Pipeline label: {:?}",
-            descriptor.label
-        );
-
-        // DIAGNOSTIC: Log bind group layouts count
-        info!(
-            "[ParticleMaterial::specialize] Number of bind group layouts: {}",
-            descriptor.layout.len()
-        );
-
-        // DIAGNOSTIC: Log vertex buffers before modification
-        info!(
-            "[ParticleMaterial::specialize] Vertex buffers BEFORE modification: {}",
-            descriptor.vertex.buffers.len()
-        );
-        for (i, vb) in descriptor.vertex.buffers.iter().enumerate() {
-            info!(
-                "[ParticleMaterial::specialize]   Vertex buffer {}: stride={}, attrs={}",
-                i,
-                vb.array_stride,
-                vb.attributes.len()
-            );
-        }
-
         // CRITICAL: Keep one empty vertex buffer layout (don't clear entirely)
         // This prevents index out of bounds errors in shadow/prepass systems
         descriptor.vertex.buffers = vec![VertexBufferLayout {
@@ -128,21 +101,6 @@ impl Material for ParticleMaterial {
             step_mode: VertexStepMode::Vertex,
             attributes: vec![],
         }];
-
-        info!(
-            "[ParticleMaterial::specialize] Vertex buffers AFTER modification: {}",
-            descriptor.vertex.buffers.len()
-        );
-
-        // DIAGNOSTIC: Log fragment shader targets if present
-        if let Some(fragment) = &descriptor.fragment {
-            info!(
-                "[ParticleMaterial::specialize] Fragment targets: {}",
-                fragment.targets.len()
-            );
-        }
-
-        info!("[ParticleMaterial::specialize] ✓ Specialization complete");
 
         Ok(())
     }
@@ -157,7 +115,6 @@ pub struct ParticleMaterialPlugin;
 impl Plugin for ParticleMaterialPlugin {
     fn build(&self, app: &mut App) {
         // Load main shader
-        //  info!("[ParticleMaterial] Loading particle shader...");
         load_internal_asset!(
             app,
             PARTICLE_SHADER_HANDLE,
@@ -187,19 +144,6 @@ impl Plugin for ParticleMaterialPlugin {
         }
 
         info!("✓ [ParticleMaterial] Plugin initialized successfully");
-
-        // DIAGNOSTIC: Log the expected bind group layout for ParticleMaterial
-        //  info!("[ParticleMaterial] Expected bind group layout (from AsBindGroup derive):");
-        //  info!("[ParticleMaterial]   Binding 0: Storage(read_only) - positions");
-        //  info!("[ParticleMaterial]   Binding 1: Storage(read_only) - sizes");
-        //  info!("[ParticleMaterial]   Binding 2: Storage(read_only) - colors");
-        //  info!("[ParticleMaterial]   Binding 3: Storage(read_only) - textures");
-        //  info!("[ParticleMaterial]   Binding 4: Texture - texture");
-        //  info!("[ParticleMaterial]   Binding 5: Sampler - texture sampler");
-        //  info!("[ParticleMaterial]   Binding 6: Uniform - blend_op");
-        //  info!("[ParticleMaterial]   Binding 7: Uniform - src_blend_factor");
-        //  info!("[ParticleMaterial]   Binding 8: Uniform - dst_blend_factor");
-        //  info!("[ParticleMaterial]   Binding 9: Uniform - billboard_type");
     }
 }
 
@@ -219,13 +163,6 @@ fn validate_particle_materials(
 
         let mut has_error = false;
 
-        // DIAGNOSTIC: Log material details
-        //  info!("[ParticleMaterial] Validating material {:?}:", id);
-        //  info!("[ParticleMaterial]   blend_op: {}", material.blend_op);
-        //  info!("[ParticleMaterial]   src_blend_factor: {}", material.src_blend_factor);
-        //  info!("[ParticleMaterial]   dst_blend_factor: {}", material.dst_blend_factor);
-        //  info!("[ParticleMaterial]   billboard_type: {}", material.billboard_type);
-
         // Validate storage buffers
         if storage_buffers.get(&material.positions).is_none() {
             error!("⚠ [ParticleMaterial {:?}] Positions buffer not loaded!", id);
@@ -233,29 +170,21 @@ fn validate_particle_materials(
                 "   Create with: storage_buffers.add(ShaderStorageBuffer::from(positions_data))"
             );
             has_error = true;
-        } else {
-            //  info!("[ParticleMaterial]   ✓ Positions buffer loaded: {:?}", material.positions.id());
         }
 
         if storage_buffers.get(&material.sizes).is_none() {
             error!("⚠ [ParticleMaterial {:?}] Sizes buffer not loaded!", id);
             has_error = true;
-        } else {
-            //  info!("[ParticleMaterial]   ✓ Sizes buffer loaded: {:?}", material.sizes.id());
         }
 
         if storage_buffers.get(&material.colors).is_none() {
             error!("⚠ [ParticleMaterial {:?}] Colors buffer not loaded!", id);
             has_error = true;
-        } else {
-            //  info!("[ParticleMaterial]   ✓ Colors buffer loaded: {:?}", material.colors.id());
         }
 
         if storage_buffers.get(&material.textures).is_none() {
             error!("⚠ [ParticleMaterial {:?}] Textures buffer not loaded!", id);
             has_error = true;
-        } else {
-            //  info!("[ParticleMaterial]   ✓ Textures buffer loaded: {:?}", material.textures.id());
         }
 
         // Validate texture
@@ -265,8 +194,6 @@ fn validate_particle_materials(
             warn!("   This is normal during startup but may cause rendering issues");
             // Don't set has_error for texture - it loads asynchronously
             // but don't add to warned_materials either so we check again next frame
-        } else {
-            //  info!("[ParticleMaterial]   ✓ Texture loaded: {:?}", material.texture.id());
         }
 
         if !has_error && texture_loaded {
@@ -296,13 +223,6 @@ fn log_particle_material_bind_groups(
         if logged_materials.contains(&id) {
             continue;
         }
-
-        //  info!("[ParticleMaterial] Material {:?} registered in Assets", id);
-        //  info!("[ParticleMaterial] This material will use bind group with:");
-        //  info!("[ParticleMaterial]   - Bindings 0-3: Storage buffers (read_only)");
-        //  info!("[ParticleMaterial]   - Binding 4: Texture");
-        //  info!("[ParticleMaterial]   - Binding 5: Sampler");
-        //  info!("[ParticleMaterial]   - Bindings 6-9: Uniforms (u32 each)");
 
         logged_materials.insert(id);
     }

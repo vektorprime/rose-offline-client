@@ -9,7 +9,7 @@
 use bevy::{
     asset::{load_internal_asset, weak_handle, Handle},
     math::{Quat, Vec3},
-    pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin, MeshPipelineKey},
+    pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin},
     prelude::*,
     reflect::TypePath,
     render::{alpha::AlphaMode, render_resource::*, renderer::RenderDevice},
@@ -564,7 +564,7 @@ pub fn update_volumetric_cloud_lighting_system(
     }
 
     let (sun_direction, sun_color, ambient_color, tod_factor) =
-        calculate_cloud_lighting(&zone_time, &zone_lighting);
+        crate::render::zone_lighting::calculate_cloud_lighting(&zone_time, &zone_lighting);
 
     for material_handle in query.iter() {
         if let Some(material) = materials.get_mut(&material_handle.0) {
@@ -574,54 +574,4 @@ pub fn update_volumetric_cloud_lighting_system(
             material.tod_factor = tod_factor;
         }
     }
-}
-
-fn calculate_cloud_lighting(
-    zone_time: &crate::resources::ZoneTime,
-    zone_lighting: &crate::render::ZoneLighting,
-) -> (Vec3, Vec3, Vec3, f32) {
-    use crate::resources::ZoneTimeState;
-
-    let time_of_day = match zone_time.state {
-        ZoneTimeState::Morning => {
-            let t = zone_time.state_percent_complete;
-            0.0 + t * 0.5
-        }
-        ZoneTimeState::Day => {
-            let t = zone_time.state_percent_complete;
-            0.5 + t * 0.25
-        }
-        ZoneTimeState::Evening => {
-            let t = zone_time.state_percent_complete;
-            0.75 + t * 0.25
-        }
-        ZoneTimeState::Night => 0.0,
-    };
-
-    let sun_angle = time_of_day * std::f32::consts::PI;
-    let sun_direction = Vec3::new(-sun_angle.cos(), sun_angle.sin(), 0.3).normalize();
-
-    let sun_color = match zone_time.state {
-        ZoneTimeState::Morning => {
-            let t = zone_time.state_percent_complete;
-            Vec3::new(1.0, 0.7 + t * 0.2, 0.5 + t * 0.4)
-        }
-        ZoneTimeState::Day => Vec3::new(1.0, 0.98, 0.95),
-        ZoneTimeState::Evening => {
-            let t = zone_time.state_percent_complete;
-            Vec3::new(1.0, 0.9 - t * 0.4, 0.8 - t * 0.5)
-        }
-        ZoneTimeState::Night => Vec3::new(0.2, 0.25, 0.4),
-    };
-
-    let ambient_color = zone_lighting.map_ambient_color;
-
-    let tod_factor = match zone_time.state {
-        ZoneTimeState::Morning => 0.5 + zone_time.state_percent_complete * 0.5,
-        ZoneTimeState::Day => 1.0,
-        ZoneTimeState::Evening => 1.0 - zone_time.state_percent_complete * 0.5,
-        ZoneTimeState::Night => 0.3,
-    };
-
-    (sun_direction, sun_color, ambient_color, tod_factor)
 }

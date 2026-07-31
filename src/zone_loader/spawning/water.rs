@@ -83,6 +83,5 @@ pub(super) fn spawn_water(
         ))
         .id();
 
-    // info!("[ASSET LIFECYCLE] Water entity spawned: {:?}", water_entity);
     (water_entity, water_center, water_half_extents)
 }

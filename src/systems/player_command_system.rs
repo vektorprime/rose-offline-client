@@ -24,6 +24,91 @@ use crate::{
     ui::UiStateInventory,
 };
 
+fn is_valid_skill_target(
+    filter: SkillTargetFilter,
+    target: (Entity, Option<&CharacterInfo>, &ClientEntity, &Command, &Team),
+    player_entity: Entity,
+    player_team_id: u32,
+    player_party: Option<&PartyInfo>,
+    player_clan: Option<&Clan>,
+) -> bool {
+    let (target_entity, target_character_info, target_client_entity, target_command, target_team) =
+        target;
+    let target_is_alive = !target_command.is_die();
+    let target_is_caster = target_entity == player_entity;
+
+    match filter {
+        SkillTargetFilter::OnlySelf => target_is_alive && target_is_caster,
+        SkillTargetFilter::Group => {
+            target_is_alive
+                && (target_is_caster
+                    || player_party.map_or(false, |party_info| {
+                        party_info.contains_member(target_client_entity.id)
+                    }))
+        }
+        SkillTargetFilter::Guild => {
+            target_is_alive
+                && (target_is_caster
+                    || target_character_info.map_or(false, |character_info| {
+                        player_clan.map_or(false, |clan| {
+                            clan.find_member(&character_info.name).is_some()
+                        })
+                    }))
+        }
+        SkillTargetFilter::Allied => target_is_alive && target_team.id == player_team_id,
+        SkillTargetFilter::Monster => {
+            target_is_alive
+                && matches!(
+                    target_client_entity.entity_type,
+                    ClientEntityType::Monster
+                )
+        }
+        SkillTargetFilter::Enemy => {
+            target_is_alive
+                && target_team.id != Team::DEFAULT_NPC_TEAM_ID
+                && target_team.id != player_team_id
+        }
+        SkillTargetFilter::EnemyCharacter => {
+            target_is_alive
+                && target_team.id != player_team_id
+                && matches!(
+                    target_client_entity.entity_type,
+                    ClientEntityType::Character
+                )
+        }
+        SkillTargetFilter::Character => {
+            target_is_alive
+                && matches!(
+                    target_client_entity.entity_type,
+                    ClientEntityType::Character
+                )
+        }
+        SkillTargetFilter::CharacterOrMonster => {
+            target_is_alive
+                && matches!(
+                    target_client_entity.entity_type,
+                    ClientEntityType::Character | ClientEntityType::Monster
+                )
+        }
+        SkillTargetFilter::DeadAlliedCharacter => {
+            !target_is_alive
+                && target_team.id == player_team_id
+                && matches!(
+                    target_client_entity.entity_type,
+                    ClientEntityType::Character
+                )
+        }
+        SkillTargetFilter::EnemyMonster => {
+            target_is_alive
+                && target_team.id != player_team_id
+                && matches!(
+                    target_client_entity.entity_type,
+                    ClientEntityType::Monster
+                )
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn player_command_system(
     mut player_command_events: MessageReader<PlayerCommandEvent>,
@@ -237,14 +322,6 @@ pub fn player_command_system(
                                         .ok();
                                 }
                             }
-                            /*
-                            Some(SkillBasicCommand::AutoTarget) => {}
-                            Some(SkillBasicCommand::AddFriend) => {}
-                            Some(SkillBasicCommand::Trade) => {}
-                            Some(SkillBasicCommand::PrivateStore) => {}
-                            Some(SkillBasicCommand::SelfTarget) => {}
-                            Some(SkillBasicCommand::VehiclePassengerInvite) => {}
-                            */
                             Some(unimplemented) => {
                                 log::warn!(
                                     "Unimplemented skill basic command type: {:?}",
@@ -296,106 +373,18 @@ pub fn player_command_system(
                         | SkillType::FireBullet
                         | SkillType::AreaTarget => {
                             let target_entity_id = {
-                                if let Ok((
-                                    target_entity,
-                                    target_character_info,
-                                    target_client_entity,
-                                    target_command,
-                                    target_team,
-                                )) = query_skill_target
+                                if let Ok(target) = query_skill_target
                                     .get(selected_target.selected.unwrap_or(player_entity))
                                 {
-                                    let target_is_alive = !target_command.is_die();
-                                    let target_is_caster = target_entity == player_entity;
-                                    let target_is_valid = match skill_data.target_filter {
-                                        SkillTargetFilter::OnlySelf => {
-                                            target_is_alive && target_is_caster
-                                        }
-                                        SkillTargetFilter::Group => {
-                                            target_is_alive
-                                                && (target_is_caster
-                                                    || player_party_info.map_or(
-                                                        false,
-                                                        |party_info| {
-                                                            party_info.contains_member(
-                                                                target_client_entity.id,
-                                                            )
-                                                        },
-                                                    ))
-                                        }
-                                        SkillTargetFilter::Guild => {
-                                            target_is_alive
-                                                && (target_is_caster
-                                                    || target_character_info.map_or(
-                                                        false,
-                                                        |character_info| {
-                                                            player_clan.map_or(false, |clan| {
-                                                                clan.find_member(
-                                                                    &character_info.name,
-                                                                )
-                                                                .is_some()
-                                                            })
-                                                        },
-                                                    ))
-                                        }
-                                        SkillTargetFilter::Allied => {
-                                            target_is_alive && target_team.id == player_team.id
-                                        }
-                                        SkillTargetFilter::Monster => {
-                                            target_is_alive
-                                                && matches!(
-                                                    target_client_entity.entity_type,
-                                                    ClientEntityType::Monster
-                                                )
-                                        }
-                                        SkillTargetFilter::Enemy => {
-                                            target_is_alive
-                                                && target_team.id != Team::DEFAULT_NPC_TEAM_ID
-                                                && target_team.id != player_team.id
-                                        }
-                                        SkillTargetFilter::EnemyCharacter => {
-                                            target_is_alive
-                                                && target_team.id != player_team.id
-                                                && matches!(
-                                                    target_client_entity.entity_type,
-                                                    ClientEntityType::Character
-                                                )
-                                        }
-                                        SkillTargetFilter::Character => {
-                                            target_is_alive
-                                                && matches!(
-                                                    target_client_entity.entity_type,
-                                                    ClientEntityType::Character
-                                                )
-                                        }
-                                        SkillTargetFilter::CharacterOrMonster => {
-                                            target_is_alive
-                                                && matches!(
-                                                    target_client_entity.entity_type,
-                                                    ClientEntityType::Character
-                                                        | ClientEntityType::Monster
-                                                )
-                                        }
-                                        SkillTargetFilter::DeadAlliedCharacter => {
-                                            !target_is_alive
-                                                && target_team.id == player_team.id
-                                                && matches!(
-                                                    target_client_entity.entity_type,
-                                                    ClientEntityType::Character
-                                                )
-                                        }
-                                        SkillTargetFilter::EnemyMonster => {
-                                            target_is_alive
-                                                && target_team.id != player_team.id
-                                                && matches!(
-                                                    target_client_entity.entity_type,
-                                                    ClientEntityType::Monster
-                                                )
-                                        }
-                                    };
-
-                                    if target_is_valid {
-                                        Some(target_client_entity.id)
+                                    if is_valid_skill_target(
+                                        skill_data.target_filter,
+                                        target,
+                                        player_entity,
+                                        player_team.id,
+                                        player_party_info,
+                                        player_clan,
+                                    ) {
+                                        Some(target.2.id)
                                     } else {
                                         None
                                     }
@@ -515,109 +504,16 @@ pub fn player_command_system(
                                         let is_valid_target = if let Some(target_entity) =
                                             selected_target.selected
                                         {
-                                            if let Ok((
-                                                target_id,
-                                                target_character_info,
-                                                target_client_entity,
-                                                target_command,
-                                                target_team,
-                                            )) = query_skill_target.get(target_entity)
+                                            if let Ok(target) = query_skill_target.get(target_entity)
                                             {
-                                                let target_is_alive = !target_command.is_die();
-                                                let target_is_caster = target_id == player_entity;
-
-                                                match skill_data.target_filter {
-                                                    SkillTargetFilter::OnlySelf => {
-                                                        target_is_alive && target_is_caster
-                                                    }
-                                                    SkillTargetFilter::Group => {
-                                                        target_is_alive
-                                                            && (target_is_caster
-                                                                || player_party_info.map_or(
-                                                                    false,
-                                                                    |party_info| {
-                                                                        party_info.contains_member(
-                                                                            target_client_entity.id,
-                                                                        )
-                                                                    },
-                                                                ))
-                                                    }
-                                                    SkillTargetFilter::Guild => {
-                                                        target_is_alive
-                                                            && (target_is_caster
-                                                                || target_character_info.map_or(
-                                                                    false,
-                                                                    |character_info| {
-                                                                        player_clan.map_or(
-                                                                            false,
-                                                                            |clan| {
-                                                                                clan.find_member(
-                                                                                    &character_info
-                                                                                        .name,
-                                                                                )
-                                                                                .is_some()
-                                                                            },
-                                                                        )
-                                                                    },
-                                                                ))
-                                                    }
-                                                    SkillTargetFilter::Allied => {
-                                                        target_is_alive
-                                                            && target_team.id == player_team.id
-                                                    }
-                                                    SkillTargetFilter::Monster => {
-                                                        target_is_alive
-                                                            && matches!(
-                                                                target_client_entity.entity_type,
-                                                                ClientEntityType::Monster
-                                                            )
-                                                    }
-                                                    SkillTargetFilter::Enemy => {
-                                                        target_is_alive
-                                                            && target_team.id
-                                                                != Team::DEFAULT_NPC_TEAM_ID
-                                                            && target_team.id != player_team.id
-                                                    }
-                                                    SkillTargetFilter::EnemyCharacter => {
-                                                        target_is_alive
-                                                            && target_team.id != player_team.id
-                                                            && matches!(
-                                                                target_client_entity.entity_type,
-                                                                ClientEntityType::Character
-                                                            )
-                                                    }
-                                                    SkillTargetFilter::Character => {
-                                                        target_is_alive
-                                                            && matches!(
-                                                                target_client_entity.entity_type,
-                                                                ClientEntityType::Character
-                                                            )
-                                                    }
-                                                    SkillTargetFilter::CharacterOrMonster => {
-                                                        target_is_alive
-                                                            && matches!(
-                                                                target_client_entity.entity_type,
-                                                                ClientEntityType::Character
-                                                                    | ClientEntityType::Monster
-                                                            )
-                                                    }
-                                                    SkillTargetFilter::DeadAlliedCharacter => {
-                                                        !target_is_alive
-                                                            && target_team.id == player_team.id
-                                                            && matches!(
-                                                                target_client_entity.entity_type,
-                                                                ClientEntityType::Character
-                                                            )
-                                                    }
-                                                    SkillTargetFilter::EnemyMonster => {
-                                                        target_is_alive
-                                                            && target_team.id != player_team.id
-                                                            && matches!(
-                                                                target_client_entity.entity_type,
-                                                                ClientEntityType::Monster
-                                                            )
-                                                    }
-                                                }
+                                                is_valid_skill_target(
+                                                    skill_data.target_filter,
+                                                    target,
+                                                    player_entity,
+                                                    player_team.id,
+                                                    player_party_info,
+                                                    player_clan,
+                                                )
                                             } else {
                                                 false
                                             }
@@ -844,14 +740,11 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::Move(position, target_entity) => {
-                //log::info!("[RESPAWN_MOVE_DIAG] PlayerCommandEvent::Move received: position=({}, {}, {})", position.x, position.y, position.z);
-
                 let target_entity_id = target_entity
                     .and_then(|target_entity| query_client_entity.get(target_entity).ok())
                     .map(|target_client_entity| target_client_entity.id);
 
                 if let Some(game_connection) = game_connection.as_ref() {
-                    //log::info!("[RESPAWN_MOVE_DIAG] Sending ClientMessage::Move to server");
                     game_connection
                         .client_message_tx
                         .send(ClientMessage::Move {

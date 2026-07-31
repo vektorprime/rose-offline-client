@@ -29,76 +29,39 @@ pub struct LuaGameConstants {
 
 impl Default for LuaGameConstants {
     fn default() -> Self {
-        let mut constants: HashMap<String, Lua4Value> = HashMap::new();
-
-        constants.insert("SV_SEX".to_string(), SV_SEX.into());
-        constants.insert("SV_BIRTH".to_string(), SV_BIRTH.into());
-        constants.insert("SV_CLASS".to_string(), SV_CLASS.into());
-        constants.insert("SV_UNION".to_string(), SV_UNION.into());
-        constants.insert("SV_RANK".to_string(), SV_RANK.into());
-        constants.insert("SV_FAME".to_string(), SV_FAME.into());
-        constants.insert("SV_STR".to_string(), SV_STR.into());
-        constants.insert("SV_DEX".to_string(), SV_DEX.into());
-        constants.insert("SV_INT".to_string(), SV_INT.into());
-        constants.insert("SV_CON".to_string(), SV_CON.into());
-        constants.insert("SV_CHA".to_string(), SV_CHA.into());
-        constants.insert("SV_SEN".to_string(), SV_SEN.into());
-        constants.insert("SV_EXP".to_string(), SV_EXP.into());
-        constants.insert("SV_LEVEL".to_string(), SV_LEVEL.into());
-        constants.insert("SV_POINT".to_string(), SV_POINT.into());
-
-        constants.insert(
-            "ITEM_TYPE_FACE_ITEM".to_string(),
-            encode_item_type(ItemType::Face).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_HELMET".to_string(),
-            encode_item_type(ItemType::Head).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_ARMOR".to_string(),
-            encode_item_type(ItemType::Body).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_GAUNTLET".to_string(),
-            encode_item_type(ItemType::Hands).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_BOOTS".to_string(),
-            encode_item_type(ItemType::Feet).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_KNAPSACK".to_string(),
-            encode_item_type(ItemType::Back).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_JEWEL".to_string(),
-            encode_item_type(ItemType::Jewellery).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_WEAPON".to_string(),
-            encode_item_type(ItemType::Weapon).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_SUBWPN".to_string(),
-            encode_item_type(ItemType::SubWeapon).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_USE".to_string(),
-            encode_item_type(ItemType::Consumable).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_ETC".to_string(),
-            encode_item_type(ItemType::Gem).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_GEM".to_string(),
-            encode_item_type(ItemType::Gem).unwrap().into(),
-        );
-        constants.insert(
-            "ITEM_TYPE_NATURAL".to_string(),
-            encode_item_type(ItemType::Material).unwrap().into(),
-        );
+        let constants: HashMap<String, Lua4Value> = [
+            ("SV_SEX", SV_SEX.into()),
+            ("SV_BIRTH", SV_BIRTH.into()),
+            ("SV_CLASS", SV_CLASS.into()),
+            ("SV_UNION", SV_UNION.into()),
+            ("SV_RANK", SV_RANK.into()),
+            ("SV_FAME", SV_FAME.into()),
+            ("SV_STR", SV_STR.into()),
+            ("SV_DEX", SV_DEX.into()),
+            ("SV_INT", SV_INT.into()),
+            ("SV_CON", SV_CON.into()),
+            ("SV_CHA", SV_CHA.into()),
+            ("SV_SEN", SV_SEN.into()),
+            ("SV_EXP", SV_EXP.into()),
+            ("SV_LEVEL", SV_LEVEL.into()),
+            ("SV_POINT", SV_POINT.into()),
+            ("ITEM_TYPE_FACE_ITEM", encode_item_type(ItemType::Face).unwrap().into()),
+            ("ITEM_TYPE_HELMET", encode_item_type(ItemType::Head).unwrap().into()),
+            ("ITEM_TYPE_ARMOR", encode_item_type(ItemType::Body).unwrap().into()),
+            ("ITEM_TYPE_GAUNTLET", encode_item_type(ItemType::Hands).unwrap().into()),
+            ("ITEM_TYPE_BOOTS", encode_item_type(ItemType::Feet).unwrap().into()),
+            ("ITEM_TYPE_KNAPSACK", encode_item_type(ItemType::Back).unwrap().into()),
+            ("ITEM_TYPE_JEWEL", encode_item_type(ItemType::Jewellery).unwrap().into()),
+            ("ITEM_TYPE_WEAPON", encode_item_type(ItemType::Weapon).unwrap().into()),
+            ("ITEM_TYPE_SUBWPN", encode_item_type(ItemType::SubWeapon).unwrap().into()),
+            ("ITEM_TYPE_USE", encode_item_type(ItemType::Consumable).unwrap().into()),
+            ("ITEM_TYPE_ETC", encode_item_type(ItemType::Gem).unwrap().into()),
+            ("ITEM_TYPE_GEM", encode_item_type(ItemType::Gem).unwrap().into()),
+            ("ITEM_TYPE_NATURAL", encode_item_type(ItemType::Material).unwrap().into()),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value))
+        .collect();
 
         Self { constants }
     }

@@ -43,6 +43,7 @@
 //! - Automatic backup of original files
 //! - Save status feedback in UI
 
+pub mod coords;
 pub mod components;
 pub mod resources;
 pub mod save;
@@ -50,15 +51,11 @@ pub mod systems;
 pub mod ui;
 
 // Re-export commonly used types for convenience
-pub use components::{
-    EditorGizmo, EditorGrid, EditorHandle, EditorModified, EditorOnly, EditorPreview,
-    EditorSelectable, GizmoType, HandleType, SelectedInEditor,
-};
+pub use components::{EditorSelectable, SelectedInEditor};
 
 pub use resources::{
     AvailableModels, CustomZonePath, DeletedZoneObjects, EditorGridSettings, EditorMode,
-    HierarchyFilter, MapEditorState, ModelCategory, ModelInfo, SelectedModel, SelectionMode,
-    TransformSpace, ZoneObjectType,
+    MapEditorState, ModelCategory, ModelInfo, SelectedModel, TransformSpace, ZoneObjectType,
 };
 
 pub use save::{SavePlugin, SaveStatus, SaveZoneEvent};
@@ -75,7 +72,6 @@ use systems::property_update_system::PropertyUpdatePlugin;
 use systems::selection_highlight_system::SelectionHighlightPlugin;
 use systems::selection_system::EditorSelectionPlugin;
 use systems::transform_gizmo_system::TransformGizmoPlugin;
-use systems::undo_system::UndoRedoPlugin;
 use ui::zone_list_panel::ZoneListPanelState;
 use ui::EditorUiPlugin;
 
@@ -103,7 +99,6 @@ impl Plugin for MapEditorPlugin {
             .add_plugins(TransformGizmoPlugin)
             .add_plugins(PropertyUpdatePlugin)
             .add_plugins(KeyboardShortcutsPlugin)
-            .add_plugins(UndoRedoPlugin)
             // Phase 2.5: Model management plugins
             .add_plugins(ModelPlacementPlugin)
             .add_plugins(DuplicateSystemPlugin)

@@ -10,7 +10,6 @@ use bevy::{
     },
     render::{alpha::AlphaMode, render_resource::Face, storage::ShaderStorageBuffer},
 };
-use bevy_camera::{primitives::Aabb, visibility::NoFrustumCulling};
 use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 
 use enum_map::{enum_map, EnumMap};
@@ -31,7 +30,6 @@ use crate::{
         CharacterModel, CharacterModelPart, CharacterModelPartIndex, DummyBoneOffset,
         ItemDropModel, NpcModel, PersonalStoreModel, VehicleModel,
     },
-    // diagnostics::render_diagnostics::{log_alpha_blend_mesh_setup_simple},
     effect_loader::{spawn_effect, EffectCache},
     render::{
         object_material_extension::RoseObjectExtension, ParticleMaterial, RoseEffectExtension,
@@ -589,68 +587,6 @@ impl ModelLoader {
         )
     }
 
-    // Gem effects temporarily disabled (use custom materials)
-    /*
-    fn spawn_character_gem_effect(
-        &self,
-        commands: &mut Commands,
-        asset_server: &AssetServer,
-        particle_materials: &mut Assets<ParticleMaterial>,
-        effect_mesh_materials: &mut Assets<EffectMeshMaterial>,
-        model_list: &ZscFile,
-        model_parts: &[Entity],
-        item_model_id: usize,
-        gem_item_number: usize,
-        gem_position: usize,
-    ) -> Option<Entity> {
-        let gem_item = self.item_database.get_gem_item(gem_item_number)?;
-        let gem_effect_id = gem_item.gem_effect_id?;
-        let gem_effect = self.effect_database.get_effect(gem_effect_id)?;
-        let effect_file_id = gem_effect.point_effects.get(0)?;
-        let effect_file = self.effect_database.get_effect_file(*effect_file_id)?;
-
-        let zsc_object = model_list.objects.get(item_model_id)?;
-        let gem_effect_point = zsc_object.effects.get(gem_position)?;
-        let parent_part_entity = model_parts.get(gem_effect_point.parent.unwrap_or(0) as usize)?;
-
-        let effect_entity = spawn_effect(
-            &self.vfs,
-            commands,
-            asset_server,
-            particle_materials,
-            effect_mesh_materials,
-            storage_buffers,
-            meshes,
-            effect_file.into(),
-            false,
-            None,
-            Some(&self.effect_cache),
-        )?;
-
-        commands
-            .entity(*parent_part_entity)
-            .add_child(effect_entity);
-
-        commands.entity(effect_entity).insert(
-            Transform::from_translation(
-                Vec3::new(
-                    gem_effect_point.position.x,
-                    gem_effect_point.position.z,
-                    -gem_effect_point.position.y,
-                ) / 100.0,
-            )
-            .with_rotation(Quat::from_xyzw(
-                gem_effect_point.rotation.x,
-                gem_effect_point.rotation.z,
-                -gem_effect_point.rotation.y,
-                gem_effect_point.rotation.w,
-            )),
-        );
-
-        Some(effect_entity)
-    }
-    */
-
     pub fn spawn_character_weapon_trail(
         &self,
         commands: &mut Commands,
@@ -846,58 +782,6 @@ impl ModelLoader {
             );
             model_parts.extend(weapon_trail_entities.into_iter());
         }
-
-        // Gem effects temporarily disabled (use custom materials)
-        /*
-        if matches!(model_part, CharacterModelPart::Weapon) {
-            if let Some(item) = equipment.get_equipment_item(EquipmentIndex::Weapon) {
-                if item.has_socket && item.gem > 300 {
-                    if let Some(item_data) =
-                        self.item_database.get_weapon_item(item.item.item_number)
-                    {
-                        if let Some(gem_effect_entity) = self.spawn_character_gem_effect(
-                            commands,
-                            asset_server,
-                            particle_materials,
-                            effect_mesh_materials,
-                            model_list,
-                            &model_parts,
-                            model_id,
-                            item.gem as usize,
-                            item_data.gem_position as usize,
-                        ) {
-                            model_parts.push(gem_effect_entity);
-                        }
-                    }
-                }
-            }
-        }
-
-        if matches!(model_part, CharacterModelPart::SubWeapon) {
-            if let Some(item) = equipment.get_equipment_item(EquipmentIndex::SubWeapon) {
-                if item.has_socket && item.gem > 300 {
-                    if let Some(item_data) = self
-                        .item_database
-                        .get_sub_weapon_item(item.item.item_number)
-                    {
-                        if let Some(gem_effect_entity) = self.spawn_character_gem_effect(
-                            commands,
-                            asset_server,
-                            particle_materials,
-                            effect_mesh_materials,
-                            model_list,
-                            &model_parts,
-                            model_id,
-                            item.gem as usize,
-                            item_data.gem_position as usize,
-                        ) {
-                            model_parts.push(gem_effect_entity);
-                        }
-                    }
-                }
-            }
-        }
-        */
 
         model_parts
     }
@@ -1312,13 +1196,6 @@ fn spawn_skeleton(
         "Failed to add inverse bind poses asset"
     );
 
-    // log::info!(
-    //     "[SKINNED_MESH_FIX] Created skeleton with {} bones ({} real, {} dummy), inverse_bindposes asset loaded successfully",
-    //     bone_entities.len(),
-    //     skeleton.bones.len(),
-    //     skeleton.dummy_bones.len()
-    // );
-
     SkinnedMesh {
         inverse_bindposes: handle,
         joints: bone_entities,
@@ -1329,7 +1206,7 @@ fn spawn_skeleton(
 fn spawn_model(
     commands: &mut Commands,
     asset_server: &AssetServer,
-    standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
+    _standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
     object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
     model_entity: Entity,
     model_list: &ZscFile,
@@ -1359,22 +1236,6 @@ fn spawn_model(
         let mesh: Handle<Mesh> = asset_server.load(mesh_path);
         let material_id = object_part.material_id as usize;
         let zsc_material = &model_list.materials[material_id];
-
-        // Determine if material is alpha-blended
-        // Alpha-blended materials have alpha enabled and z-write disabled
-        let alpha_blended = zsc_material.alpha_enabled && !zsc_material.z_write_enabled;
-
-        // Log alpha-blended mesh setup for diagnostic purposes (Crash #2)
-        // DISABLED: if alpha_blended {
-        //     log_alpha_blend_mesh_setup_simple(
-        //         model_id,
-        //         material_id,
-        //         zsc_material.alpha_enabled,
-        //         zsc_material.z_write_enabled,
-        //         zsc_material.two_sided,
-        //         zsc_material.is_skin,
-        //     );
-        // }
 
         // Create material using ExtendedMaterial<StandardMaterial, RoseObjectExtension>
         // Handle NULL texture paths for models
@@ -1423,18 +1284,6 @@ fn spawn_model(
             entity_commands.insert(zms_material_num_faces);
         }
 
-        // Log all mesh spawning for diagnostics
-        // log::info!(
-        //     "[SPAWN_MODEL] model_id={}, mesh_id={}, is_skin={}, has_skinned_mesh_param={}, bone_index={:?}, dummy_index={:?}, default_bone_index={:?}",
-        //     model_id,
-        //     mesh_id,
-        //     zsc_material.is_skin,
-        //     skinned_mesh.is_some(),
-        //     object_part.bone_index,
-        //     object_part.dummy_index,
-        //     default_bone_index
-        // );
-
         // CRITICAL: Do NOT insert SkinnedMesh directly in Bevy0.16
         // The ZSC material's is_skin flag doesn't guarantee the ZMS mesh has joint attributes
         // If SkinnedMesh is inserted but the mesh lacks joint attributes, it causes a bind group mismatch
@@ -1445,7 +1294,7 @@ fn spawn_model(
         // 2. Check if mesh has joint attributes (JOINT_INDEX, JOINT_WEIGHT)
         // 3. Only add SkinnedMesh if mesh actually has joint attributes
         if zsc_material.is_skin {
-            if let Some(skinned_mesh) = skinned_mesh {
+            if skinned_mesh.is_some() {
                 // Get the model_entity (parent with SkinnedMesh) from the bone hierarchy
                 // The skinned_mesh.joints[0] is the root bone, its parent is the model_entity
                 // Use skinned_mesh_parent if provided, otherwise use model_entity

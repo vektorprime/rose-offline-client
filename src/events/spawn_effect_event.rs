@@ -1,4 +1,4 @@
-use bevy::prelude::{Entity, Message, Transform};
+use bevy::prelude::{Entity, Message};
 
 use rose_data::EffectFileId;
 use rose_file_readers::VfsPathBuf;
@@ -46,8 +46,4 @@ pub enum SpawnEffectEvent {
 
     // Spawns an effect attached to Entity, optionally attached to dummy bone
     OnEntity(Entity, Option<usize>, SpawnEffectData),
-
-    // Spawns an effect with the given transform
-    #[allow(dead_code)]
-    WithTransform(Transform, SpawnEffectData),
 }

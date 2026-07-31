@@ -1,7 +1,5 @@
 use std::{
     collections::HashSet,
-    future::Future,
-    num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::{mpsc, Arc, OnceLock},
     time::{Duration, Instant},
@@ -12,7 +10,6 @@ use std::{
 #[cfg(target_os = "windows")]
 pub mod memory_monitor {
     use std::mem;
-    use std::time::{Duration, Instant};
 
     #[repr(C)]
     #[derive(Debug, Clone, Copy)]
@@ -69,21 +66,6 @@ pub mod memory_monitor {
             ppsmemCounters: *mut ProcessMemoryCountersEx,
             cb: u32,
         ) -> i32;
-    }
-
-    /// Formats bytes into human-readable string
-    pub fn format_bytes(bytes: u64) -> String {
-        const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-        if bytes == 0 {
-            return "0 B".to_string();
-        }
-        let exp = (bytes as f64).log(1024.0).min(UNITS.len() as f64 - 1.0) as usize;
-        let value = bytes as f64 / 1024_f64.powi(exp as i32);
-        if exp == 0 {
-            format!("{} {}", bytes, UNITS[exp])
-        } else {
-            format!("{:.2} {}", value, UNITS[exp])
-        }
     }
 
     /// System memory information
@@ -164,13 +146,13 @@ pub mod memory_monitor {
             log::info!("[MEMORY MONITOR]   Load: {}%", sys.memory_load_percent);
             log::info!(
                 "[MEMORY MONITOR]   Physical: {} / {} (used)",
-                format_bytes(sys.used_physical()),
-                format_bytes(sys.total_physical)
+                crate::vfs_asset_io::format_bytes(sys.used_physical() as usize),
+                crate::vfs_asset_io::format_bytes(sys.total_physical as usize)
             );
             log::info!(
                 "[MEMORY MONITOR]   Virtual:  {} / {} (used)",
-                format_bytes(sys.used_virtual()),
-                format_bytes(sys.total_virtual)
+                crate::vfs_asset_io::format_bytes(sys.used_virtual() as usize),
+                crate::vfs_asset_io::format_bytes(sys.total_virtual as usize)
             );
         }
 
@@ -178,150 +160,48 @@ pub mod memory_monitor {
             log::info!("[MEMORY MONITOR] Process Memory:");
             log::info!(
                 "[MEMORY MONITOR]   Resident (RAM):      {} (peak: {})",
-                format_bytes(proc.working_set_size as u64),
-                format_bytes(proc.peak_working_set_size as u64)
+                crate::vfs_asset_io::format_bytes(proc.working_set_size),
+                crate::vfs_asset_io::format_bytes(proc.peak_working_set_size)
             );
             log::info!(
                 "[MEMORY MONITOR]   Virtual (committed): {} (peak: {})",
-                format_bytes(proc.pagefile_usage as u64),
-                format_bytes(proc.peak_pagefile_usage as u64)
+                crate::vfs_asset_io::format_bytes(proc.pagefile_usage),
+                crate::vfs_asset_io::format_bytes(proc.peak_pagefile_usage)
             );
             log::info!(
                 "[MEMORY MONITOR]   Private bytes:       {}",
-                format_bytes(proc.private_usage as u64)
+                crate::vfs_asset_io::format_bytes(proc.private_usage)
             );
         }
 
         log::info!("[MEMORY MONITOR] ==========================================");
     }
-
-    /// Memory snapshot for comparison
-    #[derive(Debug, Clone)]
-    pub struct MemorySnapshot {
-        pub timestamp: Instant,
-        pub process: ProcessMemoryInfo,
-        pub system: SystemMemoryInfo,
-        pub context: String,
-    }
-
-    impl MemorySnapshot {
-        pub fn capture(context: &str) -> Option<Self> {
-            let process = get_process_memory()?;
-            let system = get_system_memory()?;
-            Some(Self {
-                timestamp: Instant::now(),
-                process,
-                system,
-                context: context.to_string(),
-            })
-        }
-
-        /// Compare with another snapshot and log differences
-        pub fn compare_and_log(&self, other: &MemorySnapshot) {
-            let duration = other.timestamp.duration_since(self.timestamp);
-
-            let resident_delta =
-                other.process.working_set_size as i64 - self.process.working_set_size as i64;
-            let virtual_delta =
-                other.process.pagefile_usage as i64 - self.process.pagefile_usage as i64;
-            let private_delta =
-                other.process.private_usage as i64 - self.process.private_usage as i64;
-
-            log::info!("[MEMORY MONITOR] ==========================================");
-            log::info!(
-                "[MEMORY MONITOR] Memory Delta: {} → {} (over {:?})",
-                self.context,
-                other.context,
-                duration
-            );
-            log::info!("[MEMORY MONITOR] ==========================================");
-            log::info!(
-                "[MEMORY MONITOR] Resident Memory: {:+} bytes ({:+.2} MB)",
-                resident_delta,
-                resident_delta as f64 / (1024.0 * 1024.0)
-            );
-            log::info!(
-                "[MEMORY MONITOR] Virtual Memory:  {:+} bytes ({:+.2} MB)",
-                virtual_delta,
-                virtual_delta as f64 / (1024.0 * 1024.0)
-            );
-            log::info!(
-                "[MEMORY MONITOR] Private Bytes:   {:+} bytes ({:+.2} MB)",
-                private_delta,
-                private_delta as f64 / (1024.0 * 1024.0)
-            );
-            log::info!("[MEMORY MONITOR] ==========================================");
-        }
-    }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub mod memory_monitor {
-    use std::time::{Duration, Instant};
-
-    pub fn format_bytes(bytes: u64) -> String {
-        const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-        if bytes == 0 {
-            return "0 B".to_string();
-        }
-        let exp = (bytes as f64).log(1024.0).min(UNITS.len() as f64 - 1.0) as usize;
-        let value = bytes as f64 / 1024_f64.powi(exp as i32);
-        if exp == 0 {
-            format!("{} {}", bytes, UNITS[exp])
-        } else {
-            format!("{:.2} {}", value, UNITS[exp])
-        }
-    }
-
     pub fn log_memory_status(context: &str) {
         log::info!(
             "[MEMORY MONITOR] Memory monitoring not available on this platform: {}",
             context
         );
     }
-
-    #[derive(Debug, Clone)]
-    pub struct MemorySnapshot {
-        pub timestamp: Instant,
-        pub context: String,
-    }
-
-    impl MemorySnapshot {
-        pub fn capture(context: &str) -> Option<Self> {
-            Some(Self {
-                timestamp: Instant::now(),
-                context: context.to_string(),
-            })
-        }
-
-        pub fn compare_and_log(&self, other: &MemorySnapshot) {
-            let duration = other.timestamp.duration_since(self.timestamp);
-            log::info!(
-                "[MEMORY MONITOR] Time delta: {:?} ({} → {})",
-                duration,
-                self.context,
-                other.context
-            );
-        }
-    }
 }
 
-use bevy::prelude::{Children, Query, Without};
-use memory_monitor::{log_memory_status, MemorySnapshot};
-use uuid::Uuid;
+use bevy::prelude::Query;
+use memory_monitor::log_memory_status;
 
 use anyhow::Result;
-use arrayvec::ArrayVec;
 use bevy::log::info_span;
 use bevy::{
     asset::RenderAssetUsages,
-    asset::{io::Reader, Asset, AssetLoader, Assets, LoadContext, LoadState},
+    asset::{Asset, Assets, LoadState},
     camera::primitives::Aabb,
     camera::visibility::{InheritedVisibility, RenderLayers, ViewVisibility},
     ecs::system::SystemParam,
     image::ImageLoaderSettings,
     light::{NotShadowCaster, NotShadowReceiver},
-    math::{Quat, Vec2, Vec3, Vec4},
+    math::{Quat, Vec2, Vec3},
     mesh::{Indices, Mesh, PrimitiveTopology},
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
@@ -331,7 +211,7 @@ use bevy::{
     },
     reflect::TypePath,
     render::alpha::AlphaMode,
-    tasks::{futures_lite::AsyncReadExt, AsyncComputeTaskPool, IoTaskPool},
+    tasks::AsyncComputeTaskPool,
 };
 use bevy_rapier3d::prelude::{
     AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, RigidBody,
@@ -339,18 +219,18 @@ use bevy_rapier3d::prelude::{
 use log::{info, warn};
 use thiserror::Error;
 
-use rose_data::{NpcId, SkyboxData, WarpGateId, ZoneId, ZoneList};
+use rose_data::{NpcId, WarpGateId, ZoneId, ZoneList};
 use rose_file_readers::{
     HimFile, IfoEffectObject, IfoFile, IfoObject, IfoSoundObject, LitFile, LitObject, RoseFile,
     RoseFileReader, StbFile, TilFile, VfsPath, VirtualFilesystem, ZonFile, ZonTileRotation,
-    ZscCollisionFlags, ZscEffectType, ZscFile,
+    ZscCollisionFlags, ZscFile,
 };
 
 use crate::{
     animation::{MeshAnimation, TransformAnimation, ZmoTextureAssetLoader},
     audio::{SoundRadius, SpatialSound},
     components::{
-        ColliderParent, EventObject, MapEditorTerrainBlock, MapEditorWaterPlane, NightTimeEffect,
+        ColliderParent, EventObject, MapEditorTerrainBlock, MapEditorWaterPlane,
         TerrainMeshForGrass, WarpObject, WaterSpawnedEvent, WindSway, Zone, ZoneObject,
         ZoneObjectAnimatedObject, ZoneObjectId, ZoneObjectPart, ZoneObjectTerrain,
         COLLISION_FILTER_CLICKABLE, COLLISION_FILTER_COLLIDABLE, COLLISION_FILTER_INSPECTABLE,
@@ -358,7 +238,7 @@ use crate::{
         COLLISION_GROUP_ZONE_OBJECT, COLLISION_GROUP_ZONE_TERRAIN,
         COLLISION_GROUP_ZONE_WARP_OBJECT, COLLISION_GROUP_ZONE_WATER,
     },
-    effect_loader::{decode_blend_factor, decode_blend_op, spawn_effect, EffectCache},
+    effect_loader::{spawn_effect, EffectCache},
     events::{LoadZoneEvent, ZoneEvent, ZoneLoadedFromVfsEvent},
     map_editor::components::EditorSelectable,
     render::{
@@ -418,12 +298,6 @@ pub struct ZoneLoadChannelReceiver(
 /// Resource for tracking memory and asset lifecycle
 #[derive(Resource, Default)]
 pub struct MemoryTrackingResource {
-    /// Count of mesh handles created
-    pub mesh_handles_created: usize,
-    /// Count of material handles created
-    pub material_handles_created: usize,
-    /// Count of texture handles created
-    pub texture_handles_created: usize,
     /// Set of unique asset paths loaded
     pub unique_asset_paths: HashSet<String>,
     /// Count of duplicate asset requests
@@ -437,52 +311,22 @@ pub struct MemoryTrackingResource {
 }
 
 impl MemoryTrackingResource {
-    /// Log when a mesh handle is created
-    pub fn log_mesh_handle_created(&mut self, path: &str) {
-        self.mesh_handles_created += 1;
-        let is_duplicate = !self.unique_asset_paths.insert(path.to_string());
-        if is_duplicate {
-            self.duplicate_asset_requests += 1;
-            //info!("[MEMORY TRACKING] Mesh handle REUSE detected: {} (total duplicates: {})",
-            //path, self.duplicate_asset_requests);
-        } else {
-            //info!("[MEMORY TRACKING] Mesh handle created: {} (total meshes: {})",
-            //path, self.mesh_handles_created);
-        }
-    }
-
-    /// Log when a material handle is created
-    pub fn log_material_handle_created(&mut self, path: &str, texture_count: usize) {
-        self.material_handles_created += 1;
-        //info!("[MEMORY TRACKING] Material handle created: {} with {} textures (total materials: {})",
-        //path, texture_count, self.material_handles_created);
-    }
-
     /// Log when a texture handle is created
     pub fn log_texture_handle_created(&mut self, path: &str) {
-        self.texture_handles_created += 1;
         let is_duplicate = !self.unique_asset_paths.insert(path.to_string());
         if is_duplicate {
             self.duplicate_asset_requests += 1;
-            //info!("[MEMORY TRACKING] Texture handle REUSE detected: {} (total duplicates: {})",
-            // path, self.duplicate_asset_requests);
-        } else {
-            //info!("[MEMORY TRACKING] Texture handle created: {} (total textures: {})",
-            // path, self.texture_handles_created);
         }
     }
 
     /// Log when an entity is spawned
-    pub fn log_entity_spawned(&mut self, entity_type: &str, asset_count: usize) {
+    pub fn log_entity_spawned(&mut self) {
         self.entities_spawned += 1;
-        //info!("[MEMORY TRACKING] Entity spawned: type={}, assets={} (total entities: {})",
-        //entity_type, asset_count, self.entities_spawned);
     }
 
     /// Log when an entity is despawned
     pub fn log_entity_despawned(&mut self) {
         self.entities_despawned += 1;
-        //info!("[MEMORY TRACKING] Entity despawned (total despawned: {})", self.entities_despawned);
     }
 
     /// Log a summary of memory statistics
@@ -494,17 +338,6 @@ impl MemoryTrackingResource {
 
         if should_log {
             self.last_summary_time = Some(now);
-            //info!("[MEMORY TRACKING] ==========================================");
-            //info!("[MEMORY TRACKING] MEMORY SUMMARY (every 5 seconds)");
-            //info!("[MEMORY TRACKING] ==========================================");
-            //info!("[MEMORY TRACKING] Mesh handles: {}", self.mesh_handles_created);
-            //info!("[MEMORY TRACKING] Material handles: {}", self.material_handles_created);
-            //info!("[MEMORY TRACKING] Texture handles: {}", self.texture_handles_created);
-            //info!("[MEMORY TRACKING] Unique asset paths: {}", self.unique_asset_paths.len());
-            //info!("[MEMORY TRACKING] Duplicate asset requests: {}", self.duplicate_asset_requests);
-            //info!("[MEMORY TRACKING] Entities spawned: {}", self.entities_spawned);
-            //info!("[MEMORY TRACKING] Entities despawned: {}", self.entities_despawned);
-            //info!("[MEMORY TRACKING] Active entities: {}", self.entities_spawned - self.entities_despawned);
 
             // Warning if counts are growing without despawns
             if self.entities_spawned > 0 && self.entities_despawned == 0 {
@@ -517,8 +350,6 @@ impl MemoryTrackingResource {
                 warn!("[MEMORY TRACKING] WARNING: {} duplicate asset requests detected - may indicate inefficient loading",
                     self.duplicate_asset_requests);
             }
-
-            //info!("[MEMORY TRACKING] ==========================================");
         }
     }
 }
@@ -644,14 +475,11 @@ pub struct LoadingZone {
     pub despawn_other_zones: bool,
     /// Zone assets that are loading - CRITICAL: Must be cleared after loading to prevent memory leak
     pub zone_assets: Vec<UntypedHandle>,
-    pub ready_frames: usize,
     pub loading_via_async_task: bool, // Track if loading via async task vs AssetServer
     pub zone_id: Option<ZoneId>,      // Track zone_id for async-loaded zones
     pub loading_start_time: Instant,  // Track when loading started
     /// Track if assets have been cleared to prevent duplicate cleanup
     pub assets_cleared: bool,
-    /// Memory snapshot at the start of zone loading for comparison
-    pub memory_snapshot_start: Option<MemorySnapshot>,
 }
 
 impl LoadingZone {
@@ -670,36 +498,6 @@ impl LoadingZone {
                 self.assets_cleared = true;
             }
         }
-    }
-
-    /// Check if all zone assets are fully loaded
-    pub fn are_assets_loaded(&self, asset_server: &AssetServer) -> bool {
-        if self.zone_assets.is_empty() {
-            return true;
-        }
-
-        use bevy::asset::LoadState;
-        let all_loaded = self.zone_assets.iter().all(|handle| {
-            matches!(
-                asset_server.get_load_state(handle.id()),
-                Some(LoadState::Loaded)
-            )
-        });
-
-        if !all_loaded {
-            let loaded_count = self
-                .zone_assets
-                .iter()
-                .filter(|h| matches!(asset_server.get_load_state(h.id()), Some(LoadState::Loaded)))
-                .count();
-            log::debug!(
-                "[ASSET LOADING] {}/{} zone assets loaded",
-                loaded_count,
-                self.zone_assets.len()
-            );
-        }
-
-        all_loaded
     }
 }
 

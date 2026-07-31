@@ -251,35 +251,6 @@ fn try_load_zsc_with_priority(
     }
 }
 
-/// Try to load a ZSC file from VFS (legacy - use try_load_zsc_with_priority instead)
-#[allow(dead_code)]
-fn try_load_zsc_from_vfs(
-    vfs: &VirtualFilesystem,
-    path: &str,
-    category: ModelCategory,
-    models: &mut Vec<ModelInfo>,
-    category_name: &str,
-) -> bool {
-    let vfs_path = VfsPath::from(std::path::PathBuf::from(path));
-
-    match vfs.read_file(&vfs_path) {
-        Ok(zsc) => {
-            load_models_from_zsc(&zsc, category, models, category_name);
-            log::info!(
-                "[LOAD MODELS] Loaded {} {} models from VFS: {}",
-                models.len(),
-                category_name,
-                path
-            );
-            true
-        }
-        Err(e) => {
-            log::debug!("[LOAD MODELS] Could not load {}: {:?}", path, e);
-            false
-        }
-    }
-}
-
 /// Create a display name for a model from its mesh path
 fn create_model_name(mesh_path: &str, object_id: usize, category_name: &str) -> String {
     if mesh_path.is_empty() {

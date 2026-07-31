@@ -10,6 +10,7 @@ use bevy::prelude::*;
 use crate::components::{
     EventObject, MapEditorTerrainBlock, MapEditorWaterPlane, WarpObject, ZoneObject,
 };
+use crate::map_editor::coords::{world_to_block_coords, write_him_file, write_til_file, ZONE_CENTER_X, ZONE_CENTER_Z};
 use crate::map_editor::resources::{DeletedZoneObjects, ZoneObjectType};
 use crate::map_editor::systems::model_placement_system::EditorPlacedObject;
 use crate::resources::CurrentZone;
@@ -17,63 +18,6 @@ use crate::zone_loader::ZoneLoaderAsset;
 
 use super::ifo_export::{export_ifo_block, ExportStats};
 use super::ifo_types::*;
-
-const ZONE_CENTER_X: f32 = 5200.0;
-const ZONE_CENTER_Z: f32 = -5200.0;
-const BLOCK_SIZE_METERS: f32 = 160.0;
-const ZONE_BLOCK_COUNT: u32 = 64;
-
-fn world_to_block_coords(world_translation: Vec3) -> (u32, u32) {
-    // World coordinates are centered around zone transform at (5200, 0, -5200).
-    // Convert world -> local grid coordinates before block quantization.
-    let local_x = world_translation.x - ZONE_CENTER_X;
-    let local_z = world_translation.z - ZONE_CENTER_Z;
-    let block_x = ((local_x + ZONE_CENTER_X) / BLOCK_SIZE_METERS).floor() as u32;
-    let block_y = ((local_z + ZONE_CENTER_X) / BLOCK_SIZE_METERS).floor() as u32;
-    (
-        block_x.clamp(0, ZONE_BLOCK_COUNT - 1),
-        block_y.clamp(0, ZONE_BLOCK_COUNT - 1),
-    )
-}
-
-fn write_him_file(
-    path: &std::path::Path,
-    width: u32,
-    height: u32,
-    heights_cm: &[f32],
-) -> std::io::Result<()> {
-    use std::io::Write;
-    let mut data = Vec::with_capacity(16 + heights_cm.len() * 4);
-    data.extend_from_slice(&width.to_le_bytes());
-    data.extend_from_slice(&height.to_le_bytes());
-    data.extend_from_slice(&0u32.to_le_bytes());
-    data.extend_from_slice(&0u32.to_le_bytes());
-    for h in heights_cm {
-        data.extend_from_slice(&h.to_le_bytes());
-    }
-    let mut file = std::fs::File::create(path)?;
-    file.write_all(&data)?;
-    Ok(())
-}
-
-fn write_til_file(
-    path: &std::path::Path,
-    width: u32,
-    height: u32,
-    tiles: &[u32],
-) -> std::io::Result<()> {
-    use std::io::Write;
-    let mut data = Vec::with_capacity(8 + tiles.len() * 7);
-    data.extend_from_slice(&width.to_le_bytes());
-    data.extend_from_slice(&height.to_le_bytes());
-    for tile in tiles {
-        data.extend_from_slice(&[0u8; 3]);
-        data.extend_from_slice(&tile.to_le_bytes());
-    }
-    let mut file = std::fs::File::create(path)?;
-    file.write_all(&data)?;
-    Ok(())
-}
 
 /// Message to trigger saving a zone
 #[derive(Message, Debug, Clone)]

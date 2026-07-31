@@ -5,7 +5,7 @@ use bevy::{
     asset::RenderAssetUsages,
     ecs::query::QueryData,
     image::ImageSampler,
-    log::{info, warn},
+    log::warn,
     platform::collections::HashMap,
     prelude::{
         Assets, Changed, ChildOf, Color, Commands, Entity, GlobalTransform, Handle, Image, Local,
@@ -198,7 +198,6 @@ fn create_nametag_data(
     _egui_managed_textures: &bevy_egui::EguiManagedTextures,
     images: &mut Assets<Image>,
     pending_data: NameTagPendingData,
-    debug_entity: Entity,
 ) -> Option<NameTagData> {
     let pixels_per_point = egui_context.ctx_mut().unwrap().pixels_per_point();
 
@@ -211,27 +210,6 @@ fn create_nametag_data(
         .ctx_mut()
         .unwrap()
         .fonts_mut(|fonts| fonts.image());
-
-    let mut atlas_nonzero = 0usize;
-    let mut atlas_max = 0u8;
-    for px in font_source_texture.pixels.iter() {
-        let [r, g, b, a] = px.to_array();
-        let v = r.max(g).max(b).max(a);
-        if v > 0 {
-            atlas_nonzero += 1;
-            if v > atlas_max {
-                atlas_max = v;
-            }
-        }
-    }
-    info!(
-        "[NAME_TAG_DIAG] Entity {:?} cpu_atlas={}x{} atlas_nonzero={} atlas_max={}",
-        debug_entity,
-        font_source_texture.width(),
-        font_source_texture.height(),
-        atlas_nonzero,
-        atlas_max
-    );
 
     for (row_index, row) in pending_data.galley.rows.iter().enumerate() {
         let mut row_min = Vec2::new(10000.0, 10000.0);
@@ -261,18 +239,13 @@ fn create_nametag_data(
         row_bounds.push((row_min, row_max));
     }
 
-    // info!("[NAME_TAG_DEBUG] All font textures found, max_bounds: {:?}", max_bounds);
-
     // Allocate texture
     let target_texture_width = (max_bounds.x as u32).next_power_of_two();
     let target_texture_height = (max_bounds.y as u32).next_power_of_two();
     let data_len = (target_texture_width * target_texture_height * 4) as usize;
     let mut data = vec![0; data_len];
 
-    // info!("[NAME_TAG_DEBUG] Allocated texture: {}x{}", target_texture_width, target_texture_height);
-
     // Copy letters to texture
-    let mut total_glyphs_copied = 0;
     for (row_index, row) in pending_data.galley.rows.iter().enumerate() {
         let row_font_texture = &font_source_texture;
 
@@ -315,27 +288,16 @@ fn create_nametag_data(
                     }
                     dst_y += 1;
                 }
-                total_glyphs_copied += 1;
             }
         }
     }
 
-    // info!("[NAME_TAG_DEBUG] Copied {} glyphs to texture", total_glyphs_copied);
-
     let mut total_nonzero_alpha = 0usize;
-    let mut max_alpha = 0u8;
     for alpha in data.iter().skip(3).step_by(4) {
         if *alpha > 0 {
             total_nonzero_alpha += 1;
-            if *alpha > max_alpha {
-                max_alpha = *alpha;
-            }
         }
     }
-    info!(
-        "[NAME_TAG_DIAG] Entity {:?} texture {}x{} alpha_nonzero={} max_alpha={}",
-        debug_entity, target_texture_width, target_texture_height, total_nonzero_alpha, max_alpha
-    );
 
     if total_nonzero_alpha == 0 {
         // In bevy_egui 0.39, the font atlas texture can exist before glyph pixels for
@@ -358,8 +320,6 @@ fn create_nametag_data(
     image.sampler = ImageSampler::nearest();
     let image = images.add(image);
 
-    // info!("[NAME_TAG_DEBUG] Created image handle: {:?}", image);
-
     let mut rects: ArrayVec<WorldUiRect, 2> = ArrayVec::new();
     let mut row_offset_y = max_bounds.y - 8.0 * (pending_data.colors.len() - 1) as f32;
 
@@ -377,37 +337,6 @@ fn create_nametag_data(
         let uv_y0 = row_bounds_min.y / target_texture_height as f32;
         let uv_y1 = row_bounds_max.y / target_texture_height as f32;
 
-        let x0 = row_bounds_min.x.max(0.0).floor() as usize;
-        let y0 = row_bounds_min.y.max(0.0).floor() as usize;
-        let x1 = row_bounds_max.x.min(target_texture_width as f32).ceil() as usize;
-        let y1 = row_bounds_max.y.min(target_texture_height as f32).ceil() as usize;
-        let mut row_nonzero_alpha = 0usize;
-        if x1 > x0 && y1 > y0 {
-            for y in y0..y1 {
-                for x in x0..x1 {
-                    let idx = (y * target_texture_width as usize + x) * 4 + 3;
-                    if data[idx] > 0 {
-                        row_nonzero_alpha += 1;
-                    }
-                }
-            }
-        }
-        info!(
-            "[NAME_TAG_DIAG] Entity {:?} row={} bounds=({:.1},{:.1})-({:.1},{:.1}) uv=({:.4},{:.4})-({:.4},{:.4}) row_alpha_nonzero={} row_size={:?}",
-            debug_entity,
-            row_index,
-            row_bounds_min.x,
-            row_bounds_min.y,
-            row_bounds_max.x,
-            row_bounds_max.y,
-            uv_x0,
-            uv_y0,
-            uv_x1,
-            uv_y1,
-            row_nonzero_alpha,
-            row_size
-        );
-
         rects.push(WorldUiRect {
             screen_offset: Vec2::new(-row_size.x / 2.0, row_offset_y - row_size.y),
             screen_size: row_size,
@@ -419,8 +348,6 @@ fn create_nametag_data(
         });
         row_offset_y -= row_size.y - 8.0;
     }
-
-    // info!("[NAME_TAG_DEBUG] Successfully created NameTagData with {} rects", rects.len());
 
     Some(NameTagData {
         image,
@@ -516,7 +443,6 @@ pub fn name_tag_system(
                 &egui_managed_textures,
                 &mut images,
                 pending_name_tag_data.clone(),
-                object.entity,
             ) {
                 name_tag_cache
                     .cache
@@ -550,8 +476,6 @@ pub fn name_tag_system(
             Visibility::Hidden
         };
 
-        // info!("[NAME_TAG_DEBUG] Spawning name tag entity for '{}' with visibility {:?}", object.name.name, visibility);
-
         let name_tag_entity = commands
             .spawn((
                 NameTag { name_tag_type },
@@ -562,8 +486,6 @@ pub fn name_tag_system(
                 GlobalTransform::default(),
             ))
             .id();
-
-        // info!("[NAME_TAG_DEBUG] Spawned name tag entity {:?} at height {}", name_tag_entity, object.model_height.height);
 
         let target_mark = if let Some(npc_type_index) = object
             .npc
@@ -704,7 +626,7 @@ pub fn name_tag_system(
 
         for (rect_idx, rect) in name_tag_data.rects.iter().enumerate() {
             let rect: WorldUiRect = rect.clone();
-            info!(
+            log::debug!(
                 "[NAME_TAG_DEBUG] Spawning name rect {} with size {:?}, uv=({:.4},{:.4})-({:.4},{:.4}), image={:?}, name='{}'",
                 rect_idx,
                 rect.screen_size,
@@ -778,9 +700,5 @@ pub fn name_tag_system(
             .entity(object.entity)
             .insert(NameTagEntity(name_tag_entity))
             .add_child(name_tag_entity);
-
-        // info!("[NAME_TAG_DEBUG] Successfully created name tag for entity {:?} name='{}'", object.entity, object.name.name);
     }
-
-    // info!("[NAME_TAG_DEBUG] === NAME TAG SYSTEM END === Cache: {}, Pending: {}", name_tag_cache.cache.len(), name_tag_cache.pending.len());
 }

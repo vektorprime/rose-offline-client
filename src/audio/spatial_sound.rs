@@ -17,7 +17,6 @@ struct SpatialControlHandle(
     oddio::Handle<oddio::SpatialBuffered<oddio::Stop<oddio::Gain<oddio::Stream<f32>>>>>,
 );
 
-#[allow(dead_code)]
 impl SpatialControlHandle {
     pub fn gain_control(&mut self) -> oddio::GainControl {
         self.0.control::<oddio::Gain<_>, _>()
@@ -45,7 +44,6 @@ pub struct SpatialSound {
     last_position: Option<Vec3>,
 }
 
-#[allow(dead_code)]
 impl SpatialSound {
     pub fn new(audio_source: Handle<AudioSource>) -> Self {
         Self {
@@ -73,10 +71,8 @@ pub fn spatial_sound_gain_changed_system(
 ) {
     for (mut spatial_sound, gain) in query.iter_mut() {
         if let Some(handle) = spatial_sound.control_handle.as_mut() {
-            match *gain {
-                SoundGain::Decibel(db) => handle.gain_control().set_gain(db),
-                SoundGain::Ratio(factor) => handle.gain_control().set_amplitude_ratio(factor),
-            }
+            let SoundGain::Ratio(factor) = *gain;
+            handle.gain_control().set_amplitude_ratio(factor);
         }
     }
 }
@@ -180,15 +176,9 @@ pub fn spatial_sound_system(
 
             let stream_signal = oddio::Stream::new(sample_rate, sample_rate as usize / 8);
             let mut gain_signal = oddio::Gain::new(stream_signal);
-            match sound_gain {
-                Some(&SoundGain::Decibel(db)) => {
-                    gain_signal.set_gain(db);
-                }
-                Some(&SoundGain::Ratio(factor)) => {
-                    gain_signal.set_amplitude_ratio(factor);
-                }
-                None => {}
-            };
+            if let Some(SoundGain::Ratio(factor)) = sound_gain {
+                gain_signal.set_amplitude_ratio(*factor);
+            }
 
             let mut handle = SpatialControlHandle(player.control().play_buffered(
                 gain_signal,

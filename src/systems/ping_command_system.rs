@@ -46,32 +46,6 @@ pub fn ping_response_system(
     }
 }
 
-/// System that processes server responses and calculates ping.
-/// This should be called when we receive any server message if we have a pending ping.
-pub fn ping_measurement_system(
-    mut ping_state: ResMut<PingState>,
-    mut ping_response_events: MessageWriter<PingResponseEvent>,
-    game_connection: Option<Res<crate::resources::GameConnection>>,
-) {
-    // If we have a pending ping and receive any server message, calculate RTT
-    if let Some(timestamp) = ping_state.pending_ping_timestamp {
-        // Check if we received a response from the server
-        if let Some(game_connection) = game_connection.as_ref() {
-            // Try to receive a message - if successful, we got a response
-            if game_connection.server_message_rx.try_recv().is_ok() {
-                let elapsed = timestamp.elapsed();
-                let ping_ms = elapsed.as_millis() as u64;
-
-                // Clear the pending ping
-                ping_state.pending_ping_timestamp = None;
-
-                // Send the response event
-                ping_response_events.write(PingResponseEvent { ping_ms });
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

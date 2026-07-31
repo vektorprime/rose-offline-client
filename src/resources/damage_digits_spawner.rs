@@ -1,19 +1,14 @@
 use bevy::{
-    pbr::MeshMaterial3d,
     prelude::{
-        AssetServer, Assets, Commands, Component, GlobalTransform, Handle, Image, Mesh, Mesh3d,
-        Resource, Transform, Vec2, Vec3, Vec4, Visibility,
+        AssetServer, Assets, Commands, Component, GlobalTransform, Handle, Image, Mesh, Resource,
+        Transform, Vec3, Visibility,
     },
-};
-use bevy_camera::{
-    primitives::Aabb,
-    visibility::{InheritedVisibility, NoFrustumCulling, ViewVisibility},
 };
 
 use crate::{
     animation::{TransformAnimation, ZmoAsset},
     components::DamageDigits,
-    render::{DamageDigitMaterial, DamageDigitRenderData},
+    render::DamageDigitRenderData,
 };
 
 #[derive(Resource)]
@@ -29,36 +24,13 @@ pub struct DamageDigitsSpawner {
 
 impl DamageDigitsSpawner {
     pub fn load(asset_server: &AssetServer, meshes: &mut Assets<Mesh>) -> Self {
-        log::info!("[DAMAGE_DIGITS_SPAWNER::load] Loading damage digit assets...");
-
         let texture_damage = asset_server.load("3ddata/effect/special/digitnumber01.dds");
-        log::info!(
-            "[DAMAGE_DIGITS_SPAWNER::load] Loaded texture_damage: {:?}",
-            texture_damage
-        );
-
         let texture_damage_player = asset_server.load("3ddata/effect/special/digitnumber02.dds");
-        log::info!(
-            "[DAMAGE_DIGITS_SPAWNER::load] Loaded texture_damage_player: {:?}",
-            texture_damage_player
-        );
-
         let texture_miss = asset_server.load("3ddata/effect/special/digitnumbermiss.dds");
-        log::info!(
-            "[DAMAGE_DIGITS_SPAWNER::load] Loaded texture_miss: {:?}",
-            texture_miss
-        );
-
         let motion = asset_server.load("3ddata/effect/special/hit_figure_01.zmo");
-        log::info!(
-            "[DAMAGE_DIGITS_SPAWNER::load] Loaded motion (ZMO): {:?}",
-            motion
-        );
-
         let mesh = meshes.add(Mesh::from(bevy::prelude::Rectangle::new(1.0, 1.0)));
-        log::info!("[DAMAGE_DIGITS_SPAWNER::load] Created mesh: {:?}", mesh);
 
-        log::info!("[DAMAGE_DIGITS_SPAWNER::load] DamageDigitsSpawner initialized successfully");
+        log::info!("[DAMAGE_DIGITS_SPAWNER] Damage digits assets loaded");
 
         Self {
             texture_damage,
@@ -88,30 +60,14 @@ impl DamageDigitsSpawner {
         damage: u32,
         is_damage_player: bool,
     ) {
-        log::info!(
-            "[DAMAGE_DIGITS_SPAWNER] spawn() called with damage={}, is_damage_player={}",
-            damage,
-            is_damage_player
-        );
-
         let (scale, _, translation) = global_transform.to_scale_rotation_translation();
-        log::info!(
-            "[DAMAGE_DIGITS_SPAWNER] GlobalTransform: scale={:?}, translation={:?}",
-            scale,
-            translation
-        );
 
         // Get the appropriate texture
         let texture_handle = self.get_texture(damage, is_damage_player);
-        log::info!(
-            "[DAMAGE_DIGITS_SPAWNER] Selected texture handle: {:?}",
-            texture_handle
-        );
 
         // We need to spawn inside a parent entity for positioning because the ActiveMotion will set the translation absolutely
         // Spawn the child entity first - note: material will be added later by damage_digit_render_system
         // Using chained inserts to avoid tuple length limits
-        log::info!("[DAMAGE_DIGITS_SPAWNER] Spawning child entity with DamageDigits, DamageDigitRenderData, PendingDamageDigitMaterial, Mesh3d, TransformAnimation, Transform, GlobalTransform, Visibility components");
         let child_entity = commands
             .spawn((
                 DamageDigits { damage },
@@ -124,24 +80,15 @@ impl DamageDigitsSpawner {
                 Visibility::default(),
             ))
             .id();
-        log::info!(
-            "[DAMAGE_DIGITS_SPAWNER] Child entity spawned with id: {:?}",
-            child_entity
-        );
 
         // Then spawn the parent and add the child
         let parent_position = translation + Vec3::new(0.0, model_height * scale.y, 0.0);
-        log::info!(
-            "[DAMAGE_DIGITS_SPAWNER] Parent position: {:?}",
-            parent_position
-        );
         commands
             .spawn((
                 Transform::from_translation(parent_position),
                 Visibility::default(),
             ))
             .add_children(&[child_entity]);
-        log::info!("[DAMAGE_DIGITS_SPAWNER] Parent entity spawned and child added. Damage digit entity creation complete.");
         // Note: NoFrustumCulling removed due to tuple length limit
     }
 }

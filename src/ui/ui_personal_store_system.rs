@@ -265,12 +265,8 @@ pub fn ui_personal_store_system(
 
     let mut response_close_button = None;
 
-    egui::Window::new("Personal Store")
-        .frame(egui::Frame::none())
-        .title_bar(false)
-        .resizable(false)
-        .default_width(dialog.width)
-        .default_height(dialog.height)
+    dialog
+        .window("Personal Store")
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,

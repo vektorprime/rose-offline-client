@@ -342,110 +342,109 @@ pub fn ui_admin_menu_system(
 
     // Render item spawner popup
     if ui_state_admin_menu.show_item_popup {
-        render_item_spawner_popup(
+        render_searchable_popup(
             ctx,
+            "Item Spawner",
+            "item_spawner_grid",
             &mut ui_state_admin_menu,
             &game_data,
             &ui_resources,
             &game_connection,
+            PopupList::Items,
         );
     }
 
     // Render skill learn popup
     if ui_state_admin_menu.show_skill_popup {
-        render_skill_learn_popup(
+        render_searchable_popup(
             ctx,
+            "Skill Learn",
+            "skill_learn_grid",
             &mut ui_state_admin_menu,
             &game_data,
             &ui_resources,
             &game_connection,
+            PopupList::Skills,
         );
     }
 }
 
-/// Renders the item spawner popup window
-fn render_item_spawner_popup(
+#[derive(Copy, Clone)]
+enum PopupList {
+    Items,
+    Skills,
+}
+
+/// Renders a searchable popup with a 4-column grid (Icon/ID/Name/Action)
+fn render_searchable_popup(
     ctx: &egui::Context,
+    title: &str,
+    grid_id: &str,
     ui_state: &mut UiStateAdminMenu,
     game_data: &Res<GameData>,
     ui_resources: &Res<UiResources>,
     game_connection: &Option<Res<GameConnection>>,
+    list: PopupList,
 ) {
-    let mut show_popup = true;
+    let mut is_open = true;
 
-    egui::Window::new("Item Spawner")
+    egui::Window::new(title)
         .default_width(500.0)
         .default_height(400.0)
         .resizable(true)
-        .open(&mut show_popup)
+        .open(&mut is_open)
         .show(ctx, |ui| {
-            // Category tabs - First row
-            ui.horizontal(|ui| {
-                let tabs_row1 = [
-                    (ItemType::Face, "Face"),
-                    (ItemType::Head, "Head"),
-                    (ItemType::Body, "Body"),
-                    (ItemType::Hands, "Hands"),
-                    (ItemType::Feet, "Feet"),
-                    (ItemType::Back, "Back"),
-                    (ItemType::Jewellery, "Jewellery"),
-                ];
-
-                for (item_type, label) in tabs_row1 {
-                    let selected = ui_state.selected_item_type == item_type;
-                    if ui.selectable_label(selected, label).clicked() {
-                        ui_state.selected_item_type = item_type;
-                        ui_state.filtered_items.clear();
-                    }
+            match list {
+                PopupList::Items => render_item_popup_tabs(ui, ui_state, game_data),
+                PopupList::Skills => {
+                    ui.separator();
                 }
-            });
-
-            // Category tabs - Second row
-            ui.horizontal(|ui| {
-                let tabs_row2 = [
-                    (ItemType::Weapon, "Weapon"),
-                    (ItemType::SubWeapon, "SubWeapon"),
-                    (ItemType::Consumable, "Consumable"),
-                    (ItemType::Gem, "Gem"),
-                    (ItemType::Material, "Material"),
-                    (ItemType::Quest, "Quest"),
-                    (ItemType::Vehicle, "Vehicle"),
-                ];
-
-                for (item_type, label) in tabs_row2 {
-                    let selected = ui_state.selected_item_type == item_type;
-                    if ui.selectable_label(selected, label).clicked() {
-                        ui_state.selected_item_type = item_type;
-                        ui_state.filtered_items.clear();
-                    }
-                }
-            });
-
-            ui.separator();
+            }
 
             // Search filter
             ui.horizontal(|ui| {
                 ui.label("Search:");
-                let response = ui.text_edit_singleline(&mut ui_state.item_search_filter);
+                let response = match list {
+                    PopupList::Items => ui.text_edit_singleline(&mut ui_state.item_search_filter),
+                    PopupList::Skills => ui.text_edit_singleline(&mut ui_state.skill_search_filter),
+                };
                 if response.changed() {
-                    ui_state.filtered_items.clear();
+                    match list {
+                        PopupList::Items => ui_state.filtered_items.clear(),
+                        PopupList::Skills => ui_state.filtered_skills.clear(),
+                    }
                 }
                 if ui.button("Clear").clicked() {
-                    ui_state.item_search_filter.clear();
-                    ui_state.filtered_items.clear();
+                    match list {
+                        PopupList::Items => {
+                            ui_state.item_search_filter.clear();
+                            ui_state.filtered_items.clear();
+                        }
+                        PopupList::Skills => {
+                            ui_state.skill_search_filter.clear();
+                            ui_state.filtered_skills.clear();
+                        }
+                    }
                 }
             });
 
             ui.separator();
 
-            // Update filtered items if needed
-            if ui_state.filtered_items.is_empty() {
-                update_filtered_items(ui_state, game_data);
+            // Update filtered list if needed
+            let filtered_is_empty = match list {
+                PopupList::Items => ui_state.filtered_items.is_empty(),
+                PopupList::Skills => ui_state.filtered_skills.is_empty(),
+            };
+            if filtered_is_empty {
+                match list {
+                    PopupList::Items => update_filtered_items(ui_state, game_data),
+                    PopupList::Skills => update_filtered_skills(ui_state, game_data),
+                }
             }
 
-            // Scrollable item list
+            // Scrollable list
             egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::Grid::new("item_spawner_grid")
+                egui::Grid::new(grid_id)
                     .num_columns(4)
                     .spacing([10.0, 5.0])
                     .show(ui, |ui| {
@@ -456,75 +455,184 @@ fn render_item_spawner_popup(
                         ui.label(egui::RichText::new("Action").strong());
                         ui.end_row();
 
-                        // Items
-                        for &item_id in &ui_state.filtered_items {
-                            let item_reference =
-                                ItemReference::new(ui_state.selected_item_type, item_id as usize);
-
-                            if let Some(item_data) = game_data.items.get_base_item(item_reference) {
-                                // Icon
-                                if let Some(sprite) = ui_resources.get_sprite_by_index(
-                                    UiSpriteSheetType::Item,
-                                    item_data.icon_index as usize,
-                                ) {
-                                    ui.add(
-                                        egui::Image::new((
-                                            sprite.texture_id,
-                                            egui::Vec2::new(32.0, 32.0),
-                                        ))
-                                        .uv(sprite.uv),
-                                    );
-                                } else {
-                                    ui.allocate_space(egui::Vec2::new(32.0, 32.0));
-                                }
-
-                                // ID
-                                ui.label(format!("{}", item_id));
-
-                                // Name
-                                ui.label(&item_data.name);
-
-                                // Spawn button
-                                if ui.button("Give").clicked() {
-                                    if let Some(game_connection) = game_connection.as_ref() {
-                                        if let Some(item_type_id) =
-                                            encode_item_type(ui_state.selected_item_type)
-                                        {
-                                            let command =
-                                                format!("/item {} {} 1", item_type_id, item_id);
-                                            game_connection
-                                                .client_message_tx
-                                                .send(ClientMessage::Chat { text: command })
-                                                .ok();
-                                        }
-                                    }
-                                }
-
-                                ui.end_row();
-                            }
+                        match list {
+                            PopupList::Items => render_item_popup_rows(
+                                ui, ui_state, game_data, ui_resources, game_connection,
+                            ),
+                            PopupList::Skills => render_skill_popup_rows(
+                                ui, ui_state, game_data, ui_resources, game_connection,
+                            ),
                         }
                     });
             });
         });
 
-    ui_state.show_item_popup = show_popup;
+    match list {
+        PopupList::Items => ui_state.show_item_popup = is_open,
+        PopupList::Skills => ui_state.show_skill_popup = is_open,
+    }
 }
 
-/// Updates the filtered items list based on current filter settings
-fn update_filtered_items(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameData>) {
-    let filter_name_re = if !ui_state.item_search_filter.is_empty() {
+fn render_item_popup_tabs(
+    ui: &mut egui::Ui,
+    ui_state: &mut UiStateAdminMenu,
+    _game_data: &Res<GameData>,
+) {
+    // Category tabs - First row
+    ui.horizontal(|ui| {
+        let tabs_row1 = [
+            (ItemType::Face, "Face"),
+            (ItemType::Head, "Head"),
+            (ItemType::Body, "Body"),
+            (ItemType::Hands, "Hands"),
+            (ItemType::Feet, "Feet"),
+            (ItemType::Back, "Back"),
+            (ItemType::Jewellery, "Jewellery"),
+        ];
+
+        for (item_type, label) in tabs_row1 {
+            let selected = ui_state.selected_item_type == item_type;
+            if ui.selectable_label(selected, label).clicked() {
+                ui_state.selected_item_type = item_type;
+                ui_state.filtered_items.clear();
+            }
+        }
+    });
+
+    // Category tabs - Second row
+    ui.horizontal(|ui| {
+        let tabs_row2 = [
+            (ItemType::Weapon, "Weapon"),
+            (ItemType::SubWeapon, "SubWeapon"),
+            (ItemType::Consumable, "Consumable"),
+            (ItemType::Gem, "Gem"),
+            (ItemType::Material, "Material"),
+            (ItemType::Quest, "Quest"),
+            (ItemType::Vehicle, "Vehicle"),
+        ];
+
+        for (item_type, label) in tabs_row2 {
+            let selected = ui_state.selected_item_type == item_type;
+            if ui.selectable_label(selected, label).clicked() {
+                ui_state.selected_item_type = item_type;
+                ui_state.filtered_items.clear();
+            }
+        }
+    });
+}
+
+fn render_item_popup_rows(
+    ui: &mut egui::Ui,
+    ui_state: &mut UiStateAdminMenu,
+    game_data: &Res<GameData>,
+    ui_resources: &Res<UiResources>,
+    game_connection: &Option<Res<GameConnection>>,
+) {
+    for &item_id in &ui_state.filtered_items {
+        let item_reference = ItemReference::new(ui_state.selected_item_type, item_id as usize);
+
+        if let Some(item_data) = game_data.items.get_base_item(item_reference) {
+            // Icon
+            if let Some(sprite) = ui_resources.get_sprite_by_index(
+                UiSpriteSheetType::Item,
+                item_data.icon_index as usize,
+            ) {
+                ui.add(
+                    egui::Image::new((sprite.texture_id, egui::Vec2::new(32.0, 32.0))).uv(sprite.uv),
+                );
+            } else {
+                ui.allocate_space(egui::Vec2::new(32.0, 32.0));
+            }
+
+            // ID
+            ui.label(format!("{}", item_id));
+
+            // Name
+            ui.label(&item_data.name);
+
+            // Spawn button
+            if ui.button("Give").clicked() {
+                if let Some(game_connection) = game_connection.as_ref() {
+                    if let Some(item_type_id) = encode_item_type(ui_state.selected_item_type) {
+                        let command = format!("/item {} {} 1", item_type_id, item_id);
+                        game_connection
+                            .client_message_tx
+                            .send(ClientMessage::Chat { text: command })
+                            .ok();
+                    }
+                }
+            }
+
+            ui.end_row();
+        }
+    }
+}
+
+fn render_skill_popup_rows(
+    ui: &mut egui::Ui,
+    ui_state: &mut UiStateAdminMenu,
+    game_data: &Res<GameData>,
+    ui_resources: &Res<UiResources>,
+    game_connection: &Option<Res<GameConnection>>,
+) {
+    for &skill_id in &ui_state.filtered_skills {
+        if let Some(skill_data) = game_data.skills.get_skill(skill_id) {
+            // Icon
+            if let Some(sprite) = ui_resources.get_sprite_by_index(
+                UiSpriteSheetType::Skill,
+                skill_data.icon_number as usize,
+            ) {
+                ui.add(
+                    egui::Image::new((sprite.texture_id, egui::Vec2::new(32.0, 32.0))).uv(sprite.uv),
+                );
+            } else {
+                ui.allocate_space(egui::Vec2::new(32.0, 32.0));
+            }
+
+            // ID
+            ui.label(format!("{}", skill_id.get()));
+
+            // Name
+            ui.label(&skill_data.name);
+
+            // Learn/Remove button
+            if ui.button("Learn").clicked() {
+                if let Some(game_connection) = game_connection.as_ref() {
+                    let command = format!("/skill add {}", skill_id.get());
+                    game_connection
+                        .client_message_tx
+                        .send(ClientMessage::Chat { text: command })
+                        .ok();
+                }
+            }
+
+            ui.end_row();
+        }
+    }
+}
+
+fn apply_name_filter<T, F>(filter_text: &str, rows: impl Iterator<Item = T>, name_fn: F) -> Vec<T>
+where
+    F: Fn(&T) -> &str,
+{
+    let filter_name_re = if !filter_text.is_empty() {
         Some(
-            Regex::new(&format!(
-                "(?i){}",
-                regex::escape(&ui_state.item_search_filter)
-            ))
-            .unwrap(),
+            Regex::new(&format!("(?i){}", regex::escape(filter_text))).unwrap(),
         )
     } else {
         None
     };
 
-    ui_state.filtered_items = game_data
+    rows.filter(|row| {
+        let name = name_fn(row);
+        !name.is_empty() && filter_name_re.as_ref().map_or(true, |re| re.is_match(name))
+    })
+    .collect()
+}
+
+/// Updates the filtered items list based on current filter settings
+fn update_filtered_items(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameData>) {
+    let rows = game_data
         .items
         .iter_items(ui_state.selected_item_type)
         .filter_map(|item_reference| {
@@ -532,20 +640,28 @@ fn update_filtered_items(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameDa
                 .items
                 .get_base_item(item_reference)
                 .map(|item_data| (item_reference, item_data))
-        })
-        .filter_map(|(item_reference, item_data)| {
-            // Filter out items with empty names or names that don't match filter
-            if item_data.name.is_empty()
-                || !filter_name_re
-                    .as_ref()
-                    .map_or(true, |re| re.is_match(&item_data.name))
-            {
-                None
-            } else {
-                Some(item_reference.item_number as u16)
-            }
-        })
-        .collect();
+        });
+
+    ui_state.filtered_items = apply_name_filter(
+        &ui_state.item_search_filter,
+        rows,
+        |(_, item_data)| item_data.name.as_str(),
+    )
+    .into_iter()
+    .map(|(item_reference, _)| item_reference.item_number as u16)
+    .collect();
+}
+
+/// Updates the filtered skills list based on current filter settings
+fn update_filtered_skills(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameData>) {
+    ui_state.filtered_skills = apply_name_filter(
+        &ui_state.skill_search_filter,
+        game_data.skills.iter(),
+        |skill_data| skill_data.name.as_str(),
+    )
+    .into_iter()
+    .map(|skill_data| skill_data.id)
+    .collect();
 }
 
 /// Helper function to send a command to the server
@@ -558,134 +674,4 @@ fn send_command(game_connection: &Option<Res<GameConnection>>, command: &str) {
             })
             .ok();
     }
-}
-
-/// Renders the skill learn popup window
-fn render_skill_learn_popup(
-    ctx: &egui::Context,
-    ui_state: &mut UiStateAdminMenu,
-    game_data: &Res<GameData>,
-    ui_resources: &Res<UiResources>,
-    game_connection: &Option<Res<GameConnection>>,
-) {
-    let mut show_popup = true;
-
-    egui::Window::new("Skill Learn")
-        .default_width(500.0)
-        .default_height(400.0)
-        .resizable(true)
-        .open(&mut show_popup)
-        .show(ctx, |ui| {
-            ui.separator();
-
-            // Search filter
-            ui.horizontal(|ui| {
-                ui.label("Search:");
-                let response = ui.text_edit_singleline(&mut ui_state.skill_search_filter);
-                if response.changed() {
-                    ui_state.filtered_skills.clear();
-                }
-                if ui.button("Clear").clicked() {
-                    ui_state.skill_search_filter.clear();
-                    ui_state.filtered_skills.clear();
-                }
-            });
-
-            ui.separator();
-
-            // Update filtered skills if needed
-            if ui_state.filtered_skills.is_empty() {
-                update_filtered_skills(ui_state, game_data);
-            }
-
-            // Scrollable skill list
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::Grid::new("skill_learn_grid")
-                    .num_columns(4)
-                    .spacing([10.0, 5.0])
-                    .show(ui, |ui| {
-                        // Header
-                        ui.label(egui::RichText::new("Icon").strong());
-                        ui.label(egui::RichText::new("ID").strong());
-                        ui.label(egui::RichText::new("Name").strong());
-                        ui.label(egui::RichText::new("Action").strong());
-                        ui.end_row();
-
-                        // Skills
-                        for &skill_id in &ui_state.filtered_skills {
-                            if let Some(skill_data) = game_data.skills.get_skill(skill_id) {
-                                // Icon
-                                if let Some(sprite) = ui_resources.get_sprite_by_index(
-                                    UiSpriteSheetType::Skill,
-                                    skill_data.icon_number as usize,
-                                ) {
-                                    ui.add(
-                                        egui::Image::new((
-                                            sprite.texture_id,
-                                            egui::Vec2::new(32.0, 32.0),
-                                        ))
-                                        .uv(sprite.uv),
-                                    );
-                                } else {
-                                    ui.allocate_space(egui::Vec2::new(32.0, 32.0));
-                                }
-
-                                // ID
-                                ui.label(format!("{}", skill_id.get()));
-
-                                // Name
-                                ui.label(&skill_data.name);
-
-                                // Learn/Remove button
-                                if ui.button("Learn").clicked() {
-                                    if let Some(game_connection) = game_connection.as_ref() {
-                                        let command = format!("/skill add {}", skill_id.get());
-                                        game_connection
-                                            .client_message_tx
-                                            .send(ClientMessage::Chat { text: command })
-                                            .ok();
-                                    }
-                                }
-
-                                ui.end_row();
-                            }
-                        }
-                    });
-            });
-        });
-
-    ui_state.show_skill_popup = show_popup;
-}
-
-/// Updates the filtered skills list based on current filter settings
-fn update_filtered_skills(ui_state: &mut UiStateAdminMenu, game_data: &Res<GameData>) {
-    let filter_name_re = if !ui_state.skill_search_filter.is_empty() {
-        Some(
-            Regex::new(&format!(
-                "(?i){}",
-                regex::escape(&ui_state.skill_search_filter)
-            ))
-            .unwrap(),
-        )
-    } else {
-        None
-    };
-
-    ui_state.filtered_skills = game_data
-        .skills
-        .iter()
-        .filter(|skill_data| {
-            // Filter out skills with empty names or names that don't match filter
-            if skill_data.name.is_empty()
-                || !filter_name_re
-                    .as_ref()
-                    .map_or(true, |re| re.is_match(&skill_data.name))
-            {
-                false
-            } else {
-                true
-            }
-        })
-        .map(|skill_data| skill_data.id)
-        .collect();
 }

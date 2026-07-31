@@ -479,31 +479,20 @@ impl GraphicsSettings {
     /// Low-end preset for older hardware
     pub fn low_preset() -> Self {
         Self {
-            vsync_mode: VsyncMode::Enabled,
-            msaa_samples: MsaaSamples::X1,
             view_distance: 300.0,
             shadow_quality: ShadowQuality::Low,
             shadow_max_distance: 50.0,
             shadow_filtering: GraphicsShadowFilteringMethod::Hardware2x2,
-            brightness: 1.0,
-            contrast: 1.0,
-            saturation: 1.0,
-            gamma: 1.0,
             bloom_enabled: false,
             bloom_intensity: 0.0,
-            motion_blur_enabled: false,
             motion_blur_intensity: 0.0,
             ssao_enabled: false,
             ssao_quality: SsaoQuality::Off,
-            dof_enabled: false,
             tonemapping: TonemappingMode::Reinhard,
             texture_quality: TextureQuality::Low,
             fxaa_enabled: true,
-            smaa_quality: SmaaQuality::Disabled,
             ambient_light_brightness: 1.0,
-            ambient_light_color: Color::WHITE,
-            terrain_light_intensity: 5.0,
-            sailing: SailingGraphicsSettings::default(),
+            ..Default::default()
         }
     }
 
@@ -511,31 +500,12 @@ impl GraphicsSettings {
     /// Note: SSAO requires MSAA Off, so we use MSAA X1 and SSAO Low for better visual quality
     pub fn medium_preset() -> Self {
         Self {
-            vsync_mode: VsyncMode::Enabled,
-            msaa_samples: MsaaSamples::X1, // Must be X1 (Off) for SSAO compatibility
-            view_distance: 500.0,
-            shadow_quality: ShadowQuality::Medium,
             shadow_max_distance: 100.0,
-            shadow_filtering: GraphicsShadowFilteringMethod::Gaussian,
-            brightness: 1.0,
-            contrast: 1.0,
-            saturation: 1.0,
-            gamma: 1.0,
-            bloom_enabled: true,
             bloom_intensity: 0.1,
-            motion_blur_enabled: false,
-            motion_blur_intensity: 0.5,
-            ssao_enabled: true,
             ssao_quality: SsaoQuality::Low,
-            dof_enabled: false,
-            tonemapping: TonemappingMode::TonyMcMapface,
             texture_quality: TextureQuality::Medium,
-            fxaa_enabled: false,
-            smaa_quality: SmaaQuality::Disabled,
             ambient_light_brightness: 1.0,
-            ambient_light_color: Color::WHITE,
-            terrain_light_intensity: 5.0,
-            sailing: SailingGraphicsSettings::default(),
+            ..Default::default()
         }
     }
 
@@ -543,31 +513,11 @@ impl GraphicsSettings {
     /// Note: SSAO requires MSAA Off, so we use MSAA X1 and SSAO Medium for better visual quality
     pub fn high_preset() -> Self {
         Self {
-            vsync_mode: VsyncMode::Enabled,
-            msaa_samples: MsaaSamples::X1, // Must be X1 (Off) for SSAO compatibility
             view_distance: 800.0,
             shadow_quality: ShadowQuality::High,
             shadow_max_distance: 200.0,
-            shadow_filtering: GraphicsShadowFilteringMethod::Gaussian,
-            brightness: 1.0,
-            contrast: 1.0,
-            saturation: 1.0,
-            gamma: 1.0,
-            bloom_enabled: true,
-            bloom_intensity: 0.15,
-            motion_blur_enabled: false,
-            motion_blur_intensity: 0.5,
-            ssao_enabled: true,
-            ssao_quality: SsaoQuality::Medium,
-            dof_enabled: false,
-            tonemapping: TonemappingMode::TonyMcMapface,
-            texture_quality: TextureQuality::High,
-            fxaa_enabled: false,
-            smaa_quality: SmaaQuality::Disabled,
             ambient_light_brightness: 1.0,
-            ambient_light_color: Color::WHITE,
-            terrain_light_intensity: 5.0,
-            sailing: SailingGraphicsSettings::default(),
+            ..Default::default()
         }
     }
 
@@ -576,30 +526,19 @@ impl GraphicsSettings {
     pub fn ultra_preset() -> Self {
         Self {
             vsync_mode: VsyncMode::Mailbox,
-            msaa_samples: MsaaSamples::X1, // Must be X1 (Off) for SSAO compatibility
             view_distance: 1500.0,
             shadow_quality: ShadowQuality::Ultra,
             shadow_max_distance: 400.0,
             shadow_filtering: GraphicsShadowFilteringMethod::Temporal,
-            brightness: 1.0,
-            contrast: 1.0,
-            saturation: 1.0,
-            gamma: 1.0,
-            bloom_enabled: true,
             bloom_intensity: 0.2,
             motion_blur_enabled: true,
             motion_blur_intensity: 0.3,
-            ssao_enabled: true,
             ssao_quality: SsaoQuality::High,
             dof_enabled: true,
-            tonemapping: TonemappingMode::TonyMcMapface,
             texture_quality: TextureQuality::Ultra,
-            fxaa_enabled: false,
             smaa_quality: SmaaQuality::High,
             ambient_light_brightness: 1.0,
-            ambient_light_color: Color::WHITE,
-            terrain_light_intensity: 5.0,
-            sailing: SailingGraphicsSettings::default(),
+            ..Default::default()
         }
     }
 }

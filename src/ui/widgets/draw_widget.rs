@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::resources::UiResources;
 
-use super::{DataBindings, DrawWidget, GetWidget, LoadWidget, Widget};
+use super::{DataBindings, DrawWidget, LoadWidget};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename = "DRAW")]
@@ -52,15 +52,5 @@ impl DrawWidget for Draw {
 
         let rect = self.widget_rect(ui.min_rect().min);
         ui.allocate_rect(rect, egui::Sense::hover());
-    }
-}
-
-impl GetWidget for Draw {
-    fn get_widget(&self, _id: i32) -> Option<&Widget> {
-        None
-    }
-
-    fn get_widget_mut(&mut self, _id: i32) -> Option<&mut Widget> {
-        None
     }
 }

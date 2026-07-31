@@ -39,9 +39,6 @@ mod world_rates;
 mod world_time;
 mod zone_time;
 
-// Debug diagnostics module for zone loading issues
-pub mod zone_debug_diagnostics;
-
 pub use account::Account;
 pub use app_state::AppState;
 pub use blood_decal_atlas::BloodDecalAtlas;
@@ -76,8 +73,8 @@ pub use sound_cache::SoundCache;
 pub use sound_settings::SoundSettings;
 pub use specular_texture::SpecularTexture;
 pub use ui_resources::{
-    load_ui_resources, ui_requested_cursor_apply_system, update_ui_resources, UiCursorType,
-    UiRequestedCursor, UiResources, UiSprite, UiSpriteSheet, UiSpriteSheetType, UiTexture,
+    load_ui_resources, update_ui_resources, UiCursorType, UiRequestedCursor, UiResources,
+    UiSprite, UiSpriteSheet, UiSpriteSheetType, UiTexture,
 };
 pub use virtual_filesystem::VfsResource;
 pub use water_settings::WaterSettings;

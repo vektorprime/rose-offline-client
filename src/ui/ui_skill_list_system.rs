@@ -157,11 +157,9 @@ pub fn ui_skill_list_system(
     let mut response_close_button = None;
     let mut response_skill_tree_button = None;
 
-    egui::Window::new("Skills")
-        .frame(egui::Frame::none())
+    dialog
+        .window("Skills")
         .open(&mut ui_state_windows.skill_list_open)
-        .title_bar(false)
-        .resizable(false)
         .fixed_size([dialog.width, dialog.height])
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(

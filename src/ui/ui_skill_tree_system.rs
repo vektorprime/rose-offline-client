@@ -101,10 +101,6 @@ fn ui_add_skill_tree_slot(
         )
         .inner;
 
-    if response.double_clicked() {
-        // player_command_events.send(PlayerCommandEvent::UseSkill(skill_slot));
-    }
-
     if let Some(skill_data) = skill_data {
         response.on_hover_ui(|ui| {
             ui_add_skill_tooltip(
@@ -211,12 +207,9 @@ pub fn ui_skill_tree_system(
     let mut response_close_button = None;
     let mut select_base_skill_index = None;
 
-    egui::Window::new("Skill Tree")
-        .frame(egui::Frame::none())
+    dialog
+        .window("Skill Tree")
         .open(&mut ui_state_windows.skill_tree_open)
-        .title_bar(false)
-        .resizable(false)
-        .default_size([dialog.width, dialog.height])
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,

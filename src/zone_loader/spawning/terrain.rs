@@ -3,7 +3,6 @@ use super::*;
 #[allow(clippy::too_many_arguments)]
 pub(super) fn spawn_terrain(
     commands: &mut Commands,
-    asset_server: &AssetServer,
     meshes: &mut Assets<Mesh>,
     terrain_materials: &mut Assets<TerrainMaterial>,
     tile_textures: &Vec<Handle<Image>>,
@@ -300,8 +299,6 @@ pub(super) fn spawn_terrain(
             ),
         ))
         .id();
-    // info!("[ASSET LIFECYCLE] Terrain entity spawned: {:?} block {}_{} with {} textures",
-    //terrain_entity, block_data.block_x, block_data.block_y);
     log::info!(
         "[SPAWN TERRAIN] Terrain entity created: {:?} at position ({}, 0, {})",
         terrain_entity,
@@ -345,13 +342,13 @@ pub(super) fn spawn_new_terrain(
         .expect("New terrain mesh data missing");
     let mut cursor = 0;
 
-    let mut read_u32 = |cursor: &mut usize, data: &[u8]| {
+    let read_u32 = |cursor: &mut usize, data: &[u8]| {
         let val = u32::from_le_bytes(data[*cursor..*cursor + 4].try_into().unwrap());
         *cursor += 4;
         val
     };
 
-    let mut read_f32 = |cursor: &mut usize, data: &[u8]| {
+    let read_f32 = |cursor: &mut usize, data: &[u8]| {
         let val = f32::from_le_bytes(data[*cursor..*cursor + 4].try_into().unwrap());
         *cursor += 4;
         val

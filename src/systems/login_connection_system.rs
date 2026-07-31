@@ -11,6 +11,7 @@ use crate::{
     resources::{
         Account, LoginConnection, ServerList, ServerListGameServer, ServerListWorldServer,
     },
+    systems::network_thread_system::handle_connection_lost,
 };
 
 pub fn login_connection_system(
@@ -119,13 +120,11 @@ pub fn login_connection_system(
     };
 
     if let Err(error) = result {
-        log::warn!("Login server connection error: {}", error);
-        message_box_events.write(MessageBoxEvent::Show {
-            message: format!("Connection to login server lost: {}", error),
-            modal: true,
-            ok: None,
-            cancel: None,
-        });
-        commands.remove_resource::<LoginConnection>();
+        handle_connection_lost::<LoginConnection>(
+            &mut commands,
+            &mut message_box_events,
+            "login",
+            &error,
+        );
     }
 }

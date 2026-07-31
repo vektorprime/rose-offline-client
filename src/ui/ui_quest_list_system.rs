@@ -9,7 +9,7 @@ use crate::{
     resources::{GameData, UiResources},
     ui::{
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
-        ui_add_item_tooltip,
+        tooltip_on_hover,
         widgets::{DataBindings, Dialog, Widget},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateWindows,
     },
@@ -62,9 +62,7 @@ fn ui_add_quest_item_slot(
         .inner;
 
     if let Some(item) = item {
-        response.on_hover_ui(|ui| {
-            ui_add_item_tooltip(ui, game_data, player_tooltip_data, item);
-        });
+        tooltip_on_hover(response, game_data, player_tooltip_data, item);
     }
 }
 

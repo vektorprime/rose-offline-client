@@ -8,7 +8,7 @@ use bevy_egui::egui;
 
 use crate::components::{EventObject, WarpObject, ZoneObject};
 use crate::map_editor::components::{EditorSelectable, SelectedInEditor};
-use crate::map_editor::resources::{HierarchyFilter, MapEditorState};
+use crate::map_editor::resources::MapEditorState;
 
 /// System parameter for querying hierarchy objects
 #[derive(SystemParam)]

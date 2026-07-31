@@ -6,7 +6,7 @@
 use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
-use crate::map_editor::components::{EditorGizmo, GizmoType, SelectedInEditor};
+use crate::map_editor::components::SelectedInEditor;
 use crate::map_editor::resources::{EditorAction, EditorMode, MapEditorState};
 
 /// Resource to track active gizmo drag state
@@ -14,9 +14,6 @@ use crate::map_editor::resources::{EditorAction, EditorMode, MapEditorState};
 pub struct GizmoDragState {
     /// Whether we're currently dragging a gizmo
     pub is_dragging: bool,
-
-    /// The axis being dragged (for translate/scale)
-    pub active_axis: Option<GizmoAxis>,
 
     /// The original transform when drag started
     pub original_transform: Option<Transform>,
@@ -28,35 +25,13 @@ pub struct GizmoDragState {
     pub drag_start_mouse_pos: Option<Vec2>,
 }
 
-/// Axis for gizmo manipulation
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GizmoAxis {
-    X,
-    Y,
-    Z,
-    XY,
-    XZ,
-    YZ,
-    Free,
-}
-
-impl Default for GizmoAxis {
-    fn default() -> Self {
-        Self::Free
-    }
-}
-
 /// System to handle transform gizmo manipulation
 pub fn transform_gizmo_system(
-    mut commands: Commands,
     mut map_editor_state: ResMut<MapEditorState>,
     mut gizmo_drag_state: ResMut<GizmoDragState>,
     mut selected_transforms: Query<&mut Transform, With<SelectedInEditor>>,
-    keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut egui_contexts: EguiContexts,
-    cameras: Query<&Camera>,
-    camera_transforms: Query<&GlobalTransform>,
     windows: Query<&Window>,
 ) {
     // Don't process if editor is disabled or egui is capturing input
@@ -74,15 +49,6 @@ pub fn transform_gizmo_system(
     let Ok(window) = windows.single() else {
         return;
     };
-
-    // Handle keyboard shortcuts for switching modes
-    handle_mode_switches(&mut map_editor_state, &keyboard);
-
-    // Handle snap-to-grid toggle
-    if keyboard.just_pressed(KeyCode::KeyG) && keyboard.pressed(KeyCode::ControlLeft) {
-        map_editor_state.snap_to_grid = !map_editor_state.snap_to_grid;
-        log::info!("[Gizmo] Snap to grid: {}", map_editor_state.snap_to_grid);
-    }
 
     // Only process transform operations in transform modes
     let editor_mode = map_editor_state.editor_mode;
@@ -151,58 +117,16 @@ pub fn transform_gizmo_system(
         // Calculate transform delta based on editor mode
         match editor_mode {
             EditorMode::Translate => {
-                apply_translation(
-                    &mut selected_transforms,
-                    &map_editor_state,
-                    delta_mouse,
-                    gizmo_drag_state.active_axis,
-                );
+                apply_translation(&mut selected_transforms, &map_editor_state, delta_mouse);
             }
             EditorMode::Rotate => {
-                apply_rotation(
-                    &mut selected_transforms,
-                    &map_editor_state,
-                    delta_mouse,
-                    gizmo_drag_state.active_axis,
-                );
+                apply_rotation(&mut selected_transforms, &map_editor_state, delta_mouse);
             }
             EditorMode::Scale => {
-                apply_scale(
-                    &mut selected_transforms,
-                    &map_editor_state,
-                    delta_mouse,
-                    gizmo_drag_state.active_axis,
-                );
+                apply_scale(&mut selected_transforms, &map_editor_state, delta_mouse);
             }
             _ => {}
         }
-    }
-}
-
-/// Handle keyboard shortcuts for switching editor modes
-fn handle_mode_switches(map_editor_state: &mut MapEditorState, keyboard: &ButtonInput<KeyCode>) {
-    // W for Translate mode
-    if keyboard.just_pressed(KeyCode::KeyW) {
-        map_editor_state.editor_mode = EditorMode::Translate;
-        log::info!("[Gizmo] Switched to Translate mode");
-    }
-
-    // E for Rotate mode
-    if keyboard.just_pressed(KeyCode::KeyE) {
-        map_editor_state.editor_mode = EditorMode::Rotate;
-        log::info!("[Gizmo] Switched to Rotate mode");
-    }
-
-    // R for Scale mode
-    if keyboard.just_pressed(KeyCode::KeyR) {
-        map_editor_state.editor_mode = EditorMode::Scale;
-        log::info!("[Gizmo] Switched to Scale mode");
-    }
-
-    // Q for Select mode
-    if keyboard.just_pressed(KeyCode::KeyQ) {
-        map_editor_state.editor_mode = EditorMode::Select;
-        log::info!("[Gizmo] Switched to Select mode");
     }
 }
 
@@ -211,36 +135,16 @@ fn apply_translation(
     transforms: &mut Query<&mut Transform, With<SelectedInEditor>>,
     map_editor_state: &MapEditorState,
     delta_mouse: Vec2,
-    active_axis: Option<GizmoAxis>,
 ) {
     // Convert mouse delta to world units (simplified - assumes orthographic-like behavior)
     let move_speed = 0.01; // Units per pixel of mouse movement
 
-    let axis = active_axis.unwrap_or(GizmoAxis::Free);
-
-    let mut delta = Vec3::ZERO;
-    match axis {
-        GizmoAxis::X => delta.x = delta_mouse.x * move_speed,
-        GizmoAxis::Y => delta.y = -delta_mouse.y * move_speed, // Y is inverted in screen space
-        GizmoAxis::Z => delta.z = delta_mouse.x * move_speed,
-        GizmoAxis::XY => {
-            delta.x = delta_mouse.x * move_speed;
-            delta.y = -delta_mouse.y * move_speed;
-        }
-        GizmoAxis::XZ => {
-            delta.x = delta_mouse.x * move_speed;
-            delta.z = delta_mouse.y * move_speed;
-        }
-        GizmoAxis::YZ => {
-            delta.y = -delta_mouse.y * move_speed;
-            delta.z = delta_mouse.x * move_speed;
-        }
-        GizmoAxis::Free => {
-            // Free movement in XZ plane by default
-            delta.x = delta_mouse.x * move_speed;
-            delta.z = delta_mouse.y * move_speed;
-        }
-    }
+    // Free movement in XZ plane by default
+    let mut delta = Vec3::new(
+        delta_mouse.x * move_speed,
+        0.0,
+        delta_mouse.y * move_speed,
+    );
 
     // Apply snap-to-grid if enabled
     if map_editor_state.snap_to_grid {
@@ -258,22 +162,12 @@ fn apply_rotation(
     transforms: &mut Query<&mut Transform, With<SelectedInEditor>>,
     map_editor_state: &MapEditorState,
     delta_mouse: Vec2,
-    active_axis: Option<GizmoAxis>,
 ) {
     let rotate_speed = 0.5; // Degrees per pixel of mouse movement
 
-    let axis = active_axis.unwrap_or(GizmoAxis::Y); // Default to Y axis rotation
-
+    // Default to Y axis rotation
     let mut euler_delta = Vec3::ZERO;
-    match axis {
-        GizmoAxis::X => euler_delta.x = delta_mouse.y * rotate_speed,
-        GizmoAxis::Y => euler_delta.y = delta_mouse.x * rotate_speed,
-        GizmoAxis::Z => euler_delta.z = delta_mouse.x * rotate_speed,
-        _ => {
-            // Free rotation defaults to Y axis
-            euler_delta.y = delta_mouse.x * rotate_speed;
-        }
-    }
+    euler_delta.y = delta_mouse.x * rotate_speed;
 
     // Apply snap-to-grid for rotation (snap to 15 degree increments)
     let rotation_snap: f32 = if map_editor_state.snap_to_grid {
@@ -308,39 +202,15 @@ fn apply_scale(
     transforms: &mut Query<&mut Transform, With<SelectedInEditor>>,
     map_editor_state: &MapEditorState,
     delta_mouse: Vec2,
-    active_axis: Option<GizmoAxis>,
 ) {
     let scale_speed = 0.005; // Scale factor per pixel of mouse movement
 
-    let axis = active_axis.unwrap_or(GizmoAxis::Free);
-
-    // Scale based on horizontal mouse movement
+    // Scale based on horizontal mouse movement (uniform)
     let scale_delta = 1.0 + (delta_mouse.x * scale_speed);
 
     for mut transform in transforms.iter_mut() {
         let mut new_scale = transform.scale;
-
-        match axis {
-            GizmoAxis::X => new_scale.x *= scale_delta,
-            GizmoAxis::Y => new_scale.y *= scale_delta,
-            GizmoAxis::Z => new_scale.z *= scale_delta,
-            GizmoAxis::XY => {
-                new_scale.x *= scale_delta;
-                new_scale.y *= scale_delta;
-            }
-            GizmoAxis::XZ => {
-                new_scale.x *= scale_delta;
-                new_scale.z *= scale_delta;
-            }
-            GizmoAxis::YZ => {
-                new_scale.y *= scale_delta;
-                new_scale.z *= scale_delta;
-            }
-            GizmoAxis::Free => {
-                // Uniform scaling
-                new_scale *= scale_delta;
-            }
-        }
+        new_scale *= scale_delta;
 
         // Apply snap-to-grid for scale (snap to 0.1 increments)
         if map_editor_state.snap_to_grid {

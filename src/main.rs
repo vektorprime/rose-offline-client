@@ -1,18 +1,14 @@
-#![allow(warnings)]
-
 use std::path::Path;
 
 use rose_data::ZoneId;
 use rose_offline_client::{
     load_config,
-    logging::{init_session_logging, LoggingConfig, LoggingGuard},
+    logging::init_session_logging,
     run_game, run_map_editor, run_model_viewer, run_zone_viewer, Config, FilesystemDeviceConfig,
     SystemsConfig,
 };
 
 fn main() {
-    println!("=== PROGRAM STARTING ===");
-    println!("main() function entered");
     let command = clap::Command::new("rose-offline-client")
         .arg(
             clap::Arg::new("config")
@@ -160,11 +156,8 @@ fn main() {
                 .long("new-terrain")
                 .help("Use the new converted terrain system"),
         );
-    println!("Parsing command line arguments...");
     let matches = command.get_matches();
-    println!("Command line arguments parsed successfully");
 
-    println!("Loading config...");
     let mut config = matches
         .value_of("config")
         .map(Path::new)
@@ -278,9 +271,6 @@ fn main() {
             .push(FilesystemDeviceConfig::Vfs("data.idx".into()));
     }
 
-    println!("Determining which mode to run...");
-
-    // Determine mode name for logging
     let mode = if matches.is_present("model-viewer") {
         "ModelViewer"
     } else if matches.is_present("zone-viewer") {
@@ -302,10 +292,8 @@ fn main() {
     log::info!("[LOGGING] Session logging initialized for mode: {}", mode);
 
     if matches.is_present("model-viewer") {
-        println!("Running in model viewer mode");
         run_model_viewer(&config);
     } else if matches.is_present("zone-viewer") {
-        println!("Running in zone viewer mode");
         run_zone_viewer(
             &config,
             matches
@@ -314,7 +302,6 @@ fn main() {
                 .and_then(ZoneId::new),
         );
     } else if matches.is_present("map-editor") {
-        println!("Running in map editor mode");
         run_map_editor(
             &config,
             matches
@@ -323,7 +310,6 @@ fn main() {
                 .and_then(ZoneId::new),
         );
     } else {
-        println!("Running in game mode");
         run_game(&config, SystemsConfig::default());
     }
 }

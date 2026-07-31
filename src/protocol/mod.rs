@@ -48,8 +48,6 @@ macro_rules! implement_protocol_client {
                         }
                     };
                 }
-
-                // Ok(())
             }
         }
     };

@@ -3,9 +3,7 @@ use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
     events::QuestTriggerEvent,
-    scripting::{
-        quest_apply_rewards, quest_check_conditions, ScriptFunctionContext, ScriptFunctionResources,
-    },
+    scripting::{ScriptFunctionContext, ScriptFunctionResources},
 };
 
 pub fn quest_trigger_system(
@@ -15,9 +13,7 @@ pub fn quest_trigger_system(
 ) {
     for event in quest_trigger_events.read() {
         match *event {
-            QuestTriggerEvent::ApplyRewards(trigger_hash) => {
-                // Authority migrated to server. Client no longer applies rewards locally.
-            }
+            QuestTriggerEvent::ApplyRewards(_) => {}
             QuestTriggerEvent::DoTrigger(trigger_hash) => {
                 if let Some(game_connection) = script_resources.game_connection.as_ref() {
                     game_connection

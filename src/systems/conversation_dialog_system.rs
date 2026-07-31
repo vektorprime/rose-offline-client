@@ -110,46 +110,6 @@ fn create_conversation_dialog(
     })
 }
 
-// TODO: Fix parse_message for Bevy 0.13
-// fn parse_message(message: &str, user_context: &LuaVMContext) -> String {
-//     let mut string = String::with_capacity(message.len());
-
-//     let mut remaining = message;
-//     while let Some(template_start) = remaining.find(|c| c == '<') {
-//         let (before_template, template) = remaining.split_at(template_start);
-//
-//         let template_end = template.find(|c| c == '>');
-//         if template_end.is_none() {
-//             return string;
-//         }
-//         let template_end = template_end.unwrap();
-//         let (template, after_template) = template.split_at(template_end + 1);
-//
-//         string += before_template;
-//         string += match template {
-//             "<NAME>" => user_context
-//                 .function_context
-//                 .query_player_stats
-//                 .get_single()
-//                 .map(|player| player.1.name.clone())
-//                 .ok(),
-//             "<LEVEL>" => user_context
-//                 .function_context
-//                 .query_player_stats
-//                 .get_single()
-//                 .map(|player| format!("{}", player.4.level))
-//                 .ok(),
-//             _ => None,
-//         }
-//         .unwrap_or_else(|| template.to_string())
-//         .as_str();
-//         remaining = after_template;
-//     }
-//
-//     string += remaining;
-//     string
-// }
-
 fn message_layout_job(response_number: Option<usize>, message: &str) -> egui::text::LayoutJob {
     let default_text_color = egui::Color32::BLACK;
     let mut remaining = message;

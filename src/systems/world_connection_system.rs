@@ -6,6 +6,7 @@ use rose_network_common::ConnectionError;
 use crate::{
     events::{MessageBoxEvent, NetworkEvent, WorldConnectionEvent},
     resources::{Account, AppState, CharacterList, WorldConnection},
+    systems::network_thread_system::handle_connection_lost,
 };
 
 pub fn world_connection_system(
@@ -98,13 +99,11 @@ pub fn world_connection_system(
     };
 
     if let Err(error) = result {
-        log::warn!("World server connection error: {}", error);
-        message_box_events.write(MessageBoxEvent::Show {
-            message: format!("Connection to world server lost: {}", error),
-            modal: true,
-            ok: None,
-            cancel: None,
-        });
-        commands.remove_resource::<WorldConnection>();
+        handle_connection_lost::<WorldConnection>(
+            &mut commands,
+            &mut message_box_events,
+            "world",
+            &error,
+        );
     }
 }

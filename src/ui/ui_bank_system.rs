@@ -16,7 +16,7 @@ use crate::{
     resources::{ClientEntityList, GameConnection, GameData, UiResources},
     ui::{
         tooltips::PlayerTooltipQuery,
-        ui_add_item_tooltip,
+        tooltip_on_hover,
         widgets::{DataBindings, Dialog},
         DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop, UiStateWindows,
     },
@@ -88,9 +88,7 @@ fn ui_add_bank_slot(
         .inner;
 
     if let Some(item) = item {
-        response.on_hover_ui(|ui| {
-            ui_add_item_tooltip(ui, game_data, player_tooltip_data, item);
-        });
+        tooltip_on_hover(response, game_data, player_tooltip_data, item);
     }
 
     if let Some(DragAndDropId::Inventory(dropped_inventory_slot)) = dropped_item {
@@ -170,12 +168,8 @@ pub fn ui_bank_system(
     let mut response_close_button = None;
 
     let ctx = egui_context.ctx_mut().unwrap();
-    egui::Window::new("Bank")
-        .frame(egui::Frame::none())
-        .title_bar(false)
-        .resizable(false)
-        .default_width(dialog.width)
-        .default_height(dialog.height)
+    dialog
+        .window("Bank")
         .show(&*ctx, |ui| {
             dialog.draw(
                 ui,

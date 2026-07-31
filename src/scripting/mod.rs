@@ -12,6 +12,20 @@ mod quest_reward_functions;
 mod script_function_context;
 mod script_function_resources;
 
+use crate::scripting::lua4::Lua4Value;
+
+pub type LuaClosure =
+    fn(&ScriptFunctionResources, &mut ScriptFunctionContext, Vec<Lua4Value>) -> Vec<Lua4Value>;
+
+macro_rules! lua_closures {
+    ($($name:literal => $func:ident),* $(,)?) => {{
+        let mut closures: HashMap<String, LuaClosure> = HashMap::new();
+        $(closures.insert($name.into(), $func);)*
+        Self { closures }
+    }};
+}
+pub(crate) use lua_closures;
+
 pub struct LuaUserValueEntity {
     pub owner_entity: Option<Entity>,
 }

@@ -4,30 +4,20 @@ use bevy::{
 };
 
 use rose_data::{
-    AmmoIndex, AnimationEventFlags, EffectBulletMoveType, EquipmentIndex, ItemClass, SkillData,
-    SkillType, VehiclePartIndex,
+    AnimationEventFlags, EffectBulletMoveType, SkillData, SkillType, VehiclePartIndex,
 };
 use rose_game_common::components::{Equipment, MoveMode, Npc};
 
 use crate::{
     animation::AnimationFrameEvent,
     components::{Command, PlayerCharacter, ProjectileTarget},
-    events::{
-        BloodImpactProfile, HitEvent, SpawnEffectData, SpawnEffectEvent, SpawnProjectileEvent,
-    },
+    events::{BloodImpactProfile, HitEvent, SpawnEffectData, SpawnEffectEvent, SpawnProjectileEvent},
     resources::GameData,
+    systems::effect_resolution::{
+        resolve_vehicle_arms_bullet_effect_id, resolve_weapon_bullet_effect_id,
+        resolve_weapon_hit_effect_id, weapon_blood_profile,
+    },
 };
-
-fn weapon_to_blood_profile(item_class: ItemClass) -> BloodImpactProfile {
-    match item_class {
-        ItemClass::Bow | ItemClass::Crossbow | ItemClass::DualGuns | ItemClass::Gun => {
-            BloodImpactProfile::Projectile
-        }
-        ItemClass::Launcher => BloodImpactProfile::Blunt,
-        ItemClass::Katar | ItemClass::DualSwords => BloodImpactProfile::Pierce,
-        _ => BloodImpactProfile::Slash,
-    }
-}
 
 #[derive(QueryData)]
 pub struct EventEntity<'w> {
@@ -74,43 +64,15 @@ pub fn animation_effect_system(
                         .and_then(|legs| game_data.items.get_vehicle_item(legs.item.item_number))
                         .and_then(|vehicle_item_data| vehicle_item_data.hit_effect_id)
                 } else {
-                    event_entity
-                        .equipment
-                        .and_then(|equipment| {
-                            game_data.items.get_weapon_item(
-                                equipment
-                                    .get_equipment_item(EquipmentIndex::Weapon)
-                                    .map(|weapon| weapon.item.item_number)
-                                    .unwrap_or(0),
-                            )
-                        })
-                        .and_then(|weapon_item_data| weapon_item_data.effect_id)
-                        .or_else(|| {
-                            event_entity
-                                .npc
-                                .and_then(|npc| game_data.npcs.get_npc(npc.id))
-                                .and_then(|npc_data| npc_data.hand_hit_effect_id)
-                        })
+                    resolve_weapon_hit_effect_id(event_entity.equipment, event_entity.npc, &game_data)
                 };
-
-                let blood_profile = event_entity
-                    .equipment
-                    .and_then(|equipment| {
-                        game_data.items.get_weapon_item(
-                            equipment
-                                .get_equipment_item(EquipmentIndex::Weapon)
-                                .map(|weapon| weapon.item.item_number)
-                                .unwrap_or(0),
-                        )
-                    })
-                    .map(|weapon_item_data| {
-                        weapon_to_blood_profile(weapon_item_data.item_data.class)
-                    })
-                    .unwrap_or(BloodImpactProfile::Slash);
 
                 hit_events.write(
                     HitEvent::with_weapon(event.entity, target_entity, effect_id)
-                        .with_blood_profile(blood_profile),
+                        .with_blood_profile(weapon_blood_profile(
+                            event_entity.equipment,
+                            &game_data,
+                        )),
                 );
             }
         }
@@ -129,12 +91,8 @@ pub fn animation_effect_system(
                         event_entity
                             .equipment
                             .and_then(|equipment| {
-                                equipment.get_vehicle_item(VehiclePartIndex::Arms)
+                                resolve_vehicle_arms_bullet_effect_id(equipment, &game_data)
                             })
-                            .and_then(|legs| {
-                                game_data.items.get_vehicle_item(legs.item.item_number)
-                            })
-                            .and_then(|vehicle_item_data| vehicle_item_data.bullet_effect_id)
                             .and_then(|id| game_data.effect_database.get_effect(id)),
                     )
                 } else {
@@ -143,34 +101,7 @@ pub fn animation_effect_system(
                         event_entity
                             .equipment
                             .and_then(|equipment| {
-                                game_data
-                                    .items
-                                    .get_weapon_item(
-                                        equipment
-                                            .get_equipment_item(EquipmentIndex::Weapon)
-                                            .map(|weapon| weapon.item.item_number)
-                                            .unwrap_or(0),
-                                    )
-                                    .and_then(|weapon_item_data| {
-                                        match weapon_item_data.item_data.class {
-                                            ItemClass::Bow | ItemClass::Crossbow => {
-                                                Some(AmmoIndex::Arrow)
-                                            }
-                                            ItemClass::Gun | ItemClass::DualGuns => {
-                                                Some(AmmoIndex::Bullet)
-                                            }
-                                            ItemClass::Launcher => Some(AmmoIndex::Throw),
-                                            _ => None,
-                                        }
-                                        .and_then(|ammo_index| equipment.get_ammo_item(ammo_index))
-                                        .and_then(|ammo_item| {
-                                            game_data
-                                                .items
-                                                .get_material_item(ammo_item.item.item_number)
-                                        })
-                                        .and_then(|ammo_item_data| ammo_item_data.bullet_effect_id)
-                                        .or(weapon_item_data.bullet_effect_id)
-                                    })
+                                resolve_weapon_bullet_effect_id(equipment, &game_data)
                             })
                             .and_then(|id| game_data.effect_database.get_effect(id)),
                     )
@@ -244,29 +175,26 @@ pub fn animation_effect_system(
             .flags
             .contains(AnimationEventFlags::EFFECT_SKILL_ACTION)
         {
-            log::info!(
-                "[ANIMATION EFFECT] EFFECT_SKILL_ACTION triggered for entity {:?}",
-                event.entity
-            );
-
             if let Some(skill_data) = event_entity
                 .command
                 .get_skill_id()
                 .and_then(|skill_id| game_data.skills.get_skill(skill_id))
             {
-                log::info!("[ANIMATION EFFECT] Skill data found: id={:?}, skill_type={:?}, bullet_effect_id={:?}, hit_effect_file_id={:?}", 
-                    skill_data.id, skill_data.skill_type, skill_data.bullet_effect_id, skill_data.hit_effect_file_id);
-
                 match skill_data.skill_type {
-                    SkillType::BasicAction | SkillType::CreateWindow | SkillType::Immediate => {
+                    SkillType::BasicAction
+                    | SkillType::CreateWindow
+                    | SkillType::Immediate
+                    | SkillType::SelfBound
+                    | SkillType::SelfBoundDuration
+                    | SkillType::SelfStateDuration
+                    | SkillType::SelfDamage => {
                         // Spawn effects if defined, even for these skill types
                         if let Some(effect_data) = skill_data
                             .bullet_effect_id
                             .and_then(|id| game_data.effect_database.get_effect(id))
                         {
-                            log::info!("[ANIMATION EFFECT] bullet_effect_id resolved to effect_data with bullet_effect={:?}", effect_data.bullet_effect);
                             if let Some(effect_file_id) = effect_data.bullet_effect {
-                                log::info!(
+                                log::debug!(
                                     "[ANIMATION EFFECT] Spawning bullet effect file_id={}",
                                     effect_file_id.get()
                                 );
@@ -276,12 +204,10 @@ pub fn animation_effect_system(
                                     SpawnEffectData::with_file_id(effect_file_id),
                                 ));
                             }
-                        } else {
-                            log::warn!("[ANIMATION EFFECT] bullet_effect_id={:?} did not resolve to effect_data", skill_data.bullet_effect_id);
                         }
 
                         if let Some(hit_effect_file_id) = skill_data.hit_effect_file_id {
-                            log::info!(
+                            log::debug!(
                                 "[ANIMATION EFFECT] Spawning hit effect file_id={}",
                                 hit_effect_file_id.get()
                             );
@@ -290,46 +216,6 @@ pub fn animation_effect_system(
                                 skill_data.hit_link_dummy_bone_id,
                                 SpawnEffectData::with_file_id(hit_effect_file_id),
                             ));
-                        } else {
-                            log::info!("[ANIMATION EFFECT] No hit_effect_file_id set");
-                        }
-                    }
-                    SkillType::SelfBound
-                    | SkillType::SelfBoundDuration
-                    | SkillType::SelfStateDuration
-                    | SkillType::SelfDamage => {
-                        if let Some(effect_data) = skill_data
-                            .bullet_effect_id
-                            .and_then(|id| game_data.effect_database.get_effect(id))
-                        {
-                            log::info!("[ANIMATION EFFECT] bullet_effect_id resolved to effect_data with bullet_effect={:?}", effect_data.bullet_effect);
-                            if let Some(effect_file_id) = effect_data.bullet_effect {
-                                log::info!(
-                                    "[ANIMATION EFFECT] Spawning bullet effect file_id={}",
-                                    effect_file_id.get()
-                                );
-                                spawn_effect_events.write(SpawnEffectEvent::OnEntity(
-                                    event.entity,
-                                    Some(skill_data.bullet_link_dummy_bone_id as usize),
-                                    SpawnEffectData::with_file_id(effect_file_id),
-                                ));
-                            }
-                        } else {
-                            log::warn!("[ANIMATION EFFECT] bullet_effect_id={:?} did not resolve to effect_data", skill_data.bullet_effect_id);
-                        }
-
-                        if let Some(hit_effect_file_id) = skill_data.hit_effect_file_id {
-                            log::info!(
-                                "[ANIMATION EFFECT] Spawning hit effect file_id={}",
-                                hit_effect_file_id.get()
-                            );
-                            spawn_effect_events.write(SpawnEffectEvent::OnEntity(
-                                event.entity,
-                                skill_data.hit_link_dummy_bone_id,
-                                SpawnEffectData::with_file_id(hit_effect_file_id),
-                            ));
-                        } else {
-                            log::info!("[ANIMATION EFFECT] No hit_effect_file_id set");
                         }
                     }
                     SkillType::FireBullet => {
@@ -408,23 +294,8 @@ pub fn animation_effect_system(
                 .get_skill_id()
                 .and_then(|skill_id| game_data.skills.get_skill(skill_id))
             {
-                let weapon_effect_id = event_entity
-                    .equipment
-                    .and_then(|equipment| {
-                        game_data.items.get_weapon_item(
-                            equipment
-                                .get_equipment_item(EquipmentIndex::Weapon)
-                                .map(|weapon| weapon.item.item_number)
-                                .unwrap_or(0),
-                        )
-                    })
-                    .and_then(|weapon_item_data| weapon_item_data.effect_id)
-                    .or_else(|| {
-                        event_entity
-                            .npc
-                            .and_then(|npc| game_data.npcs.get_npc(npc.id))
-                            .and_then(|npc_data| npc_data.hand_hit_effect_id)
-                    });
+                let weapon_effect_id =
+                    resolve_weapon_hit_effect_id(event_entity.equipment, event_entity.npc, &game_data);
 
                 if skill_data.hit_effect_file_id.is_some() {
                     hit_events.write(
@@ -436,28 +307,16 @@ pub fn animation_effect_system(
                         .with_blood_profile(BloodImpactProfile::SkillMagic),
                     );
                 } else {
-                    let blood_profile = event_entity
-                        .equipment
-                        .and_then(|equipment| {
-                            game_data.items.get_weapon_item(
-                                equipment
-                                    .get_equipment_item(EquipmentIndex::Weapon)
-                                    .map(|weapon| weapon.item.item_number)
-                                    .unwrap_or(0),
-                            )
-                        })
-                        .map(|weapon_item_data| {
-                            weapon_to_blood_profile(weapon_item_data.item_data.class)
-                        })
-                        .unwrap_or(BloodImpactProfile::Slash);
-
                     hit_events.write(
                         HitEvent::with_weapon(
                             event.entity,
                             target_entity.unwrap_or(event.entity),
                             weapon_effect_id,
                         )
-                        .with_blood_profile(blood_profile),
+                        .with_blood_profile(weapon_blood_profile(
+                            event_entity.equipment,
+                            &game_data,
+                        )),
                     );
                 }
             }

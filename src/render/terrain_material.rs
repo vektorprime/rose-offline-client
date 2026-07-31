@@ -11,16 +11,15 @@ use std::num::NonZeroU32;
 use bevy::{
     asset::{load_internal_asset, weak_handle, Asset, AssetApp, Assets, Handle},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
-    pbr::{Material, MaterialPipeline, MaterialPipelineKey, MeshPipelineKey},
+    pbr::{Material, MaterialPipeline, MaterialPipelineKey},
     prelude::{
-        App, Color, ColorToComponents, Component, DetectChanges, GlobalTransform, LinearRgba, Mesh,
-        Plugin, Query, Res, ResMut, Resource, Vec3, Vec4, With, World,
+        App, Color, ColorToComponents, DetectChanges, LinearRgba, Mesh, Plugin, Res, ResMut, Vec3,
+        Vec4,
     },
     reflect::TypePath,
     render::{
         alpha::AlphaMode,
         render_asset::RenderAssets,
-        render_phase::{PhaseItem, RenderCommand, RenderCommandResult, TrackedRenderPass},
         render_resource::*,
         renderer::RenderDevice,
         texture::{FallbackImage, GpuImage},
@@ -38,27 +37,6 @@ pub const TERRAIN_MATERIAL_SHADER_HANDLE: Handle<Shader> =
 
 /// Maximum number of terrain tile textures supported
 pub const TERRAIN_MATERIAL_MAX_TEXTURES: usize = 100;
-
-/// Per-entity terrain lighting values extracted from ZoneLighting.
-///
-/// Kept on the mesh entity so we don't need uniform buffers in the material bind group,
-/// which is disallowed by wgpu when using binding arrays.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct TerrainLighting {
-    pub light_direction: Vec4,
-    pub light_color: Vec4,
-    pub ambient_color: Vec4,
-}
-
-impl Default for TerrainLighting {
-    fn default() -> Self {
-        Self {
-            light_direction: Vec4::new(0.0, -1.0, 0.0, 0.0),
-            light_color: Vec4::new(1.0, 1.0, 1.0, 1.0),
-            ambient_color: Vec4::new(0.2, 0.2, 0.2, 1.0),
-        }
-    }
-}
 
 /// Plugin that registers the terrain material
 pub struct TerrainMaterialPlugin;
@@ -136,47 +114,6 @@ pub fn update_terrain_lighting_system(
             map_ambient.z,
             1.0,
         ));
-    }
-}
-
-/// Sync terrain lighting data to terrain mesh entities for shader consumption.
-pub fn sync_terrain_lighting_component_system(
-    zone_lighting: Res<ZoneLighting>,
-    graphics_settings: Res<GraphicsSettings>,
-    zone_time: Res<crate::resources::ZoneTime>,
-    mut terrain_entities: Query<
-        &mut TerrainLighting,
-        With<bevy::pbr::MeshMaterial3d<TerrainMaterial>>,
-    >,
-) {
-    if !zone_lighting.is_changed() && !graphics_settings.is_changed() && !zone_time.is_changed() {
-        return;
-    }
-
-    let base_intensity = graphics_settings.terrain_light_intensity;
-    let time_multiplier = match zone_time.state {
-        crate::resources::ZoneTimeState::Morning => 2.0,
-        crate::resources::ZoneTimeState::Day => 2.5,
-        crate::resources::ZoneTimeState::Evening => 2.0,
-        crate::resources::ZoneTimeState::Night => 1.0,
-    };
-    let intensity_scale = (base_intensity * time_multiplier) / 5.0;
-
-    let char_diffuse = zone_lighting.character_diffuse_color;
-    let map_ambient = zone_lighting.map_ambient_color;
-    let values = TerrainLighting {
-        light_direction: zone_lighting.light_direction.extend(0.0),
-        light_color: Vec4::new(
-            char_diffuse.x * intensity_scale,
-            char_diffuse.y * intensity_scale,
-            char_diffuse.z * intensity_scale,
-            1.0,
-        ),
-        ambient_color: Vec4::new(map_ambient.x, map_ambient.y, map_ambient.z, 1.0),
-    };
-
-    for mut lighting in terrain_entities.iter_mut() {
-        *lighting = values;
     }
 }
 

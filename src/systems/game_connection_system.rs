@@ -4,7 +4,10 @@ use bevy::camera::visibility::InheritedVisibility;
 use bevy::{
     asset::Assets,
     camera::visibility::ViewVisibility,
-    ecs::message::Messages,
+    ecs::{
+        bundle::Bundle,
+        message::Messages,
+    },
     math::{Quat, Vec3},
     prelude::{
         Commands, Entity, GlobalTransform, MessageWriter, Mut, NextState, Res, ResMut, State,
@@ -43,11 +46,11 @@ use rose_network_common::ConnectionError;
 use crate::{
     bundles::{ability_values_add_value_exclusive, ability_values_set_value_exclusive},
     components::{
-        Bank, BoatState, Clan, ClanMember, ClanMembership, ClientEntity, ClientEntityName,
-        ClientEntityType, CollisionHeightOnly, CollisionPlayer, Command, CommandCastSkillTarget,
-        Cooldowns, Dead, DirtDashEffect, FacingDirection, FlightState, ItemDropOwner,
-        ItemDropRemainingTime, MonsterSeparation, NextCommand, PartyInfo, PartyOwner,
-        PassiveRecoveryTime, PendingDamage, PendingDamageList, PendingSkillEffect,
+        Bank, BoatState, Clan, ClanMember, ClanMembership, ClientEntity, ClientEntityId,
+        ClientEntityName, ClientEntityType, CollisionHeightOnly, CollisionPlayer, Command,
+        CommandCastSkillTarget, Cooldowns, Dead, DirtDashEffect, FacingDirection, FlightState,
+        ItemDropOwner, ItemDropRemainingTime, MonsterSeparation, NextCommand, PartyInfo,
+        PartyOwner, PassiveRecoveryTime, PendingDamage, PendingDamageList, PendingSkillEffect,
         PendingSkillEffectList, PendingSkillTarget, PendingSkillTargetList, PersonalStore,
         PlayerCharacter, Position, VisibleStatusEffects,
     },
@@ -59,7 +62,48 @@ use crate::{
     resources::{
         AppState, ClientEntityList, CurrentZone, GameConnection, GameData, WorldRates, WorldTime,
     },
+    systems::network_thread_system::handle_connection_lost,
 };
+
+type SpawnTransformBundle = (
+    Transform,
+    GlobalTransform,
+    Visibility,
+    InheritedVisibility,
+    ViewVisibility,
+);
+
+fn spawn_client_entity(
+    world: &mut World,
+    entity_id: ClientEntityId,
+    entity_type: ClientEntityType,
+    position: Vec3,
+    rotation: Option<Quat>,
+    core_bundle: impl Bundle,
+    extra_components: impl Bundle,
+) -> Entity {
+    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
+    let entity = world.spawn(core_bundle).id();
+
+    let mut transform = Transform::from_xyz(position.x / 100.0, spawn_y, -position.y / 100.0);
+    if let Some(rotation) = rotation {
+        transform.rotation = rotation;
+    }
+
+    world.entity_mut(entity).insert((
+        extra_components,
+        ClientEntity::new(entity_id, entity_type),
+        CollisionHeightOnly,
+        transform,
+        GlobalTransform::default(),
+        Visibility::default(),
+        InheritedVisibility::default(),
+        ViewVisibility::default(),
+    ));
+
+    world.resource_mut::<ClientEntityList>().add(entity_id, entity);
+    entity
+}
 
 fn to_next_command(
     command_state: &SpawnCommandState,
@@ -145,7 +189,6 @@ fn get_spawn_height_from_world(world: &World, position_x: f32, position_y: f32) 
         if let Some(zone_loader_assets) = world.get_resource::<Assets<ZoneLoaderAsset>>() {
             if let Some(zone_data) = zone_loader_assets.get(&current_zone.handle) {
                 let terrain_height = zone_data.get_terrain_height(position_x, position_y) / 100.0;
-                //log::info!("[SPAWN_HEIGHT] Terrain height at ({:.2}, {:.2}): {:.2}m", position_x, position_y, terrain_height);
                 return terrain_height;
             }
         }
@@ -153,6 +196,45 @@ fn get_spawn_height_from_world(world: &World, position_x: f32, position_y: f32) 
     // Fallback: use a reasonable default height if zone data is unavailable
     log::warn!("[SPAWN_HEIGHT] Zone data unavailable, using fallback height of 10.0m");
     10.0
+}
+
+fn recalculate_ability_values_and_refill(world: &mut World, entity: Entity) {
+    world.resource_scope(|world, game_data: Mut<GameData>| {
+        let mut character = world.entity_mut(entity);
+
+        if let (
+            Some(basic_stats),
+            Some(character_info),
+            Some(equipment),
+            Some(level),
+            Some(skill_list),
+            Some(status_effects),
+        ) = (
+            character.get::<BasicStats>(),
+            character.get::<CharacterInfo>(),
+            character.get::<Equipment>(),
+            character.get::<Level>(),
+            character.get::<SkillList>(),
+            character.get::<StatusEffects>(),
+        ) {
+            let ability_values = game_data.ability_value_calculator.calculate(
+                character_info,
+                level,
+                equipment,
+                basic_stats,
+                skill_list,
+                status_effects,
+            );
+
+            if let Some(mut health_points) = character.get_mut::<HealthPoints>() {
+                health_points.hp = ability_values.get_max_health();
+            }
+
+            if let Some(mut mana_points) = character.get_mut::<ManaPoints>() {
+                mana_points.mp = ability_values.get_max_mana();
+            }
+        }
+    });
 }
 
 pub fn game_connection_system(
@@ -173,8 +255,6 @@ pub fn game_connection_system(
     mut quest_trigger_events: MessageWriter<QuestTriggerEvent>,
     mut message_box_events: MessageWriter<MessageBoxEvent>,
 ) {
-    // DIAGNOSTIC: Log whether CurrentZone resource exists at system entry
-    // log::info!("[DIAG_RUN_CONDITION] game_connection_system entry - CurrentZone resource exists: {}", current_zone.is_some());
     let Some(game_connection) = game_connection else {
         return;
     };
@@ -311,14 +391,6 @@ pub fn game_connection_system(
                 item_price_rate,
                 town_price_rate,
             }) => {
-                // DIAGNOSTIC: Log when JoinZone message is received
-                log::info!("[DIAG_JOIN_ZONE] JoinZone message received");
-                log::info!("[DIAG_JOIN_ZONE]   entity_id: {:?}", entity_id);
-                log::info!(
-                    "[DIAG_JOIN_ZONE]   player_entity: {:?}",
-                    client_entity_list.player_entity
-                );
-
                 if let Some(player_entity) = client_entity_list.player_entity {
                     let mut entity_commands = commands.entity(player_entity);
                     entity_commands.insert((
@@ -332,12 +404,6 @@ pub fn game_connection_system(
                         health_points,
                         mana_points,
                     ));
-
-                    // DIAGNOSTIC: Log when CollisionPlayer component is being added
-                    log::info!(
-                        "[DIAG_JOIN_ZONE] CollisionPlayer component added to player_entity: {:?}",
-                        player_entity
-                    );
 
                     if health_points.hp > 0 {
                         entity_commands.remove::<Dead>();
@@ -359,8 +425,6 @@ pub fn game_connection_system(
 
                     // Transition to in game state if we are not already
                     if !matches!(app_state_current.get(), AppState::Game) {
-                        // DIAGNOSTIC: Log when NextState<AppState::Game> is being set
-                        log::info!("[DIAG_JOIN_ZONE] Setting NextState<AppState::Game>, current state: {:?}", app_state_current.get());
                         app_state_next.set(AppState::Game);
                     }
                 }
@@ -384,9 +448,8 @@ pub fn game_connection_system(
                 ability_values.attack_speed += message.passive_attack_speed;
                 ability_values.passive_attack_speed = message.passive_attack_speed;
 
-                // Store data needed for deferred spawning
-                let position = message.position;
                 let entity_id = message.entity_id;
+                let position = message.position;
                 let character_info = message.character_info.clone();
                 let team = message.team;
                 let health = message.health;
@@ -398,12 +461,13 @@ pub fn game_connection_system(
                 let clan_membership = message.clan_membership.clone();
 
                 commands.queue(move |world: &mut World| {
-                    // Get terrain height at spawn position
-                    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
-
-                    // Spawn with core components first
-                    let entity = world
-                        .spawn((
+                    let entity = spawn_client_entity(
+                        world,
+                        entity_id,
+                        ClientEntityType::Character,
+                        position,
+                        None,
+                        (
                             ClientEntityName::new(character_info.name.clone()),
                             Command::with_stop(),
                             next_command,
@@ -418,25 +482,16 @@ pub fn game_connection_system(
                             ability_values,
                             status_effects,
                             StatusEffectsRegen::new(),
-                        ))
-                        .id();
-
-                    // Add remaining components in a second insert to avoid tuple size limit
-                    world.entity_mut(entity).insert((
-                        ClientEntity::new(entity_id, ClientEntityType::Character),
-                        CollisionHeightOnly,
-                        FacingDirection::default(),
-                        PendingDamageList::default(),
-                        PendingSkillEffectList::default(),
-                        PendingSkillTargetList::default(),
-                        Transform::from_xyz(position.x / 100.0, spawn_y, -position.y / 100.0),
-                        GlobalTransform::default(),
-                        Visibility::default(),
-                        InheritedVisibility::default(),
-                        ViewVisibility::default(),
-                        VisibleStatusEffects::default(),
-                        DirtDashEffect::default(),
-                    ));
+                        ),
+                        (
+                            FacingDirection::default(),
+                            PendingDamageList::default(),
+                            PendingSkillEffectList::default(),
+                            PendingSkillTargetList::default(),
+                            VisibleStatusEffects::default(),
+                            DirtDashEffect::default(),
+                        ),
+                    );
 
                     if let Some((skin, title)) = personal_store_info {
                         world
@@ -454,10 +509,6 @@ pub fn game_connection_system(
                             contribution: ClanPoints(0),
                         });
                     }
-
-                    world
-                        .resource_mut::<ClientEntityList>()
-                        .add(entity_id, entity);
                 });
             }
             Ok(ServerMessage::SpawnEntityNpc {
@@ -471,17 +522,6 @@ pub fn game_connection_system(
                 move_mode,
                 status_effects,
             }) => {
-                // DIAGNOSTIC: Log NPC spawning information
-                log::info!("[DIAG_NPC_SPAWN] Spawning NPC:");
-                log::info!("[DIAG_NPC_SPAWN]   entity_id: {:?}", entity_id);
-                log::info!("[DIAG_NPC_SPAWN]   npc_id: {:?}", npc.id);
-                log::info!(
-                    "[DIAG_NPC_SPAWN]   initial position (server): x={:.2}, y={:.2}, z={:.2}",
-                    position.x,
-                    position.y,
-                    position.z
-                );
-
                 let status_effects = StatusEffects {
                     active: status_effects,
                     ..Default::default()
@@ -494,24 +534,17 @@ pub fn game_connection_system(
                 let level = Level::new(ability_values.get_level() as u32);
                 let next_command = to_next_command(&spawn_command_state, &client_entity_list);
 
-                // Store data needed for deferred spawning
-                let npc_clone = npc;
-
                 commands.queue(move |world: &mut World| {
-                    // Get terrain height at spawn position
-                    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
-                    log::info!(
-                        "[DIAG_NPC_SPAWN] Spawning at terrain height: {:.2}m (server z was: {:.2})",
-                        spawn_y,
-                        position.z / 100.0
-                    );
-
-                    // Spawn with core components first
-                    let entity = world
-                        .spawn((
+                    spawn_client_entity(
+                        world,
+                        entity_id,
+                        ClientEntityType::Npc,
+                        position,
+                        Some(Quat::from_axis_angle(Vec3::Y, direction.to_radians())),
+                        (
                             Command::with_stop(),
                             next_command,
-                            npc_clone,
+                            npc,
                             team,
                             health,
                             move_mode,
@@ -521,29 +554,15 @@ pub fn game_connection_system(
                             move_speed,
                             status_effects,
                             StatusEffectsRegen::new(),
-                        ))
-                        .id();
-
-                    // Add remaining components in a second insert to avoid tuple size limit
-                    world.entity_mut(entity).insert((
-                        ClientEntity::new(entity_id, ClientEntityType::Npc),
-                        CollisionHeightOnly,
-                        FacingDirection::default(),
-                        PendingDamageList::default(),
-                        PendingSkillEffectList::default(),
-                        PendingSkillTargetList::default(),
-                        VisibleStatusEffects::default(),
-                        Transform::from_xyz(position.x / 100.0, spawn_y, -position.y / 100.0)
-                            .with_rotation(Quat::from_axis_angle(Vec3::Y, direction.to_radians())),
-                        GlobalTransform::default(),
-                        Visibility::default(),
-                        InheritedVisibility::default(),
-                        ViewVisibility::default(),
-                    ));
-
-                    world
-                        .resource_mut::<ClientEntityList>()
-                        .add(entity_id, entity);
+                        ),
+                        (
+                            FacingDirection::default(),
+                            PendingDamageList::default(),
+                            PendingSkillEffectList::default(),
+                            PendingSkillTargetList::default(),
+                            VisibleStatusEffects::default(),
+                        ),
+                    );
                 });
             }
             Ok(ServerMessage::SpawnEntityMonster {
@@ -556,12 +575,6 @@ pub fn game_connection_system(
                 move_mode,
                 status_effects,
             }) => {
-                // DIAGNOSTIC: Log monster spawning information
-                //log::info!("[DIAG_MONSTER_SPAWN] Spawning monster:");
-                //log::info!("[DIAG_MONSTER_SPAWN]   entity_id: {:?}", entity_id);
-                //log::info!("[DIAG_MONSTER_SPAWN]   npc_id: {:?}", npc.id);
-                //log::info!("[DIAG_MONSTER_SPAWN]   initial position (server): x={:.2}, y={:.2}, z={:.2}", position.x, position.y, position.z);
-
                 let status_effects = StatusEffects {
                     active: status_effects,
                     ..Default::default()
@@ -607,20 +620,17 @@ pub fn game_connection_system(
                     }
                 }
 
-                // Store data needed for deferred spawning
-                let npc_clone = npc;
-
                 commands.queue(move |world: &mut World| {
-                    // Get terrain height at spawn position
-                    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
-                    //log::info!("[DIAG_MONSTER_SPAWN] Spawning at terrain height: {:.2}m (server z was: {:.2})", spawn_y, position.z / 100.0);
-
-                    // Spawn with core components first
-                    let entity = world
-                        .spawn((
+                    spawn_client_entity(
+                        world,
+                        entity_id,
+                        ClientEntityType::Monster,
+                        position,
+                        None,
+                        (
                             Command::with_stop(),
                             next_command,
-                            npc_clone,
+                            npc,
                             team,
                             health,
                             move_mode,
@@ -631,29 +641,16 @@ pub fn game_connection_system(
                             move_speed,
                             status_effects,
                             StatusEffectsRegen::new(),
-                        ))
-                        .id();
-
-                    // Add remaining components in a second insert to avoid tuple size limit
-                    world.entity_mut(entity).insert((
-                        ClientEntity::new(entity_id, ClientEntityType::Monster),
-                        CollisionHeightOnly,
-                        FacingDirection::default(),
-                        MonsterSeparation::default(),
-                        PendingDamageList::default(),
-                        PendingSkillEffectList::default(),
-                        PendingSkillTargetList::default(),
-                        VisibleStatusEffects::default(),
-                        Transform::from_xyz(position.x / 100.0, spawn_y, -position.y / 100.0),
-                        GlobalTransform::default(),
-                        Visibility::default(),
-                        InheritedVisibility::default(),
-                        ViewVisibility::default(),
-                    ));
-
-                    world
-                        .resource_mut::<ClientEntityList>()
-                        .add(entity_id, entity);
+                        ),
+                        (
+                            FacingDirection::default(),
+                            MonsterSeparation::default(),
+                            PendingDamageList::default(),
+                            PendingSkillEffectList::default(),
+                            PendingSkillTargetList::default(),
+                            VisibleStatusEffects::default(),
+                        ),
+                    );
                 });
             }
             Ok(ServerMessage::SpawnEntityItemDrop {
@@ -677,29 +674,21 @@ pub fn game_connection_system(
                 };
 
                 commands.queue(move |world: &mut World| {
-                    // Get terrain height at spawn position
-                    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
-
-                    let entity = world
-                        .spawn((
+                    spawn_client_entity(
+                        world,
+                        entity_id,
+                        ClientEntityType::ItemDrop,
+                        position,
+                        None,
+                        (
                             ClientEntityName::new(name),
                             ItemDrop::with_dropped_item(dropped_item),
                             ItemDropRemainingTime::new(remaining_time),
                             ItemDropOwner::new(owner_entity_id),
                             Position::new(position),
-                            ClientEntity::new(entity_id, ClientEntityType::ItemDrop),
-                            CollisionHeightOnly,
-                            Transform::from_xyz(position.x / 100.0, spawn_y, -position.y / 100.0),
-                            GlobalTransform::default(),
-                            Visibility::default(),
-                            InheritedVisibility::default(),
-                            ViewVisibility::default(),
-                        ))
-                        .id();
-
-                    world
-                        .resource_mut::<ClientEntityList>()
-                        .add(entity_id, entity);
+                        ),
+                        (),
+                    );
                 });
             }
             Ok(ServerMessage::MoveEntity {
@@ -711,12 +700,9 @@ pub fn game_connection_system(
                 z,
                 move_mode,
             }) => {
-                //log::info!("[RESPAWN_MOVE_DIAG] Received MoveEntity from server: entity_id={:?}, pos=({},{},{})", entity_id, x, y, z);
-
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     let target_entity = target_entity_id.and_then(|id| client_entity_list.get(id));
 
-                    //log::info!("[RESPAWN_MOVE_DIAG] Found entity {:?}, inserting NextCommand::with_move", entity);
                     commands.entity(entity).insert(NextCommand::with_move(
                         Vec3::new(x, y, z as f32),
                         target_entity,
@@ -811,34 +797,19 @@ pub fn game_connection_system(
                 is_immediate,
                 from_skill,
             }) => {
-                log::info!("[GAME_CONNECTION] Received DamageEntity: attacker={:?}, defender={:?}, damage={}, is_killed={}, is_immediate={}",
-                    attacker_entity_id, defender_entity_id, damage.amount, is_killed, is_immediate);
-
                 if let Some(defender_entity) = client_entity_list.get(defender_entity_id) {
-                    log::info!(
-                        "[GAME_CONNECTION] Found defender entity {:?} for defender_entity_id {:?}",
-                        defender_entity,
-                        defender_entity_id
-                    );
-
                     let attacker_entity = client_entity_list.get(attacker_entity_id);
-                    log::info!(
-                        "[GAME_CONNECTION] Attacker entity lookup result: {:?}",
-                        attacker_entity
-                    );
 
                     let killed_by_player = is_killed
                         && client_entity_list.player_entity
                             == client_entity_list.get(attacker_entity_id);
 
                     commands.queue(move |world: &mut World| {
-                        log::info!("[GAME_CONNECTION] Queued command executing for defender entity {:?}", defender_entity);
                         let mut defender = world.entity_mut(defender_entity);
 
                         if let Some(mut pending_damage_list) =
                             defender.get_mut::<PendingDamageList>()
                         {
-                            log::info!("[GAME_CONNECTION] Found PendingDamageList, adding new pending damage entry");
                             pending_damage_list.push(PendingDamage::new(
                                 attacker_entity,
                                 damage,
@@ -846,14 +817,12 @@ pub fn game_connection_system(
                                 is_immediate,
                                 from_skill,
                             ));
-                            log::info!("[GAME_CONNECTION] Added pending damage to list, new length: {}", pending_damage_list.len());
                         } else {
                             log::error!("[GAME_CONNECTION] ERROR: Could NOT get PendingDamageList for entity {:?}!", defender_entity);
                         }
 
                         if let Some(mut health_points) = defender.get_mut::<HealthPoints>() {
                             health_points.hp = i32::max(health_points.hp - damage.amount as i32, 0);
-                            log::info!("[GAME_CONNECTION] Updated defender HP locally for visual sync: {}", health_points.hp);
                         }
 
                         if killed_by_player {
@@ -922,12 +891,7 @@ pub fn game_connection_system(
                                     .remove::<Dead>()
                                     .insert(Command::with_stop())
                                     .insert(NextCommand::with_stop());
-
-                                // log::info!("[RESPAWN_DIAG] Removed Dead component, set commands to Stop");
                             }
-
-                            // DIAGNOSTIC: Disabled - Track CollisionPlayer state
-                            // log::info!("[RESPAWN_DIAG] Setting position to ({}, {}, 0) and transform y={}", x, y, final_spawn_y);
 
                             // Note: We explicitly do NOT remove CollisionPlayer here.
                             // The collision system needs to continue processing the player for:
@@ -939,8 +903,6 @@ pub fn game_connection_system(
                                 Position::new(Vec3::new(x, y, 0.0)),
                                 Transform::from_xyz(x / 100.0, final_spawn_y, -y / 100.0),
                             ));
-
-                            // log::info!("[RESPAWN_DIAG] Position and transform updated, CollisionPlayer preserved");
                         }
                     });
 
@@ -968,7 +930,6 @@ pub fn game_connection_system(
                         client_entity_list.add(entity_id, entity);
                         client_entity_list.player_entity_id = Some(entity_id);
                         client_entity_list.player_entity = Some(entity);
-                        // log::info!("[RESPAWN_DIAG] Re-added player to client_entity_list: entity_id={:?}, entity={:?}", entity_id, entity);
                     }
 
                     // Load next zone
@@ -1293,41 +1254,7 @@ pub fn game_connection_system(
 
                     // Update HP / MP to max for new level
                     commands.queue(move |world: &mut World| {
-                        world.resource_scope(|world, game_data: Mut<GameData>| {
-                            let mut character = world.entity_mut(entity);
-
-                            if let (
-                                Some(basic_stats),
-                                Some(character_info),
-                                Some(equipment),
-                                Some(skill_list),
-                                Some(status_effects),
-                            ) = (
-                                character.get::<BasicStats>(),
-                                character.get::<CharacterInfo>(),
-                                character.get::<Equipment>(),
-                                character.get::<SkillList>(),
-                                character.get::<StatusEffects>(),
-                            ) {
-                                let ability_values = game_data.ability_value_calculator.calculate(
-                                    character_info,
-                                    &level,
-                                    equipment,
-                                    basic_stats,
-                                    skill_list,
-                                    status_effects,
-                                );
-
-                                if let Some(mut health_points) = character.get_mut::<HealthPoints>()
-                                {
-                                    health_points.hp = ability_values.get_max_health();
-                                }
-
-                                if let Some(mut mana_points) = character.get_mut::<ManaPoints>() {
-                                    mana_points.mp = ability_values.get_max_health();
-                                }
-                            }
-                        });
+                        recalculate_ability_values_and_refill(world, entity);
                     });
                 }
             }
@@ -1338,49 +1265,13 @@ pub fn game_connection_system(
                     let _ = client_entity_events.write(ClientEntityEvent::LevelUp(entity, None));
 
                     commands.queue(move |world: &mut World| {
-                        world.resource_scope(|world, game_data: Mut<GameData>| {
-                            let mut character = world.entity_mut(entity);
+                        // Update level
+                        if let Some(mut level) = world.entity_mut(entity).get_mut::<Level>() {
+                            level.level += 1;
+                        }
 
-                            // Update level
-                            if let Some(mut level) = character.get_mut::<Level>() {
-                                level.level += 1;
-                            }
-
-                            // Update HP / MP to max for new level
-                            if let (
-                                Some(basic_stats),
-                                Some(character_info),
-                                Some(equipment),
-                                Some(level),
-                                Some(skill_list),
-                                Some(status_effects),
-                            ) = (
-                                character.get::<BasicStats>(),
-                                character.get::<CharacterInfo>(),
-                                character.get::<Equipment>(),
-                                character.get::<Level>(),
-                                character.get::<SkillList>(),
-                                character.get::<StatusEffects>(),
-                            ) {
-                                let ability_values = game_data.ability_value_calculator.calculate(
-                                    character_info,
-                                    level,
-                                    equipment,
-                                    basic_stats,
-                                    skill_list,
-                                    status_effects,
-                                );
-
-                                if let Some(mut health_points) = character.get_mut::<HealthPoints>()
-                                {
-                                    health_points.hp = ability_values.get_max_health();
-                                }
-
-                                if let Some(mut mana_points) = character.get_mut::<ManaPoints>() {
-                                    mana_points.mp = ability_values.get_max_health();
-                                }
-                            }
-                        });
+                        // Update HP / MP to max for new level
+                        recalculate_ability_values_and_refill(world, entity);
                     });
                 }
             }
@@ -1966,9 +1857,7 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::StartCastingSkill { entity_id: _ }) => {
-                // Nah bruv
-            }
+            Ok(ServerMessage::StartCastingSkill { .. }) => {}
             Ok(ServerMessage::FinishCastingSkill {
                 entity_id,
                 skill_id,
@@ -2860,41 +2749,8 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::CraftInsertGem { .. }) => {
-                log::warn!("Received unimplemented ServerMessage::CraftInsertGem");
-            }
-            Ok(ServerMessage::CraftInsertGemError { .. }) => {
-                log::warn!("Received unimplemented ServerMessage::CraftInsertGemError");
-            }
-            Ok(ServerMessage::RepairedItemUsingNpc { .. }) => {
-                log::warn!("Received unimplemented ServerMessage::RepairedItemUsingNpc");
-            }
-            Ok(ServerMessage::LogoutSuccess) => {
-                log::warn!("Received unimplemented ServerMessage::LogoutSuccess");
-            }
-            Ok(ServerMessage::LogoutFailed { .. }) => {
-                log::warn!("Received unimplemented ServerMessage::LogoutFailed");
-            }
-            Ok(ServerMessage::ReturnToCharacterSelect) => {
-                log::warn!("Received unimplemented ServerMessage::ReturnToCharacterSelect");
-            }
-            Ok(ServerMessage::LoginError { .. })
-            | Ok(ServerMessage::LoginSuccess { .. })
-            | Ok(ServerMessage::ChannelList { .. })
-            | Ok(ServerMessage::ChannelListError { .. })
-            | Ok(ServerMessage::JoinServerError { .. })
-            | Ok(ServerMessage::JoinServerSuccess { .. })
-            | Ok(ServerMessage::CharacterList { .. })
-            | Ok(ServerMessage::CharacterListAppend { .. })
-            | Ok(ServerMessage::CreateCharacterSuccess { .. })
-            | Ok(ServerMessage::CreateCharacterError { .. })
-            | Ok(ServerMessage::SelectCharacterSuccess { .. })
-            | Ok(ServerMessage::SelectCharacterError { .. })
-            | Ok(ServerMessage::DeleteCharacterStart { .. })
-            | Ok(ServerMessage::DeleteCharacterCancel { .. })
-            | Ok(ServerMessage::DeleteCharacterError { .. }) => {
-                // These should only be login / world server packets, not game server
-                log::warn!("Received unexpected game server message");
+            Ok(other_message) => {
+                log::warn!("Received unhandled game server message: {:#?}", other_message);
             }
             Err(crossbeam_channel::TryRecvError::Disconnected) => {
                 break Err(ConnectionError::ConnectionLost.into());
@@ -2904,13 +2760,6 @@ pub fn game_connection_system(
     };
 
     if let Err(error) = result {
-        log::warn!("Game server connection error: {}", error);
-        message_box_events.write(MessageBoxEvent::Show {
-            message: format!("Connection to game server lost: {}", error),
-            modal: true,
-            ok: None,
-            cancel: None,
-        });
-        commands.remove_resource::<GameConnection>();
+        handle_connection_lost::<GameConnection>(&mut commands, &mut message_box_events, "game", &error);
     }
 }

@@ -1,9 +1,6 @@
-use std::future::Future;
-
 use bevy::{
     asset::{io::Reader, Asset, AssetLoader, LoadContext},
     reflect::TypePath,
-    tasks::futures_lite::AsyncReadExt,
 };
 
 #[derive(Clone, Default, TypePath)]

@@ -13,7 +13,7 @@
 use bevy::{
     asset::{load_internal_asset, weak_handle, Handle},
     math::Vec3,
-    pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin, MeshPipelineKey},
+    pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin},
     prelude::*,
     reflect::TypePath,
     render::{alpha::AlphaMode, render_resource::*, renderer::RenderDevice},
@@ -510,7 +510,7 @@ pub fn update_cloud_lighting_system(
 
     // Calculate sun direction and color based on time of day
     let (sun_direction, sun_color, ambient_color, tod_factor) =
-        calculate_cloud_lighting(&zone_time, &zone_lighting);
+        crate::render::zone_lighting::calculate_cloud_lighting(&zone_time, &zone_lighting);
 
     if should_log {
         log::info!("[CLOUD LIGHTING] ========== LIGHTING UPDATE ==========");
@@ -535,82 +535,6 @@ pub fn update_cloud_lighting_system(
         log::info!("[CLOUD LIGHTING] Updated {} material(s)", updated_count);
         log::info!("[CLOUD LIGHTING] ================================================");
     }
-}
-
-/// Calculate cloud lighting parameters based on time of day
-fn calculate_cloud_lighting(
-    zone_time: &crate::resources::ZoneTime,
-    zone_lighting: &crate::render::ZoneLighting,
-) -> (Vec3, Vec3, Vec3, f32) {
-    use crate::resources::ZoneTimeState;
-
-    // Sun direction varies with time of day
-    // Morning: East (low angle), Noon: Up, Evening: West (low angle), Night: Below horizon
-    let time_of_day = match zone_time.state {
-        ZoneTimeState::Morning => {
-            // Sun rises in the east, moves upward
-            let t = zone_time.state_percent_complete;
-            0.0 + t * 0.5 // 0.0 to 0.5 (sunrise to noon approach)
-        }
-        ZoneTimeState::Day => {
-            // Sun at highest point, slowly descending
-            let t = zone_time.state_percent_complete;
-            0.5 + t * 0.25 // 0.5 to 0.75 (noon to afternoon)
-        }
-        ZoneTimeState::Evening => {
-            // Sun sets in the west
-            let t = zone_time.state_percent_complete;
-            0.75 + t * 0.25 // 0.75 to 1.0 (sunset)
-        }
-        ZoneTimeState::Night => {
-            // Sun below horizon
-            0.0
-        }
-    };
-
-    // Calculate sun direction from time
-    let sun_angle = time_of_day * std::f32::consts::PI;
-    let sun_direction = Vec3::new(
-        -sun_angle.cos(), // X: east-west
-        sun_angle.sin(),  // Y: up-down
-        0.3,              // Z: slight northward tilt
-    )
-    .normalize();
-
-    // Sun color varies with time of day
-    let sun_color = match zone_time.state {
-        ZoneTimeState::Morning => {
-            // Warm orange/pink sunrise
-            let t = zone_time.state_percent_complete;
-            Vec3::new(1.0, 0.7 + t * 0.2, 0.5 + t * 0.4) // Orange -> whiter
-        }
-        ZoneTimeState::Day => {
-            // Bright white/yellow daylight
-            Vec3::new(1.0, 0.98, 0.95)
-        }
-        ZoneTimeState::Evening => {
-            // Warm orange/red sunset
-            let t = zone_time.state_percent_complete;
-            Vec3::new(1.0, 0.9 - t * 0.4, 0.8 - t * 0.5) // White -> orange/red
-        }
-        ZoneTimeState::Night => {
-            // Dim moonlight
-            Vec3::new(0.2, 0.25, 0.4)
-        }
-    };
-
-    // Ambient color from zone lighting
-    let ambient_color = zone_lighting.map_ambient_color;
-
-    // Time-of-day factor for cloud visibility
-    let tod_factor = match zone_time.state {
-        ZoneTimeState::Morning => 0.5 + zone_time.state_percent_complete * 0.5,
-        ZoneTimeState::Day => 1.0,
-        ZoneTimeState::Evening => 1.0 - zone_time.state_percent_complete * 0.5,
-        ZoneTimeState::Night => 0.3, // Clouds still slightly visible at night
-    };
-
-    (sun_direction, sun_color, ambient_color, tod_factor)
 }
 
 /// Create a cloud plane mesh

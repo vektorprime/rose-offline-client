@@ -69,16 +69,21 @@ fn read_lua_string<'a>(
     Ok(reader.read_fixed_length_string(size)?)
 }
 
+fn expect_byte(reader: &mut RoseFileReader, expected: u8, label: &str) -> Result<(), anyhow::Error> {
+    let found = reader.read_u8()?;
+    if found != expected {
+        anyhow::bail!("{}: {}", label, found);
+    }
+    Ok(())
+}
+
 fn read_lua_header(reader: &mut RoseFileReader) -> Result<LuaEndian, anyhow::Error> {
     let magic = reader.read_fixed_length_string(3)?;
     if magic != "Lua" {
         anyhow::bail!("Invalid lua magic: {}", magic);
     }
 
-    let version = reader.read_u8()?;
-    if version != 0x40 {
-        anyhow::bail!("Invalid lua version: {}", version);
-    }
+    expect_byte(reader, 0x40, "Invalid lua version")?;
 
     let endian = match reader.read_u8()? {
         0 => LuaEndian::Big,
@@ -86,52 +91,13 @@ fn read_lua_header(reader: &mut RoseFileReader) -> Result<LuaEndian, anyhow::Err
         invalid => anyhow::bail!("Invalid lua endian: {}", invalid),
     };
 
-    let sizeof_int = reader.read_u8()?;
-    if sizeof_int != 4 {
-        anyhow::bail!("Mismatch sizeof lua int, found: {}", sizeof_int);
-    }
-
-    let sizeof_size = reader.read_u8()?;
-    if sizeof_size != 4 {
-        anyhow::bail!("Mismatch sizeof lua size, found: {}", sizeof_size);
-    }
-
-    let sizeof_instruction = reader.read_u8()?;
-    if sizeof_instruction != 4 {
-        anyhow::bail!(
-            "Mismatch sizeof lua Instruction, found: {}",
-            sizeof_instruction
-        );
-    }
-
-    let sizeof_instruction_bits = reader.read_u8()?;
-    if sizeof_instruction_bits != 32 {
-        anyhow::bail!(
-            "Mismatch sizeof lua SIZE_INSTRUCTION, found: {}",
-            sizeof_instruction_bits
-        );
-    }
-
-    let sizeof_instruction_op_bits = reader.read_u8()?;
-    if sizeof_instruction_op_bits != 6 {
-        anyhow::bail!(
-            "Mismatch sizeof lua SIZE_OP, found: {}",
-            sizeof_instruction_op_bits
-        );
-    }
-
-    let sizeof_instruction_b_bits = reader.read_u8()?;
-    if sizeof_instruction_b_bits != 9 {
-        anyhow::bail!(
-            "Mismatch sizeof lua SIZE_B, found: {}",
-            sizeof_instruction_b_bits
-        );
-    }
-
-    let sizeof_number = reader.read_u8()?;
-    if sizeof_number != 8 {
-        anyhow::bail!("Mismatch sizeof lua number, found: {}", sizeof_number);
-    }
+    expect_byte(reader, 4, "Mismatch sizeof lua int, found")?;
+    expect_byte(reader, 4, "Mismatch sizeof lua size, found")?;
+    expect_byte(reader, 4, "Mismatch sizeof lua Instruction, found")?;
+    expect_byte(reader, 32, "Mismatch sizeof lua SIZE_INSTRUCTION, found")?;
+    expect_byte(reader, 6, "Mismatch sizeof lua SIZE_OP, found")?;
+    expect_byte(reader, 9, "Mismatch sizeof lua SIZE_B, found")?;
+    expect_byte(reader, 8, "Mismatch sizeof lua number, found")?;
 
     let lua_number = read_lua_number(reader, endian)?;
     if lua_number as i64 != (std::f64::consts::PI * 1E8) as i64 {

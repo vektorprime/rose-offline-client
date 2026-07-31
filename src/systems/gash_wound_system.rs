@@ -31,17 +31,11 @@ use crate::{
     components::{BloodOverlay, CharacterModel, Dead, GashWounds, ModelHeight, WoundVisual},
     events::BloodEffectEvent,
     resources::{BloodEffectConfig, BloodOverlayAtlas},
-    systems::uv_projection::{project_world_to_uv, ProjectionResult},
+    systems::{
+        damage_effects::normalize_or,
+        uv_projection::{project_world_to_uv, ProjectionResult},
+    },
 };
-
-fn normalize_or(value: Vec3, fallback: Vec3) -> Vec3 {
-    let len_sq = value.length_squared();
-    if len_sq > 1e-6 {
-        value / len_sq.sqrt()
-    } else {
-        fallback
-    }
-}
 
 /// Converts a world-space wound position to UV space using a cylindrical approximation.
 ///

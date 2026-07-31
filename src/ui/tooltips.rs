@@ -6,7 +6,7 @@ use bevy_egui::egui;
 
 use rose_data::{
     AbilityType, BaseItemData, EquipmentItem, Item, ItemClass, ItemGradeData, ItemType, JobId,
-    SkillAddAbility, SkillData, SkillId, SkillType, StackableItem, StatusEffectType,
+    SkillAddAbility, SkillData, SkillId, SkillType, StatusEffectType,
 };
 use rose_game_common::components::{
     AbilityValues, CharacterInfo, Equipment, ExperiencePoints, GuildMembership, HealthPoints,
@@ -57,41 +57,22 @@ pub fn get_item_name_color(item_type: ItemType, item_data: &BaseItemData) -> egu
     }
 }
 
-fn add_equipment_item_name(
+fn add_item_name(
     ui: &mut egui::Ui,
-    equipment_item: &EquipmentItem,
+    item_type: ItemType,
+    name: &str,
+    grade: u8,
     item_data: &BaseItemData,
 ) {
-    let text = if equipment_item.grade > 0 {
-        format!("{} ({})", &item_data.name, equipment_item.grade)
+    let text = if grade > 0 {
+        format!("{} ({})", name, grade)
     } else {
-        item_data.name.to_string()
+        name.to_string()
     };
 
     ui.add(egui::Label::new(
         egui::RichText::new(text)
-            .color(get_item_name_color(
-                equipment_item.item.item_type,
-                item_data,
-            ))
-            .font(egui::FontId::new(
-                16.0,
-                egui::FontFamily::Name("Ubuntu-M".into()),
-            )),
-    ));
-}
-
-fn add_stackable_item_name(
-    ui: &mut egui::Ui,
-    stackable_item: &StackableItem,
-    item_data: &BaseItemData,
-) {
-    ui.add(egui::Label::new(
-        egui::RichText::new(&item_data.name)
-            .color(get_item_name_color(
-                stackable_item.item.item_type,
-                item_data,
-            ))
+            .color(get_item_name_color(item_type, item_data))
             .font(egui::FontId::new(
                 16.0,
                 egui::FontFamily::Name("Ubuntu-M".into()),
@@ -253,23 +234,7 @@ fn add_item_equip_requirement(
         let mut color = egui::Color32::RED;
 
         if let Some(player) = player {
-            if let Some(current_value) = ability_values_get_value(
-                ability_type,
-                player.ability_values,
-                Some(player.character_info),
-                Some(player.experience_points),
-                Some(player.guild_membership),
-                Some(player.health_points),
-                Some(player.inventory),
-                Some(player.level),
-                Some(player.mana_points),
-                Some(player.move_speed),
-                Some(player.skill_points),
-                Some(player.stamina),
-                Some(player.stat_points),
-                Some(player.team),
-                Some(player.union_membership),
-            ) {
+            if let Some(current_value) = get_ability_value(ability_type, player) {
                 if current_value >= value as i32 {
                     color = egui::Color32::GREEN;
                 }
@@ -295,6 +260,29 @@ fn add_item_description(ui: &mut egui::Ui, game_data: &GameData, item_data: &Bas
     ui.label(&item_data.description);
 }
 
+fn get_ability_value(
+    ability_type: AbilityType,
+    player: &PlayerTooltipQueryItem<'_, '_, '_>,
+) -> Option<i32> {
+    ability_values_get_value(
+        ability_type,
+        player.ability_values,
+        Some(player.character_info),
+        Some(player.experience_points),
+        Some(player.guild_membership),
+        Some(player.health_points),
+        Some(player.inventory),
+        Some(player.level),
+        Some(player.mana_points),
+        Some(player.move_speed),
+        Some(player.skill_points),
+        Some(player.stamina),
+        Some(player.stat_points),
+        Some(player.team),
+        Some(player.union_membership),
+    )
+}
+
 pub fn ui_add_item_tooltip(
     ui: &mut egui::Ui,
     game_data: &GameData,
@@ -318,7 +306,13 @@ pub fn ui_add_item_tooltip(
 
     match item {
         Item::Equipment(equipment_item) => {
-            add_equipment_item_name(ui, equipment_item, item_data);
+            add_item_name(
+                ui,
+                equipment_item.item.item_type,
+                &item_data.name,
+                equipment_item.grade,
+                item_data,
+            );
 
             match equipment_item.item.item_type {
                 ItemType::Weapon => {
@@ -528,7 +522,13 @@ pub fn ui_add_item_tooltip(
             }
         }
         Item::Stackable(stackable_item) => {
-            add_stackable_item_name(ui, stackable_item, item_data);
+            add_item_name(
+                ui,
+                stackable_item.item.item_type,
+                &item_data.name,
+                0,
+                item_data,
+            );
 
             match stackable_item.item.item_type {
                 ItemType::Consumable => {
@@ -544,55 +544,9 @@ pub fn ui_add_item_tooltip(
                         item_data.quality
                     ));
 
-                    match item_data.class {
-                        ItemClass::EngineFuel => {
-                            // EngineFuel items restore vehicle fuel
-                            if let Some(use_item_data) = use_item_data {
-                                if let Some((ability_type, value)) =
-                                    use_item_data.add_ability.as_ref()
-                                {
-                                    ui.label(format!("[{:?} {}]", ability_type, value));
-                                }
-                            }
-                        }
-                        ItemClass::SkillBook => {
-                            // SkillBook items teach skills to the player
-                            if let Some(use_item_data) = use_item_data {
-                                if let Some((ability_type, value)) =
-                                    use_item_data.add_ability.as_ref()
-                                {
-                                    ui.label(format!("[{:?} {}]", ability_type, value));
-                                }
-                            }
-                        }
-                        ItemClass::MagicItem => {
-                            // MagicItem items provide special effects
-                            if let Some(use_item_data) = use_item_data {
-                                if let Some((ability_type, value)) =
-                                    use_item_data.add_ability.as_ref()
-                                {
-                                    ui.label(format!("[{:?} {}]", ability_type, value));
-                                }
-                            }
-                        }
-                        ItemClass::RepairTool => {
-                            // RepairTool items repair equipment durability
-                            if let Some(use_item_data) = use_item_data {
-                                if let Some((ability_type, value)) =
-                                    use_item_data.add_ability.as_ref()
-                                {
-                                    ui.label(format!("[{:?} {}]", ability_type, value));
-                                }
-                            }
-                        }
-                        _ => {
-                            if let Some(use_item_data) = use_item_data {
-                                if let Some((ability_type, value)) =
-                                    use_item_data.add_ability.as_ref()
-                                {
-                                    ui.label(format!("[{:?} {}]", ability_type, value));
-                                }
-                            }
+                    if let Some(use_item_data) = use_item_data {
+                        if let Some((ability_type, value)) = use_item_data.add_ability.as_ref() {
+                            ui.label(format!("[{:?} {}]", ability_type, value));
                         }
                     }
 
@@ -649,8 +603,17 @@ pub fn ui_add_item_tooltip(
     }
 }
 
-fn add_skill_name(ui: &mut egui::Ui, game_data: &GameData, skill_data: &SkillData) {
-    let text = if skill_data.name.is_empty() {
+pub fn tooltip_on_hover(
+    response: egui::Response,
+    game_data: &GameData,
+    player: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
+    item: &Item,
+) -> egui::Response {
+    response.on_hover_ui(|ui| ui_add_item_tooltip(ui, game_data, player, item))
+}
+
+fn skill_name_text(game_data: &GameData, skill_data: &SkillData) -> String {
+    if skill_data.name.is_empty() {
         format!("??? [Skill ID: {}]", skill_data.id.get())
     } else if skill_data.level > 1 {
         format!(
@@ -659,10 +622,12 @@ fn add_skill_name(ui: &mut egui::Ui, game_data: &GameData, skill_data: &SkillDat
         )
     } else {
         skill_data.name.to_string()
-    };
+    }
+}
 
+fn add_skill_name(ui: &mut egui::Ui, game_data: &GameData, skill_data: &SkillData) {
     ui.add(egui::Label::new(
-        egui::RichText::new(text)
+        egui::RichText::new(skill_name_text(game_data, skill_data))
             .color(egui::Color32::YELLOW)
             .font(egui::FontId::new(
                 16.0,
@@ -685,18 +650,7 @@ fn add_skill_next_level<'a>(
         return None;
     }
 
-    let name = if next_level_skill_data.name.is_empty() {
-        format!("??? [Skill ID: {}]", next_level_skill_data.id.get())
-    } else if next_level_skill_data.level > 1 {
-        format!(
-            "{} [{}: {}]",
-            &next_level_skill_data.name,
-            game_data.client_strings.skill_level,
-            next_level_skill_data.level
-        )
-    } else {
-        next_level_skill_data.name.to_string()
-    };
+    let name = skill_name_text(game_data, next_level_skill_data);
 
     ui.separator();
     ui.label(
@@ -714,7 +668,12 @@ fn add_skill_next_level<'a>(
     Some(next_level_skill_data)
 }
 
-fn add_skill_aoe_range(ui: &mut egui::Ui, game_data: &GameData, skill_data: &SkillData) {
+fn add_skill_aoe_range(
+    ui: &mut egui::Ui,
+    game_data: &GameData,
+    _player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
+    skill_data: &SkillData,
+) {
     if skill_data.scope > 0 {
         ui.label(format!(
             "{}: {}m",
@@ -724,7 +683,12 @@ fn add_skill_aoe_range(ui: &mut egui::Ui, game_data: &GameData, skill_data: &Ski
     }
 }
 
-fn add_skill_cast_range(ui: &mut egui::Ui, game_data: &GameData, skill_data: &SkillData) {
+fn add_skill_cast_range(
+    ui: &mut egui::Ui,
+    game_data: &GameData,
+    _player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
+    skill_data: &SkillData,
+) {
     if skill_data.cast_range > 0 {
         ui.label(format!(
             "{}: {}m",
@@ -742,7 +706,12 @@ fn add_skill_description(ui: &mut egui::Ui, skill_data: &SkillData) {
     ui.label(&skill_data.description);
 }
 
-fn add_skill_power(ui: &mut egui::Ui, game_data: &GameData, skill_data: &SkillData) {
+fn add_skill_power(
+    ui: &mut egui::Ui,
+    game_data: &GameData,
+    _player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
+    skill_data: &SkillData,
+) {
     let damage_type: &str = match skill_data.damage_type {
         0 => game_data.client_strings.skill_damage_type_0.as_str(),
         1 => game_data.client_strings.skill_damage_type_1.as_str(),
@@ -757,7 +726,12 @@ fn add_skill_power(ui: &mut egui::Ui, game_data: &GameData, skill_data: &SkillDa
     ));
 }
 
-fn add_skill_recover_xp(ui: &mut egui::Ui, game_data: &GameData, skill_data: &SkillData) {
+fn add_skill_recover_xp(
+    ui: &mut egui::Ui,
+    game_data: &GameData,
+    _player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
+    skill_data: &SkillData,
+) {
     ui.label(format!(
         "{}: {}%",
         game_data.client_strings.skill_recover_xp, skill_data.power
@@ -778,23 +752,7 @@ fn add_skill_require_ability(
         let mut color = egui::Color32::RED;
 
         if let Some(player) = player {
-            if let Some(current_value) = ability_values_get_value(
-                ability_type,
-                player.ability_values,
-                Some(player.character_info),
-                Some(player.experience_points),
-                Some(player.guild_membership),
-                Some(player.health_points),
-                Some(player.inventory),
-                Some(player.level),
-                Some(player.mana_points),
-                Some(player.move_speed),
-                Some(player.skill_points),
-                Some(player.stamina),
-                Some(player.stat_points),
-                Some(player.team),
-                Some(player.union_membership),
-            ) {
+            if let Some(current_value) = get_ability_value(ability_type, player) {
                 if current_value >= value {
                     color = egui::Color32::GREEN;
                 }
@@ -1075,7 +1033,12 @@ fn add_skill_status_effects(
     }
 }
 
-fn add_skill_steal_ability_value(ui: &mut egui::Ui, game_data: &GameData, skill_data: &SkillData) {
+fn add_skill_steal_ability_value(
+    ui: &mut egui::Ui,
+    game_data: &GameData,
+    _player: Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
+    skill_data: &SkillData,
+) {
     for skill_add_ability in skill_data.add_ability.iter().filter_map(|x| x.as_ref()) {
         ui.label(format!(
             "{}: {} {}",
@@ -1153,23 +1116,7 @@ fn add_skill_use_ability_value(
                 value = (value as f32 * use_mana_rate) as i32;
             }
 
-            if let Some(current_value) = ability_values_get_value(
-                ability_type,
-                player.ability_values,
-                Some(player.character_info),
-                Some(player.experience_points),
-                Some(player.guild_membership),
-                Some(player.health_points),
-                Some(player.inventory),
-                Some(player.level),
-                Some(player.mana_points),
-                Some(player.move_speed),
-                Some(player.skill_points),
-                Some(player.stamina),
-                Some(player.stat_points),
-                Some(player.team),
-                Some(player.union_membership),
-            ) {
+            if let Some(current_value) = get_ability_value(ability_type, player) {
                 if current_value >= value {
                     color = egui::Color32::GREEN;
                 }
@@ -1195,6 +1142,13 @@ pub enum SkillTooltipType {
     NextLevel,
 }
 
+type AddSkillSection = fn(
+    &mut egui::Ui,
+    &GameData,
+    Option<&<PlayerTooltipQuery as QueryData>::Item<'_, '_>>,
+    &SkillData,
+);
+
 pub fn ui_add_skill_tooltip(
     ui: &mut egui::Ui,
     tooltip_type: SkillTooltipType,
@@ -1216,388 +1170,101 @@ pub fn ui_add_skill_tooltip(
     if matches!(tooltip_type, SkillTooltipType::Simple) {
         add_skill_name(ui, game_data, skill_data);
         add_skill_use_ability_value(ui, game_data, player, skill_data);
+        return;
+    }
+
+    let sections: &[AddSkillSection] = match skill_data.skill_type {
+        SkillType::BasicAction => &[],
+        SkillType::CreateWindow => &[add_skill_use_ability_value],
+        SkillType::Immediate | SkillType::EnforceWeapon | SkillType::EnforceBullet => &[
+            add_skill_use_ability_value,
+            add_skill_power,
+            add_skill_status_effects,
+        ],
+        SkillType::FireBullet => &[
+            add_skill_use_ability_value,
+            add_skill_power,
+            add_skill_cast_range,
+            add_skill_status_effects,
+        ],
+        SkillType::AreaTarget => &[
+            add_skill_use_ability_value,
+            add_skill_power,
+            add_skill_cast_range,
+            add_skill_aoe_range,
+            add_skill_status_effects,
+        ],
+        SkillType::SelfBound | SkillType::SelfBoundDuration | SkillType::SelfStateDuration => &[
+            add_skill_use_ability_value,
+            add_skill_aoe_range,
+            add_skill_status_effects,
+        ],
+        SkillType::TargetBound
+        | SkillType::TargetBoundDuration
+        | SkillType::TargetStateDuration => &[
+            add_skill_use_ability_value,
+            add_skill_cast_range,
+            add_skill_aoe_range,
+            add_skill_status_effects,
+        ],
+        SkillType::SummonPet => &[add_skill_use_ability_value, add_skill_summon_points],
+        SkillType::Passive => &[add_skill_use_ability_value, add_skill_status_effects],
+        SkillType::Emote => &[add_skill_use_ability_value],
+        SkillType::SelfDamage => &[
+            add_skill_use_ability_value,
+            add_skill_power,
+            add_skill_aoe_range,
+            add_skill_status_effects,
+        ],
+        SkillType::SelfAndTarget => &[
+            add_skill_use_ability_value,
+            add_skill_power,
+            add_skill_steal_ability_value,
+            add_skill_status_effects,
+        ],
+        SkillType::Resurrection => &[
+            add_skill_use_ability_value,
+            add_skill_cast_range,
+            add_skill_aoe_range,
+            add_skill_recover_xp,
+        ],
+        SkillType::Warp => &[],
+    };
+
+    if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
+        add_skill_name(ui, game_data, skill_data);
+    }
+
+    if matches!(
+        skill_data.skill_type,
+        SkillType::SummonPet | SkillType::Passive | SkillType::Emote | SkillType::Warp
+    ) {
+        add_skill_type(ui, game_data, skill_data);
     } else {
-        match skill_data.skill_type {
-            SkillType::BasicAction => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
+        add_skill_type_and_target(ui, game_data, skill_data);
+    }
 
-                add_skill_type_and_target(ui, game_data, skill_data);
+    for section in sections {
+        section(ui, game_data, player, skill_data);
+    }
 
-                add_skill_description(ui, skill_data);
-            }
-            SkillType::CreateWindow => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
+    if !matches!(skill_data.skill_type, SkillType::BasicAction | SkillType::Warp) {
+        add_skill_requirements(ui, game_data, player, skill_data);
+    }
 
-                add_skill_type_and_target(ui, game_data, skill_data);
+    add_skill_description(ui, skill_data);
 
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::Immediate | SkillType::EnforceWeapon | SkillType::EnforceBullet => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type_and_target(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_power(ui, game_data, skill_data);
-                add_skill_status_effects(ui, game_data, player, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::FireBullet => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type_and_target(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_power(ui, game_data, skill_data);
-                add_skill_cast_range(ui, game_data, skill_data);
-                add_skill_status_effects(ui, game_data, player, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::AreaTarget => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type_and_target(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_power(ui, game_data, skill_data);
-                add_skill_cast_range(ui, game_data, skill_data);
-                add_skill_aoe_range(ui, game_data, skill_data);
-                add_skill_status_effects(ui, game_data, player, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::SelfBound | SkillType::SelfBoundDuration | SkillType::SelfStateDuration => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type_and_target(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_aoe_range(ui, game_data, skill_data);
-                add_skill_status_effects(ui, game_data, player, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::TargetBound
-            | SkillType::TargetBoundDuration
-            | SkillType::TargetStateDuration => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type_and_target(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_cast_range(ui, game_data, skill_data);
-                add_skill_aoe_range(ui, game_data, skill_data);
-                add_skill_status_effects(ui, game_data, player, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::SummonPet => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_summon_points(ui, game_data, player, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::Passive => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_status_effects(ui, game_data, player, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::Emote => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::SelfDamage => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type_and_target(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_power(ui, game_data, skill_data);
-                add_skill_aoe_range(ui, game_data, skill_data);
-                add_skill_status_effects(ui, game_data, player, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::SelfAndTarget => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type_and_target(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_power(ui, game_data, skill_data);
-                add_skill_steal_ability_value(ui, game_data, skill_data);
-                add_skill_status_effects(ui, game_data, player, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::Resurrection => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type_and_target(ui, game_data, skill_data);
-                add_skill_use_ability_value(ui, game_data, player, skill_data);
-
-                add_skill_cast_range(ui, game_data, skill_data);
-                add_skill_aoe_range(ui, game_data, skill_data);
-                add_skill_recover_xp(ui, game_data, skill_data);
-
-                add_skill_requirements(ui, game_data, player, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
-            SkillType::Warp => {
-                if !matches!(tooltip_type, SkillTooltipType::NextLevel) {
-                    add_skill_name(ui, game_data, skill_data);
-                }
-
-                add_skill_type(ui, game_data, skill_data);
-
-                add_skill_description(ui, skill_data);
-
-                if matches!(tooltip_type, SkillTooltipType::Extra) {
-                    if let Some(next_level_skill_data) =
-                        add_skill_next_level(ui, game_data, skill_data)
-                    {
-                        ui_add_skill_tooltip(
-                            ui,
-                            SkillTooltipType::NextLevel,
-                            game_data,
-                            player,
-                            next_level_skill_data.id,
-                        );
-                    }
-                }
-            }
+    if !matches!(skill_data.skill_type, SkillType::BasicAction)
+        && matches!(tooltip_type, SkillTooltipType::Extra)
+    {
+        if let Some(next_level_skill_data) = add_skill_next_level(ui, game_data, skill_data) {
+            ui_add_skill_tooltip(
+                ui,
+                SkillTooltipType::NextLevel,
+                game_data,
+                player,
+                next_level_skill_data.id,
+            );
         }
     }
 }

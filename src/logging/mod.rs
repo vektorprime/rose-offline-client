@@ -14,12 +14,12 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
-use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
-    fmt::{self, format::FmtSpan},
+    fmt,
     layer::SubscriberExt,
     util::SubscriberInitExt,
-    EnvFilter, Layer, Registry,
+    EnvFilter, Layer,
 };
 
 pub use json_format::TagExtractingJsonFormat;
@@ -72,7 +72,7 @@ impl SessionInfo {
             hostname,
             command_line,
             mode: mode.to_string(),
-            bevy_version: "0.16.1".to_string(),
+            bevy_version: "0.18.1".to_string(),
             rust_version: rustc_version_runtime::version().to_string(),
             os: std::env::consts::OS.to_string(),
             config,
@@ -205,28 +205,6 @@ pub fn init_session_logging(
     })
 }
 
-/// Initialize logging for Bevy applications.
-///
-/// This is designed to work alongside Bevy's logging system. It should be
-/// called before Bevy's DefaultPlugins are built.
-///
-/// Note: When using this with Bevy, you may need to disable Bevy's `bevy_log`
-/// feature or coordinate with it appropriately.
-pub fn init_bevy_logging(
-    mode: &str,
-    config: Option<LoggingConfig>,
-    session_config: Option<serde_json::Value>,
-) -> Result<LoggingGuard, anyhow::Error> {
-    init_session_logging(mode, config, session_config)
-}
-
-/// Get the path to the current session's log directory (if initialized)
-pub fn get_session_log_path() -> Option<PathBuf> {
-    // This is a placeholder - in a real implementation, you'd store this
-    // in a thread-local or global variable
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,7 +214,7 @@ mod tests {
         let info = SessionInfo::new("Test", None);
         assert!(info.session_id.contains('-')); // Date format has dashes
         assert_eq!(info.mode, "Test");
-        assert_eq!(info.bevy_version, "0.16.1");
+        assert_eq!(info.bevy_version, "0.18.1");
     }
 
     #[test]

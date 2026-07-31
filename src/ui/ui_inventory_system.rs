@@ -16,7 +16,7 @@ use crate::{
     resources::{GameData, UiResources},
     ui::{
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
-        ui_add_item_tooltip,
+        tooltip_on_hover,
         widgets::{DataBindings, Dialog, Widget},
         DialogInstance, DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop,
         UiStateWindows,
@@ -143,51 +143,25 @@ const VEHICLE_GRID_SLOTS: [(rose_game_common::components::ItemSlot, egui::Pos2);
     ),
 ];
 
-fn drag_accepts_equipment(drag_source: &DragAndDropId) -> bool {
-    matches!(
-        drag_source,
-        DragAndDropId::Inventory(ItemSlot::Inventory(InventoryPageType::Equipment, _))
-            | DragAndDropId::Inventory(ItemSlot::Equipment(_))
-    )
-}
-
-fn drag_accepts_equipment_or_bank(drag_source: &DragAndDropId) -> bool {
-    drag_accepts_equipment(drag_source) || matches!(drag_source, DragAndDropId::Bank(_))
-}
-
-fn drag_accepts_consumables(drag_source: &DragAndDropId) -> bool {
-    matches!(
-        drag_source,
-        DragAndDropId::Inventory(ItemSlot::Inventory(InventoryPageType::Consumables, _))
-    )
-}
-
-fn drag_accepts_consumables_or_bank(drag_source: &DragAndDropId) -> bool {
-    drag_accepts_consumables(drag_source) || matches!(drag_source, DragAndDropId::Bank(_))
-}
-
-fn drag_accepts_materials(drag_source: &DragAndDropId) -> bool {
-    matches!(
-        drag_source,
-        DragAndDropId::Inventory(ItemSlot::Inventory(InventoryPageType::Materials, _))
-            | DragAndDropId::Inventory(ItemSlot::Ammo(_))
-    )
-}
-
-fn drag_accepts_materials_or_bank(drag_source: &DragAndDropId) -> bool {
-    drag_accepts_materials(drag_source) || matches!(drag_source, DragAndDropId::Bank(_))
-}
-
-fn drag_accepts_vehicles(drag_source: &DragAndDropId) -> bool {
-    matches!(
-        drag_source,
-        DragAndDropId::Inventory(ItemSlot::Inventory(InventoryPageType::Vehicles, _))
-            | DragAndDropId::Inventory(ItemSlot::Vehicle(_))
-    )
-}
-
-fn drag_accepts_vehicles_or_bank(drag_source: &DragAndDropId) -> bool {
-    drag_accepts_vehicles(drag_source) || matches!(drag_source, DragAndDropId::Bank(_))
+fn drag_accepts(
+    page: InventoryPageType,
+    allow_bank: bool,
+    drag_source: &DragAndDropId,
+) -> bool {
+    match drag_source {
+        DragAndDropId::Inventory(ItemSlot::Inventory(actual_page, _)) => *actual_page == page,
+        DragAndDropId::Inventory(ItemSlot::Equipment(_)) => {
+            matches!(page, InventoryPageType::Equipment)
+        }
+        DragAndDropId::Inventory(ItemSlot::Ammo(_)) => {
+            matches!(page, InventoryPageType::Materials)
+        }
+        DragAndDropId::Inventory(ItemSlot::Vehicle(_)) => {
+            matches!(page, InventoryPageType::Vehicles)
+        }
+        DragAndDropId::Bank(_) => allow_bank,
+        _ => false,
+    }
 }
 
 pub trait GetItem {
@@ -231,17 +205,14 @@ fn ui_add_inventory_slot(
     number_input_dialog_events: &mut MessageWriter<NumberInputDialogEvent>,
     repair_mode: &mut Option<ItemSlot>,
 ) {
-    let drag_accepts = match inventory_slot {
-        ItemSlot::Inventory(page_type, _) => match page_type {
-            InventoryPageType::Equipment => drag_accepts_equipment_or_bank,
-            InventoryPageType::Consumables => drag_accepts_consumables_or_bank,
-            InventoryPageType::Materials => drag_accepts_materials_or_bank,
-            InventoryPageType::Vehicles => drag_accepts_vehicles_or_bank,
-        },
-        ItemSlot::Equipment(_) => drag_accepts_equipment,
-        ItemSlot::Ammo(_) => drag_accepts_materials,
-        ItemSlot::Vehicle(_) => drag_accepts_vehicles,
+    let (page, allow_bank) = match inventory_slot {
+        ItemSlot::Inventory(page_type, _) => (page_type, true),
+        ItemSlot::Equipment(_) => (InventoryPageType::Equipment, false),
+        ItemSlot::Ammo(_) => (InventoryPageType::Materials, false),
+        ItemSlot::Vehicle(_) => (InventoryPageType::Vehicles, false),
     };
+    let drag_accepts =
+        move |drag_source: &DragAndDropId| drag_accepts(page, allow_bank, drag_source);
     let item = (player.0, player.1).get_item(inventory_slot);
 
     let mut dropped_item = None;
@@ -277,10 +248,8 @@ fn ui_add_inventory_slot(
     let mut drop_inventory_slot = None;
     let mut swap_inventory_slots = None;
 
-    if item.is_some() {
-        response = response.on_hover_ui(|ui| {
-            ui_add_item_tooltip(ui, game_data, player_tooltip_data, item.as_ref().unwrap());
-        });
+    if let Some(item) = item.as_ref() {
+        response = tooltip_on_hover(response, game_data, player_tooltip_data, item);
     }
 
     if response.double_clicked() {
@@ -546,13 +515,9 @@ pub fn ui_inventory_system(
     let is_equipment_tab = ui_state_inventory.current_equipment_tab == IID_TAB_EQUIP_AVATAR;
     let is_minimised = ui_state_inventory.minimised;
 
-    egui::Window::new("Inventory")
-        .frame(egui::Frame::none())
+    dialog
+        .window("Inventory")
         .open(&mut ui_state_windows.inventory_open)
-        .title_bar(false)
-        .resizable(false)
-        .default_width(dialog.width)
-        .default_height(dialog.height)
         .show(egui_context.ctx_mut().unwrap(), |ui| {
             dialog.draw(
                 ui,
