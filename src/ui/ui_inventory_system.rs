@@ -12,7 +12,7 @@ use rose_game_common::components::{
 
 use crate::{
     components::{Cooldowns, PlayerCharacter},
-    events::{NumberInputDialogEvent, PlayerCommandEvent},
+    events::{NpcStoreEvent, NumberInputDialogEvent, PersonalStoreEvent, PlayerCommandEvent},
     resources::{GameData, UiResources},
     ui::{
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
@@ -159,6 +159,10 @@ fn drag_accepts(
         DragAndDropId::Inventory(ItemSlot::Vehicle(_)) => {
             matches!(page, InventoryPageType::Vehicles)
         }
+        // Store items can be dropped onto the inventory to buy them.
+        DragAndDropId::NpcStore(_, _) => true,
+        // Personal store items can be dropped onto the inventory to buy them.
+        DragAndDropId::PersonalStoreSell(_) => true,
         DragAndDropId::Bank(_) => allow_bank,
         _ => false,
     }
@@ -202,6 +206,8 @@ fn ui_add_inventory_slot(
     item_slot_map: &mut EnumMap<InventoryPageType, Vec<ItemSlot>>,
     ui_state_dnd: &mut UiStateDragAndDrop,
     player_command_events: &mut MessageWriter<PlayerCommandEvent>,
+    npc_store_events: &mut MessageWriter<NpcStoreEvent>,
+    personal_store_events: &mut MessageWriter<PersonalStoreEvent>,
     number_input_dialog_events: &mut MessageWriter<NumberInputDialogEvent>,
     repair_mode: &mut Option<ItemSlot>,
 ) {
@@ -427,6 +433,20 @@ fn ui_add_inventory_slot(
         ));
     }
 
+    // Dropping an NPC store item onto the inventory queues it for purchase.
+    if let Some(DragAndDropId::NpcStore(store_tab_index, store_tab_slot)) = dropped_item {
+        npc_store_events.write(NpcStoreEvent::AddToBuyList {
+            store_tab_index,
+            store_tab_slot,
+            quantity: 1,
+        });
+    }
+
+    // Dropping a personal store item onto the inventory requests to buy it.
+    if let Some(DragAndDropId::PersonalStoreSell(slot_index)) = dropped_item {
+        personal_store_events.write(PersonalStoreEvent::RequestBuyItem { slot_index });
+    }
+
     if let Some(item_slot) = equip_equipment_inventory_slot {
         player_command_events.write(PlayerCommandEvent::EquipEquipment(item_slot));
     }
@@ -490,6 +510,8 @@ pub fn ui_inventory_system(
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
     mut player_command_events: MessageWriter<PlayerCommandEvent>,
+    mut npc_store_events: MessageWriter<NpcStoreEvent>,
+    mut personal_store_events: MessageWriter<PersonalStoreEvent>,
     mut number_input_dialog_events: MessageWriter<NumberInputDialogEvent>,
 ) {
     let ui_state_inventory = &mut *ui_state_inventory;
@@ -569,6 +591,8 @@ pub fn ui_inventory_system(
                                         &mut ui_state_inventory.item_slot_map,
                                         &mut ui_state_dnd,
                                         &mut player_command_events,
+                                        &mut npc_store_events,
+                                        &mut personal_store_events,
                                         &mut number_input_dialog_events,
                                         &mut ui_state_inventory.repair_mode,
                                     );
@@ -602,6 +626,8 @@ pub fn ui_inventory_system(
                                         &mut ui_state_inventory.item_slot_map,
                                         &mut ui_state_dnd,
                                         &mut player_command_events,
+                                        &mut npc_store_events,
+                                        &mut personal_store_events,
                                         &mut number_input_dialog_events,
                                         &mut ui_state_inventory.repair_mode,
                                     );
@@ -638,6 +664,8 @@ pub fn ui_inventory_system(
                                 &mut ui_state_inventory.item_slot_map,
                                 &mut ui_state_dnd,
                                 &mut player_command_events,
+                                &mut npc_store_events,
+                                &mut personal_store_events,
                                 &mut number_input_dialog_events,
                                 &mut ui_state_inventory.repair_mode,
                             );

@@ -133,11 +133,11 @@ pub fn spawn_zone(
         zone_data.zone_id.get()
     );
 
-    // Cartoon sky removed - now using Bevy 0.16 built-in atmospheric scattering
+    // Cartoon sky removed - now using Bevy's built-in atmospheric scattering
     // The Atmosphere and AtmosphereSettings components are added to the camera instead
     // This provides physics-based Rayleigh and Mie scattering with dynamic time-of-day
     log::info!(
-        "[SPAWN ZONE] Using Bevy 0.16 built-in atmospheric scattering (cartoon sky disabled)"
+        "[SPAWN ZONE] Using Bevy built-in atmospheric scattering (cartoon sky disabled)"
     );
 
     let mut terrain_count = 0;

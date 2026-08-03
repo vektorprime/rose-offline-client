@@ -2,7 +2,7 @@
 
 ## Overview
 
-This plan outlines the implementation of collision detection and response for **hostile monsters** to prevent them from overlapping when fighting multiple monsters. The system will use the existing bevy_rapier3d physics infrastructure with a **simple soft collision** approach.
+This plan outlines the implementation of collision detection and response for **hostile monsters** to prevent them from overlapping when fighting multiple monsters. The system uses a **simple soft collision** approach implemented as a custom ECS system running alongside the existing bevy_rapier3d infrastructure.
 
 ### Design Decisions (User Confirmed)
 - **Equal separation** for all monsters regardless of size
@@ -13,7 +13,7 @@ This plan outlines the implementation of collision detection and response for **
 
 ### Existing Collision Infrastructure
 
-The project already has a robust collision system using `bevy_rapier3d` v0.31:
+The project already has a robust collision system using `bevy_rapier3d` v0.33:
 
 1. **Collision Groups** (defined in [`src/components/collision.rs`](src/components/collision.rs:57-72)):
  - `COLLISION_GROUP_NPC` (bit 11) - Used for both NPCs and monsters
@@ -75,14 +75,9 @@ flowchart TB
 
 ## Implementation Steps
 
-### Step 1: Add New Collision Group for Monsters
+### Step 1: Identify Monsters with a Marker Component
 
-Create a dedicated collision group for monsters separate from NPCs:
-
-```rust
-// In src/components/collision.rs
-pub const COLLISION_GROUP_MONSTER: Group = Group::from_bits_truncate(1 << 13);
-```
+No new Rapier collision group was added (there is no `COLLISION_GROUP_MONSTER` in `src/components/collision.rs`). Monsters are instead identified by the `MonsterSeparation` marker component combined with the `ClientEntityType::Monster` entity type, which the separation system filters on. Existing collision groups for click/inspect remain unchanged.
 
 ### Step 2: Create Monster Separation Component
 
@@ -107,7 +102,7 @@ pub struct MonsterSeparation {
 impl Default for MonsterSeparation {
     fn default() -> Self {
         Self {
-            separation_radius: 1.5,  // 1.5 meters
+            separation_radius: 1.0,  // 1 meter
             separation_force: 5.0,
             max_separation: 2.0,     // 2 meters per second max
         }
@@ -115,14 +110,13 @@ impl Default for MonsterSeparation {
 }
 ```
 
-### Step 3: Update Monster Collider System
+### Step 3: Add MonsterSeparation at Spawn
 
-Modify [`src/systems/npc_model_add_collider_system.rs`](src/systems/npc_model_add_collider_system.rs) to:
-1. Detect if the entity is a hostile monster (has `ClientEntityType::Monster`)
-2. Add `MonsterSeparation` component to hostile monsters only
-3. Keep existing collision groups for click/inspect functionality
+`npc_model_add_collider_system.rs` was not modified. Instead, `MonsterSeparation::default()` is inserted directly at spawn time:
+1. Network-spawned monsters: `SpawnEntityMonster` handler in [`src/systems/game_connection_system.rs`](src/systems/game_connection_system.rs:717)
+2. Sea monsters: [`src/zone_content/monsters.rs`](src/zone_content/monsters.rs:296) (e.g. `separation_radius: 2.0` for sharks)
 
-**Note**: We need to pass `ClientEntityType` information to this system. This may require adding a query parameter or using a marker component.
+Existing collision groups for click/inspect functionality are unchanged. The marker component resolves the `ClientEntityType` lookup problem: the separation system queries entities that have `MonsterSeparation` and re-checks `ClientEntityType::Monster` at runtime.
 
 ### Step 4: Create Monster Separation System
 
@@ -130,62 +124,64 @@ Create a new system that runs after movement and applies only to hostile monster
 
 ```rust
 // In src/systems/monster_separation_system.rs
+use crate::components::{ClientEntity, ClientEntityType, MonsterSeparation, Position};
 use bevy::prelude::*;
-use bevy_rapier3d::plugin::context::systemparams::ReadRapierContext;
-use crate::components::{MonsterSeparation, Position, ClientEntity, ClientEntityType};
 
 /// System that pushes overlapping hostile monsters apart.
 /// Only applies to entities with ClientEntityType::Monster.
+/// Note: Position is in centimeters, so we need to scale our separation values accordingly.
 pub fn monster_separation_system(
-    mut query: Query<
-        (Entity, &mut Position, &MonsterSeparation, &ClientEntity),
-        With<MonsterSeparation>,
-    >,
-    rapier_context: ReadRapierContext,
+    mut query: Query<(Entity, &mut Position, &MonsterSeparation, &ClientEntity)>,
     time: Res<Time>,
 ) {
-    let Ok(rapier_context) = rapier_context.single() else {
-        return;
-    };
-    
+    // Convert separation radius from meters to centimeters for comparison with Position
     // Collect all monster positions for overlap checking
     let monster_positions: Vec<(Entity, Vec3, f32)> = query
         .iter()
-        .map(|(e, pos, sep, _)| (e, pos.position, sep.separation_radius))
+        .filter(|(_, _, _, client_entity)| client_entity.entity_type == ClientEntityType::Monster)
+        .map(|(e, pos, sep, _)| {
+            // Convert separation_radius from meters to centimeters
+            (e, pos.position, sep.separation_radius * 100.0)
+        })
         .collect();
-    
+
     for (entity, mut position, separation, client_entity) in query.iter_mut() {
         // Only apply to hostile monsters
         if client_entity.entity_type != ClientEntityType::Monster {
             continue;
         }
-        
+
         let mut total_separation = Vec3::ZERO;
         let mut overlap_count = 0;
-        
-        for (other_entity, other_pos, other_radius) in &monster_positions {
+
+        let my_radius_cm = separation.separation_radius * 100.0; // Convert to centimeters
+
+        for (other_entity, other_pos, other_radius_cm) in &monster_positions {
             if *other_entity == entity {
                 continue;
             }
-            
+
             let distance = (position.position - *other_pos).length();
-            let min_distance = separation.separation_radius + other_radius;
-            
+            let min_distance = my_radius_cm + other_radius_cm;
+
             if distance < min_distance && distance > 0.001 {
                 // Calculate overlap and push direction
                 let overlap = min_distance - distance;
                 let direction = (position.position - *other_pos).normalize();
-                
+
                 // Add separation force proportional to overlap
+                // overlap is in centimeters, force is a multiplier
                 total_separation += direction * overlap * separation.separation_force;
                 overlap_count += 1;
             }
         }
-        
+
         if overlap_count > 0 {
-            // Apply averaged separation, clamped to max
+            // Apply averaged separation, clamped to max (converted to centimeters)
+            // max_separation is in meters per second, convert to cm/s
+            let max_sep_cm_per_sec = separation.max_separation * 100.0;
             let separation_vector = (total_separation / overlap_count as f32)
-                .clamp_length_max(separation.max_separation * time.delta_secs());
+                .clamp_length_max(max_sep_cm_per_sec * time.delta_secs());
             position.position += separation_vector;
         }
     }
@@ -232,7 +228,7 @@ for each monster A:
 
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
-| `separation_radius` | 1.5 meters | Distance at which separation begins |
+| `separation_radius` | 1.0 meters | Distance at which separation begins |
 | `separation_force` | 5.0 | Strength of separation push |
 | `max_separation` | 2.0 m/s | Maximum separation velocity |
 
@@ -264,10 +260,11 @@ Custom system applying gentle separation forces with equal strength for all mons
 
 | File | Changes |
 |------|---------|
-| New: [`src/components/monster_separation.rs`](src/components/monster_separation.rs) | New component definition |
+| [`src/components/monster_separation.rs`](src/components/monster_separation.rs) | New component definition |
 | [`src/components/mod.rs`](src/components/mod.rs) | Export `MonsterSeparation` component |
-| [`src/systems/game_connection_system.rs`](src/systems/game_connection_system.rs) | Add `MonsterSeparation` component when spawning hostile monsters (line ~591) |
-| New: [`src/systems/monster_separation_system.rs`](src/systems/monster_separation_system.rs) | Separation logic system |
+| [`src/systems/game_connection_system.rs`](src/systems/game_connection_system.rs) | Add `MonsterSeparation` component when spawning hostile monsters (line 717) |
+| [`src/zone_content/monsters.rs`](src/zone_content/monsters.rs) | Add `MonsterSeparation` to sea monsters (line 296) |
+| [`src/systems/monster_separation_system.rs`](src/systems/monster_separation_system.rs) | Separation logic system |
 | [`src/systems/mod.rs`](src/systems/mod.rs) | Export new system |
 | [`src/lib.rs`](src/lib.rs) | Register new system in schedule after `update_position_system` |
 

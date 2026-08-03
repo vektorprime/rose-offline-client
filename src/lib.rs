@@ -81,6 +81,7 @@ pub mod terrain;
 pub mod ui;
 pub mod vfs_asset_io;
 pub mod zms_asset_loader;
+pub mod zone_content;
 pub mod zone_loader;
 
 use audio::OddioPlugin;
@@ -125,6 +126,7 @@ use render::{
     // New 3D volumetric cloud system:
     VolumetricCloudPlugin,
     WaterMaterial,
+    WaterReflectionPlugin,
     WorldUiRenderPlugin,
     ZoneLightingPlugin,
 };
@@ -203,6 +205,7 @@ use systems::{
     monster_separation_system,
     move_destination_effect_system,
     move_speed_set_system,
+    memory_diagnostics_system,
     name_tag_system,
     name_tag_update_color_system,
     name_tag_update_healthbar_system,
@@ -742,7 +745,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         vfs: virtual_filesystem.clone(),
         base_path,
     })
-    // Register VFS asset reader BEFORE DefaultPlugins (required by Bevy 0.13)
+    // Register VFS asset reader BEFORE DefaultPlugins (required for VFS-based asset loading)
     // VfsAssetReaderPlugin gets the VFS from VfsResource instead of holding its own Arc
     .add_plugins(VfsAssetReaderPlugin::new());
 
@@ -807,6 +810,15 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         bindless_mode_array_size: None,
         ..Default::default()
     });
+    // The main camera carries PrimaryEguiContext explicitly (spawned in
+    // load_common_game_data). Disable bevy_egui's auto-creation so extra
+    // cameras (e.g. the water reflection camera) never steal the primary
+    // egui context - which would panic `EguiContexts::ctx_mut()` with
+    // MultipleEntities.
+    app.insert_resource(bevy_egui::EguiGlobalSettings {
+        auto_create_primary_context: false,
+        ..Default::default()
+    });
     app.add_plugins(bevy_rapier3d::prelude::RapierPhysicsPlugin::<
         bevy_rapier3d::prelude::NoUserData,
     >::default());
@@ -834,7 +846,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     // High-quality shadow map resolution
     app.insert_resource(DirectionalLightShadowMap { size: 4096 });
 
-    // Bevy 0.16 Deferred Rendering
+    // Deferred rendering (opaque renderer method)
     app.insert_resource(DefaultOpaqueRendererMethod::deferred());
 
     // Effect cache for performance - prevents reloading effect files from disk
@@ -932,6 +944,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
         // Underwater rendering effect
         UnderwaterEffectPlugin,
+        // Planar water reflections (mirrored camera + off-screen texture)
+        WaterReflectionPlugin,
         // Procedural starry sky with moon lighting
         StarrySkyMaterialPlugin,
         // Blood effect system (spatter decals, gash wounds)
@@ -1065,6 +1079,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             character_model_add_collider_system,
         ),
     );
+    app.add_systems(Update, memory_diagnostics_system);
     // name_tag_system uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
     app.add_systems(bevy_egui::EguiPrimaryContextPass, name_tag_system);
     // chat_bubble_spawn_system uses EguiContexts for text rendering - must run in EguiPrimaryContextPass for bevy_egui 0.39
@@ -1480,6 +1495,44 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     );
     app.add_systems(
         Update,
+        zone_content::npcs::spawn_dock_npcs_system
+            .run_if(in_state(AppState::Game))
+            .after(ensure_boat_state_system),
+    );
+    app.add_systems(
+        Update,
+        zone_content::monsters::spawn_sea_monsters_system
+            .run_if(in_state(AppState::Game))
+            .after(ensure_boat_state_system),
+    );
+    app.add_systems(
+        Update,
+        zone_content::monsters::sea_monster_ai_system
+            .run_if(in_state(AppState::Game))
+            .after(boat_toggle_system)
+            .after(sailing_movement_system),
+    );
+    app.add_systems(
+        Update,
+        zone_content::boats::spawn_random_boats_system
+            .run_if(in_state(AppState::Game))
+            .after(ensure_boat_state_system),
+    );
+    app.add_systems(
+        Update,
+        zone_content::boats::npc_boat_movement_system
+            .run_if(in_state(AppState::Game))
+            .after(ensure_boat_wake_emitter_system)
+            .before(boat_buoyancy_system),
+    );
+    app.add_systems(
+        Update,
+        zone_content::docks::spawn_docks_system
+            .run_if(in_state(AppState::Game))
+            .after(ensure_boat_state_system),
+    );
+    app.add_systems(
+        Update,
         ensure_boat_sound_state_system
             .run_if(in_state(AppState::Game))
             .after(boat_toggle_system),
@@ -1575,8 +1628,18 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
 
     // ui_drag_and_drop_system uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
     // Must run AFTER all UI systems that handle drop targets, otherwise it takes dragged_item
-    // before those systems can detect and process the drop
-    app.add_systems(bevy_egui::EguiPrimaryContextPass, ui_drag_and_drop_system);
+    // before those systems can detect and process the drop (see pitfalls/skill-bar-ui.md)
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_drag_and_drop_system
+            .after(ui_npc_store_system)
+            .after(ui_hotbar_system)
+            .after(ui_inventory_system)
+            .after(ui_personal_store_system)
+            .after(ui_bank_system)
+            .after(ui_skill_list_system)
+            .after(ui_skill_tree_system),
+    );
 
     // Setup network
     let (network_thread_tx, network_thread_rx) =
@@ -1902,8 +1965,7 @@ fn load_common_game_data(
             Smaa::default(),
             // Prepasses for depth (required for some effects and GPU occlusion culling)
             DepthPrepass,
-            // GPU Occlusion Culling - Bevy 0.16 experimental feature
-            // Culls objects hidden behind other objects to improve performance
+            // GPU Occlusion Culling - culls objects hidden behind other objects to improve performance
             OcclusionCulling,
             // Underwater state tracking for underwater rendering effect
             CameraUnderwaterState::default(),
@@ -1919,14 +1981,17 @@ fn load_common_game_data(
             intensity: 150.0,
             ..default()
         },
-        // Bevy 0.16 Screen Space Reflections
+        // Screen Space Reflections
         ScreenSpaceReflections::default(),
-        // Bevy 0.16 Motion Blur
+        // Motion Blur
         MotionBlur::default(),
-        // Bevy 0.16 Auto Exposure
+        // Auto Exposure
         AutoExposure::default(),
-        // Bevy 0.16 Contrast Adaptive Sharpening
+        // Contrast Adaptive Sharpening
         ContrastAdaptiveSharpening::default(),
+        // Render layers 0 and 1: layer 0 is the world, layer 1 is water
+        // (kept separate so the reflection camera can exclude water).
+        bevy::camera::visibility::RenderLayers::from_layers(&[0, 1]),
     ));
     // Insert additional components separately to avoid tuple size limit
     // DEBUG: Disable atmosphere when testing starry sky
@@ -1990,7 +2055,7 @@ fn setup_egui_fonts(mut egui_context: EguiContexts) {
     egui_context.ctx_mut().unwrap().set_fonts(fonts);
 }
 
-/// Diagnostic summary system for Bevy 0.14.2
+/// Diagnostic summary system
 /// Prints a comprehensive diagnostic summary on startup
 fn print_diagnostic_summary(
     cameras: Query<&Camera>,
@@ -2008,7 +2073,6 @@ fn print_diagnostic_summary(
         render_diagnostics.main_world_mesh_count
     );
     info!("=======================================");
-    info!("See docs/diagnostic-summary.md for interpretation guide");
 }
 
 /// System to apply depth of field settings from the resource to the camera

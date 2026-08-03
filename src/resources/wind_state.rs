@@ -14,6 +14,14 @@ pub struct WindState {
     pub gust_factor: f32,
     /// Simulation time accumulator.
     pub time_accumulator: f32,
+    /// Authoritative wind angle from the server, if a broadcast was received.
+    pub authoritative_angle: Option<f32>,
+    /// Authoritative wind speed from the server, if a broadcast was received.
+    pub authoritative_speed: Option<f32>,
+    /// Authoritative gust factor from the server, if a broadcast was received.
+    pub authoritative_gust_factor: Option<f32>,
+    /// Wall-clock time (elapsed_secs) of the last authoritative broadcast.
+    pub authoritative_last_update: f32,
 }
 
 impl Default for WindState {
@@ -26,7 +34,22 @@ impl Default for WindState {
             angle,
             gust_factor: 0.0,
             time_accumulator: 0.0,
+            authoritative_angle: None,
+            authoritative_speed: None,
+            authoritative_gust_factor: None,
+            authoritative_last_update: -10.0,
         }
+    }
+}
+
+impl WindState {
+    /// Returns true when a server wind broadcast is fresh enough to override
+    /// the locally generated wind.
+    pub fn has_fresh_authoritative_wind(&self, elapsed_secs: f32) -> bool {
+        elapsed_secs - self.authoritative_last_update < 2.0
+            && self.authoritative_angle.is_some()
+            && self.authoritative_speed.is_some()
+            && self.authoritative_gust_factor.is_some()
     }
 }
 

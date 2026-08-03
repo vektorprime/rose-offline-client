@@ -313,7 +313,7 @@ Quaternions represent 3D rotations without gimbal lock.
 ```rust
 // Construction
 Quat::IDENTITY                    // No rotation
-Quat::from_axis_angle(axis: Dir3, angle: f32)
+Quat::from_axis_angle(axis: Vec3, angle: f32)
 Quat::from_rotation_x(angle)
 Quat::from_rotation_y(angle)
 Quat::from_rotation_z(angle)
@@ -329,8 +329,8 @@ quat.conjugate()                  // Conjugate
 quat.normalize()                  // Normalize (length = 1)
 
 // Interpolation
-Quat::lerp(q1, q2, t)             // Linear interpolation
-Quat::slerp(q1, q2, t)            // Spherical interpolation (constant speed)
+q1.lerp(q2, t)                    // Linear interpolation
+q1.slerp(q2, t)                   // Spherical interpolation (constant speed)
 ```
 
 #### Euler Angle Conventions
@@ -338,7 +338,7 @@ Quat::slerp(q1, q2, t)            // Spherical interpolation (constant speed)
 ```rust
 // Rotation order enum
 pub enum EulerRot {
-    XYZ,  // Rotate around X, then Y, then Z
+    XYZ,  // Intrinsic three-axis rotation (Rx * Ry * Rz, Z applied first)
     XZY,
     YXZ,
     YZX,
@@ -408,7 +408,7 @@ let vec: Vec3 = dir.into();
 Position component stores server coordinates; Transform stores render coordinates:
 
 ```rust
-// src/systems/collision_system.rs:97
+// src/systems/collision_system.rs:216-217
 transform.translation.x = position.x / 100.0;      // right
 transform.translation.z = -position.y / 100.0;     // back (negated forward)
 // Y handled separately with terrain collision
@@ -419,7 +419,7 @@ transform.translation.z = -position.y / 100.0;     // back (negated forward)
 Compute movement direction based on camera rotation:
 
 ```rust
-// src/systems/game_keyboard_input_system.rs:67-71
+// src/systems/game_keyboard_input_system.rs:85-89
 let camera_rotation = camera_transform.rotation;
 let camera_forward = (camera_rotation * -Vec3::Z).with_y(0.0).normalize_or_zero();
 let camera_right = (camera_rotation * Vec3::X).with_y(0.0).normalize_or_zero();
@@ -447,17 +447,27 @@ transform.rotation = Quat::from_axis_angle(
 ### Billboard Objects (Always Face Camera)
 
 ```rust
-// src/systems/season/fall_system.rs:201-214
-// Create a rotation that faces the camera (billboard look-at)
-let forward = (camera_position - position).normalize();
-let right = forward.cross(Vec3::Y).normalize();
-let corrected_up = forward.cross(right);
+// src/systems/season/weather_system.rs:125-148
+// Billboard: Make particle face the camera
+let to_camera = camera_pos - transform.translation;
+if to_camera.length_squared() > 0.001 {
+    let forward = to_camera.normalize();
+    let up = Vec3::Y;
+    let right = up.cross(forward).normalize();
+    let corrected_up = forward.cross(right).normalize();
 
-// Build rotation matrix and convert to quaternion
-let look_rotation = Quat::from_mat3(&Mat3::from_cols(right, corrected_up, forward));
+    // Build rotation matrix and convert to quaternion
+    let look_rotation = Quat::from_mat3(&Mat3::from_cols(right, corrected_up, forward));
 
-// Apply particle's own rotation on top (for visual variety)
-transform.rotation = look_rotation * particle_rotation;
+    if matches!(settings.current_season, Season::Winter | Season::Fall) {
+        // Apply particle's own rotation on top (for visual variety)
+        particle.rotation += particle.rotation_speed * dt;
+        let particle_rotation = Quat::from_rotation_z(particle.rotation);
+        transform.rotation = look_rotation * particle_rotation;
+    } else {
+        transform.rotation = look_rotation;
+    }
+}
 ```
 
 ### Orbit Camera
@@ -465,7 +475,7 @@ transform.rotation = look_rotation * particle_rotation;
 Uses dolly's CameraRig for smooth orbit controls:
 
 ```rust
-// src/systems/orbit_camera_system.rs:260-273
+// src/systems/orbit_camera_system.rs:265-276
 let calculated_transform = orbit_camera.rig.update(time.delta().as_secs_f32());
 camera_transform.translation = Vec3::new(
     calculated_transform.position.x,
@@ -485,14 +495,14 @@ camera_transform.rotation = Quat::from_xyzw(
 Extract scale and translation from GlobalTransform:
 
 ```rust
-// src/systems/damage_digit_render_system.rs:114
+// src/systems/damage_digit_render_system.rs:100
 let (scale, _, translation) = global_transform.to_scale_rotation_translation();
 ```
 
 ### Entity Spawning with Transform
 
 ```rust
-// src/systems/chat_bubble_spawn_system.rs:346-347
+// src/systems/chat_bubble_spawn_system.rs:309-310
 commands.spawn((
     Transform::from_translation(Vec3::new(0.0, bubble_height, 0.0)),
     GlobalTransform::default(),
@@ -503,12 +513,17 @@ commands.spawn((
 ### Parent-Child Hierarchies
 
 ```rust
-// src/systems/bird_system.rs:228-246
+// src/systems/bird_system.rs:257-269
 // Spawn left wing as child (rotates around body center)
-parent.spawn((
-    Transform::from_rotation(Quat::from_rotation_z(0.3)), // Slightly spread
-    GlobalTransform::default(),
-));
+let left_wing_entity = commands
+    .spawn((
+        BirdWingLeft,
+        Transform::from_rotation(Quat::from_rotation_z(0.3)), // Slightly spread
+        GlobalTransform::default(),
+        // ... other components
+    ))
+    .id();
+commands.entity(bird_entity).add_child(left_wing_entity);
 ```
 
 ---
@@ -545,7 +560,7 @@ let rotation = Quat::from_axis_angle(Vec3::Y, angle - std::f32::consts::PI / 2.0
 Slerp for smooth interpolation:
 
 ```rust
-// src/systems/bird_system.rs:648
+// src/systems/bird_system.rs:595
 transform.rotation = transform.rotation.slerp(target_rotation, 2.0 * dt);
 ```
 
@@ -554,8 +569,8 @@ transform.rotation = transform.rotation.slerp(target_rotation, 2.0 * dt);
 Rotations compose from right to left:
 
 ```rust
-// Billboard + sway (src/systems/season/summer_system.rs:315)
-transform.rotation = look_rotation * sway_rotation;
+// Billboard + particle spin (src/systems/season/weather_system.rs:144)
+transform.rotation = look_rotation * particle_rotation;
 ```
 
 ---
@@ -635,11 +650,11 @@ let forward: Vec3 = transform.forward().into();
 // Option 2: Let type inference handle it
 let forward = transform.forward().into();
 
-// Option 3: Use Vec3A for SIMD performance
-let forward: Vec3A = transform.forward_vec3a().into();
+// Option 3: Deref Dir3 to Vec3
+let forward: Vec3 = *transform.forward();
 ```
 
-**Affected Code**: `src/systems/game_keyboard_input_system.rs:67-71`
+**Affected Code**: `src/systems/game_keyboard_input_system.rs:85-89`
 ```rust
 // Updated for Bevy 0.18
 let camera_forward = (camera_rotation * -Vec3::Z).with_y(0.0).normalize_or_zero();
@@ -656,7 +671,7 @@ let camera_right = (camera_rotation * Vec3::X).with_y(0.0).normalize_or_zero();
 
 **Solution**: Apply coordinate transformation:
 ```rust
-// src/systems/collision_system.rs:97-99
+// src/systems/collision_system.rs:473-475
 transform.translation.x = position.x / 100.0;      // right (same)
 transform.translation.y = position.z / 100.0;      // up (was Z)
 transform.translation.z = -position.y / 100.0;     // back (was -Y forward)
@@ -694,7 +709,7 @@ fn sync_positions(
 
 **Option 3**: Manually compute world transform for immediate use:
 ```rust
-let world_transform = parent_global_transform.compute_child_transform(&child_transform);
+let world_transform = parent_global_transform.mul_transform(child_transform);
 ```
 
 ---
@@ -707,15 +722,15 @@ let world_transform = parent_global_transform.compute_child_transform(&child_tra
 
 **Solution**: Understand rotation order - transformations apply right-to-left:
 ```rust
-// Billboard + sway rotation
-// sway_rotation is applied first, then look_rotation
-transform.rotation = look_rotation * sway_rotation;
+// Billboard + particle spin rotation
+// particle_rotation is applied first, then look_rotation
+transform.rotation = look_rotation * particle_rotation;
 
 // For local-space rotation
 transform.rotation = transform.rotation * local_rotation;
 ```
 
-**Reference**: `src/systems/season/summer_system.rs:315`
+**Reference**: `src/systems/season/weather_system.rs:144`
 
 ---
 
@@ -728,7 +743,7 @@ transform.rotation = transform.rotation * local_rotation;
 **Solution**: Keep scale uniform for entities with children:
 ```rust
 // Good - uniform scale
-transform.scale = Vec3::scale(2.0);
+transform.scale = Vec3::splat(2.0);
 
 // Problematic for parent entities
 transform.scale = Vec3::new(2.0, 1.0, 1.0);  // Avoid for parents
@@ -837,7 +852,7 @@ let new_parent_world = new_parent_global_transform;
 let new_local = child_world.reparented_to(&new_parent_world);
 
 // Apply new parent and local transform
-commands.entity(child_entity).insert((new_local, new_parent));
+commands.entity(child_entity).insert((new_local, ChildOf(new_parent_entity)));
 ```
 
 ---
@@ -878,15 +893,15 @@ commands.entity(child_entity).insert((new_local, new_parent));
 | File | Path | Description |
 |------|------|-------------|
 | `facing_direction_system.rs` | `src/systems/facing_direction_system.rs:40-43` | Character facing rotation logic |
-| `collision_system.rs` | `src/systems/collision_system.rs:97-99` | Server position to Bevy transform conversion |
-| `game_keyboard_input_system.rs` | `src/systems/game_keyboard_input_system.rs:67-71` | Camera-relative movement calculation |
-| `orbit_camera_system.rs` | `src/systems/orbit_camera_system.rs:260-273` | Orbit camera using dolly CameraRig |
-| `fall_system.rs` | `src/systems/season/fall_system.rs:201-214` | Billboard particle rotation |
-| `summer_system.rs` | `src/systems/season/summer_system.rs:315` | Billboard with sway rotation composition |
-| `bird_system.rs` | `src/systems/bird_system.rs:228-246` | Parent-child wing hierarchy |
-| `bird_system.rs` | `src/systems/bird_system.rs:648` | Smooth rotation with slerp |
-| `damage_digit_render_system.rs` | `src/systems/damage_digit_render_system.rs:114` | Extract scale/rotation/translation |
-| `chat_bubble_spawn_system.rs` | `src/systems/chat_bubble_spawn_system.rs:346-347` | Entity spawning with transform |
+| `collision_system.rs` | `src/systems/collision_system.rs:473-475` | Server position to Bevy transform conversion |
+| `game_keyboard_input_system.rs` | `src/systems/game_keyboard_input_system.rs:85-89` | Camera-relative movement calculation |
+| `orbit_camera_system.rs` | `src/systems/orbit_camera_system.rs:265-276` | Orbit camera using dolly CameraRig |
+| `weather_system.rs` | `src/systems/season/weather_system.rs:125-148` | Billboard particle rotation |
+| `weather_system.rs` | `src/systems/season/weather_system.rs:144` | Billboard with particle spin rotation composition |
+| `bird_system.rs` | `src/systems/bird_system.rs:256-269` | Parent-child wing hierarchy |
+| `bird_system.rs` | `src/systems/bird_system.rs:595` | Smooth rotation with slerp |
+| `damage_digit_render_system.rs` | `src/systems/damage_digit_render_system.rs:100` | Extract scale/rotation/translation |
+| `chat_bubble_spawn_system.rs` | `src/systems/chat_bubble_spawn_system.rs:309-310` | Entity spawning with transform |
 | `facing_direction.rs` | `src/components/facing_direction.rs` | FacingDirection component definition |
 | `position.rs` | `src/components/position.rs` | Position component (server coordinates) |
 

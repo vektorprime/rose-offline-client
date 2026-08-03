@@ -9,11 +9,19 @@
 
 use bevy::{
     asset::{load_internal_asset, weak_handle, Asset, AssetApp, Handle},
+    ecs::system::{lifetimeless::SRes, SystemParamItem},
+    image::Image,
     math::{Vec3, Vec4},
     pbr::{Material, MaterialPipeline, MaterialPipelineKey},
     prelude::{App, Plugin},
     reflect::TypePath,
-    render::{alpha::AlphaMode, render_resource::*, renderer::RenderDevice},
+    render::{
+        alpha::AlphaMode,
+        render_asset::RenderAssets,
+        render_resource::*,
+        renderer::RenderDevice,
+        texture::{FallbackImage, GpuImage},
+    },
 };
 use bevy_mesh::{Mesh, MeshVertexBufferLayoutRef};
 use bevy_shader::{Shader, ShaderRef};
@@ -66,6 +74,12 @@ pub struct WaterMaterial {
     pub fog_min_density: f32,
     /// Fog maximum density (from zone lighting)
     pub fog_max_density: f32,
+    /// Off-screen texture containing the mirrored scene rendered by the
+    /// reflection camera. Sampled in the fragment shader for planar reflections.
+    pub reflection_texture: Handle<Image>,
+    /// DEBUG: reflection camera status written by the water reflection plugin
+    /// (0 = camera disabled, 1 = active but no entities visible, 2 = ok)
+    pub reflection_status: u32,
 }
 
 /// Default implementation for WaterMaterial
@@ -85,6 +99,10 @@ impl Default for WaterMaterial {
             fog_density: 0.0018,
             fog_min_density: 0.0,
             fog_max_density: 0.75,
+            // Default handle; the water reflection plugin replaces it with the
+            // actual reflection render target once it exists.
+            reflection_texture: Handle::default(),
+            reflection_status: 0,
         }
     }
 }
@@ -161,7 +179,7 @@ impl Material for WaterMaterial {
 
 impl AsBindGroup for WaterMaterial {
     type Data = WaterMaterialKey;
-    type Param = ();
+    type Param = (SRes<RenderAssets<GpuImage>>, SRes<FallbackImage>);
 
     fn label() -> &'static str {
         "water_material"
@@ -177,7 +195,7 @@ impl AsBindGroup for WaterMaterial {
         layout_descriptor: &BindGroupLayoutDescriptor,
         render_device: &RenderDevice,
         pipeline_cache: &PipelineCache,
-        _param: &mut Self::Param,
+        (image_assets, fallback_image): &mut SystemParamItem<'_, '_, Self::Param>,
     ) -> Result<PreparedBindGroup, AsBindGroupError> {
         // Get the actual bind group layout from the pipeline cache
         let layout = pipeline_cache.get_bind_group_layout(layout_descriptor);
@@ -244,6 +262,23 @@ impl AsBindGroup for WaterMaterial {
                 self.settings.water_surface_y,
                 0.0,
             ),
+            // [12] reflection plane: normal (0,1,0) + distance (water surface y)
+            Vec4::new(0.0, 1.0, 0.0, self.settings.water_surface_y),
+            // [13] reflection params: enabled, debug_show_reflection, status, padding
+            Vec4::new(
+                if self.settings.reflection_enabled {
+                    1.0
+                } else {
+                    0.0
+                },
+                if self.settings.debug_show_reflection {
+                    1.0
+                } else {
+                    0.0
+                },
+                self.reflection_status as f32,
+                0.0,
+            ),
         ];
         let water_material_data_buffer =
             render_device.create_buffer_with_data(&BufferInitDescriptor {
@@ -252,11 +287,44 @@ impl AsBindGroup for WaterMaterial {
                 usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             });
 
+        // Reflection render target produced by the mirrored reflection camera.
+        // Falls back to the fallback image until the real texture is available.
+        use std::ops::Deref;
+        let reflection_view = match image_assets.get(&self.reflection_texture) {
+            Some(image) => &*image.texture_view,
+            None => {
+                log::warn!(
+                    "[WATER MATERIAL] Reflection texture {:?} not ready, binding fallback image",
+                    self.reflection_texture.id()
+                );
+                &*fallback_image.d2.texture_view
+            }
+        };
+        let reflection_sampler = render_device.create_sampler(&SamplerDescriptor {
+            label: Some("water_reflection_sampler"),
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: FilterMode::Linear,
+            ..Default::default()
+        });
+
         // Create bind group entries
-        let entries = vec![BindGroupEntry {
-            binding: 0,
-            resource: water_material_data_buffer.as_entire_binding(),
-        }];
+        let entries = vec![
+            BindGroupEntry {
+                binding: 0,
+                resource: water_material_data_buffer.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::TextureView(reflection_view),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::Sampler(&reflection_sampler),
+            },
+        ];
 
         // Create bind group
         let bind_group = render_device.create_bind_group(Self::label(), &layout, &entries);
@@ -272,7 +340,7 @@ impl AsBindGroup for WaterMaterial {
         &self,
         _layout: &BindGroupLayout,
         _render_device: &RenderDevice,
-        _param: &mut Self::Param,
+        _param: &mut SystemParamItem<'_, '_, Self::Param>,
         _bindless: bool,
     ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
         // This should never be called since we override as_bind_group
@@ -297,6 +365,8 @@ impl AsBindGroup for WaterMaterial {
             // [9] shallow_color
             // [10] depth_scale: x, y, wave_layers, caustics_intensity
             // [11] caustics: scale, speed, water_surface_y, padding
+            // [12] reflection_plane: normal xyz, distance
+            // [13] reflection_params: enabled, padding
             BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::FRAGMENT,
@@ -305,6 +375,24 @@ impl AsBindGroup for WaterMaterial {
                     has_dynamic_offset: false,
                     min_binding_size: None,
                 },
+                count: None,
+            },
+            // Reflection render target texture (planar reflection)
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            // Reflection texture sampler
+            BindGroupLayoutEntry {
+                binding: 2,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
                 count: None,
             },
         ]

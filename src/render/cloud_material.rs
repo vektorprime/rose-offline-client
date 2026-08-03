@@ -1,4 +1,4 @@
-//! Procedural Cloud Material for Bevy 0.16
+//! Procedural Cloud Material for Bevy 0.18
 //!
 //! This module implements a custom material that renders:
 //! - Procedural clouds using fBm noise
@@ -158,7 +158,7 @@ impl Default for CloudSettings {
 }
 
 /// Custom material for procedural cloud rendering
-/// Manual AsBindGroup implementation for Bevy 0.17 compatibility
+/// Manual AsBindGroup implementation (custom bind group layout)
 #[derive(Asset, TypePath, Clone, Debug)]
 pub struct CloudMaterial {
     // === Time and Animation ===
@@ -611,7 +611,10 @@ pub fn spawn_cloud_layer(
 /// System to make cloud layer follow camera.
 /// X/Z follow camera position and Y stays a fixed offset above camera.
 pub fn cloud_layer_follow_camera_system(
-    camera_query: Query<&GlobalTransform, With<Camera3d>>,
+    camera_query: Query<
+        &GlobalTransform,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     cloud_settings: Res<CloudSettings>,
     mut cloud_query: Query<&mut Transform, With<CloudLayer>>,
 ) {

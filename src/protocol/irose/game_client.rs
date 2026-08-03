@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use bevy::math::Vec3;
 use num_traits::FromPrimitive;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
@@ -29,8 +30,9 @@ use rose_network_irose::{
         PacketClientPersonalStoreBuyItem, PacketClientPersonalStoreListItems,
         PacketClientPickupItemDrop, PacketClientQuestRequest, PacketClientQuestRequestType,
         PacketClientRepairItemUsingItem, PacketClientRepairItemUsingNpc, PacketClientReviveRequest,
-        PacketClientSetHotbarSlot, PacketClientSetReviveZone, PacketClientUseItem,
-        PacketClientWarpGateRequest,
+        PacketClientSailInput, PacketClientSetHotbarSlot, PacketClientSetReviveZone,
+        PacketClientUseItem, PacketClientWarpGateRequest, PacketClientBoardBoat,
+        PacketClientDisembarkBoat, encode_input_i8,
     },
     game_server_packets::{
         ConnectResult, PacketConnectionReply, PacketServerAdjustPosition, PacketServerAnnounceChat,
@@ -61,7 +63,7 @@ use rose_network_irose::{
         PacketServerUpdateItemLife, PacketServerUpdateLevel, PacketServerUpdateMoney,
         PacketServerUpdateSpeed, PacketServerUpdateStatusEffects, PacketServerUpdateVehiclePart,
         PacketServerUpdateXpStamina, PacketServerUseEmote, PacketServerUseItem,
-        PacketServerWhisper, ServerPackets,
+        PacketServerWhisper, PacketServerSailState, PacketServerWindState, ServerPackets,
     },
     ClientPacketCodec, IROSE_112_TABLE,
 };
@@ -711,6 +713,28 @@ impl GameClient {
                     }
                 }
             }
+            Some(ServerPackets::SailState) => {
+                let message = PacketServerSailState::try_from(packet)?;
+                self.server_message_tx
+                    .send(ServerMessage::SailState {
+                        entity_id: message.entity_id,
+                        position: Vec3::new(message.x, message.y, message.z),
+                        heading: message.heading,
+                        speed: message.speed,
+                        sail_trim: message.sail_trim,
+                    })
+                    .ok();
+            }
+            Some(ServerPackets::WindStateUpdate) => {
+                let message = PacketServerWindState::try_from(packet)?;
+                self.server_message_tx
+                    .send(ServerMessage::WindStateUpdate {
+                        angle: message.angle,
+                        speed: message.speed,
+                        gust_factor: message.gust_factor,
+                    })
+                    .ok();
+            }
             Some(ServerPackets::NpcStoreTransactionError) => {
                 server_message!(
                     PacketServerNpcStoreTransactionError,
@@ -1223,6 +1247,33 @@ impl GameClient {
             }
             ClientMessage::MoveCollision { position } => {
                 send_packet!(PacketClientMoveCollision { position });
+            }
+            ClientMessage::SailInput {
+                rudder,
+                throttle,
+                heading,
+                speed,
+                sail_trim,
+                x,
+                y,
+                z,
+            } => {
+                send_packet!(PacketClientSailInput {
+                    rudder: encode_input_i8(rudder),
+                    throttle: encode_input_i8(throttle),
+                    heading,
+                    speed,
+                    sail_trim,
+                    x,
+                    y,
+                    z
+                });
+            }
+            ClientMessage::BoardBoat { x, y, z } => {
+                send_packet!(PacketClientBoardBoat { x, y, z });
+            }
+            ClientMessage::DisembarkBoat { x, y, z } => {
+                send_packet!(PacketClientDisembarkBoat { x, y, z });
             }
             ClientMessage::PersonalStoreBuyItem {
                 store_entity_id,

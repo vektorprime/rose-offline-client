@@ -183,12 +183,12 @@ pub fn chat_bubble_spawn_system(
 
                     let mut dst_y = ((glyph.pos.y + glyph.uv_rect.offset.y) * pixels_per_point
                         - min_pos.y)
-                        .floor() as usize
+                        .round() as usize
                         + CHAT_BUBBLE_PADDING as usize;
 
                     let dst_x = ((glyph.pos.x + glyph.uv_rect.offset.x) * pixels_per_point
                         - min_pos.x)
-                        .floor() as usize
+                        .round() as usize
                         + CHAT_BUBBLE_PADDING as usize;
 
                     if dst_x + (uv_max[0] - uv_min[0]) as usize > target_texture_width as usize
@@ -221,42 +221,6 @@ pub fn chat_bubble_spawn_system(
             }
         }
 
-        let mut outlined_data = text_data.clone();
-        unsafe {
-            let src = text_data.as_ptr();
-            let dst = outlined_data.as_mut_ptr();
-            let stride = target_texture_width as usize;
-
-            for y in 2..text_size.y as usize - 2 {
-                for x in 2..text_size.x as usize - 2 {
-                    let px_alpha = |x: usize, y: usize| {
-                        let pixel_offset = x * 4 + y * 4 * stride;
-                        *src.add(pixel_offset + 3) as u32
-                    };
-
-                    let mut alpha = 0u32;
-                    alpha += px_alpha(x, y - 2) / 2;
-                    alpha += px_alpha(x, y - 1);
-                    alpha += px_alpha(x, y + 1);
-                    alpha += px_alpha(x, y + 2) / 2;
-
-                    alpha += px_alpha(x - 2, y) / 2;
-                    alpha += px_alpha(x - 1, y);
-                    alpha += px_alpha(x + 1, y);
-                    alpha += px_alpha(x + 2, y) / 2;
-
-                    alpha += px_alpha(x - 1, y - 1) / 2;
-                    alpha += px_alpha(x - 1, y + 1) / 2;
-                    alpha += px_alpha(x + 1, y - 1) / 2;
-                    alpha += px_alpha(x + 1, y + 1) / 2;
-                    alpha = alpha.min(255);
-
-                    let pixel_offset = x * 4 + y * 4 * stride;
-                    *dst.add(pixel_offset + 3) = alpha as u8;
-                }
-            }
-        }
-
         let text_image = Image::new(
             Extent3d {
                 width: target_texture_width,
@@ -264,7 +228,7 @@ pub fn chat_bubble_spawn_system(
                 depth_or_array_layers: 1,
             },
             TextureDimension::D2,
-            outlined_data,
+            text_data,
             TextureFormat::Rgba8Unorm,
             RenderAssetUsages::default(),
         );

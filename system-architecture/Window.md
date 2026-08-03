@@ -51,7 +51,7 @@ pub struct WindowPlugin {
 
 **rose-offline-client Configuration**
 
-The project configures `WindowPlugin` in `src/lib.rs:805-825`:
+The project configures `WindowPlugin` in `src/lib.rs:771-791`:
 
 ```rust
 .set(bevy::window::WindowPlugin {
@@ -146,7 +146,7 @@ pub fn start_drag_resize(&mut self, direction: CompassOctant)
 
 Defines how the window is displayed on screen.
 
-**Source File:** `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_window\src\window.rs:1330-1367`
+**Source File:** `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_window\src\window.rs:1342-1367`
 
 **Variants**
 
@@ -181,7 +181,7 @@ window.mode = WindowMode::Fullscreen(
 
 **rose-offline-client Usage**
 
-The project uses `GraphicsModeConfig` in `src/lib.rs:427-459`:
+The project uses `GraphicsModeConfig` in `src/lib.rs:494-501`:
 
 ```rust
 #[derive(Deserialize)]
@@ -200,7 +200,7 @@ pub enum GraphicsModeConfig {
 
 Controls window size with support for physical and logical pixels.
 
-**Source File:** `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_window\src\window.rs:886-1044`
+**Source File:** `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_window\src\window.rs:897-1044`
 
 **Physical vs Logical Pixels**
 
@@ -264,7 +264,7 @@ pub struct WindowResizeConstraints {
 
 Controls frame presentation and VSync behavior.
 
-**Source File:** `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_window\src\window.rs:1210-1288`
+**Source File:** `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_window\src\window.rs:1223-1288`
 
 **Variants**
 
@@ -313,7 +313,7 @@ present_mode: if config.graphics.disable_vsync {
 Specifies which monitor to use for window positioning and fullscreen.
 
 **Source Files:**
-- `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_window\src\window.rs:1141-1168`
+- `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_window\src\window.rs:1155-1167`
 - `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_window\src\monitor.rs`
 
 **Variants**
@@ -627,7 +627,7 @@ fn query_primary_window(
 
 ### rose-offline-client Cursor Implementation
 
-The project defines custom cursor types and loading mechanisms in `src/resources/ui_resources.rs:73-104`:
+The project defines custom cursor types and loading mechanisms in `src/resources/ui_resources.rs:70-93`:
 
 ```rust
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Enum)]
@@ -665,9 +665,10 @@ cursors: enum_map! {
 }
 ```
 
-**Implementation Guide for Custom Cursors:**
-To implement the actual visual change in Bevy 0.18:
-1. Enable `custom_cursor` feature in `Cargo.toml`.
+**Implementation Status:**
+
+The cursor assets are loaded from the game binary, but they are **not yet applied to the window**. Each cursor is loaded as an `ExeResourceCursor` asset (see `src/exe_resource_loader.rs`), and the loading code in `src/resources/ui_resources.rs:378` marks them as loaded with the comment "custom cursors will be implemented separately". There is no `CursorIcon::Custom` insertion anywhere in `src/`. When implemented, applying them would follow this Bevy 0.18 API:
+1. The `custom_cursor` feature is already enabled in `Cargo.toml`.
 2. Load cursor images as Bevy `Image` assets.
 3. Create `CustomCursorImage` structs.
 4. Insert `CursorIcon::Custom` on window entities.
@@ -677,7 +678,7 @@ To implement the actual visual change in Bevy 0.18:
 ## Code Examples
 
 ### Basic Window Configuration
-Refer to `src/lib.rs:805-825` for the actual project implementation.
+Refer to `src/lib.rs:771-791` for the actual project implementation.
 
 ```rust
 use bevy::prelude::*;
@@ -707,7 +708,7 @@ use bevy::window::{Window, WindowMode, MonitorSelection, PrimaryWindow};
 use bevy::prelude::*;
 
 fn toggle_fullscreen(
-    keyboard: Res<Input<KeyCode>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     if keyboard.just_pressed(KeyCode::F11) {
@@ -751,7 +752,7 @@ fn set_cursor_icon(
 ```
 
 ### Responsive Window Resize
-Refer to `src/lib.rs` for camera projection updates.
+Note: the project currently does not handle `WindowResized` events — no `WindowResized` reader exists anywhere in `src/`. The example below is a generic pattern for resize-driven camera updates:
 
 ```rust
 use bevy::window::WindowResized;
@@ -805,13 +806,16 @@ disable_vsync = false
 ```
 
 ### Cargo.toml Features
-Custom cursor support must be enabled in `Cargo.toml`.
+Custom cursor support must be enabled in `Cargo.toml`. The project enables it (alongside other required features, with default features disabled):
 
 ```toml
-[dependencies]
-bevy = { version = "0.18", features = [
+[dependencies.bevy]
+version = "0.18"
+default-features = false
+features = [
     "custom_cursor",  # Enable custom cursor support
-] }
+    # ... other required features
+]
 ```
 
 ---
@@ -822,7 +826,7 @@ bevy = { version = "0.18", features = [
 To ensure consistent UI across different monitor scales, use logical pixels for UI elements and physical pixels for window resolution. The scale factor can be accessed via `window.scale_factor()`.
 
 ### Window Centering
-The project centers the window on the primary monitor by default using:
+The project does not set a window position; the primary window uses Bevy's default `WindowPosition::Automatic`, so placement is left to the OS window manager. To center on a monitor, set:
 `window.position = WindowPosition::Centered(MonitorSelection::Primary);`
 
 ### Dynamic Fullscreen Toggle
@@ -870,6 +874,6 @@ To prevent the window from becoming too small, use `WindowResizeConstraints` to 
 
 | Component | Path |
 |-----------|------|
-| Window Setup | `src/lib.rs:805-825` |
-| Graphics Config | `src/lib.rs:427-459` |
+| Window Setup | `src/lib.rs:771-791` |
+| Graphics Config | `src/lib.rs:494-501` |
 | UI Cursors | `src/resources/ui_resources.rs` |

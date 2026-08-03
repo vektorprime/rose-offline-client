@@ -49,6 +49,19 @@ pub fn clear_vfs_file_cache() {
     }
 }
 
+/// Returns (file count, total bytes) of the global VFS file cache.
+/// Diagnostic helper for memory leak tracking.
+pub fn vfs_file_cache_stats() -> (usize, usize) {
+    if let Ok(cache) = get_file_cache().read() {
+        let bytes = cache
+            .values()
+            .fold(0usize, |acc, data| acc.saturating_add(data.len()));
+        (cache.len(), bytes)
+    } else {
+        (0, 0)
+    }
+}
+
 #[derive(Resource)]
 pub struct VfsAssetIo {
     vfs: Arc<VirtualFilesystem>,

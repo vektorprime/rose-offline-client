@@ -4,7 +4,7 @@ use bevy::{
     math::Vec3,
     prelude::{
         Camera3d, Color, Commands, Entity, GlobalAmbientLight, GlobalTransform, Query, Res, ResMut,
-        Resource, Transform, Visibility, With,
+        Resource, Transform, Visibility, With, Without,
     },
 };
 use bevy_camera::visibility::{InheritedVisibility, ViewVisibility};
@@ -45,7 +45,10 @@ pub struct ModelViewerState {
 
 pub fn model_viewer_enter_system(
     mut commands: Commands,
-    query_cameras: Query<Entity, With<Camera3d>>,
+    query_cameras: Query<
+        Entity,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     game_data: Res<GameData>,
     mut ui_state_debug_windows: ResMut<UiStateDebugWindows>,
     mut name_tag_settings: ResMut<NameTagSettings>,

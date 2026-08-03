@@ -5,7 +5,11 @@ use bevy::prelude::{
 use rose_game_common::components::HealthPoints;
 
 use crate::{
-    components::{ClientEntity, Dead, DeathBloodHandled, ModelHeight, NextCommand, PendingDamageList},
+    animation::SkeletalAnimation,
+    components::{
+        ClientEntity, Command, Dead, DeathBloodHandled, ModelHeight, NextCommand,
+        PendingDamageList, Projectile, ProjectileTarget, Vehicle,
+    },
     events::{BloodEffectEvent, BloodImpactProfile},
     resources::{BloodEffectConfig, ClientEntityList, DamageDigitsSpawner},
     systems::damage_effects::{emit_blood_and_wounds, normalize_or, spawn_damage_digits},
@@ -13,6 +17,61 @@ use crate::{
 
 // After 5 seconds, expire pending damage and apply immediately
 const MAX_DAMAGE_AGE: f32 = 5.0;
+
+// A kill should never wait the full pending damage timeout. Once the grace period
+// has passed, if no hit frame is expected (see hit_frame_expected) then apply the
+// kill immediately - the server has already decided the entity is dead.
+const KILL_GRACE_AGE: f32 = 0.25;
+
+// Absolute cap for kills: even if a hit frame was expected but never fired (stuck
+// animation, missed hit frame, etc.), apply the kill shortly after the death packet.
+const KILL_MAX_DAMAGE_AGE: f32 = 1.5;
+
+/// Returns true if a future client-side hit frame should apply this pending damage:
+/// the attacker is mid attack/cast animation (the animation hit frame will fire), or
+/// a projectile from the attacker is still in flight toward the defender (it will
+/// fire the hit event on impact). Otherwise the kill can be applied immediately.
+fn hit_frame_expected(
+    attacker: Option<Entity>,
+    defender: Entity,
+    query_attacker: &Query<(&Command, Option<&SkeletalAnimation>, Option<&Vehicle>)>,
+    query_animation: &Query<&SkeletalAnimation>,
+    query_projectiles: &Query<&Projectile>,
+) -> bool {
+    let Some(attacker) = attacker else {
+        return false;
+    };
+
+    let Ok((command, animation, vehicle)) = query_attacker.get(attacker) else {
+        return false;
+    };
+
+    if matches!(command, Command::Attack(_) | Command::CastSkill(_)) {
+        if animation.map_or(false, |animation| !animation.completed()) {
+            return true;
+        }
+
+        // Vehicle attacks play on the driver model entity rather than the attacker
+        if vehicle.map_or(false, |vehicle| {
+            query_animation
+                .get(vehicle.driver_model_entity)
+                .map_or(false, |animation| !animation.completed())
+        }) {
+            return true;
+        }
+    }
+
+    // A projectile in flight will fire the hit event on impact
+    query_projectiles
+        .iter()
+        .any(|projectile| {
+            projectile.source == attacker
+                && matches!(
+                    projectile.target,
+                    ProjectileTarget::Entity { entity } if entity == defender
+                )
+        })
+}
 
 pub fn pending_damage_system(
     mut commands: Commands,
@@ -25,6 +84,9 @@ pub fn pending_damage_system(
         Option<&ModelHeight>,
     )>,
     dead_entities: Query<(), With<Dead>>,
+    query_attacker: Query<(&Command, Option<&SkeletalAnimation>, Option<&Vehicle>)>,
+    query_animation: Query<&SkeletalAnimation>,
+    query_projectiles: Query<&Projectile>,
     query_transform: Query<&GlobalTransform>,
     time: Res<Time>,
     mut blood_effect_events: MessageWriter<BloodEffectEvent>,
@@ -48,11 +110,25 @@ pub fn pending_damage_system(
             let pending_damage = &mut pending_damage_list[i];
             pending_damage.age += delta_time;
 
+            let is_kill = pending_damage.is_kill;
+            let attacker = pending_damage.attacker;
+            let attacker_dead = attacker.map_or(true, |attacker| dead_entities.contains(attacker));
+
+            let kill_applies_now = is_kill
+                && pending_damage.age > KILL_GRACE_AGE
+                && !hit_frame_expected(
+                    attacker,
+                    entity,
+                    &query_attacker,
+                    &query_animation,
+                    &query_projectiles,
+                );
+
             if pending_damage.is_immediate
                 || pending_damage.age > MAX_DAMAGE_AGE
-                || pending_damage
-                    .attacker
-                    .map_or(true, |attacker| dead_entities.contains(attacker))
+                || attacker_dead
+                || kill_applies_now
+                || (is_kill && pending_damage.age > KILL_MAX_DAMAGE_AGE)
             {
                 let pending_damage = pending_damage_list.remove(i);
 

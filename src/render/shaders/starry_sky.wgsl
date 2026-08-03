@@ -1,4 +1,4 @@
-//! Procedural Starry Sky Shader for Bevy 0.16
+//! Procedural Starry Sky Shader for Bevy 0.18
 //!
 //! This shader renders a dense, high-detail star field with:
 //! - Multiple star layers (distant, medium, bright stars)

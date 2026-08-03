@@ -1,6 +1,6 @@
 # Zone Lighting Documentation
 
-This document describes the high-quality graphics and lighting improvements implemented for the Bevy 0.16.1 client.
+This document describes the high-quality graphics and lighting improvements implemented for the Bevy 0.18.1 client.
 
 ## 1. High-Resolution Shadows
 The shadow mapping system has been significantly upgraded to provide sharp, detailed shadows across the game world.
@@ -19,10 +19,10 @@ Modern PBR features have been integrated to increase visual richness and materia
 ## 3. Synchronized Time-of-Day System
 The lighting system has been fully synchronized to ensure all world elements, including custom shaders, react consistently to the day/night cycle.
 
-- **Light Synchronization**: A new system `sync_zone_lighting_to_bevy_lights_system` in `src/render/zone_lighting.rs` bridges the `ZoneLighting` resource with Bevy's built-in `AmbientLight` and `DirectionalLight`.
+- **Light Synchronization**: A new system `sync_zone_lighting_to_bevy_lights_system` in `src/render/zone_lighting.rs` bridges the `ZoneLighting` resource with Bevy's built-in `GlobalAmbientLight` resource and `DirectionalLight` component.
 - **Balanced Intensities**:
     - `DirectionalLight` illuminance: **15,000 lux** (balanced for PBR).
-    - `AmbientLight` brightness: **350.0 lux** (balanced with EnvironmentMapLight).
+    - `GlobalAmbientLight` brightness: **80.0 lux** base (Bevy's default), multiplied by the user's `ambient_light_brightness` graphics setting (default 1.5, giving 120.0 lux).
 
 ## 3. Dynamic Terrain Lighting & Sun Synchronization
 The terrain rendering system has been overhauled to ensure it remains perfectly in sync with the game's dynamic sun and time-of-day cycle.
@@ -42,10 +42,10 @@ Previously, the terrain used a hardcoded light direction and static colors, caus
 
 ## 4. Atmospheric Effects
 - **High-Quality Volumetric Fog**: Increased the step count to **128** for much smoother light shafts (god rays) with minimal sampling artifacts.
-- **Atmospheric Scattering**: Integrated Bevy 0.16's built-in atmospheric scattering for realistic sky rendering during the day.
+- **Atmospheric Scattering**: Integrated Bevy 0.18's built-in atmospheric scattering for realistic sky rendering during the day.
 - **Procedural Starry Sky**: A custom material that renders a dense star field and moon with phases, automatically toggled based on the night factor.
 
 ## 5. Post-Processing
 - **Tonemapping**: Uses `TonyMcMapface` for a high-quality filmic look that preserves detail in both highlights and shadows.
-- **Anti-Aliasing**: Combines **SMAA** with **Temporal Anti-Aliasing (TAA)** (when enabled) for superior edge smoothing and temporal stability.
+- **Anti-Aliasing**: Uses **SMAA** for high-quality edge smoothing (FXAA and MSAA alternatives are available in the graphics settings).
 - **Motion Blur**: Enabled for smoother visual transitions during fast movement.

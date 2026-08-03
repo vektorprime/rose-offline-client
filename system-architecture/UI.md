@@ -5,8 +5,8 @@ The UI system is built upon the **bevy_egui 0.39** integration, providing a powe
 
 ## 2. EguiPlugin Configuration
 The UI utilizes `bevy_egui` with specific configurations to ensure compatibility across different rendering backends:
-- **Bindless Mode**: Disabled to maintain compatibility with the **WGPU** backend.
-- **Font and Scale**: Custom font settings and scaling are managed through `UiResources` and `egui`'s native context to ensure consistent text rendering across various screen resolutions.
+- **Bindless Mode**: Disabled (`bindless_mode_array_size: None` in `src/lib.rs:809`) to stay compatible with the custom WGPU settings, which disable `PARTIALLY_BOUND_BINDING_ARRAY` and would otherwise panic wgpu 27 validation.
+- **Font**: The custom font (`fonts/Ubuntu-M.ttf`) is embedded and registered with `egui`'s native `FontDefinitions` in `setup_egui_fonts` (`src/lib.rs:2041`). `UiResources` manages sprites, dialogs, and cursors, not fonts.
 
 ## 3. bevy_egui 0.39 Integration
 Integration is handled through the `EguiContexts` system parameter.
@@ -22,7 +22,7 @@ The custom widget system provides a layer of abstraction over raw `egui` calls.
     - `LoadWidget` trait: Manages the loading of assets (like images) associated with a widget.
     - `DataBindings`: Facilitates two-way communication between the UI and game state (e.g., linking an `Editbox` to a `String` in a resource).
 - **Serialization**: Widgets are serialized/deserialized using `serde`. Each widget type is mapped to a specific XML tag via `#[serde(rename = "...")]`.
-- **Discriminant Serialization**: Uses `std::mem::discriminant` during the loading phase to identify widget types and manage resources effectively.
+- **Widget Identification**: Widget types are identified during XML deserialization via serde's `#[serde(rename = "...")]`, `#[serde(alias = "...")]`, and `#[serde(other)]` tags on the `Widget` enum. (`std::mem::discriminant` is only referenced in the unused test file `src/test_widget_discriminants.rs`, not in the loading phase.)
 
 ## 5. XML Dialog Loading
 Dialogs are defined in XML files and loaded at runtime via the `DialogLoader`.
@@ -33,8 +33,8 @@ Dialogs are defined in XML files and loaded at runtime via the `DialogLoader`.
 
 ## 6. UI State Management
 UI visibility and state are tracked through various dedicated resources:
-- `UiStateWindows`: Manages core windows like `inventory_open`, `skill_tree_open`, and `settings_open` (`src/ui/mod.rs:56`).
-- `UiStateDebugWindows`: Controls the visibility of various debugging tools (`src/ui/mod.rs:102`).
+- `UiStateWindows`: Manages core windows like `inventory_open`, `skill_tree_open`, and `settings_open` (`src/ui/mod.rs:58`).
+- `UiStateDebugWindows`: Controls the visibility of various debugging tools (`src/ui/ui_debug_window_system.rs:30`).
 - `UiStateAdminMenu`: Manages the administrative interface.
 - `UiStateDragAndDrop`: Tracks current dragged items for inventory and store interactions (`src/ui/ui_drag_and_drop_system.rs:12`).
 
@@ -54,7 +54,7 @@ UI visibility and state are tracked through various dedicated resources:
 Elements that must appear in the 3D world are rendered using specialized techniques:
 - **Name Tags**: Uses `world_to_viewport` to project 3D positions into 2D screen space, then renders an egui `Tooltip` at that location (`src/ui/ui_character_select_name_tag_system.rs:19`).
 - **Chat Bubbles**: Temporary text overlays positioned above entities.
-- **Item Drop Names**: Uses `world_to_ndc` to calculate screen positions and renders text using `egui::LayerPainter` on a background layer (`src/ui/ui_item_drop_name_system.rs:44`).
+- **Item Drop Names**: Uses `world_to_ndc` to calculate screen positions and renders text using `egui::LayerPainter` on a background layer (`src/ui/ui_item_drop_name_system.rs:48`).
 
 ## 9. Code Examples
 
@@ -73,7 +73,7 @@ impl DrawWidget for Widget {
 
 ### Dialog Loading via XML
 ```rust
-// src/ui/dialog_loader.rs:61
+// src/ui/dialog_loader.rs:39
 let dialog: Dialog = quick_xml::de::from_str(bytes_str)?;
 ```
 
@@ -89,14 +89,14 @@ if let Ok(screen_pos) = camera.world_to_viewport(
 
 ## 10. Troubleshooting
 - **UI Not Rendering**: Verify that the system is using `EguiContexts` and that a valid `EguiPrimaryContextPass` is present in the render graph.
-- **Text/Font Issues**: Check `UiResources` for correct font loading and ensure `bevy_egui` is correctly initialized with the target scale.
+- **Text/Font Issues**: Verify the font registration in `setup_egui_fonts` (`src/lib.rs:2041`, embeds `fonts/Ubuntu-M.ttf`) and ensure `bevy_egui` is correctly initialized.
 - **Input Conflicts**: When UI elements are overlapping game world interactions, ensure `egui`'s `wants_pointer_input()` or `wants_keyboard_input()` is checked before processing game-world input.
 
 ## 11. Source File References
-- **Bevy_egui Source**: `C:\Users\vicha\RustroverProjects\bevvy-collection\bev_egui-0.39.1\src\`
+- **Bevy_egui Source**: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy_egui-0.39.1\src\`
 - **Project Source**:
     - `src/ui/mod.rs`: Core module and state definitions.
     - `src/ui/widgets/mod.rs`: Widget enum and traits.
     - `src/ui/dialog_loader.rs`: XML asset loading.
-    - `src/ui/name_tag.rs`: (See `ui_character_select_name_tag_system.rs`) 3D positioned UI.
-    - `src/ui/chat_bubble.rs`: (See `ui_chatbox_system.rs`) Chat interface.
+    - `src/ui/ui_character_select_name_tag_system.rs`: Character-select screen name tags; in-world name tags are rendered by `src/systems/name_tag_system.rs`.
+    - `src/systems/chat_bubble_spawn_system.rs`: Chat bubble rendering (temporary egui overlays above entities); the chat interface itself is `src/ui/ui_chatbox_system.rs`.

@@ -3,6 +3,7 @@ use bevy::prelude::*;
 use bevy::render::alpha::AlphaMode;
 use bevy_mesh::{Indices, PrimitiveTopology};
 use rose_game_common::components::MoveMode;
+use rose_game_common::messages::client::ClientMessage;
 use std::collections::HashSet;
 
 use crate::components::{
@@ -12,7 +13,7 @@ use crate::components::{
 use crate::events::{BoardBoatEvent, ChatboxEvent, DisembarkBoatEvent};
 use crate::graphics::{GraphicsSettings, SailQuality};
 use crate::render::underwater_effect::{UnderwaterVolumes, WaterVolume};
-use crate::resources::CurrentZone;
+use crate::resources::{CurrentZone, GameConnection};
 use crate::zone_loader::ZoneLoaderAsset;
 
 pub(crate) const OCEAN_ZONE_ID: u16 = 200;
@@ -149,6 +150,7 @@ pub fn boat_toggle_system(
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     underwater_volumes: Res<UnderwaterVolumes>,
     graphics_settings: Res<GraphicsSettings>,
+    game_connection: Option<Res<GameConnection>>,
     mut query: Query<
         (
             Entity,
@@ -221,6 +223,17 @@ pub fn boat_toggle_system(
                     }
 
                     set_character_model_visibility(&mut commands, character_model, false);
+
+                    if let Some(game_connection) = game_connection.as_ref() {
+                        game_connection
+                            .client_message_tx
+                            .send(ClientMessage::DisembarkBoat {
+                                x: shore_position.x,
+                                y: shore_position.y,
+                                z: shore_position.z,
+                            })
+                            .ok();
+                    }
                 } else {
                     chatbox_events.write(ChatboxEvent::System(
                         "Cannot disembark here. Sail closer to a dock or shore.".to_string(),
@@ -309,6 +322,17 @@ pub fn boat_toggle_system(
                 commands.entity(entity).add_child(model_root);
 
                 set_character_model_visibility(&mut commands, character_model, true);
+
+                if let Some(game_connection) = game_connection.as_ref() {
+                    game_connection
+                        .client_message_tx
+                        .send(ClientMessage::BoardBoat {
+                            x: position.position.x,
+                            y: position.position.y,
+                            z: position.position.z,
+                        })
+                        .ok();
+                }
             }
         }
     }
@@ -434,18 +458,31 @@ fn create_flat_shaded_mesh(vertices: &[[f32; 3]], faces: &[[usize; 3]]) -> Mesh 
     mesh
 }
 
+/// Scale applied to the boat visual root so the boat reads as a full-sized
+/// sailboat next to the player character. All part offsets scale with it.
+pub const BOAT_VISUAL_SCALE: f32 = 1.6;
+
 fn create_hull_mesh() -> Mesh {
+    // Stations from stern (+Z) to bow (-Z):
+    // (z, half_beam, sheer_y, chine_half, chine_y, keel_y)
+    // The sheer is low amidships and rises toward bow and stern; the keel
+    // rocks up toward the ends and the beam tapers to a flared bow and a
+    // flat transom.
     let stations = [
-        (1.95, 0.44, 0.58, -0.25, -0.50),
-        (0.75, 0.74, 0.84, -0.31, -0.64),
-        (-0.75, 0.68, 0.78, -0.30, -0.59),
-        (-2.10, 0.10, 0.18, -0.22, -0.36),
+        (2.05, 0.58, 0.42, 0.42, -0.18, -0.48), // transom (stern)
+        (1.45, 0.78, 0.30, 0.56, -0.24, -0.58),
+        (0.85, 0.98, 0.24, 0.72, -0.28, -0.64),
+        (0.25, 1.08, 0.22, 0.80, -0.30, -0.66), // max beam amidships
+        (-0.35, 1.06, 0.24, 0.78, -0.29, -0.65),
+        (-0.95, 0.92, 0.28, 0.68, -0.26, -0.60),
+        (-1.55, 0.66, 0.36, 0.48, -0.22, -0.52),
+        (-2.10, 0.30, 0.50, 0.20, -0.16, -0.40), // raked bow
     ];
 
     let mut vertices = Vec::with_capacity(stations.len() * 5);
-    for (z, top_half, chine_half, chine_y, keel_y) in stations {
-        vertices.push([-top_half, 0.12, z]);
-        vertices.push([top_half, 0.12, z]);
+    for (z, top_half, sheer_y, chine_half, chine_y, keel_y) in stations {
+        vertices.push([-top_half, sheer_y, z]);
+        vertices.push([top_half, sheer_y, z]);
         vertices.push([-chine_half, chine_y, z]);
         vertices.push([chine_half, chine_y, z]);
         vertices.push([0.0, keel_y, z]);
@@ -480,13 +517,15 @@ fn create_hull_mesh() -> Mesh {
         ]);
     }
 
+    // Flat transom cap at the stern (faces outward, +Z).
+    faces.extend_from_slice(&[[0, 4, 2], [0, 1, 4], [1, 3, 4]]);
+
+    // Pointed wedge cap at the bow (faces outward, -Z).
+    let last = (stations.len() - 1) * 5;
     faces.extend_from_slice(&[
-        [0, 4, 2],
-        [0, 1, 4],
-        [1, 3, 4],
-        [15, 17, 19],
-        [15, 19, 16],
-        [16, 19, 18],
+        [last, last + 2, last + 4],
+        [last, last + 4, last + 1],
+        [last + 1, last + 4, last + 3],
     ]);
 
     create_flat_shaded_mesh(&vertices, &faces)
@@ -519,7 +558,7 @@ pub(crate) fn spawn_boat_visual(
     sail_quality: SailQuality,
 ) -> Entity {
     let hull_mesh = meshes.add(create_hull_mesh());
-    let deck_mesh = meshes.add(Mesh::from(Cuboid::new(1.22, 0.08, 2.65)));
+    let deck_mesh = meshes.add(Mesh::from(Cuboid::new(1.90, 0.08, 2.90)));
     let cockpit_mesh = meshes.add(Mesh::from(Cuboid::new(0.74, 0.07, 0.70)));
     let cabin_mesh = meshes.add(Mesh::from(Cuboid::new(0.64, 0.32, 0.68)));
     let cabin_roof_mesh = meshes.add(Mesh::from(Cuboid::new(0.78, 0.08, 0.82)));
@@ -530,7 +569,7 @@ pub(crate) fn spawn_boat_visual(
     let stay_front_mesh = meshes.add(Mesh::from(Cuboid::new(0.024, 0.024, 3.0)));
     let stay_back_mesh = meshes.add(Mesh::from(Cuboid::new(0.024, 0.024, 3.35)));
     let keel_mesh = meshes.add(Mesh::from(Cuboid::new(0.16, 0.72, 1.62)));
-    let rail_mesh = meshes.add(Mesh::from(Cuboid::new(0.045, 0.08, 2.55)));
+    let rail_mesh = meshes.add(Mesh::from(Cuboid::new(0.045, 0.08, 3.10)));
     let batten_mesh = meshes.add(Mesh::from(Cuboid::new(0.028, 0.028, 0.80)));
     let (main_sail_mesh_data, main_sail_base_positions, main_sail_subdivisions) =
         create_sail_mesh_for_quality(1.75, 2.65, sail_quality);
@@ -601,7 +640,7 @@ pub(crate) fn spawn_boat_visual(
 
     let root = commands
         .spawn((
-            Transform::default(),
+            Transform::from_scale(Vec3::splat(BOAT_VISUAL_SCALE)),
             GlobalTransform::default(),
             Visibility::Inherited,
             InheritedVisibility::default(),
@@ -685,13 +724,13 @@ pub(crate) fn spawn_boat_visual(
         commands,
         rail_mesh.clone(),
         hull_trim_mat.clone(),
-        Transform::from_xyz(-0.58, 0.28, 0.16),
+        Transform::from_xyz(-0.92, 0.28, 0.16),
     );
     let rail_starboard_entity = spawn_visual_part(
         commands,
         rail_mesh,
         hull_trim_mat.clone(),
-        Transform::from_xyz(0.58, 0.28, 0.16),
+        Transform::from_xyz(0.92, 0.28, 0.16),
     );
 
     let sail_entity = commands

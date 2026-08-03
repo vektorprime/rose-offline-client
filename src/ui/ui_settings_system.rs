@@ -99,7 +99,7 @@ impl Default for PostProcessingSettings {
             bloom_enabled: true,
             bloom_intensity: 0.5,
             ssao_enabled: true,
-            dof_enabled: false,
+            dof_enabled: true,
             volumetric_fog_enabled: true,
             color_grading_enabled: false,
         }
@@ -161,7 +161,7 @@ pub struct DepthOfFieldSettings {
 impl Default for DepthOfFieldSettings {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             mode: DepthOfFieldMode::Bokeh,
             focal_distance: 10.0,
             aperture_f_stops: 3.3,
@@ -571,9 +571,9 @@ fn render_clouds_page(ui: &mut egui::Ui, volumetric_cloud_settings: &mut Volumet
             settings_checkbox(ui, "Enabled:", &mut volumetric_cloud_settings.enabled, "");
             settings_slider(ui, "Cloud Count:", &mut volumetric_cloud_settings.cloud_count, 10..=200, Some("clouds"));
             settings_slider(ui, "Cluster Size Min:", &mut volumetric_cloud_settings.cluster_size_min, 2..=5, Some("blobs"));
-            settings_slider(ui, "Cluster Size Max:", &mut volumetric_cloud_settings.cluster_size_max, 2..=5, Some("blobs"));
-            settings_slider(ui, "Radius Min:", &mut volumetric_cloud_settings.cloud_radius_min, 10.0..=200.0, Some("units"));
-            settings_slider(ui, "Radius Max:", &mut volumetric_cloud_settings.cloud_radius_max, 20.0..=300.0, Some("units"));
+            settings_slider(ui, "Cluster Size Max:", &mut volumetric_cloud_settings.cluster_size_max, 2..=8, Some("blobs"));
+            settings_slider(ui, "Radius Min:", &mut volumetric_cloud_settings.cloud_radius_min, 10.0..=400.0, Some("units"));
+            settings_slider(ui, "Radius Max:", &mut volumetric_cloud_settings.cloud_radius_max, 20.0..=700.0, Some("units"));
             settings_slider(ui, "Height Min:", &mut volumetric_cloud_settings.cloud_height_min, 100.0..=1000.0, Some("units"));
             settings_slider(ui, "Height Max:", &mut volumetric_cloud_settings.cloud_height_max, 200.0..=1500.0, Some("units"));
             settings_slider(ui, "Spawn Radius:", &mut volumetric_cloud_settings.cloud_spawn_radius, 500.0..=10000.0, Some("units"));
@@ -764,7 +764,7 @@ fn render_water_page(ui: &mut egui::Ui, water_settings: &mut WaterSettings) {
 
             // === NEW DEPTH SETTINGS ===
             settings_slider(ui, "Min Depth:", &mut water_settings.min_depth, 0.1..=5.0, Some("m"));
-            settings_slider(ui, "Max Depth:", &mut water_settings.max_depth, 1.0..=20.0, Some("m"));
+            settings_slider(ui, "Max Depth:", &mut water_settings.max_depth, 1.0..=40.0, Some("m"));
             settings_slider(ui, "Shallow Threshold:", &mut water_settings.shallow_threshold, 0.5..=10.0, Some("m"));
             settings_slider(ui, "Bottom Visibility:", &mut water_settings.bottom_visibility, 0.0..=1.0, None);
             settings_slider(ui, "Wave Amplitude:", &mut water_settings.wave_amplitude, 0.1..=2.0, None);
@@ -773,31 +773,42 @@ fn render_water_page(ui: &mut egui::Ui, water_settings: &mut WaterSettings) {
             settings_slider(ui, "Caustics Intensity:", &mut water_settings.caustics_intensity, 0.0..=1.0, None);
             settings_slider(ui, "Caustics Scale:", &mut water_settings.caustics_scale, 0.01..=1.0, None);
             settings_slider(ui, "Caustics Speed:", &mut water_settings.caustics_speed, 0.1..=2.0, None);
+
+            // === PLANAR REFLECTION SETTINGS ===
+            settings_checkbox(ui, "Reflections:", &mut water_settings.reflection_enabled, "Enabled");
+            settings_slider(ui, "Reflection Resolution:", &mut water_settings.reflection_scale, 0.25..=1.0, None);
+            settings_checkbox(ui, "Debug Show Reflection:", &mut water_settings.debug_show_reflection, "Show raw reflection texture");
         });
 
     ui.separator();
-    ui.label("Tip: Depth settings control shallow-to-deep water color transition. Wave settings control surface detail.");
+    ui.label("Tip: Depth settings control shallow-to-deep water color transition. Wave settings control surface detail. Reflections render the scene from a mirrored camera (higher resolution = higher cost).");
 }
 
 fn render_fish_page(ui: &mut egui::Ui, fish_settings: &mut FishSettings) {
     egui::Grid::new("fish_settings")
         .num_columns(2)
         .show(ui, |ui| {
-            settings_slider(ui, "Fish per Water:", &mut fish_settings.fish_count_per_water, 0..=200, None);
+            settings_slider(ui, "Fish per 1000 m²:", &mut fish_settings.fish_per_1000_sqm, 0.0..=500.0, None);
+            settings_slider(ui, "Min Fish per Water:", &mut fish_settings.min_fish_per_water, 0..=100, None);
+            settings_slider(ui, "Max Fish per Water:", &mut fish_settings.max_fish_per_water, 0..=1000, None);
             settings_slider(ui, "Min Depth:", &mut fish_settings.min_depth, 0.1..=10.0, Some("m"));
             settings_slider(ui, "Max Depth:", &mut fish_settings.max_depth, 0.1..=10.0, Some("m"));
             settings_slider(ui, "Min Speed:", &mut fish_settings.min_speed, 0.1..=5.0, None);
             settings_slider(ui, "Max Speed:", &mut fish_settings.max_speed, 0.1..=5.0, None);
             settings_slider(ui, "Boundary Margin:", &mut fish_settings.boundary_margin, 0.5..=1.0, None);
-            settings_slider(ui, "Target Reach Dist:", &mut fish_settings.target_reach_distance, 0.5..=5.0, Some("m"));
+            settings_slider(ui, "Target Reach Dist:", &mut fish_settings.target_reach_distance, 0.1..=5.0, Some("m"));
+            settings_slider(ui, "Simulation Distance:", &mut fish_settings.simulation_distance, 10.0..=500.0, Some("m"));
         });
 
     // Clamp min/max values to prevent crashes
     fish_settings.max_depth = fish_settings.max_depth.max(fish_settings.min_depth);
     fish_settings.max_speed = fish_settings.max_speed.max(fish_settings.min_speed);
+    fish_settings.max_fish_per_water = fish_settings
+        .max_fish_per_water
+        .max(fish_settings.min_fish_per_water);
 
     ui.separator();
-    ui.label("Tip: Fish settings apply when entering a new zone. Set fish count to 0 to disable.");
+    ui.label("Tip: Fish count scales with water plane area (density × area, clamped to min/max). Settings apply when entering a new zone. Set density to 0 to disable fish.");
 }
 
 fn render_birds_page(ui: &mut egui::Ui, bird_settings: &mut BirdSettings) {

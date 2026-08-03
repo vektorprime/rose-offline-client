@@ -17,6 +17,10 @@ This folder contains documentation of issues encountered during development and 
 | [model-viewer.md](model-viewer.md) | Bundle duplicates, runtime panics |
 | [performance-memory.md](performance-memory.md) | GPU memory leaks, buffer management |
 | [blood-effects.md](blood-effects.md) | Terrain blood decal visibility, orientation, and wound overlay tuning |
+| [combat-sync.md](combat-sync.md) | Delayed monster death, client/server attack range mismatch |
+| [flying.md](flying.md) | /fly flight system, server-authoritative movement echo, collision self-intersection |
+| [login-sky-determinism.md](login-sky-determinism.md) | Random login-screen day/night sky, atmosphere toggle race |
+| [personal-store-drag-buy.md](personal-store-drag-buy.md) | Personal store drag-to-buy, stack quantity selection |
 
 ## Quick Navigation by Bevy Version
 

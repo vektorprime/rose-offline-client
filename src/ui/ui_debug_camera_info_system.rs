@@ -1,4 +1,4 @@
-use bevy::prelude::{Camera, Query, ResMut, Transform, With};
+use bevy::prelude::{Camera, Query, ResMut, Transform, With, Without};
 use bevy_egui::{egui, EguiContexts};
 use dolly::prelude::{Arm, YawPitch};
 
@@ -15,7 +15,7 @@ pub fn ui_debug_camera_info_system(
             Option<&mut FreeCamera>,
             Option<&mut OrbitCamera>,
         ),
-        With<Camera>,
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
     >,
     mut ui_state_debug_windows: ResMut<UiStateDebugWindows>,
 ) {

@@ -33,7 +33,10 @@ pub fn keyboard_shortcuts_system(
     selected_entities: Query<Entity, With<SelectedInEditor>>,
     transforms: Query<&GlobalTransform>,
     zone_objects: Query<&ZoneObject>,
-    camera_query: Query<Entity, With<Camera3d>>,
+    camera_query: Query<
+        Entity,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     free_camera_query: Query<&FreeCamera>,
 ) {
     // Don't process if editor is disabled
@@ -115,7 +118,10 @@ pub fn keyboard_shortcuts_system(
 /// Handle Tab - Toggle free camera on/off
 fn handle_toggle_free_camera(
     commands: &mut Commands,
-    camera_query: &Query<Entity, With<Camera3d>>,
+    camera_query: &Query<
+        Entity,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     free_camera_query: &Query<&FreeCamera>,
 ) {
     for camera_entity in camera_query.iter() {

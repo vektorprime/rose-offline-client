@@ -1,4 +1,4 @@
-//! Procedural Starry Sky Material for Bevy 0.16
+//! Procedural Starry Sky Material for Bevy 0.18
 //!
 //! This module implements a custom material that renders:
 //! - Procedural stars with multiple density layers
@@ -78,7 +78,7 @@ impl Default for StarrySkySettings {
 }
 
 /// Custom material for procedural starry sky rendering
-/// Manual AsBindGroup implementation for Bevy 0.17 compatibility
+/// Manual AsBindGroup implementation (custom bind group layout)
 #[derive(Asset, TypePath, Clone, Debug)]
 pub struct StarrySkyMaterial {
     /// Current game time for twinkling animation
@@ -363,7 +363,7 @@ pub fn update_starry_sky_system(
 
 /// System to make the moon light follow the camera and point in the moon direction
 pub fn moon_light_follow_camera_system(
-    camera_query: Query<&GlobalTransform, With<Camera>>,
+    camera_query: Query<&GlobalTransform, (With<Camera>, Without<crate::render::WaterReflectionCamera>)>,
     mut moon_query: Query<&mut Transform, With<MoonLight>>,
     starry_sky_settings: Res<StarrySkySettings>,
 ) {
@@ -459,7 +459,13 @@ impl Default for AtmosphereState {
 pub fn toggle_atmosphere_based_on_time(
     zone_time: Option<Res<crate::resources::ZoneTime>>,
     mut atmosphere_state: ResMut<AtmosphereState>,
-    camera_query: Query<Entity, With<bevy::prelude::Camera3d>>,
+    camera_query: Query<
+        Entity,
+        (
+            With<bevy::prelude::Camera3d>,
+            Without<crate::render::WaterReflectionCamera>,
+        ),
+    >,
     mut commands: Commands,
     mut scattering_mediums: ResMut<Assets<bevy::pbr::ScatteringMedium>>,
 ) {
@@ -496,10 +502,14 @@ pub fn toggle_atmosphere_based_on_time(
 
     // Only make changes if state has changed
     if atmosphere_state.enabled != should_enable_atmosphere {
-        atmosphere_state.enabled = should_enable_atmosphere;
-
-        // Find the camera entity and toggle atmosphere components
+        // Find the camera entity and toggle atmosphere components.
+        // IMPORTANT: the state flag is only updated AFTER the camera query
+        // succeeds. If the query fails (e.g. no camera spawned yet), the flag
+        // is left unchanged so this system retries next frame instead of
+        // permanently desyncing the flag from the actual camera components.
         if let Ok(camera_entity) = camera_query.single() {
+            atmosphere_state.enabled = should_enable_atmosphere;
+
             if should_enable_atmosphere {
                 // Re-add atmosphere components
                 commands.entity(camera_entity).insert((

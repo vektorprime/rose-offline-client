@@ -41,12 +41,12 @@ winit Events → Bevy Input Events → ButtonInput Resources → Game Systems
 
 ### Core Input Types
 
-### ElementState
+### ButtonState
 
-Represents the press state of an input element.
+Represents the press state of an input element. (Formerly named `ElementState`; it was renamed to `ButtonState` in Bevy 0.15, so `ElementState` no longer exists in Bevy 0.18.1.)
 
 ```rust
-pub enum ElementState {
+pub enum ButtonState {
     Pressed,
     Released,
 }
@@ -54,7 +54,7 @@ pub enum ElementState {
 
 **Source**: `bevy-0.18.1/crates/bevy_input/src/lib.rs:179-191`
 
-### ButtonState
+### ButtonState in Input Events
 
 Bevy's enum for button press states, used in input events.
 
@@ -321,8 +321,9 @@ egui_ctx.ctx_mut().unwrap().wants_keyboard_input()
 // Check if egui wants pointer (mouse) input
 egui_ctx.ctx_mut().unwrap().wants_pointer_input()
 
-// Check if egui wants any pointer input
-egui_wants_any_pointer_input()
+// Run conditions for whole systems — skip them while egui is using input
+run_if(not(egui_wants_any_pointer_input))
+run_if(not(egui_wants_any_keyboard_input))
 ```
 
 ### Input Guard Pattern
@@ -347,7 +348,7 @@ pub fn game_input_system(
 }
 ```
 
-**Example in codebase**: `src/systems/game_keyboard_input_system.rs:40-43`
+**Example in codebase**: `src/systems/game_keyboard_input_system.rs:53-55`
 
 ---
 
@@ -388,8 +389,8 @@ pub fn game_keyboard_input_system(
 ```
 
 **Examples**:
-- `src/systems/game_keyboard_input_system.rs:37-39`
-- `src/systems/game_mouse_input_system.rs:55-57`
+- `src/systems/game_keyboard_input_system.rs:49-51`
+- `src/systems/game_mouse_input_system.rs:64-66`
 
 ### State-Specific Input
 
@@ -438,23 +439,27 @@ pub fn game_keyboard_input_system(
 
 | Action | Key(s) | System |
 |--------|--------|--------|
-| Undo | Ctrl+Z | `undo_system` |
-| Redo | Ctrl+Y | `undo_system` |
-| Redo (Alt) | Ctrl+Shift+Z | `undo_system` |
+| Undo | Ctrl+Z | `apply_undo_system` |
+| Redo | Ctrl+Y | `apply_undo_system` |
+| Redo (Alt) | Ctrl+Shift+Z | `apply_undo_system` |
 | Duplicate | Ctrl+D | `keyboard_shortcuts_system` |
-| Select All | Ctrl+A | `keyboard_shortcuts_system` |
-| Select All (Alt) | Ctrl+Shift+A | `keyboard_shortcuts_system` |
-| Find | F | `keyboard_shortcuts_system` |
-| Grid Toggle | G | `keyboard_shortcuts_system` |
-| New | Ctrl+N | `keyboard_shortcuts_system` |
-| Open | Ctrl+O | `keyboard_shortcuts_system` |
+| Deselect All | Ctrl+Shift+A | `keyboard_shortcuts_system` |
+| Grid Snap Toggle | G | `keyboard_shortcuts_system` |
+| New (not implemented) | Ctrl+N | `keyboard_shortcuts_system` |
+| Open (not implemented) | Ctrl+O | `keyboard_shortcuts_system` |
 | Delete Selection | Delete / Ctrl+Backspace | `keyboard_shortcuts_system` |
-| Escape Selection | Escape | `keyboard_shortcuts_system` |
-| Focus Mode | Tab | `keyboard_shortcuts_system` |
-| Gizmo Mode (Translate) | G (Ctrl+G) | `transform_gizmo_system` |
-| Gizmo Mode (Rotate) | E | `transform_gizmo_system` |
-| Gizmo Mode (Scale) | R | `transform_gizmo_system` |
-| Gizmo Mode (None) | Q | `transform_gizmo_system` |
+| Deselect All | Escape | `keyboard_shortcuts_system` |
+| Toggle Free Camera | Tab | `keyboard_shortcuts_system` |
+| Mode: Select | Q | `keyboard_shortcuts_system` |
+| Mode: Rotate | E | `keyboard_shortcuts_system` |
+| Mode: Scale | R | `keyboard_shortcuts_system` |
+| Mode: Add | V | `keyboard_shortcuts_system` |
+| Mode: Delete | X | `keyboard_shortcuts_system` |
+
+**Notes**:
+- There is no Translate-mode hotkey (W is intentionally reserved for FreeCamera movement).
+- Mode switching (Q/E/R/V/X) is handled by `keyboard_shortcuts_system` (`handle_mode_switches`); `transform_gizmo_system` only manipulates transforms when a gizmo drag is active.
+- `Ctrl+Z` / `Ctrl+Y` / `Ctrl+Shift+Z` are handled by `apply_undo_system` in `src/map_editor/systems/property_update_system.rs`, not by `keyboard_shortcuts_system`.
 
 ### Free Camera Controls
 
@@ -684,7 +689,7 @@ Update
 
 - `ButtonInput` operations are O(1)~ for single key checks
 - `any_pressed()` and `all_pressed()` are O(m)~ where m is the number of inputs checked
-- Event readers clear events after reading - read early if multiple systems need same events
+- Each `MessageReader` tracks its own cursor, so multiple systems can read the same messages independently; unread messages older than two updates are dropped
 - Use `just_pressed()` for one-time actions, `pressed()` for continuous actions
 
 ### Common Pitfalls
@@ -692,7 +697,7 @@ Update
 1. **Not checking egui input**: Always check `wants_keyboard_input()` or `wants_pointer_input()` before processing game input
 2. **Wrong AppState**: Ensure input systems only run in appropriate AppState
 3. **Cursor grab mode**: Check cursor grab mode when expecting mouse input
-4. **Event consumption**: MouseMotion and MouseWheel events are consumed by first reader
+4. **Message lifetime**: MouseMotion and MouseWheel messages are dropped after two updates if unread — read them every frame that needs them
 5. **Just pressed timing**: `just_pressed()` is only true for one frame - don't delay processing
 
 ---
@@ -701,35 +706,35 @@ Update
 
 ### Bevy 0.18 Migration Issues
 
-#### Issue 1: `MessageReader` Deprecation
+#### Issue 1: `EventReader` Renamed to `MessageReader`
 
-**Symptom**: Compilation errors about `MessageReader` being deprecated or removed.
+**Symptom**: Compilation errors about `EventReader`, `Events`, or `EventWriter` not being found.
 
-**Cause**: Bevy 0.18 deprecated `MessageReader` in favor of `EventReader`.
+**Cause**: Bevy 0.18 renamed the buffered-event system: `Event` → `Message`, `Events` → `Messages`, `EventReader` → `MessageReader`, `EventWriter` → `MessageWriter`. The name `Event` is now used for observer triggers (`#[derive(Event)]` + `World::trigger`), not for buffered events. The old event names no longer exist in Bevy 0.18.1.
 
-**Solution**: Replace all `MessageReader` with `EventReader`:
+**Solution**: Replace all `EventReader` with `MessageReader`:
 
 ```rust
 // Bevy 0.17 (old)
-use bevy::prelude::MessageReader;
-fn my_system(mut mouse_motion: MessageReader<MouseMotion>) {
-    for event in mouse_motion.read() {
-        // ...
-    }
-}
-
-// Bevy 0.18 (new)
 use bevy::prelude::EventReader;
 fn my_system(mut mouse_motion: EventReader<MouseMotion>) {
     for event in mouse_motion.read() {
         // ...
     }
 }
+
+// Bevy 0.18 (new)
+use bevy::prelude::MessageReader;
+fn my_system(mut mouse_motion: MessageReader<MouseMotion>) {
+    for event in mouse_motion.read() {
+        // ...
+    }
+}
 ```
 
-**Affected files**: Any system using `MessageReader<MouseMotion>`, `MessageReader<MouseWheel>`, etc.
+**Affected files**: Any system using `EventReader<MouseMotion>`, `EventReader<MouseWheel>`, etc. The project codebase already uses `MessageReader`/`MessageWriter` throughout (e.g. `src/systems/game_keyboard_input_system.rs:46-47`).
 
-**Source**: `bevy-0.18.1/crates/bevy_input/src/lib.rs` - Plugin setup now uses `EventReader` internally
+**Source**: `bevy-0.18.1/crates/bevy_ecs/src/message/` - `Message`, `MessageReader`, `MessageWriter` types
 
 ---
 
@@ -795,17 +800,17 @@ if ctx.wants_keyboard_input() && !ctx.wants_text_input() {
 }
 ```
 
-**Alternative**: Use `bevy_egui`'s `EguiSet` to control execution order:
+**Alternative**: Use `bevy_egui`'s system sets to control execution order. Note that `EguiSet` no longer exists in bevy_egui 0.39 — the input-processing sets are `EguiPreUpdateSet` (InitContexts, ProcessInput, BeginPass) and `EguiPostUpdateSet` (EndPass, ProcessOutput, PostProcessOutput):
 
 ```rust
-// In app setup
+// In app setup — run after egui has processed its input in PreUpdate
 app.add_systems(
     Update,
-    game_input_system.in_set(EguiSet::Post) // Run after egui
+    game_input_system.after(EguiPreUpdateSet::ProcessInput)
 );
 ```
 
-**Source**: `bevy_egui-0.39.1/src/lib.rs` - EguiSet enum for ordering
+**Source**: `bevy_egui-0.39.1/src/lib.rs:924-970` - `EguiPreUpdateSet` / `EguiPostUpdateSet` enums
 
 ---
 
@@ -834,7 +839,7 @@ fn game_mouse_input_system(
 }
 ```
 
-**Example in codebase**: `src/systems/game_mouse_input_system.rs:55-57`
+**Example in codebase**: `src/systems/game_mouse_input_system.rs:83-85`
 
 ---
 
@@ -867,7 +872,7 @@ fn camera_system(
 
 **Symptom**: Ctrl+C works once but not on subsequent presses.
 
-**Cause**: Checking `just_pressed` for modifier keys consumes the state.
+**Cause**: `just_pressed()` is only true on the exact frame the key was pressed — the modifier key is rarely pressed on the same frame as the action key, so `just_pressed()` on a modifier only works on the very first press.
 
 **Solution**: Use `pressed()` for modifier keys, `just_pressed()` for the action key:
 
@@ -897,17 +902,21 @@ if ctrl_pressed && keyboard.just_pressed(KeyCode::KeyC) {
 **Solution**: Check window focus state:
 
 ```rust
+use bevy::prelude::*;
+
 fn guarded_input_system(
-    windows: Query<&Window>,
+    windows: Query<&Window, With<PrimaryWindow>>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
-    let primary_window = windows.get(1).unwrap(); // Primary window has index 1
-    
+    let Ok(primary_window) = windows.single() else {
+        return;
+    };
+
     // Only process input if window has focus
     if !primary_window.focused {
         return;
     }
-    
+
     // Process input
     if keyboard.just_pressed(KeyCode::KeyW) {
         // ...
@@ -915,7 +924,7 @@ fn guarded_input_system(
 }
 ```
 
-**Note**: Window entity index 1 is the primary window in Bevy 0.18
+**Note**: Query the primary window with `With<PrimaryWindow>` and `single()`; there is no fixed entity index for the primary window.
 
 ---
 
@@ -925,53 +934,52 @@ fn guarded_input_system(
 
 **Cause**: Touch coordinates are in window space, need conversion to world space.
 
-**Solution**: Use camera's `viewport_to_world` with touch position:
+**Solution**: Use camera's `viewport_to_world_2d` with the touch position from the `TouchInput` message (the `Touch` struct is only a state snapshot stored in the `Touches` resource and has no `phase` field):
 
 ```rust
 fn touch_input_system(
-    mut touch_events: EventReader<Touch>,
+    mut touch_events: MessageReader<TouchInput>,
     query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    query_window: Query<&Window, With<PrimaryWindow>>,
 ) {
-    let (camera, camera_transform) = query_camera.single().unwrap();
-    let window = query_window.single().unwrap();
-    
+    let Ok((camera, camera_transform)) = query_camera.single() else {
+        return;
+    };
+
     for event in touch_events.read() {
         if event.phase == TouchPhase::Started {
             let touch_position = event.position;
-            
-            // Convert to normalized device coordinates
-            let ndc = window.physical_position() + window.physical_size() * 0.5;
-            
-            // Create ray from touch position
-            if let Ok(ray) = camera.viewport_to_world_2d(camera_transform, touch_position) {
-                // Use ray for interaction
+
+            // Convert touch position to world space
+            if let Ok(world_position) =
+                camera.viewport_to_world_2d(camera_transform, touch_position)
+            {
+                // Use world position for interaction
             }
         }
     }
 }
 ```
 
-**Source**: `bevy-0.18.1/crates/bevy_input/src/touch.rs` - Touch event structure
+**Source**: `bevy-0.18.1/crates/bevy_input/src/touch.rs` - `TouchInput` event structure (touch.rs:51-65)
 
 ---
 
-#### Issue 9: Gamepad Button Mapping Changes
+#### Issue 9: Gamepad Button Type Renamed
 
-**Symptom**: Gamepad buttons don't match expected actions after Bevy 0.18 upgrade.
+**Symptom**: Compilation errors about `GamepadButtonType` not being found.
 
-**Cause**: Bevy 0.18 updated gamepad button mappings to match industry standards.
+**Cause**: Bevy renamed `GamepadButtonType` to `GamepadButton`; the old name no longer exists in Bevy 0.18.1. The `South`/`East` variants are unchanged and map to the A/Cross and B/Circle buttons respectively.
 
 **Solution**: Update gamepad button references:
 
 ```rust
-// Bevy 0.17 (old)
+// Old name (Bevy <= 0.16)
 GamepadButtonType::South      // A button (Xbox) / Cross (PS)
 GamepadButtonType::East       // B button (Xbox) / Circle (PS)
 
-// Bevy 0.18 (new) - same names, but verify mapping
-GamepadButtonType::South
-GamepadButtonType::East
+// Bevy 0.18 (new)
+GamepadButton::South
+GamepadButton::East
 
 // Always test with actual controller after upgrade
 ```
@@ -980,19 +988,19 @@ GamepadButtonType::East
 
 ```rust
 fn debug_gamepad_system(
-    mut gamepad_events: EventReader<GamepadButtonEvent>,
+    mut gamepad_events: MessageReader<GamepadButtonChangedEvent>,
 ) {
-    for event in game_events.read() {
-        println!("Gamepad {}: {:?} - {:?}", 
-            event.gamepad, 
-            event.button_type, 
+    for event in gamepad_events.read() {
+        println!("Gamepad {}: {:?} - {:?}",
+            event.gamepad,
+            event.button,
             event.state
         );
     }
 }
 ```
 
-**Source**: `bevy-0.18.1/crates/bevy_input/src/gamepad.rs` - Gamepad button types
+**Source**: `bevy-0.18.1/crates/bevy_input/src/gamepad.rs:580-588` - `GamepadButton` enum
 
 ---
 

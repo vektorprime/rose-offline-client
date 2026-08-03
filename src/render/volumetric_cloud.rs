@@ -108,22 +108,22 @@ impl Default for VolumetricCloudSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            cloud_count: 120,
-            cluster_size_min: 2,
-            cluster_size_max: 5,
-            cloud_radius_min: 180.0,
-            cloud_radius_max: 380.0,
+            cloud_count: 60,
+            cluster_size_min: 3,
+            cluster_size_max: 8,
+            cloud_radius_min: 240.0,
+            cloud_radius_max: 520.0,
             cloud_height_min: 300.0,
             cloud_height_max: 700.0,
             // Default to full-map coverage from center.
             cloud_spawn_radius: MAP_HALF_EXTENT,
             density: 0.95,
             opacity: 1.0,
-            brightness: 2.9,
-            drift_speed: Vec3::new(15.0, 0.0, 8.0),
+            brightness: 2.0,
+            drift_speed: Vec3::new(8.0, 0.0, 5.0),
             noise_scale: 0.01,
             noise_octaves: 4,
-            tod_response: 0.2,
+            tod_response: 0.35,
         }
     }
 }
@@ -380,7 +380,7 @@ pub fn spawn_volumetric_clouds(
         material_handle
     );
 
-    let sphere_mesh = meshes.add(Sphere::new(1.0).mesh());
+    let sphere_mesh = meshes.add(Sphere::new(1.0).mesh().uv(24, 12));
     log::info!("[VOLUMETRIC CLOUDS] Created sphere mesh");
 
     let cluster_size_min = cloud_settings.cluster_size_min.max(2);
@@ -407,7 +407,7 @@ pub fn spawn_volumetric_clouds(
             center_z - spawn_radius + rand::random::<f32>() * (2.0 * spawn_radius);
         let cluster_center_y = spawn_height + (rand::random::<f32>() - 0.5) * 120.0;
         let cluster_spread =
-            cloud_settings.cloud_radius_max * (0.55 + rand::random::<f32>() * 0.95);
+            cloud_settings.cloud_radius_max * (0.7 + rand::random::<f32>() * 0.9);
 
         for _ in 0..cluster_size {
             let allow_overshoot = remaining == 1;
@@ -419,16 +419,19 @@ pub fn spawn_volumetric_clouds(
                 + rand::random::<f32>()
                     * (cloud_settings.cloud_radius_max - cloud_settings.cloud_radius_min);
 
-            // Per-blob non-uniform scaling yields less uniform silhouettes.
-            let width_scale = 1.1 + rand::random::<f32>() * 1.4;
-            let height_scale = 0.45 + rand::random::<f32>() * 0.55;
-            let depth_scale = 1.0 + rand::random::<f32>() * 1.3;
+            // Per-blob non-uniform scaling yields less uniform silhouettes:
+            // wide and flat puffs (cumulus-like) rather than round balls.
+            let width_scale = 1.0 + rand::random::<f32>() * 1.2;
+            let height_scale = 0.50 + rand::random::<f32>() * 0.40;
+            let depth_scale = 1.0 + rand::random::<f32>() * 1.0;
 
             let angle = rand::random::<f32>() * std::f32::consts::TAU;
             let distance = rand::random::<f32>() * cluster_spread;
             let x = cluster_center_x + angle.cos() * distance;
             let z = cluster_center_z + angle.sin() * distance;
-            let y = cluster_center_y + (rand::random::<f32>() - 0.5) * radius * 0.35;
+            // Spread blobs vertically so the cluster builds a puffy pile
+            // instead of a flat disk of circles.
+            let y = cluster_center_y + (rand::random::<f32>() - 0.5) * radius * 0.9;
 
             let scale = Vec3::new(
                 radius * width_scale,

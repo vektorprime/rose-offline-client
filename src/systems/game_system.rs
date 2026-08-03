@@ -1,6 +1,6 @@
 use bevy::{
     math::Vec3,
-    prelude::{Camera3d, Commands, Entity, MessageReader, Query, Res, ResMut, With},
+    prelude::{Camera3d, Commands, Entity, MessageReader, Query, Res, ResMut, With, Without},
 };
 use rose_game_common::messages::client::ClientMessage;
 
@@ -30,7 +30,10 @@ fn apply_ocean_zone_water_settings(water_settings: &mut WaterSettings) {
 
 pub fn game_state_enter_system(
     mut commands: Commands,
-    query_cameras: Query<Entity, With<Camera3d>>,
+    query_cameras: Query<
+        Entity,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     query_player: Query<Entity, With<PlayerCharacter>>,
 ) {
     // Reset camera

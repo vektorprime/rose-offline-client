@@ -17,7 +17,7 @@ This document provides comprehensive documentation for the animation system in r
 
 ## Overview
 
-The animation system in rose-offline-client uses Bevy's ECS architecture to provide skeletal animation, mesh morph animation, camera animation, and transform interpolation. The system is built around the `ZmoAsset` custom asset format, which stores animation data in a compressed binary format.
+The animation system in rose-offline-client uses Bevy's ECS architecture to provide skeletal animation, mesh morph animation, camera animation, and transform interpolation. The system is built around the `ZmoAsset` custom asset format, which stores animation data in a binary format (parsed from the original ROSE `ZMO0002` files by `ZmoFile` in `rose-file-readers`).
 
 ### Key Features
 
@@ -35,7 +35,7 @@ The animation system in rose-offline-client uses Bevy's ECS architecture to prov
 
 ### Time Resource
 
-Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\time.rs:1-100`
+Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\time.rs:190-204`
 
 The `Time` resource tracks elapsed time and delta time for animation updates:
 
@@ -56,20 +56,20 @@ pub struct Time<T: Default = ()> {
 }
 ```
 
-**Key Methods** (source: `time.rs:200-350`):
+**Key Methods** (source: `time.rs:206-338`):
 
 | Method | Description | Source Line |
 |--------|-------------|-------------|
-| `delta()` | Time since last update as `Duration` | `time.rs:230` |
-| `delta_secs()` | Delta time as `f32` seconds | `time.rs:245` |
-| `delta_secs_f64()` | Delta time as `f64` seconds | `time.rs:260` |
-| `elapsed()` | Total elapsed time as `Duration` | `time.rs:275` |
-| `elapsed_secs()` | Total elapsed time as `f32` seconds | `time.rs:290` |
-| `elapsed_secs_wrapped()` | Wrapped elapsed time to prevent precision loss | `time.rs:305` |
-| `advance_by(delta)` | Advance time by a duration | `time.rs:320` |
-| `advance_to(elapsed)` | Advance time to a specific elapsed value | `time.rs:335` |
+| `delta()` | Time since last update as `Duration` | `time.rs:276` |
+| `delta_secs()` | Delta time as `f32` seconds | `time.rs:283` |
+| `delta_secs_f64()` | Delta time as `f64` seconds | `time.rs:290` |
+| `elapsed()` | Total elapsed time as `Duration` | `time.rs:296` |
+| `elapsed_secs()` | Total elapsed time as `f32` seconds | `time.rs:306` |
+| `elapsed_secs_wrapped()` | Wrapped elapsed time to prevent precision loss | `time.rs:329` |
+| `advance_by(delta)` | Advance time by a duration | `time.rs:223` |
+| `advance_to(elapsed)` | Advance time to a specific elapsed value | `time.rs:244` |
 
-**Time Types** (source: `time.rs:50-80`, `real.rs:1-50`, `virt.rs:1-80`, `fixed.rs:1-100`):
+**Time Types** (source: `time.rs:192-204`, `real.rs:45-50`, `virt.rs:75-80`, `fixed.rs:69-75`):
 
 - `Time<Real>`: Wall-clock time, unaffected by pause/scale (`real.rs`)
 - `Time<Virtual>`: Game time, can be paused or scaled (`virt.rs`)
@@ -81,18 +81,23 @@ pub struct Time<T: Default = ()> {
 ```rust
 use bevy::prelude::*;
 
-fn animation_system(time: Res<Time>, mut query: Query<&mut AnimationState>) {
+fn animation_system(
+    time: Res<Time>,
+    mut query: Query<&mut AnimationState>,
+    motion_assets: Res<Assets<ZmoAsset>>,
+) {
     for mut anim in query.iter_mut() {
-        // Use delta_secs for frame-independent animation speed
-        let delta = time.delta_secs();
-        anim.update(delta);
+        // advance() is frame-independent; it reads time.delta_secs() and time.elapsed_secs_f64()
+        if let Some(zmo_asset) = motion_assets.get(anim.motion()) {
+            anim.advance(zmo_asset, &time);
+        }
     }
 }
 ```
 
 ### Timer
 
-Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\timer.rs:1-150`
+Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\timer.rs:34-40`
 
 Bevy's `Timer` provides countdown and repeating timer functionality:
 
@@ -106,41 +111,44 @@ pub struct Timer {
 }
 ```
 
-**Timer Modes** (source: `timer.rs:30-50`):
+**Timer Modes** (source: `timer.rs:487-501`):
 
 | Mode | Behavior |
 |------|----------|
 | `TimerMode::Once` | Runs once and stops at duration |
 | `TimerMode::Repeating` | Wraps around and repeats indefinitely |
 
-**Key Methods** (source: `timer.rs:150-400`):
+**Key Methods** (source: `timer.rs:42-484`):
 
 | Method | Description | Source Line |
 |--------|-------------|-------------|
-| `new(duration, mode)` | Create a new timer | `timer.rs:160` |
-| `from_seconds(secs, mode)` | Create timer from seconds | `timer.rs:175` |
-| `tick(delta)` | Advance timer by delta | `timer.rs:200` |
-| `is_finished()` | Check if timer reached duration | `timer.rs:250` |
-| `just_finished()` | True only on the tick that finished | `timer.rs:265` |
-| `elapsed()` | Elapsed time as Duration | `timer.rs:280` |
-| `elapsed_secs()` | Elapsed time as f32 | `timer.rs:295` |
-| `fraction()` | Progress from 0.0 to 1.0 | `timer.rs:310` |
-| `fraction_remaining()` | Remaining from 1.0 to 0.0 | `timer.rs:325` |
-| `remaining()` | Time remaining as Duration | `timer.rs:340` |
-| `pause()` / `unpause()` | Pause/resume timer | `timer.rs:355` |
-| `reset()` | Reset timer to zero | `timer.rs:370` |
-| `times_finished_this_tick()` | How many times a repeating timer finished | `timer.rs:385` |
+| `new(duration, mode)` | Create a new timer | `timer.rs:46` |
+| `from_seconds(secs, mode)` | Create timer from seconds | `timer.rs:61` |
+| `tick(delta)` | Advance timer by delta | `timer.rs:278` |
+| `is_finished()` | Check if timer reached duration | `timer.rs:93` |
+| `just_finished()` | True only on the tick that finished | `timer.rs:110` |
+| `elapsed()` | Elapsed time as Duration | `timer.rs:128` |
+| `elapsed_secs()` | Elapsed time as f32 | `timer.rs:135` |
+| `fraction()` | Progress from 0.0 to 1.0 | `timer.rs:408` |
+| `fraction_remaining()` | Remaining from 1.0 to 0.0 | `timer.rs:427` |
+| `remaining()` | Time remaining as Duration | `timer.rs:459` |
+| `pause()` / `unpause()` | Pause/resume timer | `timer.rs:333` |
+| `reset()` | Reset timer to zero | `timer.rs:391` |
+| `times_finished_this_tick()` | How many times a repeating timer finished | `timer.rs:482` |
 
 **Stopwatch** (source: `stopwatch.rs:1-100`):
 
 Internal timer used by `Timer` for accurate elapsed time tracking.
 
-**Common Conditions** (source: `common_conditions.rs:1-200`):
+**Common Conditions** (source: `common_conditions.rs:1-240`):
 
-- `OnStart` - Triggered when timer starts
-- `OnComplete` - Triggered when timer completes
-- `WhileRunning` - True while timer is running
-- `WhilePaused` - True while timer is paused
+- `on_timer(duration)` - Returns true once when the timer duration elapses
+- `on_real_timer(duration)` - Same as `on_timer` but driven by `Time<Real>`
+- `once_after_delay(duration)` - Returns true once after the given delay
+- `once_after_real_delay(duration)` - Same as `once_after_delay` but driven by `Time<Real>`
+- `repeating_after_delay(duration)` - Returns true each time the delay elapses
+- `repeating_after_real_delay(duration)` - Same as `repeating_after_delay` but driven by `Time<Real>`
+- `paused` - Returns true while `Time<Virtual>` is paused
 
 ### Animation Timer Example
 
@@ -175,7 +183,7 @@ fn animation_cooldown_system(
 
 ### RoseAnimationPlugin
 
-The main plugin that registers all animation components and systems. Source: `src/animation/mod.rs:1-100`
+The main plugin that registers all animation components and systems. Source: `src/animation/mod.rs:28-65`
 
 ```rust
 #[derive(Default)]
@@ -218,7 +226,7 @@ impl Plugin for RoseAnimationPlugin {
     }
 }
 ```
-Source: `src/animation/mod.rs:20-60`
+Source: `src/animation/mod.rs:34-64`
 
 ### System Execution Order
 
@@ -232,7 +240,7 @@ All animation components wrap `AnimationState` using `Deref`/`DerefMut` for seam
 
 #### AnimationState
 
-Base animation state component used by all animation types. Source: `src/animation/animation_state.rs:1-150`
+Base animation state component used by all animation types. Source: `src/animation/animation_state.rs:23-62`
 
 ---
 
@@ -240,7 +248,7 @@ Base animation state component used by all animation types. Source: `src/animati
 
 ### AnimationState
 
-Base animation state component used by all animation types. Source: `src/animation/animation_state.rs:20-100`
+Base animation state component used by all animation types. Source: `src/animation/animation_state.rs:23-62`
 
 ```rust
 #[derive(Reflect, Component)]
@@ -362,7 +370,7 @@ pub fn advance(&mut self, zmo_asset: &ZmoAsset, time: &Time) -> bool {
 
 ### SkeletalAnimation
 
-Bone-based animation for skinned meshes. Source: `src/animation/skeletal_animation.rs:1-80`
+Bone-based animation for skinned meshes. Source: `src/animation/skeletal_animation.rs:19-153`
 
 ```rust
 #[derive(Component, Reflect, Deref, DerefMut)]
@@ -445,7 +453,7 @@ pub fn skeletal_animation_system(
 
 ### MeshAnimation
 
-Vertex morph animation for effect meshes using texture-based storage. Source: `src/animation/mesh_animation.rs:1-80`
+Vertex morph animation for effect meshes using texture-based storage. Source: `src/animation/mesh_animation.rs:21-133`
 
 ```rust
 #[derive(Component, Reflect, Deref, DerefMut)]
@@ -536,7 +544,7 @@ fn update_effect_mesh_animation_material(
 
 ### CameraAnimation
 
-Cinematic camera animation with FOV control. Source: `src/animation/camera_animation.rs:1-80`
+Cinematic camera animation with FOV control. Source: `src/animation/camera_animation.rs:13-105`
 
 ```rust
 #[derive(Component, Reflect, Deref, DerefMut)]
@@ -621,7 +629,7 @@ pub fn camera_animation_system(
 
 ### TransformAnimation
 
-Simple transform interpolation animation. Source: `src/animation/transform_animation.rs:1-80`
+Simple transform interpolation animation. Source: `src/animation/transform_animation.rs:12-88`
 
 ```rust
 #[derive(Component, Reflect, Deref, DerefMut)]
@@ -679,7 +687,7 @@ pub fn transform_animation_system(
 
 ## ZMO Asset Format
 
-Custom animation file format loader. Source: `src/animation/zmo_asset_loader.rs:1-200`
+Custom animation file format loader. Source: `src/animation/zmo_asset_loader.rs:14-392`
 
 ### ZmoAsset Structure
 
@@ -744,6 +752,9 @@ impl AssetLoader for ZmoAssetLoader {
                 max_bone_id = max_bone_id.max(*bone_id);
             }
             let assign_bone_id = max_bone_id == 0 && zmo.channels.len() > 2;
+            if assign_bone_id {
+                max_bone_id = (zmo.channels.len() - 1) as u32;
+            }
             
             // Parse bone channels
             let mut bones = vec![ZmoAssetBone::default(); (max_bone_id + 1) as usize];
@@ -805,7 +816,8 @@ impl AssetLoader for ZmoTextureAssetLoader {
             let zmo = ZmoFile::read((&bytes).into(), &Default::default())?;
             
             // Pack animation data into RGBA32 texture
-            // Layout: x=frame, y=vertex, rgba=(pos.x, pos.y, pos.z, uv.x) or (normal.x, normal.y, normal.z, uv.y)
+            // Layout: x=frame, y=vertex, rgba=(pos.x, pos.z, -pos.y, uv.x) for position rows
+            // and (normal.x, normal.z, -normal.y, uv.y) for normal rows (Y/Z axes swizzled)
             let mut image_data = vec![0.0; num_vertices * stride * 16];
             
             for (vertex_id, channel) in zmo.channels.iter() {
@@ -899,7 +911,7 @@ impl ZmoAsset {
 
 ## Animation Events
 
-Frame-based event system for triggering effects and sounds. Source: `src/animation/animation_state.rs:400-500`
+Frame-based event system for triggering effects and sounds. Source: `src/animation/animation_state.rs:217-234`
 
 ### AnimationFrameEvent
 
@@ -947,7 +959,7 @@ Event flags define what happens at specific frames. Common flags include:
 - `EFFECT_SKILL_ACTION` - Execute skill action
 - `EFFECT_SKILL_HIT` - Skill hit effect
 - `EFFECT_SKILL_CASTING_0-3` - Skill casting effects
-- `EFFECT_MOVE_VEHICLE_DUMMY1/2` - Vehicle movement effects
+- `EFFECT_MOVE_VEHCILE_DUMMY1/2` - Vehicle movement effects (note: the flag name is misspelled in `rose_data`)
 
 #### Sound Events
 - `SOUND_FOOTSTEP` - Footstep sound
@@ -960,7 +972,7 @@ Event flags define what happens at specific frames. Common flags include:
 
 ### Animation Effect System
 
-Source: `src/systems/animation_effect_system.rs:1-100`
+Source: `src/systems/animation_effect_system.rs:32-449`
 
 ```rust
 pub fn animation_effect_system(
@@ -993,7 +1005,7 @@ pub fn animation_effect_system(
 
 ### Animation Sound System
 
-Source: `src/systems/animation_sound_system.rs:1-100`
+Source: `src/systems/animation_sound_system.rs:81-537`
 
 ```rust
 pub fn animation_sound_system(
@@ -1029,7 +1041,7 @@ pub fn animation_sound_system(
 
 ## Animation Blending
 
-The animation system supports two types of blending. Source: `src/animation/animation_state.rs:250-350`, `src/animation/skeletal_animation.rs:100-200`
+The animation system supports two types of blending. Source: `src/animation/animation_state.rs:186-188`, `src/animation/skeletal_animation.rs:92-94`
 
 ### Frame Interpolation
 
@@ -1074,7 +1086,7 @@ if let Some(weight) = interpolate_weight {
 
 ## Animation State Machines
 
-Animation state management is handled through the `Command` component and `command_system`. Source: `src/systems/command_system.rs:1-200`
+Animation state management is handled through the `Command` component and `command_system`. Source: `src/systems/command_system.rs:379-1237`
 
 ### Command-Based Animation Selection
 
@@ -1087,14 +1099,14 @@ pub fn command_system(
     for (entity, command, character_model, /* ... */) in query.iter_mut() {
         // Get motion handle based on command type
         let motion = match command {
-            Command::Move { move_mode, .. } => {
-                get_move_animation(*move_mode, character_model, npc_model, vehicle)
+            Command::Move(CommandMove { move_mode, .. }) => {
+                get_move_animation(move_mode, character_model, npc_model, vehicle)
             }
-            Command::Attack { .. } => {
+            Command::Attack(CommandAttack { .. }) => {
                 get_attack_animation(&mut rng, character_model, npc_model, vehicle)
             }
             Command::Die => get_die_animation(character_model, npc_model),
-            Command::Sit => get_sitting_animation(character_model, npc_model),
+            Command::Sit(_) => get_sitting_animation(character_model, npc_model),
             Command::Stop => get_stop_animation(character_model, npc_model, vehicle),
             // ...
         };
@@ -1102,10 +1114,11 @@ pub fn command_system(
         // Update animation if changed
         if let Some(motion) = motion {
             update_active_motion(
-                &mut query_animation,
-                entity,
+                &mut commands.entity(active_motion_entity),
+                &mut active_motion,
                 motion,
                 animation_speed,
+                repeat,
             );
         }
         
@@ -1128,41 +1141,96 @@ pub fn command_system(
 
 ```rust
 fn get_move_animation(
-    move_mode: MoveMode,
-    character_model: &CharacterModel,
+    move_mode: &MoveMode,
+    character_model: Option<&CharacterModel>,
     npc_model: Option<&NpcModel>,
-    vehicle: Option<&VehicleModel>,
+    vehicle: Option<&Vehicle>,
 ) -> Option<Handle<ZmoAsset>> {
-    match move_mode {
-        MoveMode::Foot => {
-            // Select walk/run animation based on speed
-            if speed > RUN_THRESHOLD {
-                character_model.get_motion(CharacterMotionAction::Run)
-            } else {
-                character_model.get_motion(CharacterMotionAction::Walk)
-            }
+    // Vehicles use VehicleMotionAction::Move
+    if let Some(vehicle) = vehicle {
+        if vehicle.action_motions[VehicleMotionAction::Move].is_strong() {
+            return Some(vehicle.action_motions[VehicleMotionAction::Move].clone());
         }
-        MoveMode::Drive => {
-            vehicle.and_then(|v| v.get_motion(VehicleMotionAction::Move))
-        }
-        // ...
+        return None;
     }
+
+    // Characters select Walk or Run based on the move mode
+    if let Some(character_model) = character_model {
+        let action = match move_mode {
+            MoveMode::Walk => CharacterMotionAction::Walk,
+            MoveMode::Run => CharacterMotionAction::Run,
+            MoveMode::Drive | MoveMode::Sail => return None,
+        };
+
+        if character_model.action_motions[action].is_strong() {
+            return Some(character_model.action_motions[action].clone());
+        }
+        return None;
+    }
+
+    // NPCs use NpcMotionAction::Move for walk and NpcMotionAction::Run for run
+    if let Some(npc_model) = npc_model {
+        let action = match move_mode {
+            MoveMode::Walk => NpcMotionAction::Move,
+            MoveMode::Run => NpcMotionAction::Run,
+            MoveMode::Drive => unreachable!("NPC cannot drive!"),
+            MoveMode::Sail => return None,
+        };
+
+        if npc_model.action_motions[action].is_strong() {
+            return Some(npc_model.action_motions[action].clone());
+        }
+    }
+
+    None
 }
 
-fn get_attack_animation(
+fn get_attack_animation<R: rand::Rng + ?Sized>(
     rng: &mut R,
-    character_model: &CharacterModel,
+    character_model: Option<&CharacterModel>,
     npc_model: Option<&NpcModel>,
-    vehicle: Option<&VehicleModel>,
+    vehicle: Option<&Vehicle>,
 ) -> Option<Handle<ZmoAsset>> {
-    // Select random attack animation (1-3)
-    let attack_num = rng.gen_range(1..=4);
-    character_model.get_motion(match attack_num {
-        1 => CharacterMotionAction::Attack1,
-        2 => CharacterMotionAction::Attack2,
-        3 => CharacterMotionAction::Attack3,
-        _ => CharacterMotionAction::Attack1,
-    })
+    // Vehicles randomly pick Attack1/Attack2/Attack3
+    if let Some(vehicle) = vehicle {
+        let action = *[
+            VehicleMotionAction::Attack1,
+            VehicleMotionAction::Attack2,
+            VehicleMotionAction::Attack3,
+        ]
+        .choose(rng)
+        .unwrap();
+
+        if vehicle.action_motions[action].is_strong() {
+            return Some(vehicle.action_motions[action].clone());
+        }
+        return None;
+    }
+
+    // Characters randomly pick Attack / Attack2 / Attack3
+    if let Some(character_model) = character_model {
+        let action = *[
+            CharacterMotionAction::Attack,
+            CharacterMotionAction::Attack2,
+            CharacterMotionAction::Attack3,
+        ]
+        .choose(rng)
+        .unwrap();
+
+        if character_model.action_motions[action].is_strong() {
+            return Some(character_model.action_motions[action].clone());
+        }
+        return None;
+    }
+
+    // NPCs use NpcMotionAction::Attack
+    if let Some(npc_model) = npc_model {
+        if npc_model.action_motions[NpcMotionAction::Attack].is_strong() {
+            return Some(npc_model.action_motions[NpcMotionAction::Attack].clone());
+        }
+    }
+
+    None
 }
 
 fn get_die_animation(...) -> Option<Handle<ZmoAsset>>
@@ -1176,17 +1244,17 @@ fn get_pickup_animation(...) -> Option<Handle<ZmoAsset>>
 ```rust
 fn get_move_animation_speed(move_speed: &MoveSpeed) -> f32 {
     // Scale animation speed with movement speed
-    move_speed.speed / BASE_WALK_SPEED
+    (move_speed.speed + 180.0) / 600.0
 }
 
 fn get_attack_animation_speed(ability_values: &AbilityValues) -> f32 {
-    // Faster attack speed with higher attack speed stat
-    1.0 + (ability_values.attack_speed - 100.0) / 1000.0
+    // Faster attack speed with higher attack speed stat (clamped at 30)
+    i32::max(ability_values.get_attack_speed(), 30) as f32 / 100.0
 }
 
 fn get_vehicle_move_animation_speed(move_speed: &MoveSpeed) -> f32 {
     // Vehicle animation speed scaling
-    move_speed.speed / BASE_VEHICLE_SPEED
+    (move_speed.speed + 500.0) / 1000.0
 }
 ```
 
@@ -1200,29 +1268,29 @@ Animation speed can be controlled per-animation or globally:
 
 | Setting | Default | Description | Source |
 |---------|---------|-------------|--------|
-| `animation_speed` | `1.0` | Per-animation speed multiplier | `src/animation/animation_state.rs:35` |
-| `interpolation_interval` | `0.5` | Blend-in duration in seconds | `src/animation/zmo_asset_loader.rs:150` |
+| `animation_speed` | `1.0` | Per-animation speed multiplier | `src/animation/animation_state.rs:29` |
+| `interpolation_interval` | `0.5` | Blend-in duration in seconds | `src/animation/zmo_asset_loader.rs:204` |
 
 ### Loop Configuration
 
 | Setting | Default | Description | Source |
 |---------|---------|-------------|--------|
-| `max_loop_count` | `None` | Maximum loop iterations (None = infinite) | `src/animation/animation_state.rs:42` |
-| `current_loop_count` | `0` | Current loop iteration | `src/animation/animation_state.rs:45` |
+| `max_loop_count` | `Some(1)` | Maximum loop iterations (None = infinite) | `src/animation/animation_state.rs:69` |
+| `current_loop_count` | `0` | Current loop iteration | `src/animation/animation_state.rs:36` |
 
 ### Timing Configuration
 
 | Setting | Default | Description | Source |
 |---------|---------|-------------|--------|
-| `start_delay` | `None` | Delay before animation starts (seconds) | `src/animation/animation_state.rs:65` |
-| `start_time` | `None` | Animation start timestamp | `src/animation/animation_state.rs:58` |
+| `start_delay` | `None` | Delay before animation starts (seconds) | `src/animation/animation_state.rs:61` |
+| `start_time` | `None` | Animation start timestamp | `src/animation/animation_state.rs:45` |
 
 ### Frame Interpolation
 
 | Setting | Default | Description | Source |
 |---------|---------|-------------|--------|
-| `current_frame_fract` | `0.0` | Interpolation weight (0.0 to 1.0) | `src/animation/animation_state.rs:55` |
-| `interpolate_weight` | `0.0` | Animation interval blend weight | `src/animation/animation_state.rs:48` |
+| `current_frame_fract` | `0.0` | Interpolation weight (0.0 to 1.0) | `src/animation/animation_state.rs:53` |
+| `interpolate_weight` | `0.0` | Animation interval blend weight | `src/animation/animation_state.rs:39` |
 
 ---
 
@@ -1233,7 +1301,7 @@ Animation speed can be controlled per-animation or globally:
 Play an animation once and handle completion:
 
 ```rust
-// src/animation/animation_state.rs:100-120
+// src/animation/animation_state.rs:84-90
 commands.spawn(SkeletalAnimation::once(animation_handle));
 ```
 
@@ -1242,7 +1310,7 @@ commands.spawn(SkeletalAnimation::once(animation_handle));
 Continuous looping for idle states:
 
 ```rust
-// src/animation/animation_state.rs:125-145
+// src/animation/animation_state.rs:92-98
 commands.spawn(SkeletalAnimation::repeat(idle_handle, None));
 ```
 
@@ -1251,7 +1319,7 @@ commands.spawn(SkeletalAnimation::repeat(idle_handle, None));
 Play animation a specific number of times:
 
 ```rust
-// src/animation/animation_state.rs:150-170
+// src/animation/animation_state.rs:92-98
 commands.spawn(SkeletalAnimation::repeat(wave_handle, Some(3)));
 ```
 
@@ -1260,8 +1328,8 @@ commands.spawn(SkeletalAnimation::repeat(wave_handle, Some(3)));
 Scale animation speed with movement speed:
 
 ```rust
-// src/systems/command_system.rs:300-350
-let speed = move_speed.speed / BASE_WALK_SPEED;
+// src/systems/command_system.rs:302-304
+let speed = (move_speed.speed + 180.0) / 600.0;
 SkeletalAnimation::once(walk_handle).with_animation_speed(speed);
 ```
 
@@ -1270,8 +1338,10 @@ SkeletalAnimation::once(walk_handle).with_animation_speed(speed);
 Start animation after a delay:
 
 ```rust
-// src/animation/animation_state.rs:175-195
-SkeletalAnimation::once(hit_handle).with_start_delay(0.1);
+// src/animation/mesh_animation.rs:33-36
+// Note: the fluent `with_start_delay` builder exists on MeshAnimation only;
+// on SkeletalAnimation/CameraAnimation/TransformAnimation use set_start_delay()
+MeshAnimation::once(hit_handle).with_start_delay(0.1);
 ```
 
 ### Pattern 6: Event-Driven Effects
@@ -1279,7 +1349,9 @@ SkeletalAnimation::once(hit_handle).with_start_delay(0.1);
 Trigger effects at specific animation frames:
 
 ```rust
-// src/systems/animation_effect_system.rs:50-150
+// src/animation/skeletal_animation.rs:76-82
+// iter_animation_events emits AnimationFrameEvent messages; these are consumed
+// by animation_effect_system and animation_sound_system (in the Update schedule)
 animation.iter_animation_events(zmo_asset, |event_id| {
     // Spawn effect, play sound, etc.
 });
@@ -1290,7 +1362,7 @@ animation.iter_animation_events(zmo_asset, |event_id| {
 Chain animations based on completion:
 
 ```rust
-// src/systems/command_system.rs:400-450
+// src/systems/command_system.rs:470-484
 if animation.completed() {
     // Start next animation
 }
@@ -1301,7 +1373,7 @@ if animation.completed() {
 Blend between animations using interpolation interval:
 
 ```rust
-// src/animation/skeletal_animation.rs:120-180
+// src/animation/skeletal_animation.rs:92-94
 let weight = (interpolate_weight * FRAC_PI_2).sin();
 bone_transform.translation = current.lerp(target, weight);
 ```
@@ -1405,7 +1477,7 @@ use crate::animation::AnimationFrameEvent;
 use rose_data::AnimationEventFlags;
 
 fn on_animation_event(
-    mut events: EventReader<AnimationFrameEvent>,
+    mut events: MessageReader<AnimationFrameEvent>,
     mut commands: Commands,
 ) {
     for event in events.read() {
@@ -1499,7 +1571,7 @@ fn animation_system(time: Res<Time<Real>>) {
 }
 ```
 
-Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\time.rs:50-80`, `virt.rs:1-50`
+Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\time.rs:192-204`, `virt.rs:75-82`
 
 ---
 
@@ -1519,7 +1591,7 @@ timer.tick(time.delta_secs()); // Type mismatch!
 timer.tick(time.delta()); // Returns Duration
 ```
 
-Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\timer.rs:200-250`
+Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\timer.rs:260-317`
 
 ---
 
@@ -1563,7 +1635,7 @@ let elapsed = time.elapsed_secs();
 let elapsed = time.elapsed_secs_wrapped();
 ```
 
-Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\time.rs:300-320`
+Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\time.rs:316-338`
 
 ---
 
@@ -1588,7 +1660,7 @@ if timer.mode() == TimerMode::Repeating {
 }
 ```
 
-Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\timer.rs:380-400`
+Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_time\src\timer.rs:463-484`
 
 ---
 
@@ -1637,39 +1709,46 @@ Source: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bev
 
 **Root Cause**: No delta time clamping, large delta values passed to animation systems.
 
-**Solution**: Clamp delta time in animation systems:
+**Solution**: Clamp delta time via `Time<Virtual>::set_max_delta`, which Bevy uses to clamp the reported delta:
 
 ```rust
-const MAX_DELTA_TIME: f32 = 0.1; // 100ms max
+// Bevy 0.18 clamps Time<Virtual> deltas via max_delta (default 250ms):
+use std::time::Duration;
+use bevy::time::Virtual;
 
-fn skeletal_animation_system(time: Res<Time>, mut query: Query<&mut SkeletalAnimation>) {
-    let delta = time.delta_secs().min(MAX_DELTA_TIME);
-    
-    for mut anim in query.iter_mut() {
-        anim.advance(delta);
-    }
-}
+app.insert_resource(Time::<Virtual>::from_max_delta(Duration::from_secs_f32(0.1)));
+
+// The animation systems do not clamp delta themselves: AnimationState::advance
+// reads time.delta_secs() and time.elapsed_secs_f64() directly from &Time.
 ```
 
 ---
 
 #### Issue 9: Interpolation Weight Not Resetting
 
-**Problem**: Animation blend-in doesn't work when switching to the same animation.
+**Problem**: Animation blend-in doesn't restart when switching to the same animation.
 
-**Root Cause**: `interpolate_weight` not reset when motion handle changes.
+**Root Cause**: `update_active_motion` in the command system intentionally does not restart an
+animation that is already playing: if the motion handle is unchanged and the animation is not
+completed, only `animation_speed` is updated. A new `SkeletalAnimation` component (with
+`interpolate_weight` reset to `0.0`) is only inserted when the motion handle changes.
 
-**Solution**: Reset interpolation weight when changing animations:
+**Solution**: To force a restart of the same motion, replace the component (this is what
+`update_active_motion` does for new motions):
 
 ```rust
-// In animation state update
-if new_motion != current_motion {
-    animation.interpolate_weight = 0.0;
-    animation.current_frame_fract = 0.0;
+// src/systems/command_system.rs:273-296
+if active_motion.motion().id() == motion.id() && !active_motion.completed() {
+    // Already playing this animation - only update speed
+    active_motion.set_animation_speed(animation_speed);
+    return;
 }
+
+// Inserting a fresh SkeletalAnimation resets interpolate_weight to 0.0
+entity_commands.insert(SkeletalAnimation::once(motion).with_animation_speed(animation_speed));
 ```
 
-Source: `src/animation/animation_state.rs:250-280`
+Source: `src/systems/command_system.rs:273-296`
 
 ---
 
@@ -1691,7 +1770,7 @@ while self.last_absolute_event_frame <= current_event_frame {
 }
 ```
 
-Source: `src/animation/animation_state.rs:400-450`
+Source: `src/animation/animation_state.rs:217-234`
 
 ---
 
@@ -1706,7 +1785,7 @@ Source: `src/animation/animation_state.rs:400-450`
 2. Check ZMO asset loaded successfully (not `None` in assets)
 3. Ensure bone entity IDs in `SkinnedMesh::joints` match animation bone IDs
 
-**Source**: `src/animation/skeletal_animation.rs:80-120`
+**Source**: `src/animation/skeletal_animation.rs:89-147`
 
 ---
 
@@ -1722,7 +1801,7 @@ Source: `src/animation/animation_state.rs:400-450`
 anim.set_animation_speed(speed.abs());
 
 // Check ZMO loader Y-axis conversion
-// src/animation/zmo_asset_loader.rs:180-200
+// src/animation/zmo_asset_loader.rs:171-197
 ```
 
 ---
@@ -1742,7 +1821,7 @@ Query<(
 )>
 ```
 
-Source: `src/animation/camera_animation.rs:60-100`
+Source: `src/animation/camera_animation.rs:97-103`
 
 ---
 
@@ -1755,7 +1834,7 @@ Source: `src/animation/camera_animation.rs:60-100`
 2. Check animation texture channels match mesh vertex count
 3. Ensure material has `animation_texture` set in extension
 
-**Source**: `src/animation/mesh_animation.rs:80-150`, `src/animation/zmo_asset_loader.rs:300-400`
+**Source**: `src/animation/mesh_animation.rs:94-133`, `src/animation/zmo_asset_loader.rs:243-391`
 
 ---
 

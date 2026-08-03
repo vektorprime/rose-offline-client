@@ -454,7 +454,7 @@ impl Default for GraphicsSettings {
             motion_blur_intensity: 0.5,
             ssao_enabled: true,
             ssao_quality: SsaoQuality::default(),
-            dof_enabled: false,
+            dof_enabled: true,
 
             // Advanced
             tonemapping: TonemappingMode::default(),

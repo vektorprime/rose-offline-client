@@ -1,7 +1,6 @@
 # OCEAN Zone Scaffold (Zone 200)
 
-This folder is the initial scaffold for the ocean sailing zone described in:
-- `plans/sailing-system-detailed-expansion.md` (Section D)
+This folder is the initial scaffold for the ocean sailing zone (zone 200).
 
 ## Current status
 

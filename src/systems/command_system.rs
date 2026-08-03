@@ -1,7 +1,7 @@
 use bevy::{
     ecs::{message::MessageWriter, system::EntityCommands},
     math::{Vec3, Vec3Swizzles},
-    prelude::{AssetServer, Commands, Entity, Handle, Mut, Or, Query, Res, With},
+    prelude::{AssetServer, Commands, Entity, Handle, Local, Mut, Or, Query, Res, With},
 };
 use rand::prelude::SliceRandom;
 
@@ -19,8 +19,8 @@ use crate::{
     components::{
         CharacterModel, ClientEntity, ClientEntityType, Command, CommandAttack, CommandCastSkill,
         CommandCastSkillState, CommandCastSkillTarget, CommandEmote, CommandMove, CommandSit, Dead,
-        FacingDirection, NextCommand, NpcModel, PersonalStore, PlayerCharacter, Position, Vehicle,
-        VehicleModel,
+        FacingDirection, FlightState, NextCommand, NpcModel, PersonalStore, PlayerCharacter,
+        Position, Vehicle, VehicleModel,
     },
     events::{ClientEntityEvent, ConversationDialogEvent, PersonalStoreEvent},
     resources::{GameConnection, GameData},
@@ -403,9 +403,11 @@ pub fn command_system(
     query_attack_target: Query<(Entity, &Position, Option<&Dead>)>,
     query_npc: Query<&Npc>,
     query_personal_store: Query<&PersonalStore>,
+    query_flight_state: Query<&FlightState>,
     asset_server: Res<AssetServer>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
+    mut attack_diag_frame: Local<u32>,
     mut conversation_dialog_events: MessageWriter<ConversationDialogEvent>,
     mut client_entity_events: MessageWriter<ClientEntityEvent>,
     mut personal_store_events: MessageWriter<PersonalStoreEvent>,
@@ -682,6 +684,32 @@ pub fn command_system(
                 target,
                 move_mode: command_move_mode,
             }) => {
+                // When flying, never run/walk on the ground: keep the
+                // idle/hover animation instead. Flight movement is handled by
+                // flight_movement_system and positions are reported to the
+                // server via MoveCollision, so a leftover ground move command
+                // must not play the run animation mid-air.
+                if query_flight_state
+                    .get(entity)
+                    .map(|flight_state| flight_state.is_flying)
+                    .unwrap_or(false)
+                {
+                    update_stop_motion(
+                        &mut commands,
+                        active_motion_entity,
+                        &mut active_motion,
+                        character_model,
+                        npc_model,
+                        vehicle,
+                        vehicle_model,
+                        vehicle_active_motion_entity,
+                        &mut vehicle_active_motion,
+                    );
+                    *command = Command::with_stop();
+                    *next_command = NextCommand::default();
+                    continue;
+                }
+
                 let mut entity_commands = commands.entity(entity);
                 let mut pickup_item_entity = None;
                 let mut talk_to_npc_entity = None;
@@ -695,7 +723,15 @@ pub fn command_system(
                             ClientEntityType::Character => {
                                 move_to_character_entity =
                                     Some((*target_entity, target_position.position));
-                                Some(CHARACTER_MOVE_TO_DISTANCE)
+                                // Monsters chasing a character in combat must close to
+                                // their own attack range. The click-to-interact distance
+                                // would leave them ~10m short, forcing the target player
+                                // to close the remaining gap before combat can start.
+                                Some(if npc_model.is_some() {
+                                    ability_values.get_attack_range() as f32
+                                } else {
+                                    CHARACTER_MOVE_TO_DISTANCE
+                                })
                             }
                             ClientEntityType::Npc => {
                                 talk_to_npc_entity =
@@ -852,7 +888,26 @@ pub fn command_system(
                 let distance = position.position.xy().distance(target.1.xy());
 
                 let attack_range = ability_values.get_attack_range() as f32;
-                if distance < attack_range {
+                *attack_diag_frame += 1;
+                if player_character.is_some() && *attack_diag_frame % 30 == 0
+                {
+                    log::info!(
+                        "[ATTACK_DIAG] player={:?} target={:?} dist={:.1} range={:.1} {} cmd={:?} next={:?} player_pos={:?} target_pos={:?}",
+                        entity.index(),
+                        target_entity.index(),
+                        distance,
+                        attack_range,
+                        if distance <= attack_range { "ATTACK" } else { "chase" },
+                        command,
+                        next_command,
+                        position.position,
+                        target.1.position,
+                    );
+                }
+                // Use inclusive comparison so we attack at the exact same boundary the
+                // server uses (distance <= attack_range), preventing a desync where the
+                // server executes the attack but the client converts it into a move.
+                if distance <= attack_range {
                     let vehicle_attack_animation =
                         get_vehicle_attack_animation(&mut rng, vehicle_model);
                     let attack_animation =
@@ -1068,6 +1123,19 @@ pub fn command_system(
                             position.xy().distance(target_position.xy()) < cast_range
                         })
                         .unwrap_or(true);
+                    if player_character.is_some() && *attack_diag_frame % 30 == 0
+                    {
+                        log::info!(
+                            "[ATTACK_DIAG] CastSkill player skill={:?} target={:?} in_range={} cast_range={:.1} cmd={:?} next={:?} player_pos={:?}",
+                            skill_id,
+                            target_entity.map(|e| e.index()),
+                            in_range,
+                            cast_range,
+                            command,
+                            next_command,
+                            position.position,
+                        );
+                    }
                     if in_range {
                         if let Some(target_position) = target_position.as_ref() {
                             // Update direction to face skill target

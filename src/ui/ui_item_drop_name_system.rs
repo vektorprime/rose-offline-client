@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bevy::prelude::{Camera, Camera3d, GlobalTransform, Local, Query, Res, Vec2, With};
+use bevy::prelude::{Camera, Camera3d, GlobalTransform, Local, Query, Res, Vec2, With, Without};
 use bevy_egui::{egui, EguiContexts};
 
 use rose_data::Item;
@@ -17,7 +17,10 @@ pub struct ItemDropName {
 
 pub fn ui_item_drop_name_system(
     mut egui_context: EguiContexts,
-    query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    query_camera: Query<
+        (&Camera, &GlobalTransform),
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     query_item_drop: Query<(&ItemDrop, &GlobalTransform)>,
     game_data: Res<GameData>,
     mut visible_names: Local<Vec<ItemDropName>>,

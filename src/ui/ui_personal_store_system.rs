@@ -6,12 +6,12 @@ use bevy::{
     },
 };
 use bevy_egui::{egui, EguiContexts};
-use rose_data::Item;
+use rose_data::{Item, StackableItem};
 use rose_game_common::{components::Money, messages::client::ClientMessage};
 
 use crate::{
     components::{ClientEntity, PersonalStore, PlayerCharacter, Position},
-    events::{MessageBoxEvent, PersonalStoreEvent},
+    events::{MessageBoxEvent, NumberInputDialogEvent, PersonalStoreEvent},
     resources::{GameConnection, GameData, UiResources},
     ui::{
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
@@ -126,6 +126,7 @@ pub fn ui_personal_store_system(
     mut ui_state_dnd: ResMut<UiStateDragAndDrop>,
     mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut personal_store_events: MessageReader<PersonalStoreEvent>,
+    mut number_input_dialog_events: MessageWriter<NumberInputDialogEvent>,
     query_personal_store: Query<(&ClientEntity, &PersonalStore, &Position), With<PersonalStore>>,
     query_player: Query<&Position, With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
@@ -193,6 +194,93 @@ pub fn ui_personal_store_system(
                                 buy_item: item.clone(),
                             })
                             .ok();
+                    }
+                }
+            }
+            PersonalStoreEvent::RequestBuyItem { slot_index } => {
+                let slot_index = *slot_index;
+                if let Some((item, price)) = ui_state
+                    .store_sell_items
+                    .get(slot_index)
+                    .and_then(|slot| slot.as_ref())
+                {
+                    let item = item.clone();
+                    let item_name = game_data
+                        .items
+                        .get_base_item(item.get_item_reference())
+                        .map(|item_data| item_data.name.clone())
+                        .unwrap_or_default();
+                    let price = *price;
+                    let quantity = item.get_quantity();
+
+                    if item.is_stackable_item() && quantity > 1 {
+                        // Ask how many to purchase when the store has a stack.
+                        number_input_dialog_events.write(NumberInputDialogEvent::Show {
+                            max_value: Some(quantity as usize),
+                            modal: false,
+                            ok: Some(Box::new(move |commands, quantity| {
+                                let buy_item =
+                                    StackableItem::new(item.get_item_reference(), quantity as u32)
+                                        .map(Item::Stackable)
+                                        .unwrap_or_else(|| item.clone());
+                                let total_price = price.0 * quantity as i64;
+
+                                commands.queue(move |world: &mut World| {
+                                    if let Some(mut message_box_events) =
+                                        world.get_resource_mut::<Messages<MessageBoxEvent>>()
+                                    {
+                                        message_box_events.write(MessageBoxEvent::Show {
+                                            message: format!(
+                                                "Are you sure you want to buy {} x {} for {} Zuly?",
+                                                quantity, item_name, total_price
+                                            ),
+                                            modal: false,
+                                            ok: Some(Box::new(move |commands| {
+                                                commands.queue(move |world: &mut World| {
+                                                    if let Some(mut personal_store_events) = world
+                                                        .get_resource_mut::<
+                                                            Messages<PersonalStoreEvent>,
+                                                        >()
+                                                    {
+                                                        personal_store_events.write(
+                                                            PersonalStoreEvent::BuyItem {
+                                                                slot_index,
+                                                                item: buy_item,
+                                                            },
+                                                        );
+                                                    }
+                                                });
+                                            })),
+                                            cancel: Some(Box::new(|_| {})),
+                                        });
+                                    }
+                                });
+                            })),
+                            cancel: None,
+                        });
+                    } else {
+                        message_box_events.write(MessageBoxEvent::Show {
+                            message: format!(
+                                "Are you sure you want to buy {} for {} Zuly?",
+                                item_name, price.0
+                            ),
+                            modal: false,
+                            ok: Some(Box::new(move |commands| {
+                                commands.queue(move |world: &mut World| {
+                                    if let Some(mut personal_store_events) =
+                                        world.get_resource_mut::<Messages<PersonalStoreEvent>>()
+                                    {
+                                        personal_store_events.write(
+                                            PersonalStoreEvent::BuyItem {
+                                                slot_index,
+                                                item,
+                                            },
+                                        );
+                                    }
+                                });
+                            })),
+                            cancel: Some(Box::new(|_| {})),
+                        });
                     }
                 }
             }

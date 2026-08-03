@@ -1,6 +1,7 @@
 use bevy::asset::Asset;
 use bevy::prelude::{
-    AssetServer, Assets, Camera3d, Commands, Entity, Local, MessageWriter, Query, Res, ResMut, With,
+    AssetServer, Assets, Camera3d, Commands, Entity, Local, MessageWriter, Query, Res, ResMut,
+    With, Without,
 };
 use bevy_egui::{egui, EguiContexts};
 
@@ -36,7 +37,10 @@ pub fn ui_character_select_system(
     mut ui_state: Local<UiCharacterSelectState>,
     mut character_select_state: ResMut<CharacterSelectState>,
     mut egui_context: EguiContexts,
-    query_camera: Query<Entity, With<Camera3d>>,
+    query_camera: Query<
+        Entity,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     character_list: Option<Res<CharacterList>>,
     asset_server: Res<AssetServer>,
     dialog_assets: Res<Assets<Dialog>>,

@@ -5,7 +5,7 @@ use bevy::{
     prelude::{
         AssetServer, Camera, Camera3d, Commands, Component, Entity, GlobalTransform, Handle,
         InheritedVisibility, Local, MessageReader, MessageWriter, MouseButton, NextState, Query,
-        Res, ResMut, Resource, Vec2, ViewVisibility, Visibility, With, World,
+        Res, ResMut, Resource, Vec2, ViewVisibility, Visibility, With, Without, World,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
@@ -169,7 +169,7 @@ pub fn character_select_system(
     mut join_zone_id: Local<Option<ZoneId>>,
     query_camera: Query<
         (Entity, &Camera, &GlobalTransform, Option<&CameraAnimation>),
-        With<Camera3d>,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
     >,
     world_connection: Option<Res<WorldConnection>>,
     mut character_list: Option<ResMut<CharacterList>>,
@@ -425,7 +425,10 @@ pub fn character_select_input_system(
     mut input_state: ResMut<CharacterSelectInputState>,
     mut egui_ctx: EguiContexts,
     query_window: Query<&Window, With<PrimaryWindow>>,
-    query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    query_camera: Query<
+        (&Camera, &GlobalTransform),
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     query_entities: Query<(Option<&ColliderParent>, Option<&CharacterSelectCharacter>)>,
     mut character_select_events: MessageWriter<CharacterSelectEvent>,
 ) {

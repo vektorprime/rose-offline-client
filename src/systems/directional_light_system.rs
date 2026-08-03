@@ -1,6 +1,6 @@
 use bevy::{
     light::DirectionalLightShadowMap,
-    prelude::{Camera, DirectionalLight, Entity, GlobalTransform, Mat4, Query, Res, Vec3, With},
+    prelude::{Camera, DirectionalLight, Entity, GlobalTransform, Mat4, Query, Res, Vec3, With, Without},
 };
 
 use crate::components::PlayerCharacter;
@@ -11,7 +11,10 @@ const PROJECTION_HALF_DEPTH: f32 = 100.0;
 pub fn directional_light_system(
     query_player: Query<&GlobalTransform, With<PlayerCharacter>>,
     query_light: Query<&GlobalTransform, With<DirectionalLight>>,
-    views: Query<(Entity, &GlobalTransform), With<Camera>>,
+    views: Query<
+        (Entity, &GlobalTransform),
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
     shadow_map: Res<DirectionalLightShadowMap>,
 ) {
     let lookat_position = if let Ok(player_transform) = query_player.single() {

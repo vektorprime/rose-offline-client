@@ -6,7 +6,7 @@ use bevy::{
     math::{Quat, Vec2, Vec3},
     prelude::{
         BevyError, Component, Entity, GlobalTransform, Local, MessageReader, MouseButton, Query,
-        Res, Time, Transform, Window, With,
+        Res, Time, Transform, Window, With, Without,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
@@ -73,7 +73,10 @@ pub struct CameraControlState {
 
 pub fn orbit_camera_system(
     mut control_state: Local<CameraControlState>,
-    mut query: Query<(&mut OrbitCamera, &mut Transform)>,
+    mut query: Query<
+        (&mut OrbitCamera, &mut Transform),
+        Without<crate::render::WaterReflectionCamera>,
+    >,
     query_global_transform: Query<&GlobalTransform>,
     mut mouse_motion_events: MessageReader<MouseMotion>,
     mut mouse_wheel_reader: MessageReader<MouseWheel>,

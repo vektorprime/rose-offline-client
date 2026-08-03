@@ -4,6 +4,7 @@ use rand::Rng;
 
 use crate::components::{BoatState, BowSprayParticle, WakeEmitter, WakeParticle, WakeSource};
 use crate::graphics::GraphicsSettings;
+use crate::systems::boat_spawn_system::BOAT_VISUAL_SCALE;
 
 const WAKE_ALPHA_BUCKETS: usize = 8;
 
@@ -131,8 +132,10 @@ pub fn boat_wake_spawn_system(
             let wake_lifetime_secs = 2.0;
 
             for side in [-1.0f32, 1.0f32] {
-                let spawn_pos =
-                    center - forward * 1.5 + right * side * 0.9 + Vec3::new(0.0, -0.03, 0.0);
+                let spawn_pos = center
+                    - forward * (1.5 * BOAT_VISUAL_SCALE)
+                    + right * side * (0.9 * BOAT_VISUAL_SCALE)
+                    + Vec3::new(0.0, -0.05, 0.0);
                 let wake_dir = (-forward + right * side * 0.3).normalize_or_zero();
                 let velocity = wake_dir * (boat.speed * 0.3);
 
@@ -178,12 +181,12 @@ pub fn boat_wake_spawn_system(
                     break;
                 }
 
-                let side_offset = rng.gen_range(-0.35..0.35);
+                let side_offset = rng.gen_range(-0.55..0.55);
                 let vertical_jitter = rng.gen_range(-0.02..0.06);
                 let spawn_pos = center
-                    + forward * 1.55
+                    + forward * (1.55 * BOAT_VISUAL_SCALE)
                     + right * side_offset
-                    + Vec3::new(0.0, 0.03 + vertical_jitter, 0.0);
+                    + Vec3::new(0.0, 0.05 + vertical_jitter, 0.0);
 
                 let upward = rng.gen_range(2.0..4.0);
                 let backward = boat.speed * rng.gen_range(0.25..0.45);

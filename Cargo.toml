@@ -68,7 +68,7 @@ default-features = false
 features = [
     "std",
     "async_executor",
-    "bevy_log",            # Required for logging macros in Bevy 0.16
+    "bevy_log",            # Required for logging macros in Bevy 0.18
     "bevy_asset",
     "bevy_winit",
     "bevy_core_pipeline",

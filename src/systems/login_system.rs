@@ -1,7 +1,7 @@
 use bevy::{
     prelude::{
         AssetServer, Camera3d, Commands, Entity, Handle, MessageReader, MessageWriter, Query, Res,
-        ResMut, With,
+        ResMut, With, Without,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
@@ -23,7 +23,10 @@ pub fn login_state_enter_system(
     mut commands: Commands,
     mut loaded_zone: MessageWriter<LoadZoneEvent>,
     mut query_cursor_options: Query<&mut CursorOptions, With<PrimaryWindow>>,
-    query_cameras: Query<Entity, With<Camera3d>>,
+    query_cameras: Query<
+        Entity,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     login_camera_animation: Option<Res<LoginCameraAnimation>>,
     asset_server: Res<AssetServer>,
 ) {
@@ -67,7 +70,10 @@ pub fn login_state_exit_system(mut commands: Commands) {
 pub fn login_system(
     mut commands: Commands,
     mut egui_context: EguiContexts,
-    query_cameras: Query<(Entity, Option<&CameraAnimation>), With<Camera3d>>,
+    query_cameras: Query<
+        (Entity, Option<&CameraAnimation>),
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     login_camera_animation: Option<Res<LoginCameraAnimation>>,
     asset_server: Res<AssetServer>,
     login_connection: Option<Res<LoginConnection>>,

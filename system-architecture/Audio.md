@@ -1,7 +1,7 @@
 # Audio System Architecture
 
 ## Overview
-The project utilizes a custom audio implementation based on `oddio` and `cpal` instead of Bevy's built-in audio system. This custom architecture provides granular control over audio mixing, spatialization, and streaming, allowing for advanced features like precise gain control, custom crossfading for background music, and efficient handling of large sound libraries via a custom cache.
+The project utilizes a custom audio implementation based on `oddio` and `cpal` instead of Bevy's built-in audio system. This custom architecture provides granular control over audio mixing, spatialization, and streaming, allowing for advanced features like precise gain control, custom day/night background music transitions, and efficient handling of large sound libraries via a custom cache.
 
 ## Core Components
 
@@ -11,7 +11,7 @@ The `OddioPlugin` handles the initialization of the audio backend. It sets up th
 - **Initialization**: It detects the default output device and sample rate, then creates a root mixer and a spatial scene.
 - **Integration**: The `OddioContext` resource is inserted to provide access to the mixer and spatial scene handles across the application.
 
-Example: `src/audio/mod.rs:60`
+Example: `src/audio/mod.rs:101`
 ```rust
 impl Plugin for OddioPlugin {
     fn build(&self, app: &mut App) {
@@ -96,8 +96,8 @@ Used for UI elements and Background Music. Global sounds are played directly thr
 ## Key Systems
 
 ### `background_music_system`
-Manages zone-based BGM with day/night cycles and crossfading.
-- **Logic**: Monitors `CurrentZone` and `ZoneTime`. When the zone or time of day changes, it triggers a crossfade by fading out the current track and fading in the new one over a set duration.
+Manages zone-based BGM with day/night cycles and timed track transitions.
+- **Logic**: Monitors `CurrentZone` and `ZoneTime`. When the zone or time of day changes, it swaps between the zone's day and night tracks: the old track entity is despawned after `CROSSFADE_DURATION_MS` and the new track is spawned only then (no actual volume fade or overlap).
 
 Example: `src/systems/background_music_system.rs:10`
 ```rust
@@ -111,20 +111,20 @@ Plays sound effects tied to specific animation frames.
 Handles ambient sounds emitted by NPCs when they are in an idle state.
 
 ### `vehicle_sound_system`
-Manages audio for vehicles, typically including engine loops and movement sounds.
+Switches repeating per-part vehicle sounds between idle and move variants when a vehicle starts or stops moving.
 
 ## Troubleshooting
 
 ### Oddio Initialization Failures
 - **No Output Device**: Ensure a valid audio output device is connected. The `OddioPlugin` will panic if `default_output_device()` returns `None`.
-- **Sample Rate Mismatch**: Verify that the device supports the sample rate requested by the configuration.
+- **Sample Rate Mismatch**: The plugin uses the device's default output sample rate (there is no fixed configuration); stream setup will panic if the device has no default output config or the stream cannot be built.
 
 ### Spatial Audio Positioning Issues
 - **Listener Position**: Ensure the `PlayerCharacter` component is present; otherwise, the system falls back to the `Camera3d` position, which may cause audio to feel disconnected from the player.
 - **Radius**: Check the `SoundRadius` component; if not provided, it defaults to 4.0 units.
 
 ### Memory Usage
-- **Cache Bloat**: The `SoundCache` uses a fixed-size vector. Ensure the size is appropriate for the number of unique sounds in the game to avoid out-of-bounds access or excessive memory allocation.
+- **Cache Bloat**: The `SoundCache` uses a fixed-size vector indexed by `SoundId`. Out-of-range IDs are silently ignored (no crash), but their sounds are re-loaded from disk on every request; ensure the cache size covers all sound IDs used in the game.
 - **Unused Handles**: Ensure that `GlobalSound` and `SpatialSound` entities are despawned when they finish playing to release asset handles.
 
 ## Source File References

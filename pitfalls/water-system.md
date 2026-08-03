@@ -145,3 +145,60 @@ When spawning entities that should appear within a transformed parent (like a zo
 2. **Zone offset matters** - Zones are positioned at `(5200.0, 0.0, -5200.0)` to center them in the world
 3. **Event data must include parent reference** - Events that trigger entity spawning should include the parent entity reference
 4. **Debug with world positions** - When debugging visibility issues, check both local and world positions to identify transform inheritance problems
+
+---
+
+## Fish Lined Up in Rows / Converged and Static / Huge Perf Hit (Fixed 2026-08-02)
+
+### Problem
+1. Fish spawned lined up in visible rows and stayed that way.
+2. In many areas fish were all converged in one spot, seemingly not moving, while other areas looked fine.
+3. After adding a separation force, the game became much slower while CPU/MEM/GPU usage looked low.
+
+### Root Cause
+1. **Spawn pattern**: schools were placed on a fixed 8x8 stratified grid in row-major order. With ~118 schools for 64 cells, schools wrapped around (`% grid_cells_z`) and doubled up; members clustered within ±5% of the water width at one shared depth. Result: visible parallel rows of tight clusters.
+2. **Shared school target**: all members of a school converged on the same point (±0.5 m), so clusters collapsed into lines/points.
+3. **Wobble bug (the "not moving" look)**: the swim wobble was added to position every frame WITHOUT scaling by `delta`. At 60 fps a fast fish weaved ~2.4 m/s sideways vs 2 m/s forward, so fish vibrated in place with near-zero net progress. Same bug on the vertical wobble.
+4. **No separation force**: fish have no collision, so overlapping spawn piles never spread apart.
+5. **NaN freeze risk**: `direction / distance` with distance == 0 produces NaN, permanently corrupting the fish transform.
+6. **O(n²) separation loop**: naive pairwise neighbor scan over all fish per frame cost tens of ms/frame in the unoptimized debug build (single core pegged — reads as low overall CPU% in Task Manager).
+
+### Solution (src/systems/fish_system.rs)
+1. Replaced the 8x8 grid with uniform random school centers (no rows, no wrap).
+2. Per-member targets instead of one shared school target — schools disperse naturally.
+3. Member spread scales with school size (`0.8 * sqrt(school_size)`), capped to the water plane size; per-member depth jitter (±0.3 m) so schools aren't flat planes.
+4. Scaled all wobble additions by `delta` (per-second lateral speed ~0.03 m/s instead of per-frame).
+5. Added separation force (radius 0.5 m, push ≤ 2 m/s, frame-rate independent via delta).
+6. NaN guard: `!distance.is_finite() || distance < reach` → pick new target.
+7. `pick_new_target` guards against zero-size water planes (`extents.max(0.001)`) — an empty `gen_range` range panics and disables the whole movement system.
+8. **Perf fix**: separation uses an X-sorted index sweep — the inner scan breaks as soon as the X delta exceeds the 0.5 m radius (O(n·k) instead of O(n²)).
+
+### Lesson Learned
+- Any per-frame displacement added in a per-frame system must be scaled by `delta` or it becomes frame-rate-dependent and can dominate real movement.
+- Neighborhood queries need a spatial acceleration (sorted sweep, grid, hash) — naive O(n²) pairwise scans are unusable in debug builds with a few hundred entities per area.
+- `rng.gen_range(a..b)` panics on empty ranges — guard degenerate extents, since a single system panic disables the system and appears as frozen behavior.
+
+---
+
+## Fish Still Clumped and Stationary After First Fix (Fixed 2026-08-02, user confirmed)
+
+### Problem
+After the row/wobble/O(n²) fixes, many areas still showed fish packed together in static clumps while other areas looked realistic.
+
+### Root Cause
+1. **Fixed count per water plane**: `fish_count_per_water: 400` applied to every plane regardless of size. Zones build water from many small per-block IFO planes, so a 10x10 m pond received the same 400 fish as a huge lake (~4 fish/m²) — a packed, churning ball whose targets all lie inside the same tiny area, so the clump never goes anywhere. Large planes spread the same 400 thin and looked normal.
+2. **Separation skipped fish from different water planes** (`water_center` equality check). Fish where adjacent/overlapping planes meet could stack forever and never push apart.
+3. **Separation radius (0.5 m) smaller than large fish** (tuna ~1.1 m long) — big fish interpenetrated.
+4. **No distance culling**: every fish in every loaded plane simulated every frame, amplifying the cost of over-populated planes.
+
+### Solution (src/components/fish.rs, src/systems/fish_system.rs, src/ui/ui_settings_system.rs)
+1. Area-based count: `fish_per_1000_sqm` (default 50) x plane area, clamped to `[min_fish_per_water=8, max_fish_per_water=150]`; density 0 disables fish. Mirrors the existing `BirdSettings` density pattern.
+2. Separation now uses world-space positions (`GlobalTransform` snapshot) with no same-water check, so fish from different planes also separate. Pushes are world directions applied to local translation — valid because zone parents are pure translations.
+3. Separation radius raised to 0.9 m; `target_reach_distance` lowered 1.0 -> 0.4 m (fewer no-move re-target frames on small planes).
+4. Camera-distance cull: fish beyond `simulation_distance` (default 80 m) are skipped entirely; disabled when no camera exists.
+5. Spawn extents guarded (`max(0.001)`) like `pick_new_target` already was; clamp range normalized so misconfigured min/max cannot panic.
+
+### Lesson Learned
+- Ambient-creature counts must scale with the area they live in — a fixed count per spawn region over-packs small regions no matter how good the per-fish AI is.
+- When separating entities that come from multiple sources/regions, keying the check on the source (water plane) can silently disable separation exactly where sources overlap.
+

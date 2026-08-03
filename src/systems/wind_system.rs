@@ -8,6 +8,19 @@ pub fn wind_update_system(
     settings: Res<WindSettings>,
     mut wind: ResMut<WindState>,
 ) {
+    // When a fresh server wind broadcast exists (ocean zone), use it as the
+    // authoritative source; fall back to local generation otherwise.
+    if wind.has_fresh_authoritative_wind(time.elapsed_secs()) {
+        let angle = wind.authoritative_angle.unwrap_or(wind.angle);
+        let speed = wind.authoritative_speed.unwrap_or(wind.speed);
+        let gust_factor = wind.authoritative_gust_factor.unwrap_or(wind.gust_factor);
+        wind.angle = angle;
+        wind.speed = speed;
+        wind.gust_factor = gust_factor;
+        wind.direction = Vec2::new(angle.sin(), angle.cos()) * speed;
+        return;
+    }
+
     wind.time_accumulator += time.delta_secs();
     let t = wind.time_accumulator;
 

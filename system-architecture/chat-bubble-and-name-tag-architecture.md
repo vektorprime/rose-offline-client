@@ -1,7 +1,7 @@
 # Chat Bubble and Name Tag System Architecture
 
 ## Status: RESOLVED
-**Last Updated**: 2026-03-02
+**Last Updated**: 2026-08-03
 
 ## Overview
 The chat bubble and name tag systems provide world-space UI elements that follow characters and monsters. Both systems utilize a custom rendering pipeline designed for high performance and billboard behavior, bypassing the standard `bevy_ui` for elements that need to exist within the 3D world.
@@ -29,11 +29,13 @@ pub struct WorldUiRect {
 **File:** `src/components/chat_bubble.rs`
 Tracks the state and lifetime of a chat bubble.
 - `target_entity`: The entity the bubble is following.
-- `remaining_time`: Countdown timer for despawning.
+- `text`: The text being displayed.
+- `remaining_time`: Time remaining before fade-out starts.
 - `total_time`: Initial duration for fade calculations.
+- `fade_start_fraction`: Fraction of the total time at which fading begins (default `0.2`).
 
 ### 3. MonsterChatter
-**File:** `src/components/monster_chatter.rs`
+**File:** `src/components/chat_bubble.rs` (same module as `ChatBubble`)
 Enables NPCs to periodically "speak" random phrases.
 - `time_until_next_chat`: Randomized timer.
 - `min_interval` / `max_interval`: Bounds for the random timer.
@@ -71,15 +73,15 @@ Both systems use `egui` for high-quality text layout:
 1. **Layout**: Create an `egui::Galley` using `LayoutJob`.
 2. **Texture Allocation**: Allocate a Bevy `Image` with a power-of-two size large enough for the text.
 3. **Glyph Copying**: Iterate through the `egui` font texture and copy individual glyph pixels into the Bevy `Image` buffer.
-4. **Outlining**: A custom pass iterates over the generated buffer to add a 1-pixel black outline for better contrast.
+4. **Tinting**: Glyph pixels are copied as white + alpha (glyph coverage = max of the RGBA channels) and tinted at render time via the `WorldUiRect` vertex color; chat bubbles also receive a procedurally generated rounded-rectangle background texture.
 
 ### 2. Spawn Systems
-- **`chat_bubble_spawn_system`**: Listens for `ChatBubbleEvent`. It handles the asynchronous nature of `egui` texture uploads by caching pending bubbles until the required font textures are ready in the GPU.
+- **`chat_bubble_spawn_system`**: Listens for `ChatBubbleEvent`. It caches pending bubbles, forces `egui` font glyphs to be uploaded by rendering a hidden `egui::Area` (required in bevy_egui 0.39), and reads the CPU-side font atlas directly to build the text and background textures.
 - **`name_tag_system`**: Automatically detects new entities with `ClientEntityName` and generates name tags. It caches textures by name to avoid redundant work.
 
 ### 3. Update and Cleanup
 - **`chat_bubble_update_system`**: Ticks down the `remaining_time`. In the last 20% of the bubble's life, it linearly fades the alpha of the `WorldUiRect` color.
-- **`chat_bubble_cleanup_system`**: Uses `RemovedComponents` to detect when a character is despawned and immediately removes its associated chat bubbles.
+- **`chat_bubble_cleanup_system`**: Uses `RemovedComponents<ClientEntityName>` to detect when a character is despawned and immediately removes its associated chat bubbles.
 
 ---
 
@@ -98,11 +100,11 @@ Both systems use `egui` for high-quality text layout:
 ### Player Positioning
 - **Symptom**: Player name tags appeared at the waist.
 - **Root Cause**: The AABB calculation in `character_model_add_collider_system.rs` was only considering the Body, Hands, and Feet parts. It was missing the Head, Face, and Hair parts, which are separate entities in the player's skinned mesh.
-- **Fix**: Expanded the AABB calculation to include all head-related parts and increased the base vertical offset to 0.85.
+- **Fix**: Expanded the AABB calculation to include all head-related parts and increased the base vertical offset to `1.8` (the height is computed as `ModelHeight::new(1.8 + half_extents.y * 2.0)` in `character_model_add_collider_system.rs`).
 
 ---
 
-## Technical Considerations for Bevy 0.16
-- **Reversed-Z**: The pipeline uses `CompareFunction::Greater` because Bevy 0.16 uses a reversed-Z depth buffer (1.0 is near, 0.0 is far).
-- **VisibilityClass**: `WorldUiRect` is registered with `#[require(VisibilityClass)]` and a component hook to ensure it integrates with Bevy's standard visibility systems.
-- **Asset Management**: Uses `Mesh3d` and `MeshMaterial3d` components for compatibility with the new Bevy 0.16 mesh rendering architecture.
+## Technical Considerations for Bevy 0.18
+- **Depth Testing**: The pipeline uses `CompareFunction::Always` with `depth_write_enabled: false`; world UI quads are screen-space overlays anchored to world positions and render on top regardless of scene depth.
+- **VisibilityClass**: `WorldUiRect` is registered with `#[require(VisibilityClass)]` so it integrates with Bevy's standard visibility systems.
+- **Rendering Architecture**: World UI does not use Bevy's mesh rendering components (`Mesh3d` / `MeshMaterial3d`). It is a fully custom pipeline: quads are emitted as `WorldUiBatch` entities in the render app with a raw vertex buffer, a per-image bind group, and a specialized `WorldUiPipeline` in the `Transparent3d` phase.

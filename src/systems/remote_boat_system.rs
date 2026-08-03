@@ -56,12 +56,21 @@ pub fn remote_boat_sync_system(
         let mut remote_heading = facing.actual;
         let mut remote_sail_trim = None;
 
+        // While authoritative SailState packets keep arriving, the server
+        // drives heading/speed/trim (set by the SailState handler); skip
+        // position-delta estimation.
+        let authoritative_fresh = remote_state
+            .as_ref()
+            .map_or(false, |r| time.elapsed_secs() - r.last_authoritative_at < 0.5);
+
         if let Some(mut remote_state) = remote_state {
-            let delta = position.position - remote_state.target_position_cm;
-            let horizontal_delta = Vec2::new(delta.x, delta.y);
-            remote_speed = horizontal_delta.length() / 100.0 / dt;
-            if horizontal_delta.length_squared() > 1.0 {
-                remote_heading = horizontal_delta.x.atan2(horizontal_delta.y);
+            if !authoritative_fresh {
+                let delta = position.position - remote_state.target_position_cm;
+                let horizontal_delta = Vec2::new(delta.x, delta.y);
+                remote_speed = horizontal_delta.length() / 100.0 / dt;
+                if horizontal_delta.length_squared() > 1.0 {
+                    remote_heading = horizontal_delta.x.atan2(horizontal_delta.y);
+                }
             }
 
             previous_position_cm = remote_state.target_position_cm;
@@ -78,10 +87,12 @@ pub fn remote_boat_sync_system(
         if let Some(mut boat_state) = boat_state {
             boat_state.active = true;
             boat_state.rider_entity = Some(entity);
-            boat_state.heading = remote_heading;
-            boat_state.speed = remote_speed.clamp(0.0, boat_state.max_speed);
-            boat_state.sail_trim = remote_sail_trim.unwrap_or(boat_state.sail_trim);
-            boat_state.rudder = 0.0;
+            if !authoritative_fresh {
+                boat_state.heading = remote_heading;
+                boat_state.speed = remote_speed.clamp(0.0, boat_state.max_speed);
+                boat_state.sail_trim = remote_sail_trim.unwrap_or(boat_state.sail_trim);
+                boat_state.rudder = 0.0;
+            }
             boat_state.water_height_cm = position.z;
 
             if boat_state.model_root_entity.is_none() {

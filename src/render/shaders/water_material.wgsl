@@ -12,6 +12,7 @@
 //! - Depth-based color gradient (shallow to deep water)
 //! - Bottom visibility in shallow water
 //! - Caustics effects
+//! - Planar reflection: samples the mirrored reflection camera's render target
 //!
 //! Note: This shader uses its own lighting uniforms instead of zone_lighting
 //! because custom materials only have access to bind groups 0-2.
@@ -49,8 +50,16 @@ struct VertexOutput {
 // [9] shallow_color (vec4)
 // [10] depth_scale: x, y, wave_layers (as float), caustics_intensity
 // [11] caustics: scale, speed, water_surface_y, padding
+// [12] reflection_plane: normal xyz, distance (water surface y)
+// [13] reflection_params: enabled, padding
 @group(#{MATERIAL_BIND_GROUP}) @binding(0)
-var<storage, read> water_material_data: array<vec4<f32>, 12>;
+var<storage, read> water_material_data: array<vec4<f32>, 14>;
+
+// Planar reflection render target (rendered by the mirrored reflection camera)
+@group(#{MATERIAL_BIND_GROUP}) @binding(1)
+var reflection_texture: texture_2d<f32>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(2)
+var reflection_sampler: sampler;
 
 fn light_direction_value() -> vec3<f32> {
     return water_material_data[0].xyz;
@@ -168,6 +177,22 @@ fn caustics_speed_value() -> f32 {
 
 fn water_surface_y_value() -> f32 {
     return water_material_data[11].z;
+}
+
+fn reflection_plane_value() -> vec4<f32> {
+    return water_material_data[12];
+}
+
+fn reflection_enabled_value() -> f32 {
+    return water_material_data[13].x;
+}
+
+fn debug_show_reflection_value() -> f32 {
+    return water_material_data[13].y;
+}
+
+fn reflection_status_value() -> f32 {
+    return water_material_data[13].z;
 }
 
 // Fresnel-Schlick approximation for angle-dependent reflectivity
@@ -553,6 +578,63 @@ fn apply_zone_fog(fragment_color: vec3<f32>, world_position: vec4<f32>) -> vec3<
     return mix(fragment_color, fog_color, fog_amount);
 }
 
+// === PLANAR REFLECTION SAMPLING ===
+// The reflection camera's view-projection is exactly the main camera's
+// view-projection composed with the plane reflection. A water fragment at
+// `world_pos` (which lies on the reflection plane) therefore projects to the
+// same screen position in both cameras, and the mirrored scene point visible
+// at that fragment appears in the reflection texture at the fragment's own
+// screen position. This mirrors the approach of Bevy's official `mirror`
+// example (screen-space texture sampling).
+fn sample_water_reflection(world_pos: vec3<f32>, wave_normal: vec3<f32>, time: f32) -> vec3<f32> {
+    if (reflection_enabled_value() < 0.5) {
+        return vec3<f32>(0.0);
+    }
+
+    // Project the fragment position through the main camera's clip_from_world
+    // to get its screen position (which is where the reflection texture shows
+    // the mirrored scene for this fragment).
+    let clip = view.clip_from_world * vec4<f32>(world_pos, 1.0);
+    let ndc = clip.xy / clip.w;
+    let uv = vec2<f32>(0.5 * ndc.x + 0.5, 0.5 - 0.5 * ndc.y);
+
+    // Subtle wave distortion of the reflected image for a living surface.
+    let distorted_uv = uv
+        + wave_normal.xz * 0.008
+        + vec2<f32>(sin(time * 0.6) * 0.001, cos(time * 0.4) * 0.001);
+
+    // Fade out at the edges of the render target to hide seams.
+    let edge_fade = smoothstep(0.0, 0.06, distorted_uv.x)
+        * (1.0 - smoothstep(0.94, 1.0, distorted_uv.x))
+        * smoothstep(0.0, 0.06, distorted_uv.y)
+        * (1.0 - smoothstep(0.94, 1.0, distorted_uv.y));
+
+    let reflected_color =
+        textureSample(reflection_texture, reflection_sampler, distorted_uv).rgb * edge_fade;
+
+    // DEBUG: encode the reflection camera status as a color:
+    // - red: camera disabled
+    // - orange: camera active but no entities visible (frustum/culling issue)
+    // - magenta: camera active but suspiciously few visible entities
+    //   (broken frustum culling almost everything)
+    // - otherwise: show the raw reflection texture sample
+    if (debug_show_reflection_value() > 0.5) {
+        let status = reflection_status_value();
+        if (status < 0.5) {
+            return vec3<f32>(1.0, 0.0, 0.0);
+        }
+        if (status < 1.5) {
+            return vec3<f32>(1.0, 0.5, 0.0);
+        }
+        if (status < 2.5) {
+            return vec3<f32>(1.0, 0.0, 1.0);
+        }
+        return reflected_color;
+    }
+
+    return reflected_color;
+}
+
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
@@ -727,9 +809,21 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     // === COMBINE ALL EFFECTS ===
     // Start with lit water color
     var final_color = lit_water_color;
-    
-    // Add sky reflection based on fresnel (increased from 0.4 to 0.6 for more reflection)
-    final_color = mix(final_color, sky_reflection, fresnel * 0.6);
+
+    // Real planar reflection (mirrored scene) blended by fresnel.
+    // Falls back to the procedural sky tint when reflections are disabled.
+    let reflection_color = sample_water_reflection(in.world_position.xyz, wave_normal, wave_time);
+
+    // DEBUG: show the raw reflection sample (or the status color)
+    if (debug_show_reflection_value() > 0.5) {
+        return vec4<f32>(reflection_color, 1.0);
+    }
+
+    let reflection_light = mix(sky_reflection, reflection_color, reflection_enabled_value());
+    // Strong blend: at least 50% reflection everywhere (clearly visible even
+    // looking straight down at the water), up to ~100% at grazing angles.
+    let reflection_blend = max(saturate(fresnel), 0.5);
+    final_color = mix(final_color, reflection_light, reflection_blend);
     
     // Add specular highlights
     final_color = final_color + specular_color;

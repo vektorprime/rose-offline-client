@@ -39,7 +39,7 @@ This documentation is for **Bevy 0.18.1**. Key changes from earlier versions:
 
 | Feature | Bevy 0.14 | Bevy 0.18 |
 |---------|-----------|-----------|
-| Shadow field | `shadows_enabled` | `shadow_maps_enabled` |
+| Shadow field | `shadows_enabled` | `shadows_enabled` (unchanged in 0.18; `shadow_maps_enabled` is a newer-Bevy rename) |
 | Ambient light | Resource only | Component + Resource |
 | Light bundles | `DirectionalLightBundle` | Individual components |
 | Fog volume | Bevy 0.15+ | Enhanced in 0.18 |
@@ -50,7 +50,7 @@ This documentation is for **Bevy 0.18.1**. Key changes from earlier versions:
 
 The `DirectionalLight` component represents light sources infinitely far away, such as the sun or moon. Light shines along the forward direction of the entity's transform.
 
-**Source:** `bevy-0.18.1/crates/bevy_light/src/directional_light.rs:73`
+**Source:** `bevy-0.18.1/crates/bevy_light/src/directional_light.rs:70`
 
 ### Structure
 
@@ -58,7 +58,7 @@ The `DirectionalLight` component represents light sources infinitely far away, s
 pub struct DirectionalLight {
     pub color: Color,
     pub illuminance: f32,           // Lux (lumens per square meter)
-    pub shadow_maps_enabled: bool,  // Bevy 0.18: renamed from shadows_enabled
+    pub shadows_enabled: bool,      // 0.18.1 field name (shadow_maps_enabled is a newer-Bevy rename)
     pub contact_shadows_enabled: bool,
     #[cfg(feature = "experimental_pbr_pcss")]
     pub soft_shadow_size: Option<f32>,
@@ -68,7 +68,7 @@ pub struct DirectionalLight {
 }
 ```
 
-**Migration Note:** Bevy 0.18 renamed `shadows_enabled` to `shadow_maps_enabled` for consistency.
+**Migration Note:** In Bevy 0.18.1 the field is still named `shadows_enabled`. The rename to `shadow_maps_enabled` only happens in newer Bevy versions.
 
 ### Illuminance Values (Lux)
 
@@ -86,11 +86,11 @@ pub struct DirectionalLight {
 ### Usage in Rose Offline Client
 
 ```rust
-// src/render/zone_lighting.rs:146
+// src/render/zone_lighting.rs:141
 let light_entity = commands.spawn((
     DirectionalLight {
         illuminance: 15000.0,       // Balanced PBR lighting
-        shadow_maps_enabled: true,  // REQUIRED for volumetric lighting
+        shadows_enabled: true,      // REQUIRED for volumetric lighting
         ..Default::default()
     },
     default_light_transform(),
@@ -133,7 +133,7 @@ pub const OFF: SunDisk = SunDisk {
 
 Controls shadow map resolution for directional and spot lights:
 
-**Source:** `bevy-0.18.1/crates/bevy_light/src/directional_light.rs:193`
+**Source:** `bevy-0.18.1/crates/bevy_light/src/directional_light.rs:183`
 
 ```rust
 pub struct DirectionalLightShadowMap {
@@ -169,7 +169,7 @@ CascadeShadowConfig {
 
 Anti-aliasing method for shadow edges via PCF (Percentage Closer Filtering):
 
-**Source:** `bevy-0.18.1/crates/bevy_light/src/lib.rs:275`
+**Source:** `bevy-0.18.1/crates/bevy_light/src/lib.rs:241`
 
 ```rust
 pub enum ShadowFilteringMethod {
@@ -246,7 +246,7 @@ pub struct FogVolume {
 
 ### Rose Offline Client Implementation
 
-**Source:** `src/render/zone_lighting.rs:193`
+**Source:** `src/render/zone_lighting.rs:188`
 
 ```rust
 commands.spawn((
@@ -266,7 +266,7 @@ commands.spawn((
 
 **Critical Notes:**
 1. Fog volume must be positioned at game world center (5120, 0, -5120)
-2. `DirectionalLight::shadow_maps_enabled` MUST be true for volumetric lighting
+2. `DirectionalLight::shadows_enabled` MUST be true for volumetric lighting
 3. Scattering asymmetry > 0.5 creates forward-scattering effect (Mie scattering)
 
 ---
@@ -275,11 +275,11 @@ commands.spawn((
 
 Physically-based atmospheric scattering implementing Hillaire's 2020 paper.
 
-**Source:** `bevy-0.18.1/crates/bevy_light/src/atmosphere.rs`
+**Source:** `bevy-0.18.1/crates/bevy_pbr/src/atmosphere/mod.rs:210`
 
 ### Atmosphere Component
 
-**Source:** `bevy-0.18.1/crates/bevy_light/src/atmosphere.rs:24`
+**Source:** `bevy-0.18.1/crates/bevy_pbr/src/atmosphere/mod.rs:210`
 
 Add to `Camera3d` to enable atmospheric scattering:
 
@@ -292,14 +292,15 @@ pub struct Atmosphere {
 }
 ```
 
-// Presets
-Atmosphere::earth(medium_handle)  // Earth-like (R=6,360,000m, H=100,000m)
-Atmosphere::mars(medium_handle)   // Martian (R=3,389,500m, H=120,000m)
+// Preset
+Atmosphere::earthlike(medium_handle)  // Earth-like (R=6,360,000m, H=100,000m)
 ```
 
 ### ScatteringMedium Asset
 
 Defines how light scatters through the atmosphere:
+
+**Source:** `bevy-0.18.1/crates/bevy_pbr/src/medium.rs:69`
 
 ```rust
 pub struct ScatteringMedium {
@@ -309,8 +310,8 @@ pub struct ScatteringMedium {
     pub terms: SmallVec<[ScatteringTerm; 1]>,
 }
 
-// Earth atmosphere preset
-ScatteringMedium::earth(256, 256)
+// Earth atmosphere preset (also the Default impl)
+ScatteringMedium::earthlike(256, 256)
 ```
 
 ### ScatteringTerm
@@ -345,8 +346,6 @@ pub enum PhaseFunction {
     Rayleigh,                            // Gas molecules (blue sky)
     Mie { asymmetry: f32 },              // Dust/aerosols (forward-scattering)
     Curve(Arc<dyn Curve<f32>>),          // Custom
-    ChromaticCurve(Arc<dyn Curve<LinearRgba>>),  // Wavelength-dependent
-    ChromaticTexture(Handle<Image>),     // Texture-based (N×1 RGBA)
 }
 ```
 
@@ -354,7 +353,7 @@ pub enum PhaseFunction {
 
 Controls LUT resolution and sampling quality:
 
-**Source:** `bevy-0.18.1/crates/bevy_pbr/src/atmosphere/mod.rs:258`
+**Source:** `bevy-0.18.1/crates/bevy_pbr/src/atmosphere/mod.rs:294`
 
 ```rust
 pub struct AtmosphereSettings {
@@ -403,7 +402,7 @@ pub struct AtmosphereEnvironmentMapLight {
 
 HDR environment maps for PBR image-based lighting:
 
-**Source:** `bevy-0.18.1/crates/bevy_light/src/probe.rs:104`
+**Source:** `bevy-0.18.1/crates/bevy_light/src/probe.rs:106`
 
 ```rust
 pub struct EnvironmentMapLight {
@@ -557,7 +556,7 @@ pub struct MoonLight;
 
 ### CloudLayer
 
-TODO: Document cloud layer implementation when added.
+Cloud layer rendering is implemented in `src/render/cloud_material.rs` (procedural fBm-noise clouds with time-of-day lighting) and `src/render/volumetric_cloud.rs` (3D volumetric clouds). Lighting parameters are computed by `calculate_cloud_lighting` in `src/render/zone_lighting.rs:742`.
 
 ---
 
@@ -567,7 +566,7 @@ TODO: Document cloud layer implementation when added.
 
 Central lighting configuration for zones:
 
-**Source:** `src/render/zone_lighting.rs:533`
+**Source:** `src/render/zone_lighting.rs:537`
 
 ```rust
 pub struct ZoneLighting {
@@ -618,7 +617,7 @@ pub enum SkyMode {
 
 Dynamic sun rotation based on time of day:
 
-**Source:** `src/render/zone_lighting.rs:316`
+**Source:** `src/render/zone_lighting.rs:336`
 
 ```rust
 // Time mapping (with +19 hour shift for extended daylight)
@@ -695,7 +694,7 @@ pub struct ZoneLightingPlugin;
 
 impl Plugin for ZoneLightingPlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(app, ZONE_LIGHTING_SHADER_HANDLE, "shaders/zone_lighting.wgsl", Shader::from_wgsl);
+        load_internal_asset!(app, ZONE_LIGHTING_SHADER_HANDLE_TYPED, "shaders/zone_lighting.wgsl", Shader::from_wgsl);
         
         app.register_type::<ZoneLighting>()
             .init_resource::<ZoneLighting>()
@@ -731,21 +730,24 @@ impl Plugin for ZoneLightingPlugin {
 Controlled via `GraphicsSettings` resource:
 
 ```rust
-// src/graphics/apply_systems.rs:56
+// src/graphics/graphics_settings.rs:72
 pub enum ShadowQuality {
     Off,      // No shadows
-    Low,      // 1024x1024 shadow maps
-    Medium,   // 2048x2048 shadow maps (default)
-    High,     // 4096x4096 shadow maps
+    Low,      // 1 cascade, 1024x1024 shadow maps
+    Medium,   // 2 cascades, 2048x2048 shadow maps (default)
+    High,     // 3 cascades, 2048x2048 shadow maps
+    Ultra,    // 4 cascades, 4096x4096 shadow maps
 }
 ```
+
+Applied by `apply_shadow_quality_system` in `src/graphics/apply_systems.rs:45`.
 
 ### Volumetric Fog Settings
 
 Via `ZoneLighting` resource:
 
 ```rust
-// src/render/zone_lighting.rs:533
+// src/render/zone_lighting.rs:537
 pub struct ZoneLighting {
     pub volumetric_fog_enabled: bool,
     pub volumetric_fog_color: Vec3,
@@ -761,7 +763,7 @@ pub struct ZoneLighting {
 Via `AtmosphereSettings` resource:
 
 ```rust
-// bevy-0.18.1/crates/bevy_pbr/src/atmosphere/mod.rs:258
+// bevy-0.18.1/crates/bevy_pbr/src/atmosphere/mod.rs:294
 pub struct AtmosphereSettings {
     pub transmittance_lut_size: UVec2,       // Default: (256, 128)
     pub multiscattering_lut_size: UVec2,     // Default: (32, 32)
@@ -777,12 +779,12 @@ pub struct AtmosphereSettings {
 ### Creating a Sun Light with Shadows
 
 ```rust
-// src/render/zone_lighting.rs:146
+// src/render/zone_lighting.rs:141
 commands.spawn((
     DirectionalLight {
         color: Color::srgb(1.0, 0.95, 0.9),  // Warm sunlight
         illuminance: 15000.0,
-        shadow_maps_enabled: true,
+        shadows_enabled: true,
         ..Default::default()
     },
     Transform::from_rotation(Quat::from_euler(
@@ -797,19 +799,18 @@ commands.spawn((
         minimum_distance: 0.1,
     },
     VolumetricLight,
-    SunDisk::EARTH,
 ));
 ```
 
 ### Creating a Moon Light
 
 ```rust
-// src/lib.rs:2320
+// src/lib.rs:2282
 commands.spawn((
     DirectionalLight {
         color: Color::srgb(0.8, 0.85, 0.95),  // Blue-white moonlight
         illuminance: 5000.0,
-        shadow_maps_enabled: true,
+        shadows_enabled: true,
         shadow_depth_bias: 0.0,
         shadow_normal_bias: 0.0,
         ..Default::default()
@@ -826,7 +827,7 @@ commands.spawn((
     VolumetricFog {
         ambient_color: Color::WHITE,
         ambient_intensity: 0.1,
-        step_count: 64,
+        step_count: 128,  // The client camera uses 128 steps (src/lib.rs:2021)
         ..Default::default()
     },
 ));
@@ -835,11 +836,11 @@ commands.spawn((
 ### Setting Up Atmosphere
 
 ```rust
-let earth_medium = assets.add(ScatteringMedium::earth(256, 256));
+let earth_medium = assets.add(ScatteringMedium::earthlike(256, 256));
 
 commands.spawn((
     Camera3d::default(),
-    Atmosphere::earth(earth_medium.clone()),
+    Atmosphere::earthlike(earth_medium.clone()),
     AtmosphereEnvironmentMapLight::default(),
 ));
 ```
@@ -850,31 +851,24 @@ commands.spawn((
 
 ### Bevy 0.18 Migration Issues
 
-#### Issue: `shadows_enabled` field not found
+#### Issue: `shadow_maps_enabled` field not found
 
 **Symptom:**
 ```
-error[E0560]: struct `DirectionalLight` has no field named `shadows_enabled`
+error[E0560]: struct `DirectionalLight` has no field named `shadow_maps_enabled`
 ```
 
-**Cause:** Bevy 0.18 renamed `shadows_enabled` to `shadow_maps_enabled`.
+**Cause:** The `shadow_maps_enabled` name is a newer-Bevy rename. In Bevy 0.18.1 the field is still named `shadows_enabled`.
 
 **Solution:**
 ```rust
-// Before (Bevy 0.14-0.17)
 DirectionalLight {
     shadows_enabled: true,
     ..Default::default()
 }
-
-// After (Bevy 0.18+)
-DirectionalLight {
-    shadow_maps_enabled: true,
-    ..Default::default()
-}
 ```
 
-**Source:** `bevy-0.18.1/crates/bevy_light/src/directional_light.rs:93`
+**Source:** `bevy-0.18.1/crates/bevy_light/src/directional_light.rs:89`
 
 ---
 
@@ -889,9 +883,9 @@ DirectionalLight {
 
 1. **Shadow maps not enabled**
    ```rust
-   // Ensure shadow_maps_enabled is true
+   // Ensure shadows_enabled is true
    DirectionalLight {
-       shadow_maps_enabled: true,  // MUST be true
+       shadows_enabled: true,  // MUST be true
        ..Default::default()
    }
    ```
@@ -920,7 +914,7 @@ DirectionalLight {
    ));
    ```
 
-**Source:** `src/render/zone_lighting.rs:146-204`
+**Source:** `src/render/zone_lighting.rs:139-199`
 
 ---
 
@@ -934,11 +928,9 @@ DirectionalLight {
 
 1. **Remove Atmosphere component at night**
    ```rust
-   // src/render/starry_sky_material.rs
-   let should_enable_atmosphere = match zone_time.state {
-       ZoneTimeState::Night => false,
-       _ => true,
-   };
+   // src/render/starry_sky_material.rs:523
+   commands.entity(camera_entity).remove::<Atmosphere>();
+   commands.entity(camera_entity).remove::<AtmosphereSettings>();
    ```
 
 2. **Update night_factor in StarrySkySettings**
@@ -1016,7 +1008,7 @@ DirectionalLight {
    ));
    ```
 
-**Source:** `src/render/zone_lighting.rs:153-157`
+**Source:** `src/render/zone_lighting.rs:147-151`
 
 ---
 
@@ -1054,7 +1046,7 @@ DirectionalLight {
    }
    ```
 
-**Source:** `bevy-0.18.1/crates/bevy_pbr/src/atmosphere/mod.rs:258`
+**Source:** `bevy-0.18.1/crates/bevy_pbr/src/atmosphere/mod.rs:294`
 
 ---
 
@@ -1111,7 +1103,7 @@ Atmosphere {
    }
    ```
 
-**Source:** `src/render/zone_lighting.rs:193-204`
+**Source:** `src/render/zone_lighting.rs:188-199`
 
 ---
 
@@ -1144,11 +1136,11 @@ Atmosphere {
    // SunDisk requires Atmosphere on camera
    commands.spawn((
        Camera3d::default(),
-       Atmosphere::earth(medium_handle),
+       Atmosphere::earthlike(medium_handle),
    ));
    ```
 
-**Source:** `bevy-0.18.1/crates/bevy_light/src/directional_light.rs:267`
+**Source:** `bevy-0.18.1/crates/bevy_light/src/directional_light.rs:256`
 
 ---
 
@@ -1156,20 +1148,20 @@ Atmosphere {
 
 | Component/Resource | Source File | Description |
 |-------------------|-------------|-------------|
-| `DirectionalLight` | `bevy_light/src/directional_light.rs:73` | Sun/moon light source |
-| `DirectionalLightShadowMap` | `bevy_light/src/directional_light.rs:193` | Shadow map resolution |
+| `DirectionalLight` | `bevy_light/src/directional_light.rs:70` | Sun/moon light source |
+| `DirectionalLightShadowMap` | `bevy_light/src/directional_light.rs:183` | Shadow map resolution |
 | `CascadeShadowConfig` | `bevy_light/src/cascade.rs` | CSM configuration |
-| `ShadowFilteringMethod` | `bevy_light/src/lib.rs:275` | Shadow anti-aliasing |
+| `ShadowFilteringMethod` | `bevy_light/src/lib.rs:241` | Shadow anti-aliasing |
 | `VolumetricFog` | `bevy_light/src/volumetric.rs` | Camera volumetric settings |
 | `VolumetricLight` | `bevy_light/src/volumetric.rs` | Light shafts marker |
 | `FogVolume` | `bevy_light/src/volumetric.rs` | Volumetric fog region |
-| `Atmosphere` | `bevy_light/src/atmosphere.rs:171` | Atmospheric scattering |
-| `ScatteringMedium` | `bevy_light/src/atmosphere.rs:110` | Scattering properties |
-| `AtmosphereSettings` | `bevy_pbr/src/atmosphere/mod.rs:258` | LUT quality settings |
-| `AtmosphereEnvironmentMapLight` | `bevy_light/src/probe.rs` | Atmosphere-based IBL |
-| `EnvironmentMapLight` | `bevy_light/src/probe.rs:104` | HDR environment lighting |
+| `Atmosphere` | `bevy_pbr/src/atmosphere/mod.rs:210` | Atmospheric scattering |
+| `ScatteringMedium` | `bevy_pbr/src/medium.rs:69` | Scattering properties |
+| `AtmosphereSettings` | `bevy_pbr/src/atmosphere/mod.rs:294` | LUT quality settings |
+| `AtmosphereEnvironmentMapLight` | `bevy_light/src/probe.rs:153` | Atmosphere-based IBL |
+| `EnvironmentMapLight` | `bevy_light/src/probe.rs:106` | HDR environment lighting |
 | `DistanceFog` | `bevy_pbr/src/fog.rs` | Classic distance fog |
-| `SunDisk` | `bevy_light/src/directional_light.rs:267` | Visible solar disk |
+| `SunDisk` | `bevy_light/src/directional_light.rs:256` | Visible solar disk |
 | `GlobalAmbientLight` | `bevy_light/src/ambient_light.rs` | Global ambient resource |
 | `AmbientLight` | `bevy_light/src/ambient_light.rs` | Ambient light component |
 
@@ -1184,13 +1176,13 @@ Atmosphere {
 | `crates/bevy_light/src/directional_light.rs` | DirectionalLight, SunDisk, shadow maps |
 | `crates/bevy_light/src/cascade.rs` | CascadeShadowConfig, CSM logic |
 | `crates/bevy_light/src/volumetric.rs` | VolumetricFog, VolumetricLight, FogVolume |
-| `crates/bevy_light/src/atmosphere.rs` | Atmosphere, ScatteringMedium, scattering terms |
 | `crates/bevy_light/src/probe.rs` | EnvironmentMapLight, LightProbe, Skybox |
 | `crates/bevy_light/src/ambient_light.rs` | AmbientLight, GlobalAmbientLight |
 | `crates/bevy_light/src/lib.rs` | ShadowFilteringMethod, LightPlugin |
 | `crates/bevy_pbr/src/fog.rs` | DistanceFog, FogFalloff |
-| `crates/bevy_pbr/src/atmosphere/mod.rs` | AtmosphereSettings, LUT generation |
-| `crates/bevy_pbr/src/atmosphere/environment.rs` | AtmosphereEnvironmentMapLight |
+| `crates/bevy_pbr/src/atmosphere/mod.rs` | Atmosphere, AtmosphereSettings, AtmosphereMode, LUT generation |
+| `crates/bevy_pbr/src/medium.rs` | ScatteringMedium, ScatteringTerm, Falloff, PhaseFunction |
+| `crates/bevy_pbr/src/atmosphere/environment.rs` | Atmosphere environment-map probe system |
 | `crates/bevy_pbr/src/volumetric_fog/mod.rs` | VolumetricFogPlugin |
 | `crates/bevy_pbr/src/volumetric_fog/render.rs` | Volumetric rendering pipeline |
 

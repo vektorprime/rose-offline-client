@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the architecture for implementing a live map editor for the Rose Online client. The editor will allow real-time editing of zone objects, terrain, and entity properties through an egui-based interface.
+This document describes the architecture of the live map editor for the Rose Online client. The editor is fully implemented and allows real-time editing of zone objects, terrain, and entity properties through an egui-based interface. It is selected with the `--map-editor` CLI flag and is wired into the client as a separate `AppState` with its own plugin (`MapEditorPlugin`).
 
 ## Table of Contents
 
@@ -13,7 +13,7 @@ This document describes the architecture for implementing a live map editor for 
 5. [Property Editing System](#5-property-editing-system)
 6. [Model Management System](#6-model-management-system)
 7. [Map Serialization and Saving](#7-map-serialization-and-saving)
-8. [Implementation Steps](#8-implementation-steps)
+8. [Implementation Status](#8-implementation-status)
 
 ---
 
@@ -21,27 +21,45 @@ This document describes the architecture for implementing a live map editor for 
 
 ### Approach
 
-Add a new `--map-editor` flag to [`src/main.rs`](src/main.rs:1) following the existing pattern used for `--zone-viewer` and `--model-viewer`.
-
-### Implementation
+The `--map-editor` flag is defined in [`src/main.rs`](src/main.rs:65) following the same pattern used for `--zone-viewer` and `--model-viewer`:
 
 ```rust
-// In src/main.rs, add to clap Command:
-.arg(
-    clap::Arg::new("map-editor")
-        .long("map-editor")
-        .help("Run map editor mode"),
-)
+clap::Arg::new("map-editor")
+    .long("map-editor")
+    .help("Run map editor mode"),
+```
 
-// Add new run mode check:
-if matches.is_present("map-editor") {
-    run_map_editor(&config, zone_id);
+Mode selection in `main()`:
+
+```rust
+let mode = if matches.is_present("model-viewer") {
+    "ModelViewer"
+} else if matches.is_present("zone-viewer") {
+    "ZoneViewer"
+} else if matches.is_present("map-editor") {
+    "MapEditor"
+} else {
+    "Game"
+};
+```
+
+The dispatch at the end of `main()` calls `run_map_editor` with the optional `--zone` value ([`src/main.rs`](src/main.rs:304)):
+
+```rust
+} else if matches.is_present("map-editor") {
+    run_map_editor(
+        &config,
+        matches
+            .value_of("zone")
+            .and_then(|str| str.parse::<u16>().ok())
+            .and_then(ZoneId::new),
+    );
 }
 ```
 
-### New Entry Point
+### Entry Point
 
-Create a new `run_map_editor()` function in [`src/lib.rs`](src/lib.rs:1):
+`run_map_editor()` is defined in [`src/lib.rs`](src/lib.rs:646) and launches the client in `AppState::MapEditor`, loading the given zone (or zone 1 by default) through a `LoadZoneEvent` message:
 
 ```rust
 pub fn run_map_editor(config: &Config, zone_id: Option<ZoneId>) {
@@ -50,7 +68,7 @@ pub fn run_map_editor(config: &Config, zone_id: Option<ZoneId>) {
         AppState::MapEditor,
         SystemsConfig {
             add_custom_systems: Some(Box::new(move |app| {
-                app.world_mut().send_event(LoadZoneEvent::new(
+                app.world_mut().write_message(LoadZoneEvent::new(
                     zone_id.unwrap_or_else(|| ZoneId::new(1).unwrap()),
                 ));
             })),
@@ -62,10 +80,10 @@ pub fn run_map_editor(config: &Config, zone_id: Option<ZoneId>) {
 
 ### AppState Extension
 
-Add new state to [`src/resources/app_state.rs`](src/resources/app_state.rs):
+`MapEditor` is a state variant in [`src/resources/app_state.rs`](src/resources/app_state.rs:11):
 
 ```rust
-#[derive(Debug, Clone, Copy, Default, Eq, Hash, PartialEq, States)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash, States)]
 pub enum AppState {
     #[default]
     GameLogin,
@@ -73,9 +91,11 @@ pub enum AppState {
     Game,
     ModelViewer,
     ZoneViewer,
-    MapEditor,  // NEW
+    MapEditor,
 }
 ```
+
+State transitions into/out of the editor run `map_editor_enter_system` / `map_editor_exit_system` ([`src/lib.rs`](src/lib.rs:1251)), which enable the editor, open the zone list panel, and configure the camera to `FreeCamera` at the zone center.
 
 ---
 
@@ -83,136 +103,65 @@ pub enum AppState {
 
 ### Core Resource Structure
 
+`MapEditorState` is defined in [`src/map_editor/resources.rs`](src/map_editor/resources.rs:39) (not `src/resources/map_editor.rs`):
+
 ```rust
-// src/resources/map_editor.rs
-
-use bevy::prelude::*;
-use std::collections::HashSet;
-
 #[derive(Resource, Default)]
 pub struct MapEditorState {
-    // Selection
-    pub selected_entity: Option<Entity>,
-    pub selected_entities: HashSet<Entity>,  // Multi-select with Ctrl
-    pub selection_mode: SelectionMode,
-    
-    // Editor Mode
+    pub enabled: bool,                          // Whether the editor is active
+    pub selected_entities: HashSet<Entity>,     // Multi-select with Ctrl
     pub editor_mode: EditorMode,
-    pub transform_mode: TransformMode,
     pub transform_space: TransformSpace,
-    
-    // UI State
-    pub hierarchy_filter: HierarchyFilter,
-    pub show_grid: bool,
-    pub show_colliders: bool,
-    pub show_gizmos: bool,
     pub snap_to_grid: bool,
     pub grid_size: f32,
-    
-    // Undo/Redo
+    pub show_grid: bool,
+    pub is_modified: bool,
+    pub model_browser_search: String,
+    pub hierarchy_filter: String,
     pub undo_stack: Vec<EditorAction>,
     pub redo_stack: Vec<EditorAction>,
-    pub max_undo_steps: usize,
-    
-    // Modified State
-    pub is_modified: bool,
-    pub current_zone_id: Option<ZoneId>,
-    
-    // Model Browser
-    pub model_browser_search: String,
-    pub model_browser_category: ModelCategory,
-}
-
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
-pub enum SelectionMode {
-    #[default]
-    Single,
-    Multi,
-    Area,
-}
-
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
-pub enum EditorMode {
-    #[default]
-    Select,
-    Translate,
-    Rotate,
-    Scale,
-    Add,
-    Delete,
-}
-
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
-pub enum TransformMode {
-    #[default]
-    Translate,
-    Rotate,
-    Scale,
-}
-
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
-pub enum TransformSpace {
-    #[default]
-    World,
-    Local,
-}
-
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
-pub enum HierarchyFilter {
-    #[default]
-    All,
-    DecoObjects,
-    CnstObjects,
-    EventObjects,
-    WarpObjects,
-    Terrain,
-    Water,
-    Effects,
-    Sounds,
-}
-
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
-pub enum ModelCategory {
-    #[default]
-    All,
-    Deco,
-    Cnst,
-    Event,
-    Special,
 }
 ```
+
+Helper methods provide `clear_selection`, `select_entity`, `deselect_entity`, `toggle_entity_selection`, `is_entity_selected`, `selection_count`, `first_selected`, undo/redo stack management (`push_action`, `pop_undo`, `push_redo`, `pop_redo`, `can_undo`, `can_redo`, `clear_history`), and `is_modified` is set by `push_action`. Undo history is capped at 100 entries (`MAX_UNDO_HISTORY`).
+
+Supporting enums in the same file:
+
+- `EditorMode` — `Select`, `Translate`, `Rotate`, `Scale`, `Add`, `Delete` (default `Select`).
+- `TransformSpace` — `World`, `Local` (default `World`).
+- `ModelCategory` — `All`, `Deco`, `Cnst`, `Event`, `Special` (default `All`).
+
+There is no `SelectionMode` or `TransformMode` enum, and `hierarchy_filter` is a plain `String` (there is no `HierarchyFilter` enum).
+
+### Related Resources
+
+Other resources registered by `MapEditorPlugin` (all in [`src/map_editor/resources.rs`](src/map_editor/resources.rs)):
+
+- `AvailableModels` — models loaded from the ZSC files, grouped as `deco_models`, `cnst_models`, `event_models`, `special_models`.
+- `SelectedModel` — currently selected model for placement, browser visibility, selected category tab, scroll position, search filter, and a `pending_placement` flag ("Add to Zone" clicked).
+- `EditorGridSettings` — grid `visible`, `cell_size`, `extent`, `color`.
+- `DeletedZoneObjects` — tracks deleted objects as `(block_x, block_y, ifo_object_id, ZoneObjectType)` so the save system can remove them from pre-existing IFO data.
+- `CustomZonePath` — custom output path + zone id for saving brand-new zones.
+- `DuplicateSelectedEvent` — message requesting duplication of the selected entities (default offset `(1.0, 0.0, 1.0)`).
 
 ### Editor Action for Undo/Redo
 
 ```rust
-// src/resources/map_editor.rs
+// src/map_editor/resources.rs
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum EditorAction {
-    TransformEntity {
-        entity: Entity,
-        old_transform: Transform,
-        new_transform: Transform,
-    },
-    AddEntity {
-        entity: Entity,
-        zone_object: ZoneObject,
-        transform: Transform,
-    },
-    RemoveEntity {
-        entity: Entity,
-        zone_object: ZoneObject,
-        transform: Transform,
-        parent: Option<Entity>,
-    },
-    PropertyChange {
-        entity: Entity,
-        component_type: ComponentType,
-        old_value: Box<dyn std::any::Any>,
-        new_value: Box<dyn std::any::Any>,
-    },
+    TransformEntity { entity, old_transform, new_transform },
+    AddEntity { entity },
+    DeleteEntity { entity, transform, entity_type, serialized_data },
+    ModifyComponent { entity, component_type, old_value, new_value },
+    TransformEntities { entities: Vec<(Entity, Transform, Transform)> },
+    DeleteEntities { entities: Vec<(Entity, Transform, String, String)> },
+    AddEntities { entities: Vec<Entity> },
 }
 ```
+
+Undo/redo of `TransformEntity`/`TransformEntities`/`AddEntity`/`AddEntities`/`DeleteEntity`/`DeleteEntities` is implemented in `apply_undo_system` / `apply_redo_system` ([`src/map_editor/systems/property_update_system.rs`](src/map_editor/systems/property_update_system.rs:488)). Component modifications (`ModifyComponent`) are recorded for undo but only logged as a stub.
 
 ---
 
@@ -220,108 +169,31 @@ pub enum EditorAction {
 
 ### Raycasting from Mouse Position
 
-Based on the existing [`debug_inspector_picking_system`](src/systems/debug_inspector_system.rs:93), implement a click-based selection system.
+Implemented in [`src/map_editor/systems/selection_system.rs`](src/map_editor/systems/selection_system.rs) (`editor_picking_system`, registered by `EditorSelectionPlugin`), based on the existing [`debug_inspector_picking_system`](src/systems/debug_inspector_system.rs:93). The system:
 
-```rust
-// src/systems/map_editor_selection_system.rs
-
-use bevy::prelude::*;
-use bevy_egui::EguiContexts;
-use bevy_rapier3d::prelude::*;
-
-fn map_editor_selection_system(
-    mut map_editor_state: ResMut<MapEditorState>,
-    mut egui_ctx: EguiContexts,
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    rapier_context: ReadRapierContext,
-    query_window: Query<&Window, With<PrimaryWindow>>,
-    query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    query_zone_objects: Query<(Entity, &ZoneObject, &Transform)>,
-) {
-    // Skip if egui wants pointer input
-    if egui_ctx.ctx_mut().wants_pointer_input() {
-        return;
-    }
-    
-    let Ok(window) = query_window.get_single() else { return; };
-    let Some(cursor_position) = window.cursor_position() else { return; };
-    
-    // Handle click selection
-    if mouse_input.just_pressed(MouseButton::Left) {
-        for (camera, camera_transform) in query_camera.iter() {
-            if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
-                // Cast ray to find entity
-                if let Some((entity, _distance)) = rapier_context.cast_ray(
-                    ray.origin,
-                    *ray.direction,
-                    10000000.0,
-                    false,
-                    QueryFilter::new().groups(CollisionGroups::new(
-                        COLLISION_FILTER_INSPECTABLE,
-                        Group::all(),
-                    )),
-                ) {
-                    // Handle multi-select with Ctrl
-                    if keyboard.pressed(KeyCode::ControlLeft) {
-                        if map_editor_state.selected_entities.contains(&entity) {
-                            map_editor_state.selected_entities.remove(&entity);
-                        } else {
-                            map_editor_state.selected_entities.insert(entity);
-                        }
-                    } else {
-                        map_editor_state.selected_entities.clear();
-                        map_editor_state.selected_entities.insert(entity);
-                    }
-                    map_editor_state.selected_entity = Some(entity);
-                } else {
-                    // Clicked empty space - clear selection
-                    if !keyboard.pressed(KeyCode::ControlLeft) {
-                        map_editor_state.selected_entities.clear();
-                        map_editor_state.selected_entity = None;
-                    }
-                }
-            }
-        }
-    }
-}
-```
+- Skips when the editor is disabled, when in `EditorMode::Add` (the placement system owns clicks), or when egui wants pointer input.
+- Casts a Rapier ray from the camera through the cursor position (`10000000.0` max distance), filtered with `CollisionGroups::new(COLLISION_FILTER_INSPECTABLE, Group::all())`.
+- Resolves the hit collider to its parent game object via `ColliderParent` (falling back to the hit entity itself).
+- Ctrl+click toggles an entity in the multi-selection; a plain click clears and selects. Clicking empty space clears the selection unless Ctrl is held.
+- Adds/removes the `SelectedInEditor` marker component on the affected entities.
 
 ### Selection Highlighting
 
-```rust
-// src/systems/map_editor_selection_highlight_system.rs
+`selection_highlight_system` ([`src/map_editor/systems/selection_highlight_system.rs`](src/map_editor/systems/selection_highlight_system.rs), registered by `SelectionHighlightPlugin`) updates rendering for entities with/without the `SelectedInEditor` marker.
 
-fn map_editor_selection_highlight_system(
-    map_editor_state: Res<MapEditorState>,
-    mut query_selected: Query<&mut Visibility, With<SelectedInEditor>>,
-    mut query_not_selected: Query<&mut Visibility, (Without<SelectedInEditor>, With<ZoneObject>)>,
-) {
-    // Add/remove SelectedInEditor marker component based on selection
-    // Update outline shader or highlight material
-}
-```
+### Component Markers
 
-### Component Marker
+Defined in [`src/map_editor/components.rs`](src/map_editor/components.rs):
 
 ```rust
-// src/components/map_editor.rs
-
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct SelectedInEditor;
 
-#[derive(Component)]
-pub struct EditorGizmo {
-    pub target_entity: Entity,
-    pub gizmo_type: GizmoType,
-}
-
-pub enum GizmoType {
-    Translate,
-    Rotate,
-    Scale,
-}
+#[derive(Component, Default)]
+pub struct EditorSelectable;
 ```
+
+There is no `EditorGizmo` component or `GizmoType` enum — transform gizmos are drawn by the gizmo system directly (see below).
 
 ---
 
@@ -331,861 +203,127 @@ pub enum GizmoType {
 
 ```
 +--------------------------------------------------+
-| Menu Bar (File, Edit, View, Object, Help)       |
+| Menu Bar (File, View, Zone, Object, Help)        |
 +------------+---------------------+---------------+
 | Hierarchy  | 3D View            | Properties    |
 | Panel      | (Main Viewport)    | Panel         |
-|            |                     |               |
-| - Zone     |  [Selected Object]  | Transform:    |
-|   - Block  |                     |   Position    |
-|     - Objs |                     |   Rotation    |
-|   - Block  |                     |   Scale       |
-|     - Objs |                     |               |
-|            |                     | ZoneObject:   |
-|            |                     |   Type        |
-|            |                     |   ID          |
-|            |                     |   ...         |
+| (Left)     |                    | (Right)       |
+|            |                    |               |
 +------------+---------------------+---------------+
-| Model Browser (Collapsible)                      |
+| Model Browser (bottom, Deco/Cnst/Event/Special)  |
 +--------------------------------------------------+
-| Status Bar: Zone ID | Object Count | Modified    |
+| Status Bar                                       |
 +--------------------------------------------------+
 ```
+
+The zone list is a floating egui window (`ZoneListPanelState`), opened by default when entering the editor.
 
 ### Main Editor UI System
 
-```rust
-// src/ui/ui_map_editor_system.rs
+All editor UI panels live under `src/map_editor/ui/` and are driven by `editor_ui_system` ([`src/map_editor/ui/mod.rs`](src/map_editor/ui/mod.rs:164), registered by `EditorUiPlugin`). The UI systems run in `bevy_egui::EguiPrimaryContextPass` (required by bevy_egui 0.39) and only render while `MapEditorState::enabled` is true.
 
-use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+The panels are:
 
-pub fn ui_map_editor_system(
-    mut egui_context: EguiContexts,
-    mut map_editor_state: ResMut<MapEditorState>,
-    mut ui_state: Local<UiMapEditorState>,
-    // ... other params
-) {
-    let ctx = egui_context.ctx_mut();
-    
-    // Menu Bar
-    egui::TopBottomPanel::top("map_editor_menu").show(ctx, |ui| {
-        egui::menu::bar(ui, |ui| {
-            ui.menu_button("File", |ui| file_menu(ui, &mut map_editor_state));
-            ui.menu_button("Edit", |ui| edit_menu(ui, &mut map_editor_state));
-            ui.menu_button("View", |ui| view_menu(ui, &mut map_editor_state));
-            ui.menu_button("Object", |ui| object_menu(ui, &mut map_editor_state));
-        });
-    });
-    
-    // Hierarchy Panel (Left)
-    egui::SidePanel::left("hierarchy_panel")
-        .default_width(250.0)
-        .show(ctx, |ui| {
-            hierarchy_panel(ui, &mut map_editor_state, &query_zone_objects);
-        });
-    
-    // Properties Panel (Right)
-    egui::SidePanel::right("properties_panel")
-        .default_width(300.0)
-        .show(ctx, |ui| {
-            properties_panel(ui, &mut map_editor_state, world);
-        });
-    
-    // Model Browser (Bottom, collapsible)
-    if map_editor_state.editor_mode == EditorMode::Add {
-        egui::TopBottomPanel::bottom("model_browser")
-            .default_height(200.0)
-            .show(ctx, |ui| {
-                model_browser_panel(ui, &mut map_editor_state, &game_data);
-            });
-    }
-    
-    // Status Bar
-    egui::TopBottomPanel::bottom("status_bar")
-        .height(20.0)
-        .show(ctx, |ui| {
-            status_bar(ui, &map_editor_state, &current_zone);
-        });
-}
-```
+- **Menu bar** — `editor_menu_bar` ([`src/map_editor/ui/menu_bar.rs`](src/map_editor/ui/menu_bar.rs:49)), `egui::TopBottomPanel::top`. Menus: **File** (New Zone, Open Zone..., Save, Save Version..., Exit Editor), **View** (Model Browser toggle), **Zone** (Open Zone), **Object** (Add Water Plane), **Help** (keyboard shortcut and about windows).
+- **Hierarchy panel** — `editor_hierarchy_panel` ([`src/map_editor/ui/hierarchy_panel.rs`](src/map_editor/ui/hierarchy_panel.rs:136)), `egui::SidePanel::left`. Lists selectable zone objects with a filter and supports selecting entities.
+- **Properties panel** — `editor_properties_panel` ([`src/map_editor/ui/properties_panel.rs`](src/map_editor/ui/properties_panel.rs:45)), `egui::SidePanel::right`. Collapsible sections: Transform, Zone Object, Event Object, Warp Object, Collision, and additional components, plus terrain height and water plane authoring.
+- **Model browser** — `editor_model_browser_panel` ([`src/map_editor/ui/model_browser_panel.rs`](src/map_editor/ui/model_browser_panel.rs:14)), `egui::TopBottomPanel::bottom`, category tabs (Deco, Cnst, Event, Special) with model counts and a search box.
+- **Status bar** — `editor_status_bar` ([`src/map_editor/ui/status_bar.rs`](src/map_editor/ui/status_bar.rs:51)), `egui::TopBottomPanel::bottom`, shows zone id, object count, and save status.
+- **Zone list panel** — `zone_list_panel_system` ([`src/map_editor/ui/zone_list_panel.rs`](src/map_editor/ui/zone_list_panel.rs)), a floating window listing zones from `GameData`, loading the chosen zone.
 
-### Hierarchy Panel Implementation
+### ZoneObject Label Formatting
 
-```rust
-// src/ui/ui_map_editor_hierarchy.rs
-
-fn hierarchy_panel(
-    ui: &mut egui::Ui,
-    map_editor_state: &mut MapEditorState,
-    query_zone_objects: &Query<(Entity, &ZoneObject, &Transform, Option<&Parent>)>,
-) {
-    ui.heading("Hierarchy");
-    ui.separator();
-    
-    // Filter dropdown
-    egui::ComboBox::from_label("Filter")
-        .selected_text(format!("{:?}", map_editor_state.hierarchy_filter))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut map_editor_state.hierarchy_filter, HierarchyFilter::All, "All");
-            ui.selectable_value(&mut map_editor_state.hierarchy_filter, HierarchyFilter::DecoObjects, "Deco Objects");
-            ui.selectable_value(&mut map_editor_state.hierarchy_filter, HierarchyFilter::CnstObjects, "Cnst Objects");
-            ui.selectable_value(&mut map_editor_state.hierarchy_filter, HierarchyFilter::EventObjects, "Event Objects");
-        });
-    
-    ui.separator();
-    
-    // Scrollable list
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        for (entity, zone_object, transform, parent) in query_zone_objects.iter() {
-            if !matches_filter(zone_object, map_editor_state.hierarchy_filter) {
-                continue;
-            }
-            
-            let is_selected = map_editor_state.selected_entities.contains(&entity);
-            let label = format_zone_object_label(zone_object);
-            
-            let response = ui.selectable_label(is_selected, &label);
-            if response.clicked() {
-                map_editor_state.selected_entity = Some(entity);
-                map_editor_state.selected_entities.clear();
-                map_editor_state.selected_entities.insert(entity);
-            }
-            
-            // Context menu
-            response.context_menu(|ui| {
-                if ui.button("Delete").clicked() {
-                    // Queue for deletion
-                }
-                if ui.button("Duplicate").clicked() {
-                    // Duplicate entity
-                }
-            });
-        }
-    });
-}
-
-fn format_zone_object_label(zone_object: &ZoneObject) -> String {
-    match zone_object {
-        ZoneObject::DecoObject(id) => format!("Deco Object {}", id.ifo_object_id),
-        ZoneObject::CnstObject(id) => format!("Cnst Object {}", id.ifo_object_id),
-        ZoneObject::EventObject(id) => format!("Event Object {}", id.ifo_object_id),
-        ZoneObject::WarpObject(id) => format!("Warp Object {}", id.ifo_object_id),
-        ZoneObject::AnimatedObject(obj) => format!("Animated: {}", obj.mesh_path),
-        ZoneObject::Terrain(terrain) => format!("Terrain Block {}_{}", terrain.block_x, terrain.block_y),
-        ZoneObject::Water => "Water".to_string(),
-        ZoneObject::EffectObject { effect_path, .. } => format!("Effect: {}", effect_path),
-        ZoneObject::SoundObject { sound_path, .. } => format!("Sound: {}", sound_path),
-        ZoneObject::EventObjectPart(_) => "Event Object Part".to_string(),
-        ZoneObject::WarpObjectPart(_) => "Warp Object Part".to_string(),
-        ZoneObject::CnstObjectPart(_) => "Cnst Object Part".to_string(),
-        ZoneObject::DecoObjectPart(part) => format!("Part {} [{}]", part.zsc_part_id, part.mesh_path),
-    }
-}
-```
-
-### Properties Panel Implementation
-
-```rust
-// src/ui/ui_map_editor_properties.rs
-
-fn properties_panel(
-    ui: &mut egui::Ui,
-    map_editor_state: &mut MapEditorState,
-    world: &mut World,
-) {
-    ui.heading("Properties");
-    ui.separator();
-    
-    let Some(entity) = map_editor_state.selected_entity else {
-        ui.label("No object selected");
-        return;
-    };
-    
-    // Transform section
-    ui.collapsing("Transform", |ui| {
-        transform_editor(ui, entity, world, map_editor_state);
-    });
-    
-    ui.separator();
-    
-    // ZoneObject section
-    world.resource_scope(|world: &mut World, query_zone_objects: Mut<Query<&ZoneObject>>| {
-        if let Ok(zone_object) = query_zone_objects.get(entity) {
-            ui.collapsing("Zone Object", |ui| {
-                zone_object_editor(ui, zone_object);
-            });
-        }
-    });
-    
-    // Type-specific sections
-    world.resource_scope(|world: &mut World, query_parts: Mut<Query<&ZoneObjectPart>>| {
-        if let Ok(part) = query_parts.get(entity) {
-            ui.collapsing("Object Part", |ui| {
-                zone_object_part_editor(ui, part);
-            });
-        }
-    });
-    
-    // Collision section
-    world.resource_scope(|world: &mut World, query_collider: Mut<Query<&Collider>>| {
-        if query_collider.get(entity).is_ok() {
-            ui.collapsing("Collision", |ui| {
-                collision_editor(ui, entity, world);
-            });
-        }
-    });
-}
-
-fn transform_editor(
-    ui: &mut egui::Ui,
-    entity: Entity,
-    world: &mut World,
-    map_editor_state: &mut MapEditorState,
-) {
-    world.resource_scope(|world: &mut World, mut query_transform: Mut<Query<&mut Transform>>| {
-        if let Ok(mut transform) = query_transform.get_mut(entity) {
-            let mut changed = false;
-            
-            // Position
-            ui.label("Position");
-            ui.horizontal(|ui| {
-                changed |= ui.add(egui::DragValue::new(&mut transform.translation.x).prefix("X: ")).changed();
-                changed |= ui.add(egui::DragValue::new(&mut transform.translation.y).prefix("Y: ")).changed();
-                changed |= ui.add(egui::DragValue::new(&mut transform.translation.z).prefix("Z: ")).changed();
-            });
-            
-            // Rotation (as Euler angles for UX)
-            ui.label("Rotation (degrees)");
-            let (mut yaw, mut pitch, mut roll) = transform.rotation.to_euler(EulerRot::YXZ);
-            yaw = yaw.to_degrees();
-            pitch = pitch.to_degrees();
-            roll = roll.to_degrees();
-            
-            ui.horizontal(|ui| {
-                changed |= ui.add(egui::DragValue::new(&mut yaw).prefix("Y: ")).changed();
-                changed |= ui.add(egui::DragValue::new(&mut pitch).prefix("P: ")).changed();
-                changed |= ui.add(egui::DragValue::new(&mut roll).prefix("R: ")).changed();
-            });
-            
-            if changed {
-                transform.rotation = Quat::from_euler(
-                    EulerRot::YXZ,
-                    yaw.to_radians(),
-                    pitch.to_radians(),
-                    roll.to_radians(),
-                );
-                map_editor_state.is_modified = true;
-            }
-            
-            // Scale
-            ui.label("Scale");
-            ui.horizontal(|ui| {
-                changed |= ui.add(egui::DragValue::new(&mut transform.scale.x).prefix("X: ")).changed();
-                changed |= ui.add(egui::DragValue::new(&mut transform.scale.y).prefix("Y: ")).changed();
-                changed |= ui.add(egui::DragValue::new(&mut transform.scale.z).prefix("Z: ")).changed();
-            });
-            
-            if changed {
-                map_editor_state.is_modified = true;
-            }
-        }
-    });
-}
-```
+The hierarchy panel labels objects via a match on `ZoneObject` (defined in [`src/components/zone_object.rs`](src/components/zone_object.rs:65)); variants `DecoObject`/`CnstObject`/`EventObject`/`WarpObject` carry `ZoneObjectId { ifo_object_id, zsc_object_id }`, parts (`*ObjectPart`) carry `ZoneObjectPart`, plus `AnimatedObject`, `Terrain(ZoneObjectTerrain)`, `EffectObject { ifo_object_id, effect_path }`, `SoundObject { ifo_object_id, sound_path }`, and `Water`.
 
 ---
 
 ## 5. Property Editing System
 
-### Component Type Registry
+Property editing is implemented with a message-driven flow, not a `ComponentEditor` trait registry (there is no `src/map_editor/editors/` directory):
 
-Create a registry for editable components:
+1. The properties panel edits values through edit buffers (`PendingPropertyEdits` resource) and writes `PropertyChangeEvent` messages ([`src/map_editor/ui/properties_panel.rs`](src/map_editor/ui/properties_panel.rs)).
+2. `property_update_system` ([`src/map_editor/systems/property_update_system.rs`](src/map_editor/systems/property_update_system.rs:120)) reads those messages, applies changes to the world, and pushes `EditorAction::ModifyComponent` onto the undo stack.
 
-```rust
-// src/map_editor/component_editors.rs
+`PropertyChangeEvent` variants:
 
-use bevy::prelude::*;
+- `PositionChanged { entity, old_value, new_value }`
+- `RotationChanged { entity, old_value, new_value }`
+- `ScaleChanged { entity, old_value, new_value }`
+- `TransformChanged { entity, old_position, old_rotation, old_scale, new_position, new_rotation, new_scale }`
+- `ZoneObjectIdChanged { entity, component_type, old_value, new_value }`
+- `EventObjectChanged { entity, component_type, old_value, new_value }` (edits `EventObject.quest_trigger_name` / `script_function_name`, see [`src/components/event_object.rs`](src/components/event_object.rs:4))
+- `WarpObjectChanged { entity, component_type, old_value, new_value }` (edits `WarpObject.warp_id`, see [`src/components/warp_object.rs`](src/components/warp_object.rs:6))
+- `CollisionChanged { entity, component_type, old_value, new_value }`
+- `WaterPlaneChanged { entity, block_x, block_y, old_start, old_end, old_size, new_start, new_end, new_size }` (water plane authoring)
+- `TerrainBlockChanged { entity, block_x, block_y, old_height_offset_cm, new_height_offset_cm }` (terrain height editing)
 
-pub trait ComponentEditor {
-    fn ui(&self, ui: &mut egui::Ui, entity: Entity, world: &mut World) -> bool;
-    fn component_name(&self) -> &'static str;
-}
-
-pub struct ComponentEditorRegistry {
-    editors: Vec<Box<dyn ComponentEditor>>,
-}
-
-impl ComponentEditorRegistry {
-    pub fn new() -> Self {
-        let mut registry = Self { editors: Vec::new() };
-        
-        // Register all component editors
-        registry.register(ZoneObjectEditor);
-        registry.register(ZoneObjectPartEditor);
-        registry.register(EventObjectEditor);
-        registry.register(WarpObjectEditor);
-        registry.register(TransformEditor);
-        
-        registry
-    }
-    
-    pub fn register(&mut self, editor: impl ComponentEditor + 'static) {
-        self.editors.push(Box::new(editor));
-    }
-    
-    pub fn draw(&self, ui: &mut egui::Ui, entity: Entity, world: &mut World) {
-        for editor in &self.editors {
-            ui.collapsing(editor.component_name(), |ui| {
-                editor.ui(ui, entity, world);
-            });
-        }
-    }
-}
-```
-
-### ZoneObject Editor
-
-```rust
-// src/map_editor/editors/zone_object_editor.rs
-
-struct ZoneObjectEditor;
-
-impl ComponentEditor for ZoneObjectEditor {
-    fn component_name(&self) -> &'static str {
-        "Zone Object"
-    }
-    
-    fn ui(&self, ui: &mut egui::Ui, entity: Entity, world: &mut World) -> bool {
-        world.resource_scope(|world: &mut World, mut query: Mut<Query<&ZoneObject>>| {
-            if let Ok(zone_object) = query.get(entity) {
-                match zone_object {
-                    ZoneObject::DecoObject(id) => {
-                        ui.label("Type: Decoration Object");
-                        ui.label(format!("IFO Object ID: {}", id.ifo_object_id));
-                        ui.label(format!("ZSC Object ID: {}", id.zsc_object_id));
-                    }
-                    ZoneObject::CnstObject(id) => {
-                        ui.label("Type: Construction Object");
-                        ui.label(format!("IFO Object ID: {}", id.ifo_object_id));
-                        ui.label(format!("ZSC Object ID: {}", id.zsc_object_id));
-                    }
-                    ZoneObject::EventObject(id) => {
-                        ui.label("Type: Event Object");
-                        ui.label(format!("IFO Object ID: {}", id.ifo_object_id));
-                        ui.label(format!("ZSC Object ID: {}", id.zsc_object_id));
-                    }
-                    ZoneObject::WarpObject(id) => {
-                        ui.label("Type: Warp Object");
-                        ui.label(format!("IFO Object ID: {}", id.ifo_object_id));
-                        ui.label(format!("ZSC Object ID: {}", id.zsc_object_id));
-                    }
-                    ZoneObject::AnimatedObject(obj) => {
-                        ui.label("Type: Animated Object");
-                        ui.label(format!("Mesh: {}", obj.mesh_path));
-                        ui.label(format!("Motion: {}", obj.motion_path));
-                        ui.label(format!("Texture: {}", obj.texture_path));
-                    }
-                    ZoneObject::Terrain(terrain) => {
-                        ui.label("Type: Terrain");
-                        ui.label(format!("Block X: {}", terrain.block_x));
-                        ui.label(format!("Block Y: {}", terrain.block_y));
-                    }
-                    ZoneObject::Water => {
-                        ui.label("Type: Water");
-                    }
-                    ZoneObject::EffectObject { ifo_object_id, effect_path } => {
-                        ui.label("Type: Effect");
-                        ui.label(format!("IFO Object ID: {}", ifo_object_id));
-                        ui.label(format!("Effect Path: {}", effect_path));
-                    }
-                    ZoneObject::SoundObject { ifo_object_id, sound_path } => {
-                        ui.label("Type: Sound");
-                        ui.label(format!("IFO Object ID: {}", ifo_object_id));
-                        ui.label(format!("Sound Path: {}", sound_path));
-                    }
-                    _ => {
-                        ui.label("Part Object");
-                    }
-                }
-                false
-            } else {
-                ui.label("Not a zone object");
-                false
-            }
-        })
-    }
-}
-```
-
-### EventObject Editor (with editable properties)
-
-```rust
-// src/map_editor/editors/event_object_editor.rs
-
-struct EventObjectEditor;
-
-impl ComponentEditor for EventObjectEditor {
-    fn component_name(&self) -> &'static str {
-        "Event Object"
-    }
-    
-    fn ui(&self, ui: &mut egui::Ui, entity: Entity, world: &mut World) -> bool {
-        world.resource_scope(|world: &mut World, mut query: Mut<Query<&mut EventObject>>| {
-            if let Ok(mut event_object) = query.get_mut(entity) {
-                let mut changed = false;
-                
-                ui.horizontal(|ui| {
-                    ui.label("Quest Trigger:");
-                    changed |= ui.text_edit_singleline(&mut event_object.quest_trigger_name).changed();
-                });
-                
-                ui.horizontal(|ui| {
-                    ui.label("Script Function:");
-                    changed |= ui.text_edit_singleline(&mut event_object.script_function_name).changed();
-                });
-                
-                changed
-            } else {
-                ui.label("No Event Object component");
-                false
-            }
-        })
-    }
-}
-```
+Terrain height editing works on the `MapEditorTerrainBlock` component ([`src/components/map_editor_zone_edit.rs`](src/components/map_editor_zone_edit.rs:47)) by adjusting `height_offset_cm`; water plane authoring works on `MapEditorWaterPlane` ([`src/components/map_editor_zone_edit.rs`](src/components/map_editor_zone_edit.rs:8)). New water planes are added to a zone via the `AddWaterPlaneEvent` message, which spawns a `ZoneObject::Water` plane 20 m above the selected terrain block.
 
 ---
 
 ## 6. Model Management System
 
+### Model Loading
+
+`load_available_models_system` and `update_models_on_zone_load_system` ([`src/map_editor/systems/load_models_system.rs`](src/map_editor/systems/load_models_system.rs:18)) populate the `AvailableModels` resource from `zsc_deco`, `zsc_cnst`, `zsc_event_object` and warp/special data (`ModelInfo { id, name, mesh_path, category, part_count }`). Models are refreshed when a zone is loaded.
+
 ### Model Browser Panel
 
-```rust
-// src/ui/ui_map_editor_model_browser.rs
-
-fn model_browser_panel(
-    ui: &mut egui::Ui,
-    map_editor_state: &mut MapEditorState,
-    game_data: &GameData,
-) {
-    ui.heading("Model Browser");
-    ui.separator();
-    
-    // Search bar
-    ui.horizontal(|ui| {
-        ui.label("Search:");
-        ui.text_edit_singleline(&mut map_editor_state.model_browser_search);
-    });
-    
-    // Category filter
-    ui.horizontal(|ui| {
-        ui.selectable_value(&mut map_editor_state.model_browser_category, ModelCategory::All, "All");
-        ui.selectable_value(&mut map_editor_state.model_browser_category, ModelCategory::Deco, "Deco");
-        ui.selectable_value(&mut map_editor_state.model_browser_category, ModelCategory::Cnst, "Cnst");
-        ui.selectable_value(&mut map_editor_state.model_browser_category, ModelCategory::Event, "Event");
-    });
-    
-    ui.separator();
-    
-    // Model list
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        let search_lower = map_editor_state.model_browser_search.to_lowercase();
-        
-        // Deco objects
-        if matches!(map_editor_state.model_browser_category, ModelCategory::All | ModelCategory::Deco) {
-            ui.label("Decoration Objects:");
-            for (id, object) in game_data.zsc_deco.objects.iter().enumerate() {
-                for mesh in &object.meshes {
-                    let mesh_path = mesh.path().to_string_lossy();
-                    if search_lower.is_empty() || mesh_path.to_lowercase().contains(&search_lower) {
-                        if ui.selectable_label(false, &mesh_path).clicked() {
-                            // Add model at cursor position or origin
-                            // spawn_model_at_cursor(id as usize, ZoneObject::DecoObject);
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Cnst objects
-        if matches!(map_editor_state.model_browser_category, ModelCategory::All | ModelCategory::Cnst) {
-            ui.label("Construction Objects:");
-            // Similar listing...
-        }
-        
-        // Event objects
-        if matches!(map_editor_state.model_browser_category, ModelCategory::All | ModelCategory::Event) {
-            ui.label("Event Objects:");
-            // Similar listing...
-        }
-    });
-}
-```
+`editor_model_browser_panel` ([`src/map_editor/ui/model_browser_panel.rs`](src/map_editor/ui/model_browser_panel.rs:14)) shows the loaded models in category tabs (Deco, Cnst, Event, Special) with per-category counts and a search filter stored in `SelectedModel`. Selecting a model and clicking "Add to Zone" sets `SelectedModel.pending_placement`.
 
 ### Model Placement System
 
-```rust
-// src/systems/map_editor_placement_system.rs
+`model_placement_system` ([`src/map_editor/systems/model_placement_system.rs`](src/map_editor/systems/model_placement_system.rs:70), registered by `ModelPlacementPlugin`) handles placement:
 
-fn map_editor_placement_system(
-    mut commands: Commands,
-    map_editor_state: Res<MapEditorState>,
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    rapier_context: ReadRapierContext,
-    query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
-    query_window: Query<&Window, With<PrimaryWindow>>,
-    asset_server: Res<AssetServer>,
-    game_data: Res<GameData>,
-    mut zone_loading_assets: ResMut<Vec<UntypedHandle>>,
-    object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
-    specular_texture: Res<SpecularTexture>,
-    vfs_resource: Res<VfsResource>,
-) {
-    // Only in Add mode
-    if map_editor_state.editor_mode != EditorMode::Add {
-        return;
-    }
-    
-    // Check if we have a model selected to place
-    let Some(model_to_place) = &map_editor_state.model_to_place else {
-        return;
-    };
-    
-    // Skip if egui wants pointer input
-    if egui_ctx.ctx_mut().wants_pointer_input() {
-        return;
-    }
-    
-    let Ok(window) = query_window.get_single() else { return; };
-    let Some(cursor_position) = window.cursor_position() else { return; };
-    
-    // Get ray from camera
-    for (camera, camera_transform) in query_camera.iter() {
-        if let Ok(ray) = camera.viewport_to_world(camera_transform, cursor_position) {
-            // Raycast to find placement position
-            if let Some((_, distance)) = rapier_context.cast_ray(
-                ray.origin,
-                *ray.direction,
-                10000000.0,
-                false,
-                QueryFilter::new().groups(CollisionGroups::new(
-                    COLLISION_GROUP_ZONE_TERRAIN,
-                    Group::all(),
-                )),
-            ) {
-                let placement_position = ray.origin + *ray.direction * distance;
-                
-                // Preview at placement position
-                // TODO: Draw preview gizmo
-                
-                // Place on click
-                if mouse_input.just_pressed(MouseButton::Left) {
-                    spawn_new_zone_object(
-                        &mut commands,
-                        &asset_server,
-                        &mut zone_loading_assets,
-                        &vfs_resource,
-                        object_materials.into(),
-                        &specular_texture,
-                        &game_data,
-                        model_to_place,
-                        placement_position,
-                    );
-                }
-            }
-        }
-    }
-}
-
-fn spawn_new_zone_object(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    zone_loading_assets: &mut Vec<UntypedHandle>,
-    vfs_resource: &VfsResource,
-    object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
-    specular_texture: &SpecularTexture,
-    game_data: &GameData,
-    model_info: &ModelToPlace,
-    position: Vec3,
-) -> Entity {
-    let (zsc, object_type_fn, part_type_fn, collision_group) = match model_info.category {
-        ModelCategory::Deco => (&game_data.zsc_deco, ZoneObject::DecoObject, ZoneObject::DecoObjectPart, COLLISION_GROUP_ZONE_OBJECT),
-        ModelCategory::Cnst => (&game_data.zsc_cnst, ZoneObject::CnstObject, ZoneObject::CnstObjectPart, COLLISION_GROUP_ZONE_OBJECT),
-        ModelCategory::Event => (&game_data.zsc_event_object, ZoneObject::EventObject, ZoneObject::EventObjectPart, COLLISION_GROUP_ZONE_EVENT_OBJECT),
-        _ => return Entity::PLACEHOLDER,
-    };
-    
-    // Use existing spawn_object function from zone_loader.rs
-    let object_instance = IfoObject {
-        object_id: model_info.object_id as u32,
-        position: IfoPosition {
-            x: position.x * 100.0,
-            y: -position.z * 100.0,
-            z: position.y * 100.0,
-        },
-        rotation: IfoRotation::default(),
-        scale: IfoScale::splat(100.0),
-    };
-    
-    spawn_object(
-        commands,
-        asset_server,
-        zone_loading_assets,
-        vfs_resource,
-        object_materials,
-        specular_texture,
-        zsc,
-        &PathBuf::new(), // No lightmap for new objects
-        None,
-        &object_instance,
-        0, // ifo_object_id (will be assigned)
-        model_info.object_id,
-        object_type_fn,
-        part_type_fn,
-        collision_group,
-    )
-}
-```
+- Only runs in `EditorMode::Add` with a pending placement.
+- Casts a ray against the `COLLISION_GROUP_ZONE_TERRAIN` group to find the placement position on the terrain.
+- `model_preview_system` draws a preview of the model at the cursor position (`EditorPlacedObject` marker).
+- Clicking places the model (transforming world-space to IFO-space coordinates: `x * 100.0`, `y = -z * 100.0`, `z = y * 100.0`) and records an `EditorAction::AddEntity` for undo.
+- `add_to_zone_system` attaches newly placed models to the current `Zone` entity and records `DuplicateSelectedEvent` handling for Ctrl+D duplication.
 
 ---
 
 ## 7. Map Serialization and Saving
 
-### Save Format
+Save functionality lives in `src/map_editor/save/`:
 
-Save modified zone data back to IFO format:
+- `ifo_types.rs` — data structures for the IFO format (`IfoBlock`, etc.).
+- `ifo_export.rs` — binary IFO writer (`export_ifo_block`).
+- `save_system.rs` — `SavePlugin`, `SaveZoneEvent` message (with `with_path` for custom paths), `SaveStatus`/`SaveResult` UI feedback, and `save_zone_system`.
 
-```rust
-// src/map_editor/map_saver.rs
+Flow: the menu bar's File > Save / Save Version... writes a `SaveZoneEvent`; `save_zone_system` collects the zone's objects (skipping objects tracked in `DeletedZoneObjects`), groups them by block (`world_to_block_coords`, [`src/map_editor/coords.rs`](src/map_editor/coords.rs:15)), exports each block to `{block_x}_{block_y}.IFO`, and writes HIM/TIL heightmap files via `write_him_file` / `write_til_file` ([`src/map_editor/coords.rs`](src/map_editor/coords.rs:27)). Original files are backed up before overwriting, and `SaveStatus` reflects success/failure in the UI (status bar and save dialog).
 
-use rose_file_readers::{IfoFile, IfoObject, IfoEffectObject, IfoSoundObject};
-use std::path::PathBuf;
-
-pub struct MapSaver;
-
-impl MapSaver {
-    /// Export current zone state to IFO files
-    pub fn export_zone(
-        world: &World,
-        zone_id: ZoneId,
-        output_path: &Path,
-    ) -> Result<(), anyhow::Error> {
-        // Collect all zone objects
-        let objects = Self::collect_zone_objects(world);
-        
-        // Group by block
-        let mut blocks: HashMap<(u32, u32), BlockData> = HashMap::new();
-        
-        for (entity, zone_object, transform) in objects {
-            let (block_x, block_y) = Self::get_block_coords(&transform.translation);
-            
-            let block = blocks.entry((block_x, block_y)).or_default();
-            
-            match zone_object {
-                ZoneObject::DecoObject(id) => {
-                    block.deco_objects.push(Self::to_ifo_object(entity, transform, id.zsc_object_id));
-                }
-                ZoneObject::CnstObject(id) => {
-                    block.cnst_objects.push(Self::to_ifo_object(entity, transform, id.zsc_object_id));
-                }
-                ZoneObject::EventObject(id) => {
-                    block.event_objects.push(Self::to_ifo_event_object(entity, transform, id.zsc_object_id));
-                }
-                ZoneObject::WarpObject(id) => {
-                    block.warps.push(Self::to_ifo_warp(entity, transform, id.zsc_object_id));
-                }
-                ZoneObject::EffectObject { effect_path, .. } => {
-                    block.effect_objects.push(Self::to_ifo_effect_object(entity, transform, effect_path));
-                }
-                ZoneObject::SoundObject { sound_path, .. } => {
-                    block.sound_objects.push(Self::to_ifo_sound_object(entity, transform, sound_path));
-                }
-                _ => {}
-            }
-        }
-        
-        // Write each block's IFO file
-        for ((block_x, block_y), block_data) in blocks {
-            let ifo_path = output_path.join(format!("{}_{}.IFO", block_x, block_y));
-            Self::write_ifo_file(&ifo_path, &block_data)?;
-        }
-        
-        Ok(())
-    }
-    
-    fn collect_zone_objects(world: &World) -> Vec<(Entity, ZoneObject, Transform)> {
-        let mut result = Vec::new();
-        
-        world.resource_scope(|world: &World, query: Mut<Query<(Entity, &ZoneObject, &Transform)>>| {
-            for (entity, zone_object, transform) in query.iter() {
-                result.push((entity, zone_object.clone(), *transform));
-            }
-        });
-        
-        result
-    }
-    
-    fn get_block_coords(position: &Vec3) -> (u32, u32) {
-        // Convert world position to block coordinates
-        let block_x = (position.x / 160.0).floor() as u32;
-        let block_y = (65.0 - (position.z / 160.0)).floor() as u32;
-        (block_x, block_y)
-    }
-    
-    fn to_ifo_object(entity: Entity, transform: &Transform, object_id: usize) -> IfoObject {
-        IfoObject {
-            object_id: object_id as u32,
-            position: IfoPosition {
-                x: transform.translation.x * 100.0,
-                y: -transform.translation.z * 100.0,
-                z: transform.translation.y * 100.0,
-            },
-            rotation: Self::quat_to_ifo_rotation(&transform.rotation),
-            scale: Self::scale_to_ifo(&transform.scale),
-        }
-    }
-    
-    fn write_ifo_file(path: &Path, block_data: &BlockData) -> Result<(), anyhow::Error> {
-        // Write IFO file using rose_file_readers
-        // This requires implementing IfoFile serialization
-        Ok(())
-    }
-}
-```
-
-### Save Dialog
-
-```rust
-// src/ui/ui_map_editor_save.rs
-
-fn save_dialog(
-    ui: &mut egui::Ui,
-    map_editor_state: &mut MapEditorState,
-    save_state: &mut SaveDialogState,
-) {
-    egui::Window::new("Save Map")
-        .open(&mut save_state.show_dialog)
-        .show(ui.ctx(), |ui| {
-            ui.label("Save modified zone data?");
-            ui.label(format!("Zone ID: {}", map_editor_state.current_zone_id.map_or("None", |id| id.get().to_string())));
-            
-            ui.horizontal(|ui| {
-                if ui.button("Save").clicked() {
-                    // Perform save
-                    save_state.show_dialog = false;
-                }
-                if ui.button("Save As...").clicked() {
-                    // Show file dialog
-                }
-                if ui.button("Cancel").clicked() {
-                    save_state.show_dialog = false;
-                }
-            });
-        });
-}
-```
+New zones are bootstrapped through the `NewZoneEvent` message (File > New Zone): `bootstrap_default_zone_blocks` ([`src/map_editor/ui/mod.rs`](src/map_editor/ui/mod.rs:528)) writes a flat 64x64 block scaffold of HIM/TIL/IFO files into the custom zone path (`3DDATA/MAPS/CUSTOM/ZONE_{:03}` by default), tracked in `CustomZonePath` for later saves. If the new zone id is not in the zone list, zone 1 is loaded as a fallback for editing.
 
 ---
 
-## 8. Implementation Steps
+## 8. Implementation Status
 
-### Phase 1: Foundation
+The map editor is fully implemented; the phases below describe what exists today:
 
-1. **Add command line flag**
-   - Modify [`src/main.rs`](src/main.rs:14) to add `--map-editor` flag
-   - Add `MapEditor` to `AppState` enum
-   - Create `run_map_editor()` entry point
+### Phase 1: Foundation — DONE
+- `--map-editor` flag in `src/main.rs`, `AppState::MapEditor`, `run_map_editor()` entry point.
+- `MapEditorState` and related resources in `src/map_editor/resources.rs`, registered by `MapEditorPlugin` (`src/map_editor/mod.rs`).
 
-2. **Create MapEditorState resource**
-   - Create `src/resources/map_editor.rs`
-   - Register resource in plugin
+### Phase 2: Selection System — DONE
+- Entity picking via `editor_picking_system` with multi-select (Ctrl+click), based on `debug_inspector_picking_system`.
+- Selection highlighting via `selection_highlight_system` and the `SelectedInEditor` / `EditorSelectable` markers.
 
-3. **Create MapEditorPlugin**
-   - Create `src/map_editor/mod.rs`
-   - Register systems and resources
+### Phase 3: UI Panels — DONE
+- Menu bar (File, View, Zone, Object, Help), hierarchy panel (left), properties panel (right), model browser (bottom), status bar (bottom), zone list panel (floating window).
 
-### Phase 2: Selection System
+### Phase 4: Property Editing — DONE
+- Transform editing (position, rotation, scale) via drag values; terrain height and water plane authoring.
+- `PropertyChangeEvent` message flow with undo/redo (`apply_undo_system`: Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z). Component modifications are recorded but undo of `ModifyComponent` is currently a stub.
 
-4. **Implement entity picking**
-   - Create `src/systems/map_editor_selection_system.rs`
-   - Based on existing `debug_inspector_picking_system`
-   - Add multi-select support
+### Phase 5: Model Management — DONE
+- Model browser with category tabs and search; click-to-place with cursor preview; snap-to-grid option (G key).
 
-5. **Add selection highlighting**
-   - Create outline shader or highlight material
-   - Add `SelectedInEditor` marker component
+### Phase 6: Saving — DONE
+- IFO export per block, HIM/TIL heightmap writing, Save / Save Version, new zone bootstrapping, backup of original files, save status feedback.
 
-### Phase 3: UI Panels
-
-6. **Create menu bar**
-   - File menu: New, Open, Save, Save As
-   - Edit menu: Undo, Redo, Cut, Copy, Paste, Delete
-   - View menu: Grid, Colliders, Gizmos
-   - Object menu: Add, Duplicate, Delete
-
-7. **Create hierarchy panel**
-   - Tree view of zone objects
-   - Filtering by object type
-   - Context menu for actions
-
-8. **Create properties panel**
-   - Transform editor
-   - ZoneObject type display
-   - Type-specific property editors
-
-### Phase 4: Property Editing
-
-9. **Implement transform editing**
-   - Position, rotation, scale drag values
-   - Undo/redo support for transforms
-
-10. **Implement component editors**
-    - EventObject properties
-    - WarpObject destination
-    - SoundObject path
-
-### Phase 5: Model Management
-
-11. **Create model browser**
-    - List available models from ZSC files
-    - Search and filter functionality
-    - Preview thumbnails (optional)
-
-12. **Implement model placement**
-    - Click to place at cursor
-    - Preview before placement
-    - Snap to grid option
-
-### Phase 6: Saving
-
-13. **Implement map export**
-    - Collect zone objects by block
-    - Convert to IFO format
-    - Write to output directory
-
-14. **Add save dialog**
-    - Confirm save
-    - Choose output location
-    - Show progress
-
-### Phase 7: Polish
-
-15. **Add undo/redo system**
-    - Track all editor actions
-    - Implement undo/redo stacks
-    - Keyboard shortcuts (Ctrl+Z, Ctrl+Y)
-
-16. **Add gizmos**
-    - Translation gizmo (arrows)
-    - Rotation gizmo (rings)
-    - Scale gizmo (boxes)
-
-17. **Testing and documentation**
-    - Test all features
-    - Write user documentation
-    - Add tooltips to UI
+### Phase 7: Polish — PARTIAL
+- Undo/redo stacks with Ctrl+Z/Ctrl+Y; transform gizmos (translate/rotate/scale) drawn by `transform_gizmo_system`; grid via `grid_system`; duplicate via Ctrl+D. Copy/paste (Ctrl+C/Ctrl+V) is not implemented; Ctrl+N / Ctrl+O only log "not implemented".
 
 ---
 
@@ -1198,49 +336,56 @@ flowchart TB
         B --> C[run_map_editor]
         C --> D[AppState::MapEditor]
     end
-    
+
     subgraph Resources
         E[MapEditorState]
-        F[ComponentEditorRegistry]
-        G[UndoRedoStack]
+        E2[AvailableModels / SelectedModel]
+        E3[EditorGridSettings / DeletedZoneObjects / CustomZonePath]
     end
-    
+
     subgraph Systems
-        H[Selection System]
-        I[Placement System]
-        J[Gizmo System]
-        K[UI System]
+        H[editor_picking_system]
+        H2[selection_highlight_system]
+        I[model_placement_system]
+        I2[transform_gizmo_system]
+        J[property_update_system + apply_undo_system]
+        K[editor_ui_system]
+        K2[save_zone_system]
     end
-    
+
     subgraph UI Panels
         L[Menu Bar]
         M[Hierarchy Panel]
         N[Properties Panel]
         O[Model Browser]
         P[Status Bar]
+        P2[Zone List Panel]
     end
-    
+
     subgraph Components
         Q[SelectedInEditor]
-        R[EditorGizmo]
+        Q2[EditorSelectable]
         S[ZoneObject]
     end
-    
+
     D --> E
     E --> H
     E --> I
+    E --> I2
     E --> J
     E --> K
-    
+
     K --> L
     K --> M
     K --> N
     K --> O
     K --> P
-    
+    K --> P2
+
     H --> Q
-    J --> R
+    H --> Q2
     N --> S
+    K2 --> E3
 ```
 
 ---
@@ -1250,34 +395,39 @@ flowchart TB
 ```
 src/
 ├── map_editor/
-│   ├── mod.rs                    # MapEditorPlugin
-│   ├── resources.rs              # MapEditorState, etc.
-│   ├── components.rs             # SelectedInEditor, EditorGizmo
+│   ├── mod.rs                    # MapEditorPlugin, enter/exit systems
+│   ├── resources.rs              # MapEditorState, EditorMode, ModelCategory, EditorAction,
+│   │                             #   AvailableModels, SelectedModel, EditorGridSettings,
+│   │                             #   DeletedZoneObjects, CustomZonePath, DuplicateSelectedEvent
+│   ├── components.rs             # SelectedInEditor, EditorSelectable
+│   ├── coords.rs                 # world_to_block_coords, write_him_file, write_til_file
 │   ├── systems/
 │   │   ├── mod.rs
-│   │   ├── selection_system.rs   # Entity picking
-│   │   ├── placement_system.rs   # Model placement
-│   │   ├── gizmo_system.rs       # Transform gizmos
-│   │   └── highlight_system.rs   # Selection highlighting
+│   │   ├── selection_system.rs           # editor_picking_system (EditorSelectionPlugin)
+│   │   ├── selection_highlight_system.rs # selection_highlight_system
+│   │   ├── transform_gizmo_system.rs     # transform_gizmo_system, draw_gizmo_visuals
+│   │   ├── grid_system.rs                # EditorGridPlugin
+│   │   ├── property_update_system.rs     # PropertyChangeEvent, property_update_system, apply_undo_system
+│   │   ├── keyboard_shortcuts_system.rs  # keyboard_shortcuts_system
+│   │   ├── load_models_system.rs         # load_available_models_system, update_models_on_zone_load_system
+│   │   ├── model_placement_system.rs     # model_placement_system, model_preview_system, add_to_zone_system
+│   │   └── duplicate_system.rs           # DuplicateSystemPlugin, handle_duplicate_event
 │   ├── ui/
-│   │   ├── mod.rs
-│   │   ├── menu_bar.rs           # Top menu bar
-│   │   ├── hierarchy_panel.rs    # Left panel
-│   │   ├── properties_panel.rs   # Right panel
-│   │   ├── model_browser.rs      # Bottom panel
-│   │   └── status_bar.rs         # Bottom status
-│   ├── editors/
-│   │   ├── mod.rs
-│   │   ├── component_editor.rs   # Trait definition
-│   │   ├── zone_object_editor.rs
-│   │   ├── event_object_editor.rs
-│   │   └── transform_editor.rs
+│   │   ├── mod.rs                # EditorUiPlugin, editor_ui_system, NewZoneEvent, AddWaterPlaneEvent
+│   │   ├── menu_bar.rs           # editor_menu_bar + dialogs
+│   │   ├── hierarchy_panel.rs    # editor_hierarchy_panel (left)
+│   │   ├── properties_panel.rs   # editor_properties_panel (right)
+│   │   ├── model_browser_panel.rs# editor_model_browser_panel (bottom)
+│   │   ├── status_bar.rs         # editor_status_bar (bottom)
+│   │   └── zone_list_panel.rs    # ZoneListPanelState, zone_list_panel_system
 │   └── save/
-│       ├── mod.rs
-│       ├── map_saver.rs          # Export to IFO
-│       └── save_dialog.rs        # Save UI
-└── resources/
-    └── map_editor.rs             # Resource definitions
+│       ├── mod.rs                # SavePlugin, SaveStatus, SaveZoneEvent re-exports
+│       ├── ifo_types.rs          # IFO data structures (IfoBlock)
+│       ├── ifo_export.rs         # export_ifo_block binary writer
+│       └── save_system.rs        # save_zone_system
+└── components/
+    ├── map_editor_zone_edit.rs   # MapEditorTerrainBlock, MapEditorWaterPlane
+    └── zone_object.rs            # ZoneObject enum and helpers
 ```
 
 ---
@@ -1286,46 +436,63 @@ src/
 
 ### Existing Systems to Reuse
 
-1. **[`spawn_object`](src/zone_loader.rs:2593)** - Use for placing new objects
-2. **[`debug_inspector_picking_system`](src/systems/debug_inspector_system.rs:93)** - Base for selection
-3. **[`EguiContexts`](src/lib.rs:31)** - egui integration pattern
-4. **[`CollisionGroups`](src/components/mod.rs)** - Collision filtering for selection
+1. **`spawn_object`** ([`src/zone_loader/spawning/objects.rs`](src/zone_loader/spawning/objects.rs:3), `pub(super)`, called from [`src/zone_loader/spawning.rs`](src/zone_loader/spawning.rs:214)) — zone object spawning used when loading zones.
+2. **`debug_inspector_picking_system`** ([`src/systems/debug_inspector_system.rs`](src/systems/debug_inspector_system.rs:93)) — the raycast-picking pattern the editor selection system is based on.
+3. **`EguiContexts`** — bevy_egui integration ([`src/lib.rs`](src/lib.rs:37)); editor UI systems must run in `bevy_egui::EguiPrimaryContextPass`.
+4. **`CollisionGroups` / `COLLISION_FILTER_INSPECTABLE`** ([`src/components/collision.rs`](src/components/collision.rs:69), re-exported by [`src/components/mod.rs`](src/components/mod.rs:83)) — collision filtering for selection; terrain placement rays use `COLLISION_GROUP_ZONE_TERRAIN`.
 
-### New Events
+### Editor Events (Messages)
+
+Bevy 0.18 message types used by the editor (no `MapEditorEvent` enum exists):
 
 ```rust
-// src/events/map_editor_event.rs
+// src/map_editor/resources.rs
+#[derive(Message, Debug, Clone)]
+pub struct DuplicateSelectedEvent { pub offset: Vec3 }
 
-#[derive(Event)]
-pub enum MapEditorEvent {
-    ObjectSelected(Entity),
-    ObjectDeselected(Entity),
-    ObjectAdded(Entity),
-    ObjectRemoved(Entity),
-    TransformChanged(Entity),
-    PropertyChanged(Entity, ComponentType),
-    SaveRequested,
-    UndoRequested,
-    RedoRequested,
+// src/map_editor/ui/mod.rs
+#[derive(Message)]
+pub struct NewZoneEvent {
+    pub prompt_if_modified: bool,
+    pub zone_id: u16,
+    pub output_path: Option<PathBuf>,
+    pub initialize_default_block: bool,
 }
+
+#[derive(Message, Default)]
+pub struct AddWaterPlaneEvent;
+
+// src/map_editor/systems/property_update_system.rs
+#[derive(Message)]
+pub enum PropertyChangeEvent { /* Position/Rotation/Scale/Transform/ZoneObjectId/EventObject/
+                                  WarpObject/Collision/WaterPlane/TerrainBlock variants */ }
+
+// src/map_editor/save/save_system.rs
+#[derive(Message)]
+pub struct SaveZoneEvent { /* zone_id, path, version */ }
 ```
 
 ---
 
 ## Keyboard Shortcuts
 
+Implemented in `keyboard_shortcuts_system` ([`src/map_editor/systems/keyboard_shortcuts_system.rs`](src/map_editor/systems/keyboard_shortcuts_system.rs:26)) and `apply_undo_system`:
+
 | Shortcut | Action |
 |----------|--------|
-| Ctrl+D | Toggle debug UI |
-| Delete | Delete selected |
+| Delete (or Ctrl+Backspace) | Delete selected |
+| Ctrl+D | Duplicate selected |
 | Ctrl+Z | Undo |
-| Ctrl+Y | Redo |
-| Ctrl+C | Copy |
-| Ctrl+V | Paste |
-| Ctrl+D | Duplicate |
-| W | Translate mode |
+| Ctrl+Y or Ctrl+Shift+Z | Redo |
+| Escape | Deselect all |
+| Q | Select mode |
 | E | Rotate mode |
 | R | Scale mode |
-| G | Toggle grid |
-| Escape | Deselect all |
-```
+| V | Add mode |
+| X | Delete mode |
+| G | Toggle snap to grid |
+| Tab | Toggle free camera on/off |
+| Ctrl+Shift+A | Deselect all (alternative) |
+| Ctrl+N / Ctrl+O | Logged only (not implemented) |
+
+Note: **W is not bound** to a mode — it is reserved for `FreeCamera` WASD movement. Ctrl+C / Ctrl+V (copy/paste) are not implemented.

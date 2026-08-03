@@ -78,6 +78,13 @@ impl Default for UiNpcStoreState {
     }
 }
 
+fn store_slot_drag_accepts(drag_source: &DragAndDropId) -> bool {
+    matches!(
+        drag_source,
+        DragAndDropId::Inventory(ItemSlot::Inventory(_, _))
+    )
+}
+
 fn ui_add_store_item_slot(
     ui: &mut egui::Ui,
     ui_state_dnd: &mut UiStateDragAndDrop,
@@ -86,6 +93,7 @@ fn ui_add_store_item_slot(
     store_tab_index: usize,
     store_tab_slot: usize,
     buy_list: &mut [Option<PendingBuyItem>; NUM_BUY_ITEMS],
+    sell_list: &mut [Option<PendingSellItem>; NUM_SELL_ITEMS],
     player: Option<&(&AbilityValues, &Inventory, &Position, &PlayerCharacter)>,
     player_tooltip_data: Option<&PlayerTooltipQueryItem<'_, '_, '_>>,
     game_data: &GameData,
@@ -137,7 +145,7 @@ fn ui_add_store_item_slot(
                         false,
                         quantity,
                         None,
-                        |_| false,
+                        store_slot_drag_accepts,
                         &mut ui_state_dnd.dragged_item,
                         &mut dropped_item,
                         [40.0, 40.0],
@@ -177,6 +185,19 @@ fn ui_add_store_item_slot(
                         });
                         break;
                     }
+                }
+            }
+        }
+
+        // Dropping an inventory item onto the store window queues it for sale.
+        if let Some(DragAndDropId::Inventory(item_slot)) = dropped_item {
+            for slot in sell_list.iter_mut() {
+                if slot.is_none() {
+                    *slot = Some(PendingSellItem {
+                        item_slot,
+                        quantity: 1,
+                    });
+                    break;
                 }
             }
         }
@@ -560,6 +581,7 @@ pub fn ui_npc_store_system(
                                     current_tab_index,
                                     column + row * 8,
                                     &mut ui_state.buy_list,
+                                    &mut ui_state.sell_list,
                                     player.as_ref(),
                                     player_tooltip_data.as_ref(),
                                     &game_data,

@@ -19,8 +19,11 @@ use rose_game_common::messages::client::ClientMessage;
 /// - Checks if Space bar is held when the player is in flight mode
 /// - Gets the camera's view direction to determine flight direction
 /// - Calculates flight movement locally for smooth visual feedback
-/// - Sends movement intent to server via NextCommand and MoveCollision
-/// - Does NOT mutate Position directly (server-authoritative)
+/// - Moves the local Position directly (client-authoritative flight) so the
+///   player actually flies at flight speed instead of chasing the destination
+///   at ground run speed through the normal move-command pipeline
+/// - Sends movement intent to server via MoveCollision
+/// - Stops any ground move command so the run animation/ground speed never apply
 /// - Updates FacingDirection component locally for responsive rotation
 pub fn flight_movement_system(
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -32,7 +35,7 @@ pub fn flight_movement_system(
     mut commands: Commands,
     game_connection: Option<Res<GameConnection>>,
     mut query: Query<
-        (Entity, &mut FlightState, &mut FacingDirection, &Position),
+        (Entity, &mut FlightState, &mut FacingDirection, &mut Position),
         With<PlayerCharacter>,
     >,
 ) {
@@ -49,7 +52,7 @@ pub fn flight_movement_system(
         0.0
     };
 
-    for (entity, mut flight_state, mut facing, position) in query.iter_mut() {
+    for (entity, mut flight_state, mut facing, mut position) in query.iter_mut() {
         // Only process if flying
         if !flight_state.is_flying {
             continue;
@@ -109,13 +112,12 @@ pub fn flight_movement_system(
                     horizontal_forward.y.atan2(horizontal_forward.x) + std::f32::consts::PI;
             }
 
-            // Send movement intent to server
-            // The server will validate and update Position accordingly
+            // Apply the movement locally and cancel any ground move command so the
+            // player flies at flight speed with the idle/flight pose instead of
+            // running after the destination at ground speed.
             let intended_position = Vec3::new(new_x, new_y, new_z);
-
-            commands
-                .entity(entity)
-                .insert(NextCommand::with_move(intended_position, None, None));
+            position.position = intended_position;
+            commands.entity(entity).insert(NextCommand::with_stop());
 
             if let Some(game_connection) = game_connection.as_ref() {
                 game_connection
@@ -140,15 +142,11 @@ pub fn flight_movement_system(
                 let new_x = position.x + movement.x;
                 let new_y = position.y + movement.y;
                 let new_z = (position.z + movement.z).max(min_z);
-
-                // Send movement intent to server
                 let intended_position = Vec3::new(new_x, new_y, new_z);
 
-                commands.entity(entity).insert(NextCommand::with_move(
-                    intended_position,
-                    None,
-                    None,
-                ));
+                // Apply the momentum locally and cancel any ground move command.
+                position.position = intended_position;
+                commands.entity(entity).insert(NextCommand::with_stop());
 
                 if let Some(game_connection) = game_connection.as_ref() {
                     game_connection
@@ -161,6 +159,25 @@ pub fn flight_movement_system(
             }
 
             // No descent - player hovers in place when not thrusting
+            // Cancel any leftover ground move command so the player doesn't run
+            // or drift while hovering.
+            commands.entity(entity).insert(NextCommand::with_stop());
+
+            // Hovering in place: keep reporting our position to the server so
+            // its authoritative position stays in lockstep with the hover
+            // position and stale pre-flight move commands don't drag the
+            // server entity away (which could later trigger a
+            // teleport-rejection snap-back).
+            if flight_state.current_speed <= 0.0 {
+                if let Some(game_connection) = game_connection.as_ref() {
+                    game_connection
+                        .client_message_tx
+                        .send(ClientMessage::MoveCollision {
+                            position: position.position,
+                        })
+                        .ok();
+                }
+            }
         }
     }
 }

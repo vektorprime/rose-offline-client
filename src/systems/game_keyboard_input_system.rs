@@ -3,6 +3,7 @@ use bevy::{
     math::{Vec2, Vec3},
     prelude::{
         Camera3d, Entity, KeyCode, Local, MessageWriter, Query, Res, State, Time, Transform, With,
+        Without,
     },
 };
 use bevy_egui::EguiContexts;
@@ -24,7 +25,10 @@ const WASD_MOVE_COMMAND_LEAD_TIME_SECS: f32 = 0.25;
 pub fn game_keyboard_input_system(
     app_state: Res<State<AppState>>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    query_camera: Query<&Transform, With<Camera3d>>,
+    query_camera: Query<
+        &Transform,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     query_player: Query<
         (
             Entity,

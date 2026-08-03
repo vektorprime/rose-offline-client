@@ -71,7 +71,9 @@ pub(super) fn spawn_water(
             InheritedVisibility::default(),
             ViewVisibility::default(),
             Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
-            RenderLayers::layer(0),
+            // Water lives on layer 1 so the reflection camera (layer 0) never
+            // renders water into its own reflection.
+            RenderLayers::layer(1),
             NotShadowCaster,
         ))
         .insert((

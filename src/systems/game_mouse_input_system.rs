@@ -3,7 +3,7 @@ use bevy::{
     math::Vec3,
     prelude::{
         BevyError, Camera, Camera3d, Entity, GlobalTransform, Local, MessageWriter, MouseButton,
-        Query, Res, ResMut, State, With,
+        Query, Res, ResMut, State, With, Without,
     },
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, Window},
 };
@@ -38,7 +38,10 @@ pub fn game_mouse_input_system(
     app_state: Res<State<AppState>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     query_window: Query<(&Window, &CursorOptions), With<PrimaryWindow>>,
-    query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    query_camera: Query<
+        (&Camera, &GlobalTransform),
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     rapier_context: ReadRapierContext,
     mut egui_ctx: EguiContexts,
     query_hit_entity: Query<(

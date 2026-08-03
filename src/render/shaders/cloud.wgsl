@@ -1,4 +1,4 @@
-//! Procedural Cloud Shader for Bevy 0.16
+//! Procedural Cloud Shader for Bevy 0.18
 //!
 //! Renders realistic clouds using:
 //! - Fractional Brownian Motion (fBm) noise

@@ -1,8 +1,7 @@
 use bevy::prelude::Resource;
-use rand::Rng;
 use std::time::Duration;
 
-use rose_data::WorldTicks;
+use rose_data::{WorldTicks, WORLD_TICKS_PER_DAY};
 
 #[derive(Resource)]
 pub struct WorldTime {
@@ -12,7 +11,12 @@ pub struct WorldTime {
 
 impl Default for WorldTime {
     fn default() -> Self {
-        Self::new(WorldTicks(rand::thread_rng().gen_range(0..=9999)))
+        // Deterministic start time: midday on a standard 160-tick day.
+        // The previous random seed made the time-of-day (and therefore whether
+        // the sky renders as the daytime atmosphere or the night star field)
+        // change on every launch of the login screen. The real server time
+        // replaces this value once the player joins a zone in-game.
+        Self::new(WorldTicks(WORLD_TICKS_PER_DAY / 2))
     }
 }
 

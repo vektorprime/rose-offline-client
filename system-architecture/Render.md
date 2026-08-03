@@ -13,10 +13,11 @@ The engine utilizes deferred rendering for opaque objects to efficiently manage 
 - **Advantages**: Reduced lighting complexity and support for more dynamic environmental lights (e.g., zone-specific lighting).
 
 ### WGPU Settings and Feature Flags
-The rendering backend is powered by `wgpu`. Configuration includes specific feature flags to ensure compatibility across different hardware while enabling advanced features like:
-- Storage buffer support for particle data.
-- Specialized vertex buffer layouts for procedural geometry.
-- Reverse-Z depth buffering for improved precision.
+The rendering backend is powered by `wgpu`. The client configures `WgpuSettings` in `src/lib.rs` to disable problematic bindless features for stability across hardware, while relying on core wgpu features for the custom pipeline:
+- Disabled features: `BUFFER_BINDING_ARRAY`, `STORAGE_RESOURCE_BINDING_ARRAY`, and `PARTIALLY_BOUND_BINDING_ARRAY` (bindless paths), while texture binding arrays remain available for `TerrainMaterial`.
+- Read-only storage buffers carry per-particle and per-material data to the GPU (particles, damage digits, water, terrain lighting).
+- Specialized vertex buffer layouts for procedural geometry are configured per material in each material's `specialize()`.
+- Reverse-Z depth buffering (Bevy default) is used; sky and cloud materials combine it with `CompareFunction::GreaterEqual`.
 
 ## Custom Materials
 
@@ -33,7 +34,7 @@ A GPU-driven particle system that bypasses traditional CPU-side mesh updates.
 ### WaterMaterial
 A fully procedural water rendering solution that does not rely on external textures for its core appearance.
 - **Features**: Supports animated waves, foam intensity, refraction, and subsurface scattering (SSS).
-- **Underwater Effects**: Integrated with `RoseWaterExtension` and `UnderwaterEffectPlugin` to provide fog and color blending when the camera is submerged.
+- **Underwater Effects**: Integrated with `UnderwaterEffectPlugin` to provide volumetric fog and color blending when the camera is submerged.
 - **Reference**: `src/render/water_material.rs`
 
 ### DamageDigitMaterial
@@ -51,7 +52,7 @@ A procedural sky system that renders a star field and moon.
 ### CloudMaterial
 Procedural cloud generation using fBm noise.
 - **Visuals**: Supports coverage, density, softness, and time-of-day lighting integration.
-- **Animation**: Wind-driven movement via UV offset/translation in the shader.
+- **Animation**: Wind-driven movement via a time-based offset of the noise sampling position in the shader.
 - **Reference**: `src/render/cloud_material.rs`
 
 ## ExtendedMaterial Extensions
@@ -61,9 +62,11 @@ The following extensions allow the `StandardMaterial` to be augmented with ROSE-
 | Extension | Purpose | Key Features |
 | :--- | :--- | :--- |
 | **RoseObjectExtension** | General object enhancement | Lightmap support, specular maps, and blink state for characters. |
-| **RoseTerrainExtension** | Terrain rendering | Multiple texture splatting (up to 4), detail textures, and tile-based selection. |
-| **RoseWaterExtension** | Water augmentation | UV animation for wave movement and specialized water textures. |
 | **RoseEffectExtension** | VFX mesh rendering | Frame-based animation using texture atlases and interpolation. |
+
+Terrain and water are **not** `StandardMaterial` extensions — they use standalone custom `Material` implementations:
+- **TerrainMaterial** (`src/render/terrain_material.rs`): up to 100 tile textures in a texture binding array, selected per-vertex via `TERRAIN_MESH_ATTRIBUTE_TILE_INFO` (two layers + rotation), with lightmap support via UV0.
+- **WaterMaterial** (`src/render/water_material.rs`): fully procedural shading with a custom `AsBindGroup` that packs per-material values into a storage buffer.
 
 ## Post-Processing Effects
 
@@ -80,7 +83,7 @@ The rendering pipeline includes a comprehensive suite of post-processing effects
 
 ### Particle Material Bind Group Layout
 ```rust
-// src/render/particle_material.rs:20
+// src/render/particle_material.rs:17
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct ParticleMaterial {
     #[storage(0, read_only)]
@@ -97,13 +100,13 @@ pub struct ParticleMaterial {
 
 ### Water Material Custom AsBindGroup
 ```rust
-// src/render/water_material.rs:181
+// src/render/water_material.rs:193
 fn as_bind_group(
     &self,
     layout_descriptor: &BindGroupLayoutDescriptor,
     render_device: &RenderDevice,
     pipeline_cache: &PipelineCache,
-    _param: &mut Self::Param,
+    (image_assets, fallback_image): &mut SystemParamItem<'_, '_, Self::Param>,
 ) -> Result<PreparedBindGroup, AsBindGroupError> {
     // Packs per-material values into a single storage buffer for efficiency
     let water_material_data = [ ... ]; 
@@ -127,11 +130,11 @@ fn as_bind_group(
 
 ## Source File References
 
-### Bevvy Source
-- **PBR**: `C:\Users\vicha\RustroverProjects\bevvy-collection\bevvy-0.18.1\crates\bev_pbr\src\`
-- **Post-Processing**: `C:\Users\vicha\RustroverProjects\bevvy-collection\bevvy-0.18.1\crates\bev_post_process\src\`
+### Bevy Source
+- **PBR**: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_pbr\src\`
+- **Post-Processing**: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\bevy_post_process\src\`
 
 ### Project Source
 - **Core Render Logic**: `src/render/mod.rs`
-- **Material Definitions**: `src/render/materials/*.rs` (Note: located in `src/render/` directly in this project)
+- **Material Definitions**: `src/render/*_material.rs`
 - **Extensions**: `src/render/*_extension.rs`

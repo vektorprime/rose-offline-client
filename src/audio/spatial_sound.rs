@@ -3,7 +3,7 @@ use bevy::{
     math::Vec3,
     prelude::{
         AssetServer, Assets, Camera3d, Changed, Commands, Component, Entity, GlobalTransform,
-        Handle, Local, Query, Res, ResMut, With,
+        Handle, Local, Query, Res, ResMut, With, Without,
     },
     time::Time,
 };
@@ -82,7 +82,10 @@ pub fn spatial_sound_system(
     mut context: ResMut<OddioContext>,
     audio: Res<Assets<AudioSource>>,
     asset_server: Res<AssetServer>,
-    camera: Query<&GlobalTransform, With<Camera3d>>,
+    camera: Query<
+        &GlobalTransform,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     mut query_spatial_sounds: Query<(
         Entity,
         &mut SpatialSound,

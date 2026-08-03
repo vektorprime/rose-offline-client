@@ -205,7 +205,10 @@ pub fn ui_minimap_system(
         (With<Npc>, Without<PlayerCharacter>),
     >,
     asset_server: Res<AssetServer>,
-    query_camera: Query<&Transform, With<Camera3d>>,
+    query_camera: Query<
+        &Transform,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     images: Res<Assets<Image>>,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,

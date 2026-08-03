@@ -44,11 +44,24 @@ impl Default for Fish {
 }
 
 /// Resource for fish spawning settings
+///
+/// Fish type variety (colors, sizes, speeds, schooling) is defined in
+/// `src/systems/fish_system.rs` (`FishType` + `default_fish_type_distribution`);
+/// all existing fields here drive the shared spawning parameters.
+///
+/// Fish count scales with the water plane area so small ponds get a few fish
+/// while large lakes get more, instead of every plane receiving the same
+/// fixed count (which over-packed small planes into static clumps).
 #[derive(Resource, Reflect, Debug, Clone)]
 #[reflect(Resource)]
 pub struct FishSettings {
-    /// Number of fish to spawn per water plane
-    pub fish_count_per_water: usize,
+    /// Fish density: number of fish per 1000 square meters of water surface.
+    /// Set to 0 to disable fish entirely.
+    pub fish_per_1000_sqm: f32,
+    /// Minimum fish to spawn per water plane (when density is non-zero)
+    pub min_fish_per_water: usize,
+    /// Maximum fish to spawn per water plane
+    pub max_fish_per_water: usize,
     /// Minimum depth below water surface
     pub min_depth: f32,
     /// Maximum depth below water surface
@@ -61,18 +74,23 @@ pub struct FishSettings {
     pub target_reach_distance: f32,
     /// How far fish can swim from water center (as fraction of water size)
     pub boundary_margin: f32,
+    /// Fish farther than this from the camera are not simulated (meters)
+    pub simulation_distance: f32,
 }
 
 impl Default for FishSettings {
     fn default() -> Self {
         Self {
-            fish_count_per_water: 50,
+            fish_per_1000_sqm: 50.0,
+            min_fish_per_water: 8,
+            max_fish_per_water: 150,
             min_depth: 0.5,
             max_depth: 3.0,
             min_speed: 0.5,
             max_speed: 2.0,
-            target_reach_distance: 1.0,
+            target_reach_distance: 0.4,
             boundary_margin: 0.8, // Stay 80% within water bounds
+            simulation_distance: 80.0,
         }
     }
 }

@@ -11,7 +11,7 @@ use bevy::{
     math::{Quat, Vec3},
     prelude::{
         Commands, Entity, GlobalTransform, MessageWriter, Mut, NextState, Res, ResMut, State,
-        Transform, Visibility, World,
+        Time, Transform, Visibility, World,
     },
 };
 
@@ -23,7 +23,8 @@ enum CooldownType {
 }
 
 use rose_data::{
-    AbilityType, EquipmentItem, Item, ItemReference, ItemSlotBehaviour, ItemType, StatusEffectType,
+    AbilityType, EquipmentItem, Item, ItemReference, ItemSlotBehaviour, ItemType, NpcId,
+    StatusEffectType,
 };
 use rose_game_common::{
     components::{
@@ -49,10 +50,10 @@ use crate::{
         Bank, BoatState, Clan, ClanMember, ClanMembership, ClientEntity, ClientEntityId,
         ClientEntityName, ClientEntityType, CollisionHeightOnly, CollisionPlayer, Command,
         CommandCastSkillTarget, Cooldowns, Dead, DirtDashEffect, FacingDirection, FlightState,
-        ItemDropOwner, ItemDropRemainingTime, MonsterSeparation, NextCommand, PartyInfo,
+        ItemDropOwner, ItemDropRemainingTime,         MonsterSeparation, NextCommand, PartyInfo,
         PartyOwner, PassiveRecoveryTime, PendingDamage, PendingDamageList, PendingSkillEffect,
         PendingSkillEffectList, PendingSkillTarget, PendingSkillTargetList, PersonalStore,
-        PlayerCharacter, Position, VisibleStatusEffects,
+        PlayerCharacter, Position, RemoteBoatState, VisibleStatusEffects,
     },
     events::{
         BankEvent, ChatBubbleEvent, ChatBubbleType, ChatboxEvent, ClientEntityEvent,
@@ -60,7 +61,8 @@ use crate::{
         QuestTriggerEvent, UseItemEvent,
     },
     resources::{
-        AppState, ClientEntityList, CurrentZone, GameConnection, GameData, WorldRates, WorldTime,
+        AppState, ClientEntityList, CurrentZone, GameConnection, GameData, WindState, WorldRates,
+        WorldTime,
     },
     systems::network_thread_system::handle_connection_lost,
 };
@@ -73,16 +75,28 @@ type SpawnTransformBundle = (
     ViewVisibility,
 );
 
+/// Small SystemParam bundling app state and wall-clock time. Bundled to stay
+/// within Bevy's 16-parameter function system limit.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct ConnectionState<'w> {
+    pub app_state: Res<'w, State<AppState>>,
+    pub time: Res<'w, Time>,
+}
+
 fn spawn_client_entity(
     world: &mut World,
     entity_id: ClientEntityId,
     entity_type: ClientEntityType,
     position: Vec3,
+    npc_id: Option<NpcId>,
     rotation: Option<Quat>,
     core_bundle: impl Bundle,
     extra_components: impl Bundle,
 ) -> Entity {
-    let spawn_y = get_spawn_height_from_world(world, position.x, position.y);
+    let spawn_y = match npc_id {
+        Some(npc_id) => get_npc_spawn_height_from_world(world, npc_id, position.x, position.y),
+        None => get_spawn_height_from_world(world, position.x, position.y),
+    };
     let entity = world.spawn(core_bundle).id();
 
     let mut transform = Transform::from_xyz(position.x / 100.0, spawn_y, -position.y / 100.0);
@@ -198,6 +212,59 @@ fn get_spawn_height_from_world(world: &World, position_x: f32, position_y: f32) 
     10.0
 }
 
+/// Returns the spawn height for a static zone NPC from the IFO data, where the
+/// level designer placed the NPC. This can differ from the terrain height when
+/// the NPC stands on top of objects like castle steps. Falls back to the terrain
+/// height when the NPC doesn't match a static zone spawn point, or when the data
+/// is unreliable (unset height or wildly different from the terrain).
+fn get_npc_spawn_height_from_world(
+    world: &World,
+    npc_id: NpcId,
+    position_x: f32,
+    position_y: f32,
+) -> f32 {
+    if let Some(current_zone) = world.get_resource::<CurrentZone>() {
+        if let Some(zone_loader_assets) = world.get_resource::<Assets<ZoneLoaderAsset>>() {
+            if let Some(zone_data) = zone_loader_assets.get(&current_zone.handle) {
+                let mut best: Option<(f32, f32)> = None;
+                for npc in zone_data.npcs.iter() {
+                    if npc.npc_id != npc_id {
+                        continue;
+                    }
+                    let dx = npc.position.x - position_x;
+                    let dy = npc.position.y - position_y;
+                    let distance_sq = dx * dx + dy * dy;
+                    if best.map_or(true, |(best_distance, _)| distance_sq < best_distance) {
+                        best = Some((distance_sq, npc.position.z));
+                    }
+                }
+
+                if let Some((distance_sq, npc_height)) = best {
+                    // Static zone NPCs are spawned by the server at their exact
+                    // IFO position, so a close match is expected.
+                    if distance_sq < 200.0 * 200.0 && npc_height != 0.0 {
+                        let terrain_height = zone_data.get_terrain_height(position_x, position_y);
+                        // Guard against unreliable data: the IFO height should be
+                        // near or above the terrain (standing on objects/steps).
+                        if npc_height >= terrain_height - 50.0
+                            && npc_height - terrain_height < 1000.0
+                        {
+                            log::info!(
+                                "[NPC SPAWN] Using IFO spawn height {:.2}m (terrain {:.2}m) for npc {}",
+                                npc_height / 100.0,
+                                terrain_height / 100.0,
+                                npc_id.get()
+                            );
+                            return npc_height / 100.0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    get_spawn_height_from_world(world, position_x, position_y)
+}
+
 fn recalculate_ability_values_and_refill(world: &mut World, entity: Entity) {
     world.resource_scope(|world, game_data: Mut<GameData>| {
         let mut character = world.entity_mut(entity);
@@ -241,7 +308,7 @@ pub fn game_connection_system(
     mut commands: Commands,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
-    app_state_current: Res<State<AppState>>,
+    connection_state: ConnectionState,
     mut app_state_next: ResMut<NextState<AppState>>,
     mut client_entity_list: ResMut<ClientEntityList>,
     mut chatbox_events: MessageWriter<ChatboxEvent>,
@@ -424,7 +491,7 @@ pub fn game_connection_system(
                     client_entity_list.player_entity_id = Some(entity_id);
 
                     // Transition to in game state if we are not already
-                    if !matches!(app_state_current.get(), AppState::Game) {
+                    if !matches!(connection_state.app_state.get(), AppState::Game) {
                         app_state_next.set(AppState::Game);
                     }
                 }
@@ -466,6 +533,7 @@ pub fn game_connection_system(
                         entity_id,
                         ClientEntityType::Character,
                         position,
+                        None,
                         None,
                         (
                             ClientEntityName::new(character_info.name.clone()),
@@ -540,6 +608,7 @@ pub fn game_connection_system(
                         entity_id,
                         ClientEntityType::Npc,
                         position,
+                        Some(npc.id),
                         Some(Quat::from_axis_angle(Vec3::Y, direction.to_radians())),
                         (
                             Command::with_stop(),
@@ -627,6 +696,7 @@ pub fn game_connection_system(
                         ClientEntityType::Monster,
                         position,
                         None,
+                        None,
                         (
                             Command::with_stop(),
                             next_command,
@@ -680,6 +750,7 @@ pub fn game_connection_system(
                         ClientEntityType::ItemDrop,
                         position,
                         None,
+                        None,
                         (
                             ClientEntityName::new(name),
                             ItemDrop::with_dropped_item(dropped_item),
@@ -701,13 +772,45 @@ pub fn game_connection_system(
                 move_mode,
             }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
+                    if client_entity_list.player_entity == Some(entity) {
+                        log::info!(
+                            "[ATTACK_DIAG] MoveEntity player dest=({:.0},{:.0},{:.0}) target={:?} mode={:?}",
+                            x,
+                            y,
+                            z,
+                            target_entity_id,
+                            move_mode
+                        );
+                    }
                     let target_entity = target_entity_id.and_then(|id| client_entity_list.get(id));
 
-                    commands.entity(entity).insert(NextCommand::with_move(
-                        Vec3::new(x, y, z as f32),
-                        target_entity,
-                        move_mode,
-                    ));
+                    commands.queue(move |world: &mut World| {
+                        let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
+                            return;
+                        };
+
+                        // While flying, ignore the server's ground-move echo
+                        // (sent in response to our MoveCollision reports): it
+                        // would play the run animation mid-air and drag the
+                        // character toward the stale echoed destination at
+                        // ground speed. Flight positions are reported via
+                        // MoveCollision and accepted by the server, so the
+                        // server stays authoritative without a Move command.
+                        let is_flying = entity_mut
+                            .get::<FlightState>()
+                            .map(|flight_state| flight_state.is_flying)
+                            .unwrap_or(false);
+
+                        if is_flying {
+                            entity_mut.insert(NextCommand::with_stop());
+                        } else {
+                            entity_mut.insert(NextCommand::with_move(
+                                Vec3::new(x, y, z as f32),
+                                target_entity,
+                                move_mode,
+                            ));
+                        }
+                    });
                 } else {
                     log::warn!("[RESPAWN_MOVE_DIAG] Entity not found in client_entity_list! entity_id={:?}", entity_id);
                     log::warn!(
@@ -722,6 +825,14 @@ pub fn game_connection_system(
                 position,
             }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
+                    if client_entity_list.player_entity == Some(entity) {
+                        log::info!(
+                            "[ATTACK_DIAG] AdjustPosition player pos=({:.0},{:.0},{:.0})",
+                            position.x,
+                            position.y,
+                            position.z
+                        );
+                    }
                     commands.queue(move |world: &mut World| {
                         if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
                             let is_flying = entity_mut
@@ -762,6 +873,9 @@ pub fn game_connection_system(
             }) => {
                 // TODO: Lerp to XYZ ?
                 if let Some(entity) = client_entity_list.get(entity_id) {
+                    if client_entity_list.player_entity == Some(entity) {
+                        log::info!("[ATTACK_DIAG] StopMoveEntity player");
+                    }
                     commands.entity(entity).insert(NextCommand::with_stop());
                 }
             }
@@ -2570,6 +2684,60 @@ pub fn game_connection_system(
                         commands.entity(entity).insert(MoveSpeed::new(speed as f32));
                     }
                 }
+            }
+            Ok(ServerMessage::SailState {
+                entity_id,
+                position,
+                heading,
+                speed,
+                sail_trim,
+            }) => {
+                // The local player's boat is client-predicted; its own SailInput
+                // reports already drive the server state. Applying the echoed
+                // SailState here caused rubber-banding (100ms-stale position
+                // snap-backs) and facing jitter (server heading diverging from
+                // the local heading). Only remote entities reconcile from it.
+                if let Some(entity) = client_entity_list.get(entity_id) {
+                    if client_entity_list.player_entity == Some(entity) {
+                        continue;
+                    }
+                    let authoritative_at = connection_state.time.elapsed_secs();
+                    commands.queue(move |world: &mut World| {
+                        if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+                            entity_mut.insert(Position::new(position));
+                            if let Some(mut facing) = entity_mut.get_mut::<FacingDirection>() {
+                                facing.actual = heading;
+                                facing.desired = heading;
+                            }
+                            if let Some(mut boat) = entity_mut.get_mut::<BoatState>() {
+                                boat.active = true;
+                                boat.heading = heading;
+                                boat.speed = speed.clamp(0.0, boat.max_speed);
+                                boat.sail_trim = sail_trim;
+                                boat.water_height_cm = position.z;
+                            }
+                            if let Some(mut remote) = entity_mut.get_mut::<RemoteBoatState>() {
+                                remote.last_authoritative_at = authoritative_at;
+                                remote.sail_trim = sail_trim;
+                            }
+                        }
+                    });
+                }
+            }
+            Ok(ServerMessage::WindStateUpdate {
+                angle,
+                speed,
+                gust_factor,
+            }) => {
+                let authoritative_at = connection_state.time.elapsed_secs();
+                commands.queue(move |world: &mut World| {
+                    if let Some(mut wind) = world.get_resource_mut::<WindState>() {
+                        wind.authoritative_angle = Some(angle);
+                        wind.authoritative_speed = Some(speed);
+                        wind.authoritative_gust_factor = Some(gust_factor);
+                        wind.authoritative_last_update = authoritative_at;
+                    }
+                });
             }
             Ok(ServerMessage::ChangeNpcId { entity_id, npc_id }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {

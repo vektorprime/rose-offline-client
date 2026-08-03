@@ -1,7 +1,7 @@
 use bevy::{
     ecs::prelude::{Res, ResMut},
     math::{Vec3, Vec4Swizzles},
-    prelude::{Children, Entity, Query, Visibility, With},
+    prelude::{Children, Entity, Query, State, Visibility, With},
 };
 
 use rose_data::{SkyboxState, WORLD_TICK_DURATION};
@@ -9,7 +9,7 @@ use rose_data::{SkyboxState, WORLD_TICK_DURATION};
 use crate::{
     components::NightTimeEffect,
     render::ZoneLighting,
-    resources::{CurrentZone, GameData, WorldTime, ZoneTime, ZoneTimeState},
+    resources::{AppState, CurrentZone, GameData, WorldTime, ZoneTime, ZoneTimeState},
 };
 
 // Note: ZoneLighting is now used from resources::CurrentZone (via zone_lighting.rs)
@@ -84,6 +84,7 @@ pub fn zone_time_system(
     current_zone: Option<Res<CurrentZone>>,
     game_data: Res<GameData>,
     world_time: Res<WorldTime>,
+    app_state: Res<State<AppState>>,
     mut zone_time: ResMut<ZoneTime>,
     mut query_night_effects: Query<Entity, With<NightTimeEffect>>,
     mut query_visibility: Query<&mut Visibility>,
@@ -183,7 +184,18 @@ pub fn zone_time_system(
         .skybox_id
         .and_then(|id| game_data.skybox.get_skybox_data(id));
 
-    let world_day_time = world_time.ticks.get_world_time();
+    // Menu screens (login, character select) always show a fixed midday sky.
+    // Without this override, the startup WorldTime seed made the login screen's
+    // time-of-day - and thus whether the sky is the daytime atmosphere or the
+    // night star field - change randomly on every launch.
+    let world_day_time = if matches!(
+        app_state.get(),
+        AppState::GameLogin | AppState::GameCharacterSelect
+    ) {
+        safe_day_cycle / 2
+    } else {
+        world_time.ticks.get_world_time()
+    };
     let (day_time, partial_tick) = if let Some(overwrite_time) = zone_time.debug_overwrite_time {
         (overwrite_time, 0.0)
     } else {

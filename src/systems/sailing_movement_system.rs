@@ -1,10 +1,14 @@
 use bevy::prelude::*;
 
+use rose_game_common::messages::client::ClientMessage;
+
 use crate::components::{BoatState, FacingDirection, PlayerCharacter, Position};
 use crate::render::underwater_effect::UnderwaterVolumes;
-use crate::resources::WaterSettings;
-use crate::resources::WindState;
+use crate::resources::{GameConnection, WaterSettings, WindState};
 use crate::sailing::{sailing_step, SailingStepInput};
+
+/// Interval between sail state reports to the server (seconds).
+const SAIL_REPORT_INTERVAL: f32 = 0.1;
 
 fn sample_water_surface_height_cm(
     position_cm: Vec3,
@@ -52,6 +56,8 @@ pub fn sailing_movement_system(
     underwater_volumes: Res<UnderwaterVolumes>,
     water_settings: Res<WaterSettings>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    game_connection: Option<Res<GameConnection>>,
+    mut report_accumulator: Local<f32>,
     mut boat_query: Query<
         (&mut BoatState, &mut Position, &mut FacingDirection),
         With<PlayerCharacter>,
@@ -72,10 +78,10 @@ pub fn sailing_movement_system(
         } else {
             0.0
         };
-        let trim_input = if keyboard.pressed(KeyCode::KeyW) {
-            -1.0
-        } else if keyboard.pressed(KeyCode::KeyS) {
+        let throttle_input = if keyboard.pressed(KeyCode::KeyW) {
             1.0
+        } else if keyboard.pressed(KeyCode::KeyS) {
+            -1.0
         } else {
             0.0
         };
@@ -83,9 +89,8 @@ pub fn sailing_movement_system(
         let step = sailing_step(SailingStepInput {
             heading: boat.heading,
             speed: boat.speed,
-            sail_trim: boat.sail_trim,
             rudder: steer_input,
-            trim_input,
+            throttle: throttle_input,
             max_speed: boat.max_speed,
             wind_angle: wind.angle,
             wind_speed: wind.speed,
@@ -94,7 +99,6 @@ pub fn sailing_movement_system(
         boat.rudder = steer_input;
         boat.heading = step.heading;
         boat.speed = step.speed;
-        boat.sail_trim = step.sail_trim;
         position.position.x += step.forward_cm.x;
         position.position.y += step.forward_cm.y;
 
@@ -108,5 +112,30 @@ pub fn sailing_movement_system(
         position.position.z = water_height_cm;
 
         facing.desired = boat.heading;
+
+        // Send a periodic state report (inputs + full boat state + position)
+        // to the server for validation and authoritative broadcasting to
+        // other clients. The local player does NOT reconcile from the echoed
+        // SailState; its own prediction is authoritative (server corrections
+        // arrive via AdjustPosition).
+        if let Some(game_connection) = game_connection.as_ref() {
+            *report_accumulator += dt;
+            if *report_accumulator >= SAIL_REPORT_INTERVAL {
+                *report_accumulator = 0.0;
+                game_connection
+                    .client_message_tx
+                    .send(ClientMessage::SailInput {
+                        rudder: steer_input,
+                        throttle: throttle_input,
+                        heading: boat.heading,
+                        speed: boat.speed,
+                        sail_trim: boat.sail_trim,
+                        x: position.position.x,
+                        y: position.position.y,
+                        z: position.position.z,
+                    })
+                    .ok();
+            }
+        }
     }
 }

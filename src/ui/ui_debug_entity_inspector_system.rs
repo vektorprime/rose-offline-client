@@ -1,5 +1,5 @@
 use bevy::{
-    prelude::{Camera3d, DirectionalLight, Entity, Mut, With, World},
+    prelude::{Camera3d, DirectionalLight, Entity, Mut, With, Without, World},
     window::PrimaryWindow,
 };
 use bevy_egui::EguiContext;
@@ -32,7 +32,10 @@ pub fn ui_debug_entity_inspector_system(world: &mut World) {
                         ui.horizontal(|ui| {
                             if ui.button("Camera").clicked() {
                                 if let Ok(entity) = world
-                                    .query_filtered::<Entity, With<Camera3d>>()
+                                    .query_filtered::<Entity, (
+                                        With<Camera3d>,
+                                        Without<crate::render::WaterReflectionCamera>,
+                                    )>()
                                     .single(world)
                                 {
                                     debug_inspector_state.entity = Some(entity);

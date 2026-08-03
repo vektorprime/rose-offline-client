@@ -1,7 +1,7 @@
 # Starry Sky & Atmosphere Architecture
 
 **Date:** February 28, 2026
-**Bevy Version:** 0.16.1
+**Bevy Version:** 0.18.1
 **Project:** ROSE Offline Client
 
 **Status:** ✅ **FULLY FUNCTIONAL** - Stars render correctly at night with real-time UI controls
@@ -54,7 +54,7 @@ Stars are generated procedurally in the GPU shader using a **grid-based sampling
 
 ### Implementation Location
 
-`src/render/shaders/starry_sky.wgsl` - `star_layer()` function (lines 91-132)
+`src/render/shaders/starry_sky.wgsl` - `star_layer()` function (lines 101-144)
 
 ### Algorithm Breakdown
 
@@ -94,7 +94,7 @@ Checking neighbors ensures stars near cell boundaries are visible from all adjac
                 let star_pos = rand_vals.xyz;
 
                 // Star exists based on density threshold
-                let star_exists = step(rand_vals.x, star_density);
+                let star_exists = step(rand_vals.x, sky_star_density());
 
                 // Distance from current pixel to star position
                 let diff = grid_fract - cell_offset - star_pos;
@@ -108,7 +108,7 @@ Checking neighbors ensures stars near cell boundaries are visible from all adjac
 
                 // Twinkling effect
                 let twinkle_phase = rand_vals.z * 6.28318;
-                let twinkle = 0.7 + 0.3 * sin(time * twinkle_speed + twinkle_phase);
+                let twinkle = 0.7 + 0.3 * sin(sky_time() * twinkle_speed + twinkle_phase);
 
                 star_brightness += intensity * star_exists * brightness_base * twinkle;
             }
@@ -148,8 +148,8 @@ Stars per layer ≈ (scale / 2)² × π × star_density
 
 **Recommended star_density values:**
 - **0.15**: Sparse (~1,000 stars) - minimalist aesthetic
-- **0.50**: Moderate (~3,300 stars) - **recommended default**
-- **0.70**: Dense (~5,000+ stars) - photorealistic
+- **0.50**: Moderate (~3,300 stars)
+- **1.0**: Maximum density (~6,600 stars) - **current code default** (see `StarrySkySettings` defaults below)
 
 ---
 
@@ -163,10 +163,10 @@ The day/night cycle is controlled by the `zone_time_system` which reads from eit
 
 ### Core Resources
 
-#### `WorldTime` (from `rose-game-common`)
+#### `WorldTime` (client resource, `src/resources/world_time.rs`; tick type from `rose-data`)
 ```rust
 pub struct WorldTime {
-    pub ticks: u64,              // Server tick count
+    pub ticks: WorldTicks,     // rose_data::WorldTicks newtype over u64 - server tick count
     pub time_since_last_tick: Duration,
 }
 ```
@@ -192,33 +192,29 @@ pub struct SkySettings {
 
 ### Time State Thresholds
 
-From zone data (STB file):
-- `morning_time`: Tick when morning begins (typically ~6:00)
-- `day_time`: Tick when day begins (typically ~12:00)
-- `evening_time`: Tick when evening begins (typically ~18:00)
-- `night_time`: Tick when night begins (typically ~22:00)
+Zone data (STB file) provides these fields, but they are used only for tick calculations and debug logging:
+- `morning_time`: Tick when morning begins
+- `day_time`: Tick when day begins
+- `evening_time`: Tick when evening begins
+- `night_time`: Tick when night begins
 - `day_cycle`: Total ticks for 24-hour cycle (typically 160)
+
+**State determination uses FIXED hour thresholds** (per `zone_time_system.rs`), NOT the zone data values:
+- Morning: 6:00-12:00
+- Day: 12:00-17:00
+- Evening: 17:00-19:00 (2-hour dusk transition)
+- Night: 19:00-6:00 (wraps around midnight)
+
+This ensures a consistent day/night cycle across all zones.
 
 ### State Detection Logic
 
 ```rust
-// Night wraps around midnight
-let is_night = if zone_data.night_time >= zone_data.morning_time {
-    day_time >= zone_data.night_time || day_time < zone_data.morning_time
-} else {
-    day_time >= zone_data.night_time && day_time < zone_data.morning_time
-};
-
-// Evening may also wrap
-let is_evening = if zone_data.night_time >= zone_data.evening_time {
-    day_time >= zone_data.evening_time && day_time < zone_data.night_time
-} else {
-    day_time >= zone_data.evening_time || day_time < zone_data.night_time
-};
-
-// Day and morning are simple ranges
-let is_day = day_time >= zone_data.day_time && day_time < zone_data.evening_time;
-let is_morning = day_time >= zone_data.morning_time && day_time < zone_data.day_time;
+// day_time_hours = (day_time / safe_day_cycle) * 24.0
+let is_morning = day_time_hours >= 6.0 && day_time_hours < 12.0;
+let is_day = day_time_hours >= 12.0 && day_time_hours < 17.0;
+let is_evening = day_time_hours >= 17.0 && day_time_hours < 19.0; // 2-hour evening transition (dusk)
+let is_night = day_time_hours >= 19.0 || day_time_hours < 6.0;
 ```
 
 ### Night Factor by State
@@ -261,7 +257,7 @@ UI Slider → SkySettings.manual_time
 - **Star Density**: 0.0-1.0 (probability of star per grid cell)
 - **Star Brightness**: 0.0-5.0 (overall brightness multiplier)
 - **Moon Phase**: 0.0-1.0 (0/1=new, 0.5=full)
-- **Moon Direction X/Y/Z**: -1.0 to 1.0 (direction vector)
+- **Moon Direction X/Z**: -1.0 to 1.0, **Moon Direction Y**: 0.0 to 1.0 (direction vector)
 - **Normalize Button**: Normalizes moon direction to unit vector
 - **Night Factor**: Read-only display (auto-controlled)
 
@@ -322,7 +318,7 @@ EarlyPrepasses
     ↓
 MainOpaquePass (solid objects)
     ↓
-Atmosphere::RenderSky (fullscreen quad, additive blend) ← REMOVED at night
+Atmosphere `render_sky` pass (fullscreen triangle, additive-style blend) ← REMOVED at night
     ↓
 MainTransparentPass (transparent objects)
     ↓
@@ -341,30 +337,31 @@ fn specialize(...) {
     // 1. Vertex layout: position only
     descriptor.vertex.buffers = vec![vertex_layout];
 
-    // 2. Disable backface culling (camera is INSIDE sphere)
-    descriptor.primitive.cull_mode = None;
-
-    // 3. Additive blending for stars
+    // 2. Standard alpha blending (prevents color accumulation / ghosting)
     color_target_state.blend = Some(BlendState {
         color: BlendComponent {
             src_factor: BlendFactor::SrcAlpha,
-            dst_factor: BlendFactor::One,
+            dst_factor: BlendFactor::OneMinusSrcAlpha,
             operation: BlendOperation::Add,
         },
-        ...
+        alpha: BlendComponent {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::OneMinusSrcAlpha,
+            operation: BlendOperation::Add,
+        },
     });
 
-    // 4. Disable depth writes, always pass depth test
+    // 3. Disable depth writes, use GreaterEqual comparison
     depth_stencil.depth_write_enabled = false;
-    depth_stencil.depth_compare = CompareFunction::Always;
+    depth_stencil.depth_compare = CompareFunction::GreaterEqual;
 }
 ```
 
 **Why these settings?**
-- **No culling**: Camera is inside the sphere, all triangles face away
-- **Additive blend**: Stars accumulate brightness naturally
+- **Inward-facing triangles**: Instead of disabling culling, the sphere mesh's triangle winding is reversed (and normals flipped) when spawning, so triangles are front-facing when viewed from inside. `cull_mode` is left at its default.
+- **Standard alpha blend**: The material's `alpha_mode()` returns `AlphaMode::Blend`, which places it in the `Transparent3d` render phase and prevents color accumulation (ghosting) that additive blending caused
 - **No depth write**: Sky should always render behind everything
-- **Always compare**: Prevents depth issues at far plane
+- **GreaterEqual compare**: With Bevy's reverse-z depth buffer this prevents the sky from bleeding through opaque geometry
 
 ### Atmosphere Toggle
 
@@ -380,7 +377,9 @@ match zone_time.state {
     _ => {
         // Add atmosphere components
         commands.entity(camera).insert((
-            Atmosphere::EARTH,
+            Atmosphere::earthlike(
+                scattering_mediums.add(ScatteringMedium::default()),
+            ),
             AtmosphereSettings::default(),
         ));
     }
@@ -400,7 +399,7 @@ match zone_time.state {
 
 | Resource | Location | Purpose |
 |----------|----------|---------|
-| `WorldTime` | `rose-game-common` | Server tick-based time |
+| `WorldTime` | `src/resources/world_time.rs` | Server tick-based time (tick type from `rose-data`) |
 | `ZoneTime` | `src/resources/zone_time.rs` | Current zone's time state |
 | `StarrySkySettings` | `src/render/starry_sky_material.rs` | Star appearance settings |
 | `SkySettings` | `src/render/zone_lighting.rs` | Time mode and manual override |
@@ -426,7 +425,9 @@ match zone_time.state {
 
 ## System Execution Order
 
-### Update Schedule (in `lib.rs`)
+### Update Schedule
+
+Systems `zone_time_system`, `toggle_atmosphere_based_on_time`, `update_starry_sky_night_factor`, and `update_starry_sky_system` are registered in `lib.rs`; `apply_sky_settings_to_zone_time` and `update_sun_position_system` are registered in the `ZoneLightingPlugin` (`zone_lighting.rs`). All run in the `Update` schedule:
 
 ```rust
 app.add_systems(Update, (
@@ -448,8 +449,8 @@ app.add_systems(Update, (
     // 6. Sun position (depends on SkySettings or ZoneTime)
     update_sun_position_system,
     
-    // 7. Color grading (depends on ZoneTime)
-    color_grading_time_of_day_system,
+    // DISABLED: color_grading_time_of_day_system (commented out in lib.rs -
+    // it conflicted with the atmosphere scattering system)
 ));
 ```
 
@@ -466,17 +467,17 @@ ZoneTime.debug_overwrite_time
        ↓
 zone_time_system (uses override if set)
        ↓
-┌─────────────────┬─────────────────┬──────────────────┐
-↓                 ↓                 ↓                  ↓
-toggle_atmo...  update_starry...  update_sun...    color_grading...
-       ↓                 ↓                 ↓                  ↓
-Atmosphere      night_factor      sun rotation     color grading
-component       (0.0 or 1.0)
-       ↓                 ↓
+┌─────────────────┬─────────────────┬──────────────┐
+↓                 ↓                 ↓              ↓
+toggle_atmo...  update_starry...  update_sun...  zone_lighting
+        ↓                 ↓                 ↓              ↓
+Atmosphere      night_factor      sun rotation   fog/ambient
+component       (0.0 or 1.0)                   (time state)
+        ↓                 ↓
 [removed at    update_starry_sky_system
  night]                 ↓
-              StarrySkyMaterial uniforms
-       ↓
+               StarrySkyMaterial uniforms
+        ↓
 GPU shader renders stars
 ```
 
@@ -492,15 +493,17 @@ GPU shader renders stars
 impl Default for StarrySkySettings {
     fn default() -> Self {
         Self {
-            star_density: 0.50,        // 50% cell occupancy (~3,300 stars)
-            star_brightness: 1.0,      // Normal brightness
-            moon_phase: 0.5,           // Full moon
+            star_density: 1.0,        // 100% cell occupancy (~6,600 stars max)
+            star_brightness: 5.0,     // Bright stars
+            moon_phase: 0.5,          // Full moon
             moon_direction: Vec3::new(0.3, 0.8, 0.5).normalize(),
-            night_factor: 0.0,         // Auto-controlled
+            night_factor: 0.0,        // Auto-controlled
         }
     }
 }
 ```
+
+Note: `StarrySkyMaterial::default()` uses `star_density: 0.50` and `star_brightness: 1.0`, but the `StarrySkySettings` resource (which the spawn system and UI use) defaults to `1.0` / `5.0`.
 
 #### `SkySettings` (in `zone_lighting.rs`)
 
@@ -536,10 +539,10 @@ impl Default for SkySettings {
 
 **Individual layer brightness** (in shader):
 ```wgsl
-let distant_stars = star_layer(dir, 80.0, 0.4 * star_brightness, 2.0);
-let medium_stars = star_layer(dir, 40.0, 0.7 * star_brightness, 3.0);
-let bright_stars = star_layer(dir, 20.0, 1.2 * star_brightness, 4.0);
-let rare_stars = star_layer(dir, 10.0, 2.0 * star_brightness, 5.0);
+let distant_stars = star_layer(dir, 80.0, 0.4 * sky_star_brightness(), 2.0);
+let medium_stars = star_layer(dir, 40.0, 0.7 * sky_star_brightness(), 3.0);
+let bright_stars = star_layer(dir, 20.0, 1.2 * sky_star_brightness(), 4.0);
+let rare_stars = star_layer(dir, 10.0, 2.0 * sky_star_brightness(), 5.0);
 ```
 
 **Overall multiplier** (via UI):
@@ -548,14 +551,15 @@ let rare_stars = star_layer(dir, 10.0, 2.0 * star_brightness, 5.0);
 
 #### Moon Configuration
 
-**Phase cycle:**
+**Phase cycle** (per shader/code convention: `0.5` = full moon, `0`/`1` = new moon):
 - 0.0-0.05: New Moon (invisible)
 - 0.05-0.25: Waxing Crescent
 - 0.25-0.35: First Quarter
-- 0.35-0.55: Waxing Gibbous
-- 0.55-0.65: Full Moon (brightest)
-- 0.65-0.75: Waning Gibbous
-- 0.75-0.95: Last Quarter
+- 0.35-0.45: Waxing Gibbous
+- 0.45-0.55: Full Moon (brightest)
+- 0.55-0.65: Waning Gibbous
+- 0.65-0.85: Last Quarter
+- 0.85-0.95: Waning Crescent
 - 0.95-1.0: New Moon (invisible)
 
 **Direction:**
@@ -569,41 +573,32 @@ let rare_stars = star_layer(dir, 10.0, 2.0 * star_brightness, 5.0);
 
 ### Log Messages to Monitor
 
-#### Starry Sky Pipeline
+Note: There are no per-frame `[STARRY SKY SPECIALIZE/PREPARE/UPDATE]` or `[NIGHT_FACTOR_UPDATE]` / `[ATMOSPHERE]` logs in the current source. The logs that actually exist:
+
+#### Starry Sky Spawn (one-time, `lib.rs`)
 ```
-[STARRY SKY PLUGIN] ========== PLUGIN BUILD START ==========
-[STARRY SKY PLUGIN] Internal shader asset loaded: <handle>
-[STARRY SKY SPECIALIZE] Specializing pipeline for StarrySkyMaterial
-[STARRY SKY PREPARE] night_factor = 1.0 - stars SHOULD BE VISIBLE
-[STARRY SKY UPDATE] Updated X material(s)
+[STARRY SKY] Spawning sky sphere (radius 50000), star_density: 1, star_brightness: 5, night_factor: 0
+[STARRY SKY] StarrySky entity spawned with id: ...
+[STARRY SKY] MoonLight entity spawned with id: ...
 ```
 
-#### Time System
+#### Time System (logged once per zone, `zone_time_system.rs`)
 ```
-[ZONE_TIME] ========== CURRENT TIME ==========
-[ZONE_TIME]   tick: 128 / 160
-[ZONE_TIME]   game time: 19:12
-[ZONE_TIME]   state: Evening
-[ZONE_TIME]   state_percent: 75.0%
+[ZONE_TIME] ========== ZONE TIME THRESHOLDS ==========
+[ZONE_TIME] Zone <id> (<name>)
+[ZONE_TIME]   day_cycle: <N> ticks = 24 hours (safe_day_cycle: <N>)
+[ZONE_TIME]   ACTUAL VALUES FROM STB:
+[ZONE_TIME]     morning_time: ...  day_time: ...  evening_time: ...  night_time: ...
+[ZONE_TIME] =============================================
+[ZONE_TIME] WARNING: zone_data.day_cycle=<N> is invalid, using default 160
 ```
 
-#### Sky Settings Bridge
+#### Sky Settings Bridge (`zone_lighting.rs`)
 ```
-[SKY SETTINGS] Manual time enabled: 0.0 hours -> 0 ticks (day_cycle: 160)
 [SKY SETTINGS] Automatic time enabled - following game time
 ```
 
-#### Night Factor
-```
-[NIGHT_FACTOR_UPDATE] State is NIGHT -> night_factor = 1.0
-[NIGHT_FACTOR_UPDATE] State is EVENING (2nd half, 75.0%) -> night_factor = 0.5
-```
-
-#### Atmosphere
-```
-[ATMOSPHERE] ✗ DISABLED atmosphere: true -> false (state: Night)
-[ATMOSPHERE] ✓ ENABLED atmosphere: false -> true (state: Day)
-```
+The `[SKY SETTINGS] Manual time enabled: <hours> hours -> <ticks> ticks (day_cycle: <N>)` log exists in source but is currently commented out.
 
 ### Shader Debug Modes
 
@@ -623,11 +618,11 @@ In `src/render/shaders/starry_sky.wgsl`, set `DEBUG_MODE`:
 #### Stars Not Visible
 
 **Checklist:**
-1. ✅ Is it night time? Check `[ZONE_TIME] state: Night`
-2. ✅ Is atmosphere disabled? Check `[ATMOSPHERE] ✗ DISABLED`
-3. ✅ Is night_factor = 1.0? Check `[STARRY SKY PREPARE] night_factor`
-4. ✅ Is star_density > 0? Check `[STARRY SKY PREPARE] star_density`
-5. ✅ Is shader compiling? Check for `[STARRY SKY SPECIALIZE]`
+1. ✅ Is it night time? Check the Zone Time debug window (Debug → Time) or `[ZONE_TIME]` logs; Night = 19:00-6:00
+2. ✅ Is atmosphere removed? At night the `Atmosphere` component is removed from the camera (`toggle_atmosphere_based_on_time`)
+3. ✅ Is night_factor = 1.0? Check the read-only Night Factor display in the Stars tab (or inspect `StarrySkySettings.night_factor`)
+4. ✅ Is star_density > 0? Check the Star Density slider in the Stars tab
+5. ✅ Is shader compiling? Watch for shader compile errors in the log at startup
 
 **Quick Test:**
 - Set `DEBUG_MODE = 1` in shader
@@ -640,7 +635,7 @@ In `src/render/shaders/starry_sky.wgsl`, set `DEBUG_MODE`:
 1. ✅ Is SkySettings.mode = Manual?
 2. ✅ Did you change the slider (triggers is_changed())?
 3. ✅ Is CurrentZone resource present?
-4. ✅ Check `[SKY SETTINGS] Manual time enabled` log
+4. ✅ Check `[SKY SETTINGS]` logs — note the Manual-time log is commented out in `zone_lighting.rs`, only the Automatic log is active
 
 **Debug:**
 ```rust
@@ -663,7 +658,7 @@ log::info!("[DEBUG] manual_time = {}", sky_settings.manual_time);
 
 ### Issue #1: Shader Import Paths (February 27, 2026)
 
-**Problem:** Bevy 0.16.1 changed shader import syntax
+**Problem:** Bevy 0.18.1 changed shader import syntax
 
 **Before:**
 ```wgsl
@@ -707,7 +702,7 @@ log::info!("[DEBUG] manual_time = {}", sky_settings.manual_time);
 
 **Problem:** Default `star_density = 0.15` produced only ~1,000 stars
 
-**Fix:** Changed to `star_density = 0.50` (~3,300 stars)
+**Fix:** Changed to `star_density = 0.50` (~3,300 stars); the current `StarrySkySettings` default is now `1.0` (~6,600 stars max)
 
 **Impact:** Much denser, more realistic star field
 
@@ -728,9 +723,10 @@ log::info!("[DEBUG] manual_time = {}", sky_settings.manual_time);
 
 | File | Purpose |
 |------|---------|
-| `bevy-0.16.1/crates/bevy_pbr/src/atmosphere/node.rs` | Atmosphere rendering |
-| `bevy-0.16.1/crates/bevy_pbr/src/render/mesh_functions.wgsl` | Mesh transformation functions |
-| `bevy-0.16.1/crates/bevy_mesh/src/primitives/dim3/sphere.rs` | Sphere mesh generation |
+| `bevy-0.18.1/crates/bevy_pbr/src/atmosphere/node.rs` | Atmosphere LUT / sky rendering |
+| `bevy-0.18.1/crates/bevy_light/src/atmosphere.rs` | `Atmosphere` / `ScatteringMedium` component definitions |
+| `bevy-0.18.1/crates/bevy_pbr/src/render/mesh_functions.wgsl` | Mesh transformation functions |
+| `bevy-0.18.1/crates/bevy_mesh/src/primitives/dim3/sphere.rs` | Sphere mesh generation |
 
 ---
 
@@ -745,7 +741,7 @@ The starry sky system is a **fully integrated, production-ready feature** that:
 5. **Includes moon rendering** with phases and directional lighting
 
 **For future engineers:**
-- Star density is the primary tuning parameter (0.50 recommended)
+- Star density is the primary tuning parameter (code default is 1.0)
 - Time system uses `ZoneTime.debug_overwrite_time` for manual control
 - Atmosphere must be removed (not faded) for stars to be visible
 - All settings are exposed in the in-game Settings menu
@@ -753,4 +749,4 @@ The starry sky system is a **fully integrated, production-ready feature** that:
 ---
 
 *Last updated: February 28, 2026*
-*ROSE Offline Client - Bevy 0.16.1*
+*ROSE Offline Client - Bevy 0.18.1*

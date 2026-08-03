@@ -11,9 +11,7 @@ You MUST follow all of the instructions in this document. Consider this document
   - `cargo clean` unless the user explicitly approves it.
 - Do NOT truncate output using:
   - `head`
-  - `Select-Object`
-- When filtering output, use:
-  - `findstr` only
+
 
 If any instruction conflicts with these rules, **these rules take priority**.
 
@@ -56,6 +54,8 @@ Do NOT report:
 - General build progress
 - Non-error logs unless needed to explain the failure
 
+Note: dev builds are slow — `[profile.dev.package."*"] opt-level = 3` in Cargo.toml builds all dependencies optimized. Do not treat long build times as a hang.
+
 ---
 
 ## 3. REQUIRED PRE-WORK ANALYSIS
@@ -66,8 +66,8 @@ Before starting any task, you MUST complete all of the following:
 
 Check these folders first:
 
-1. `pitfalls` folder — identify known issues and previous fixes
-2. `system-architecture` folder — understand the relevant architecture for features and components we will interact with
+1. `pitfalls` folder — start with `pitfalls/index.md` (table of contents by component and by Bevy version), then read the entries for the component you are touching
+2. `system-architecture` folder — start with `system-architecture/README.md`, then read the doc for the subsystem you are touching
 
 ### Step 2 - Identify affected features
 
@@ -79,7 +79,7 @@ IF YOU ARE UNSURE ABOUT THE BEVY 0.18 DOCUMENTATION:
 
 For each relevant feature:
 
-- Search the Bevy 0.18.1 source code for the related implementation - `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1`
+- Search the Bevy 0.18.1 source code for the related implementation - `C:\Users\%USERNAME%\RustroverProjects\bevy-collection\bevy-0.18.1`
 - Read the relevant `.rs` files
 - Confirm actual behavior from source code
 - Do NOT assume behavior without checking source
@@ -88,27 +88,32 @@ For each relevant feature:
 
 ## 4. SOURCE CODE LOCATIONS
 
+### Dependency crates (build requirement)
+
+`Cargo.toml` uses **absolute-path dependencies**. `cargo build` fails if these are missing or moved:
+
+- `C:/Users/%USERNAME%/RustroverProjects/rose-offline/` — `rose-data`, `rose-data-irose`, `rose-file-readers`, `rose-game-common`, `rose-game-irose`, `rose-network-common`, `rose-network-irose`
+- `../bevy_procedural_grass` (i.e. `C:/Users/%USERNAME%/RustroverProjects/bevy_procedural_grass`)
 
 ### Source Code for Bevy 0.18.1
 
-`C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1`
+`C:\Users\%USERNAME%\RustroverProjects\bevy-collection\bevy-0.18.1`
 
 ### Source Code for WGPU v27
 
-`C:\Users\vicha\RustroverProjects\bevy-collection\wgpu-27`
+`C:\Users\%USERNAME%\RustroverProjects\bevy-collection\wgpu-27`
 
 ### Source Code for Bevy_EGUI 0.39.1
 
-`C:\Users\vicha\RustroverProjects\bevy-collection\bevy_egui-0.39.1`
+`C:\Users\%USERNAME%\RustroverProjects\bevy-collection\bevy_egui-0.39.1`
 
 ### Game Server Source Code
 
-`C:\Users\vicha\RustroverProjects\rose-offline`
+`C:\Users\%USERNAME%\RustroverProjects\rose-offline`
 
 ### Game Client Source Code
 
-`C:\Users\vicha\RustroverProjects\rose-offline-client`
-
+`C:\Users\%USERNAME%\RustroverProjects\rose-offline-client`
 
 ---
 
@@ -128,15 +133,25 @@ If progress stalls, uncertainty remains, or the issue is not understood well eno
 
 **Older working version using Bevy 0.11**
 
-`C:\Users\vicha\RustroverProjects\exjam-rose-offline-client\rose-offline-client`
+`C:\Users\%USERNAME%\RustroverProjects\exjam-rose-offline-client\rose-offline-client`
 
 ### Rust error code reference
 
-`C:\Users\vicha\RustroverProjects\rust-errors\all-rust-errors.md`
+`C:\Users\%USERNAME%\RustroverProjects\rust-errors\all-rust-errors.md`
 
 ---
 
-## 6. PLACEHOLDERS AND STUB FUNCTIONS
+## 6. REPOSITORY FACTS
+
+- Single crate; entrypoint `src/main.rs` (clap CLI) dispatches to `src/lib.rs` functions `run_game`, `run_model_viewer`, `run_zone_viewer`, `run_map_editor`. Mode is selected by CLI flags: `--model-viewer`, `--zone-viewer` / `--zone=<N>`, `--map-editor`.
+- The client loads game data from `data.idx` in the current directory, or via `--data-idx=<path>` / `--data-path=<path>`. It cannot start without game data. Only the `irose` data version exists (`--data-version irose`, likewise for network/UI versions).
+- Actual engine version is **Bevy 0.18.1**.
+- The user launches the client (you must not run it). Every session writes structured logs to `logs/<session-timestamp>/` relative to the working directory (`structured.jsonl`, `session.json`).
+- `simplification/` — research and cleanup reports for the dead-code removal pass (historical, do not re-apply).
+
+---
+
+## 7. PLACEHOLDERS AND STUB FUNCTIONS
 
 - Never leave placeholders when the user expects complete code
 - Never leave stub functions when the user expects complete code
@@ -144,7 +159,7 @@ If progress stalls, uncertainty remains, or the issue is not understood well eno
 
 ---
 
-## 7. TASK DIFFICULTY
+## 8. TASK DIFFICULTY
 
 - If a task is difficult, break it into as many smaller steps as needed
 - Never give up on a task because it is difficult
@@ -152,7 +167,7 @@ If progress stalls, uncertainty remains, or the issue is not understood well eno
 
 ---
 
-## 8. LESSONS LEARNED IN `pitfalls` FOLDER
+## 9. LESSONS LEARNED IN `pitfalls` FOLDER
 
 When you fix an issue **and the user confirms it is resolved**:
 
@@ -167,21 +182,13 @@ Do NOT create, edit, or modify `pitfalls` notes before the user confirms the iss
 
 ---
 
-## 9. ISSUE TRACKING
+## 10. ISSUE TRACKING
 
-When working on an issue:
-
-- Maintain a dedicated `.md` file for that issue
-- Record what was attempted
-- Record the results of each attempt
-- Review this file whenever context is compressed
-- Use it to avoid repeating failed approaches
-
-After the issue is confirmed fixed, clean up the issue-tracking file if appropriate.
+The `plans/` and `docs/` folders have been removed; do not create new files there. Track progress within the current session's todo list instead.
 
 ---
 
-## 10. TASK COMPLETION REQUIREMENT
+## 11. TASK COMPLETION REQUIREMENT
 
 Before considering a task resolved:
 

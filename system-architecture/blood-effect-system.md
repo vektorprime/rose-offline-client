@@ -2,10 +2,10 @@
 
 ## Overview
 
-This document outlines the architecture for implementing a blood effects system in the Rose Online client using Bevy 0.16.1. The system provides:
-- **Blood Spatter**: Decals spawned on terrain when monsters are killed
-- **Gash Wounds**: Visual wounds appearing on monsters when HP drops below 50%
-- **Persistent Wounds**: Wounds remain visible on killed monsters until they despawn
+This document describes the blood effects system implemented in the Rose Online client using Bevy 0.18.1. The system provides:
+- **Blood Spatter**: Forward decals spawned on terrain when entities take damage or are killed
+- **Gash Wounds**: UV-space blood overlay stains appearing on entities when HP drops below the wound visibility threshold (default 50%)
+- **Persistent Wounds**: Wounds remain visible on entities until they despawn
 
 ## Architecture Analysis
 
@@ -21,41 +21,42 @@ flowchart TB
     end
 
     subgraph Blood Effects System
-        BloodSpatterEvent[BloodSpatterEvent]
+        BloodSpatterEvent[BloodEffectEvent::SpawnSpatter]
         WoundStateChanged[WoundStateChanged]
-        BloodSpawner[BloodSpawner Resource]
+        BloodEffectRuntime[BloodEffectRuntime Resource]
     end
 
     subgraph Rendering
         ForwardDecal[ForwardDecal Material]
-        WoundMesh[Wound Mesh Attachment]
-        ParticleSystem[Particle System]
+        BloodOverlay[BloodOverlay UV-Space Texture]
+        RoseObjectExtension[RoseObjectExtension Shader]
     end
 
-    HitEvent --> BloodSpawner
+    HitEvent --> BloodSpatterEvent
     PendingDamage --> HealthPoints
-    HealthPoints --> |HP below 50%| WoundStateChanged
-    HealthPoints --> |HP reaches 0| BloodSpatterEvent
+    HealthPoints --> |HP below threshold| WoundStateChanged
+    Dead --> |Added&lt;Dead&gt;| BloodSpatterEvent
     Dead --> |On Despawn| CleanupWounds
-    
+
     BloodSpatterEvent --> ForwardDecal
-    WoundStateChanged --> WoundMesh
-    BloodSpawner --> ParticleSystem
+    WoundStateChanged --> BloodOverlay
+    BloodOverlay --> RoseObjectExtension
+    BloodEffectRuntime --> |Pooling| ForwardDecal
 ```
 
 ### Key Integration Points
 
 | System | File | Integration |
 |--------|------|-------------|
-| Damage Events | [`hit_event.rs`](src/events/hit_event.rs) | Read `HitEvent` for damage timing |
-| HP Tracking | [`ability_values.rs`](src/bundles/ability_values.rs) | Monitor `HealthPoints` component |
-| Death Tracking | [`dead.rs`](src/components/dead.rs) | `Dead` component triggers blood spatter |
+| Damage Events | [`hit_event.rs`](src/events/hit_event.rs) | `HitEvent` carries a `BloodImpactProfile`; `hit_event_system` emits blood events via `emit_blood_and_wounds` in [`damage_effects.rs`](src/systems/damage_effects.rs) |
+| HP Tracking | [`ability_values.rs`](src/bundles/ability_values.rs) | `HealthPoints`/`AbilityValues` (from `rose_game_common::components`) read by `wound_visibility_system` |
+| Death Tracking | [`dead.rs`](src/components/dead.rs) | `Dead` component (`Added<Dead>`) triggers kill spatter |
 | Effect Spawning | [`spawn_effect_event.rs`](src/events/spawn_effect_event.rs) | Pattern for effect events |
-| Particle Rendering | [`particle_material.rs`](src/render/particle_material.rs) | Storage buffer approach for particles |
+| Particle Rendering | [`particle_material.rs`](src/render/particle_material.rs) | Storage buffer approach for particles (used by effect particles, not blood) |
 
-## Bevy 0.16.1 Decal Support
+## Bevy 0.18.1 Decal Support
 
-Bevy 0.16.1 provides two decal implementations:
+Bevy 0.18.1 provides two decal implementations:
 
 ### Forward Decals (Recommended for Blood Spatter)
 
@@ -98,7 +99,7 @@ commands.spawn((
 
 ### Clustered Decals (Alternative)
 
-Clustered decals are higher quality but require bindless textures (not available on macOS/iOS/WebGL2). Not recommended for this use case due to platform limitations.
+Clustered decals are the highest-quality decal type in Bevy, but they require bindless textures, so per Bevy 0.18.1 docs they cannot be used on WebGL 2 or WebGPU. Not recommended for this use case due to platform limitations.
 
 ## Component Design
 
@@ -108,24 +109,40 @@ Clustered decals are higher quality but require bindless textures (not available
 // src/components/blood_effect.rs
 
 /// Marker for blood spatter decal entities
-#[derive(Component, Reflect)]
+#[derive(Component, Reflect, Clone, Debug)]
 #[reflect(Component)]
 pub struct BloodSpatter {
-    /// Time until this spatter fades out
+    /// Time remaining before this spatter fades out completely (in seconds).
     pub lifetime: f32,
-    /// Current alpha value
+    /// Total lifetime assigned when spawned (in seconds).
+    pub total_lifetime: f32,
+    /// Current alpha transparency value (0.0 = invisible, 1.0 = fully opaque).
     pub alpha: f32,
-    /// Size of the decal
+    /// Initial alpha value used as the fade baseline.
+    pub base_alpha: f32,
+    /// Size of the decal in world units.
     pub size: f32,
+    /// Color while blood is fresh.
+    pub wet_color: Color,
+    /// Color after drying.
+    pub dry_color: Color,
+    /// Whether this pooled spatter is currently active/visible.
+    pub active: bool,
 }
 
+/// Marker set when a kill-triggered blood spatter was already emitted from
+/// combat resolution. Used to avoid duplicate death-triggered spatters.
+#[derive(Component, Reflect, Clone, Debug, Default)]
+#[reflect(Component)]
+pub struct DeathBloodHandled;
+
 /// Configuration for blood spatter appearance
-#[derive(Component, Reflect)]
+#[derive(Component, Reflect, Clone, Debug)]
 #[reflect(Component)]
 pub struct BloodSpatterConfig {
     /// Minimum spatter size
     pub min_size: f32,
-    /// Maximum spatter size  
+    /// Maximum spatter size
     pub max_size: f32,
     /// Number of spatter decals to spawn on death
     pub spatter_count: usize,
@@ -154,52 +171,104 @@ impl Default for BloodSpatterConfig {
 // src/components/blood_effect.rs (continued)
 
 /// Tracks wound state for an entity
-#[derive(Component, Reflect)]
+#[derive(Component, Reflect, Clone, Debug)]
 #[reflect(Component)]
 pub struct GashWounds {
-    /// Currently active wound visuals
-    pub wounds: Vec<GashWound>,
-    /// Whether the entity is below 50% HP threshold
+    /// Number of wound visuals currently attached to this entity.
+    pub wound_count: usize,
+    /// Whether wounds are currently visible (HP < threshold).
     pub wounds_visible: bool,
-    /// Entity that owns the wounds (for cleanup)
-    pub owner_entity: Entity,
+    /// The parent entity that owns these wounds (for cleanup tracking).
+    pub parent_entity: Entity,
 }
 
-/// Individual wound visual
-#[derive(Clone, Reflect)]
-pub struct GashWound {
-    /// Position on the mesh (local space)
-    pub local_position: Vec3,
-    /// Rotation of the wound decal
-    pub rotation: f32,
-    /// Size of the wound
-    pub size: f32,
-    /// Which bone this wound is attached to (for skinned meshes)
-    pub bone_index: Option<usize>,
-}
-
-/// Marker component for wound visual entities
-#[derive(Component)]
+/// Marker component for wound visual child entities
+#[derive(Component, Reflect, Clone, Debug)]
+#[reflect(Component)]
 pub struct WoundVisual {
-    /// The parent entity this wound is attached to
-    pub parent: Entity,
+    /// The parent entity this wound visual is attached to.
+    pub parent_entity: Entity,
+    /// Wound visual size scalar.
+    pub size: f32,
+    /// Whether this wound visual is currently active.
+    pub active: bool,
+}
+```
+
+### Blood Overlay Components
+
+Wounds are not spawned as separate mesh quads. Instead, blood is painted into UV-space overlay textures sampled by the [`RoseObjectExtension`](src/render/object_material_extension.rs) material extension, so the blood deforms with skeletal animation.
+
+```rust
+// src/components/blood_overlay.rs
+
+/// UV-space blood stain position.
+#[derive(Clone, Debug, Reflect)]
+pub struct BloodStain {
+    /// UV space position (center of stain) in [0, 1] range.
+    pub uv_center: Vec2,
+    /// UV space size of the stain (width, height).
+    pub uv_size: Vec2,
+    /// Rotation in UV space (radians).
+    pub rotation: f32,
+    /// Alpha intensity of the stain (0.0 = invisible, 1.0 = fully opaque).
+    pub alpha: f32,
+    /// Which blood texture variant to use (0-7 for different stain shapes).
+    pub texture_variant: usize,
+    /// Whether this stain is currently visible.
+    pub visible: bool,
+    /// The material entity this stain belongs to.
+    /// When None, the stain applies to all materials (legacy behavior).
+    pub material_entity: Option<Entity>,
+}
+
+/// Component that tracks blood overlay state for an entity.
+#[derive(Component, Reflect, Clone, Debug)]
+#[reflect(Component)]
+pub struct BloodOverlay {
+    /// List of blood stains on this entity.
+    pub stains: Vec<BloodStain>,
+    /// Whether the overlay texture needs to be regenerated.
+    pub texture_dirty: bool,
+    /// Whether this entity currently has visible blood.
+    pub is_bloodied: bool,
+    /// Maximum number of stains before old ones are removed.
+    pub max_stains: usize,
+    /// Per-material dirty flags. When a material entity is present here,
+    /// its overlay texture needs regeneration.
+    pub material_dirty: HashMap<Entity, bool>,
 }
 ```
 
 ## Event Design
 
+Events are declared with `#[derive(Message)]` and written/read via `MessageWriter`/`MessageReader` (Bevy 0.18.1 naming).
+
 ```rust
 // src/events/blood_effect_event.rs
 
+/// Blood impact profile used to tune layered blood behavior.
+#[derive(Reflect, Clone, Copy, Debug, Default)]
+pub enum BloodImpactProfile {
+    #[default]
+    Slash,
+    Pierce,
+    Blunt,
+    SkillMagic,
+    Projectile,
+}
+
 /// Event triggered when blood effects should spawn
-#[derive(Event)]
+#[derive(Message, Reflect, Clone, Debug)]
 pub enum BloodEffectEvent {
     /// Spawn blood spatter on terrain at position
     SpawnSpatter {
         position: Vec3,
         normal: Vec3,
+        impact_direction: Vec3,
         damage_amount: u32,
         is_kill: bool,
+        profile: BloodImpactProfile,
     },
     /// Show gash wound on entity
     ShowWound {
@@ -213,54 +282,40 @@ pub enum BloodEffectEvent {
         health_percent: f32,
     },
     /// Clean up all wounds for an entity
-    CleanupWounds {
-        entity: Entity,
-    },
+    CleanupWounds { entity: Entity },
 }
 ```
+
+Constructors exist for the common cases: `BloodEffectEvent::kill_spatter_with_profile(...)`, `hit_spatter_with_profile(...)`, and `show_wound(entity, position, normal)`.
 
 ## Resource Design
 
 ```rust
-// src/resources/blood_effect_manager.rs
+// src/resources/blood_effect_runtime.rs
 
-/// Manages blood effect spawning and pooling
-#[derive(Resource)]
-pub struct BloodEffectManager {
-    /// Pool of reusable spatter entities
-    spatter_pool: Vec<Entity>,
-    /// Pool of reusable wound visual entities
-    wound_pool: Vec<Entity>,
-    /// Maximum number of active blood spatters
-    max_spatters: usize,
-    /// Current active spatter count
-    active_spatters: usize,
-    /// Blood texture handles
-    blood_textures: Vec<Handle<Image>>,
-    /// Wound texture handles
-    wound_textures: Vec<Handle<Image>>,
+/// Runtime state for blood effects, including entity pooling.
+#[derive(Resource, Default, Debug)]
+pub struct BloodEffectRuntime {
+    pub spatter_pool: Vec<Entity>,
+    pub wound_pool: Vec<Entity>,
 }
 
-impl BloodEffectManager {
-    pub fn get_or_create_spatter(&mut self, commands: &mut Commands) -> Entity {
-        if let Some(entity) = self.spatter_pool.pop() {
-            return entity;
-        }
-        // Create new spatter entity
-        commands.spawn((
-            BloodSpatter::default(),
-            Visibility::Hidden,
-            Transform::default(),
-        )).id()
-    }
-    
-    pub fn return_spatter(&mut self, entity: Entity) {
-        if self.spatter_pool.len() < self.max_spatters {
-            self.spatter_pool.push(entity);
-        }
-    }
+/// Lightweight diagnostics counters for blood effects.
+#[derive(Resource, Default, Debug)]
+pub struct BloodEffectDiagnostics {
+    pub spatter_events: u64,
+    pub active_spatters_spawned: u64,
+    pub pooled_spatters_reused: u64,
+    pub pooled_spatters_returned: u64,
+    pub wound_visuals_spawned: u64,
+    pub wound_visuals_reused: u64,
+    pub mist_spawned: u64,
+    pub droplets_spawned: u64,
+    pub accum_time_secs: f32,
 }
 ```
+
+Spatter entities are pooled in `BloodEffectRuntime::spatter_pool`. When the `max_spatters` limit is reached, the oldest active spatter (lowest `lifetime`) is returned to the pool instead of despawning. Blood/wound textures are generated procedurally once and cached in the [`BloodDecalAtlas`](src/resources/blood_decal_atlas.rs) resource (`spatter_textures`, `wound_textures`).
 
 ## System Design
 
@@ -269,188 +324,178 @@ impl BloodEffectManager {
 ```rust
 // src/systems/blood_spatter_system.rs
 
-/// System that listens for death events and spawns blood spatter
+/// System that listens for entities being marked as Dead and spawns blood spatter events.
 pub fn blood_spatter_on_death_system(
-    mut commands: Commands,
-    mut blood_events: EventWriter<BloodEffectEvent>,
-    query_dead: Query<(Entity, &GlobalTransform, &ModelHeight), (Added<Dead>, With<Npc>)>,
-    query_terrain: Query<&GlobalTransform, With<TerrainMarker>>,
+    mut blood_events: MessageWriter<BloodEffectEvent>,
+    query_dead: Query<
+        &GlobalTransform,
+        (Added<Dead>, With<ModelHeight>, Without<DeathBloodHandled>),
+    >,
+    config: Res<BloodEffectConfig>,
 ) {
-    for (entity, transform, model_height) in query_dead.iter() {
+    if !config.enable_blood {
+        return;
+    }
+
+    for transform in query_dead.iter() {
         let position = transform.translation();
-        
+
         // Spawn blood spatter at feet position
-        blood_events.write(BloodEffectEvent::SpawnSpatter {
-            position: Vec3::new(position.x, position.y, position.z),
-            normal: Vec3::Y,
-            damage_amount: 0, // Final blow
-            is_kill: true,
-        });
-    }
-}
-
-/// System that processes blood effect events
-pub fn process_blood_effects_system(
-    mut commands: Commands,
-    mut blood_events: EventReader<BloodEffectEvent>,
-    mut blood_manager: ResMut<BloodEffectManager>,
-    mut decal_materials: ResMut<Assets<ForwardDecalMaterial<StandardMaterial>>>,
-    mut mesh_materials: ResMut<Assets<MeshMaterial3d<ForwardDecalMaterial<StandardMaterial>>>>,
-) {
-    for event in blood_events.read() {
-        match event {
-            BloodEffectEvent::SpawnSpatter { position, normal, damage_amount, is_kill } => {
-                spawn_blood_spatter(
-                    &mut commands,
-                    &mut blood_manager,
-                    &mut decal_materials,
-                    position,
-                    normal,
-                    *damage_amount,
-                    *is_kill,
-                );
-            }
-            // ... other event handlers
-        }
-    }
-}
-
-fn spawn_blood_spatter(
-    commands: &mut Commands,
-    blood_manager: &mut BloodEffectManager,
-    decal_materials: &mut Assets<ForwardDecalMaterial<StandardMaterial>>,
-    position: &Vec3,
-    normal: &Vec3,
-    damage_amount: u32,
-    is_kill: bool,
-) {
-    let config = BloodSpatterConfig::default();
-    let spatter_count = if is_kill { config.spatter_count } else { 1 };
-    
-    for _ in 0..spatter_count {
-        let offset = Vec3::new(
-            (rand::random::<f32>() - 0.5) * config.spatter_radius,
-            0.0,
-            (rand::random::<f32>() - 0.5) * config.spatter_radius,
-        );
-        
-        let spatter_pos = *position + offset;
-        let size = config.min_size + rand::random::<f32>() * (config.max_size - config.min_size);
-        
-        // Select random blood texture
-        let texture = blood_manager.blood_textures
-            .choose(&mut rand::thread_rng())
-            .cloned()
-            .unwrap_or_default();
-        
-        let material = ForwardDecalMaterial {
-            base: StandardMaterial {
-                base_color_texture: Some(texture),
-                base_color: Color::srgba(0.6, 0.0, 0.0, 0.8),
-                alpha_mode: AlphaMode::Blend,
-                cull_mode: None,
-                ..default()
-            },
-            extension: ForwardDecalMaterialExt {
-                depth_fade_factor: 0.5,
-            },
-        };
-        
-        commands.spawn((
-            Name::new("BloodSpatter"),
-            ForwardDecal,
-            MeshMaterial3d(decal_materials.add(material)),
-            BloodSpatter {
-                lifetime: config.spatter_lifetime,
-                alpha: 0.8,
-                size,
-            },
-            Transform::from_translation(spatter_pos + Vec3::Y * 0.05)
-                .looking_to(Vec3::NEG_Y, *normal)
-                .with_scale(Vec3::new(size, size, 0.01)),
+        blood_events.write(BloodEffectEvent::kill_spatter_with_profile(
+            position,
+            Vec3::Y,
+            0, // Final blow damage already applied
+            Vec3::Y,
+            BloodImpactProfile::Slash,
         ));
     }
 }
 ```
 
-### Wound Visibility System
-
 ```rust
-// src/systems/wound_visibility_system.rs
-
-/// System that monitors HP and shows/hides wounds
-pub fn wound_visibility_system(
+/// System that processes blood effect events and spawns spatter decals.
+///
+/// Handles `BloodEffectEvent::SpawnSpatter` by creating forward decal entities
+/// (or reusing pooled ones). Spatter count/size/alpha are scaled by impact
+/// profile multipliers, damage amount, and distance-based LOD.
+pub fn blood_spatter_spawn_system(
     mut commands: Commands,
-    mut query: Query<(Entity, &HealthPoints, &AbilityValues, Option<&mut GashWounds>), Without<Dead>>,
-    mut blood_events: EventWriter<BloodEffectEvent>,
+    mut blood_events: MessageReader<BloodEffectEvent>,
+    config: Res<BloodEffectConfig>,
+    query_spatters: Query<
+        (
+            Entity,
+            &BloodSpatter,
+            &MeshMaterial3d<ForwardDecalMaterial<StandardMaterial>>,
+        ),
+        With<BloodSpatter>,
+    >,
+    query_transform: Query<&GlobalTransform>,
+    client_entity_list: Res<ClientEntityList>,
+    atlas: Res<BloodDecalAtlas>,
+    mut decal_materials: ResMut<Assets<ForwardDecalMaterial<StandardMaterial>>>,
+    mut runtime: ResMut<BloodEffectRuntime>,
+    mut diagnostics: ResMut<BloodEffectDiagnostics>,
 ) {
-    for (entity, hp, ability_values, wounds) in query.iter_mut() {
-        let max_hp = ability_values.get_max_health();
-        let health_percent = hp.hp as f32 / max_hp as f32;
-        
-        // Show wounds when below 50% HP
-        let should_show_wounds = health_percent < 0.5;
-        
-        if let Some(mut wounds) = wounds {
-            if wounds.wounds_visible != should_show_wounds {
-                wounds.wounds_visible = should_show_wounds;
-                
-                if should_show_wounds {
-                    // Add new wound visual
-                    blood_events.write(BloodEffectEvent::ShowWound {
-                        entity,
-                        wound_position: Vec3::ZERO, // Will be calculated
-                        wound_normal: Vec3::Z,
-                    });
-                }
-            }
-        } else if should_show_wounds {
-            // First time showing wounds - create component
-            commands.entity(entity).insert(GashWounds {
-                wounds: vec![],
-                wounds_visible: true,
-                owner_entity: entity,
-            });
-            
-            blood_events.write(BloodEffectEvent::ShowWound {
-                entity,
-                wound_position: Vec3::ZERO,
-                wound_normal: Vec3::Z,
-            });
+    // ...
+    for event in blood_events.read() {
+        if let BloodEffectEvent::SpawnSpatter { position, normal, impact_direction, damage_amount, is_kill, profile } = event {
+            // spatter count = base count (kill vs hit) * profile multiplier * LOD scale
+            // per-spatter: biased directional distribution from impact vector,
+            // random size within range, alpha from damage amount and profile
+            // spawn or reuse from runtime.spatter_pool
         }
     }
 }
 ```
+
+The spatter transform aligns the decal to the surface normal with a random spin:
+
+```rust
+fn build_spatter_transform(position: Vec3, normal: Vec3, size: f32, rotation: f32) -> Transform {
+    let surface_normal = normalize_or(normal, Vec3::Y);
+    let align_to_surface = Quat::from_rotation_arc(Vec3::Y, surface_normal);
+    let spin_on_surface = Quat::from_axis_angle(surface_normal, rotation);
+
+    Transform::from_translation(position + surface_normal * 0.01)
+        .with_rotation(spin_on_surface * align_to_surface)
+        .with_scale(Vec3::new(size, size, 1.0))
+}
+```
+
+Blood textures are generated procedurally (8 spatter variants + wound texture) by `initialize_blood_decal_atlas_system` / `create_blood_texture_variant` at startup.
+
+### Wound Visibility System
+
+```rust
+// src/systems/gash_wound_system.rs
+
+/// System that monitors HP and shows/hides wounds based on health percentage.
+pub fn wound_visibility_system(
+    mut commands: Commands,
+    mut query: Query<
+        (
+            Entity,
+            &HealthPoints,
+            &AbilityValues,
+            Option<&mut GashWounds>,
+            Option<&ModelHeight>,
+        ),
+        Without<Dead>,
+    >,
+    mut blood_events: MessageWriter<BloodEffectEvent>,
+    config: Res<BloodEffectConfig>,
+) {
+    if !config.enable_blood || !config.show_wounds {
+        return;
+    }
+
+    for (entity, hp, ability_values, wounds, model_height) in query.iter_mut() {
+        let max_hp = ability_values.get_max_health();
+        if max_hp <= 0 {
+            continue;
+        }
+
+        let health_percent = hp.hp as f32 / max_hp as f32;
+        let should_show_wounds = health_percent < config.wound_visibility_threshold;
+
+        if let Some(mut wounds) = wounds {
+            if wounds.wounds_visible != should_show_wounds {
+                wounds.wounds_visible = should_show_wounds;
+                // Emit show_wound events up to config.max_wounds_per_entity
+            }
+        } else if should_show_wounds {
+            // First time showing wounds - create component and BloodOverlay
+            commands.entity(entity).insert(BloodOverlay::new());
+            // Emit seeded show_wound events, then insert GashWounds
+        }
+    }
+}
+```
+
+`wound_spawn_system` (same file) consumes `ShowWound` events and paints `BloodStain`s into the entity's `BloodOverlay` component. For entities with a `CharacterModel` component, the accurate `project_world_to_uv()` function (triangle-ray intersection with skinned mesh vertex transformation) finds the UV coordinates and material index; otherwise a cylindrical `world_pos_to_uv()` approximation is used. `blood_overlay_generate_system` (`src/systems/blood_overlay_system.rs`) regenerates per-material overlay textures and binds them to `RoseObjectExtension` (`blood_overlay_texture`, `blood_params`).
 
 ### Blood Spatter Fade System
 
 ```rust
 // src/systems/blood_spatter_system.rs (continued)
 
-/// System that fades out and despawns blood spatters over time
+/// System that fades out blood spatters over time and removes expired ones.
 pub fn blood_spatter_fade_system(
     mut commands: Commands,
-    mut query: Query<(Entity, &mut BloodSpatter, &mut MeshMaterial3d<ForwardDecalMaterial<StandardMaterial>>)>,
+    mut query: Query<
+        (
+            Entity,
+            &mut BloodSpatter,
+            &MeshMaterial3d<ForwardDecalMaterial<StandardMaterial>>,
+        ),
+        With<ForwardDecal>,
+    >,
     time: Res<Time>,
-    decal_materials: Res<Assets<ForwardDecalMaterial<StandardMaterial>>>,
+    config: Res<BloodEffectConfig>,
+    mut decal_materials: ResMut<Assets<ForwardDecalMaterial<StandardMaterial>>>,
+    mut runtime: ResMut<BloodEffectRuntime>,
+    mut diagnostics: ResMut<BloodEffectDiagnostics>,
 ) {
     let delta = time.delta_secs();
-    
-    for (entity, mut spatter, mut material_handle) in query.iter_mut() {
-        spatter.lifetime -= delta;
-        
-        if spatter.lifetime <= 0.0 {
-            commands.entity(entity).despawn();
+    for (entity, mut spatter, material_handle) in query.iter_mut() {
+        if !spatter.active {
             continue;
         }
-        
-        // Fade out over last 5 seconds
-        if spatter.lifetime < 5.0 {
-            spatter.alpha = (spatter.lifetime / 5.0).clamp(0.0, 1.0);
-            
-            if let Some(material) = decal_materials.get_mut(&material_handle.0) {
-                material.base.base_color.set_alpha(spatter.alpha);
-            }
+
+        spatter.lifetime -= delta;
+
+        if spatter.lifetime <= 0.0 {
+            spatter.active = false;
+            commands.entity(entity).insert(Visibility::Hidden);
+            runtime.spatter_pool.push(entity);
+            continue;
+        }
+
+        // Alpha fades from base_alpha starting at config.fade_start_fraction,
+        // and the color interpolates from wet_color to dry_color over time.
+        if let Some(material) = decal_materials.get_mut(&material_handle.0) {
+            material.base.base_color = color;
         }
     }
 }
@@ -459,17 +504,17 @@ pub fn blood_spatter_fade_system(
 ### Wound Cleanup System
 
 ```rust
-// src/systems/wound_cleanup_system.rs
+// src/systems/gash_wound_system.rs (continued)
 
-/// System that cleans up wounds when entities despawn
+/// System that cleans up wound visuals when their parent entity despawns.
 pub fn wound_cleanup_system(
     mut commands: Commands,
     query_wound_visuals: Query<(Entity, &WoundVisual)>,
     query_parents: Query<(), Without<Dead>>,
 ) {
     for (wound_entity, wound_visual) in query_wound_visuals.iter() {
-        // If parent entity no longer exists or is dead and despawning
-        if query_parents.get(wound_visual.parent).is_err() {
+        // If parent entity no longer exists, clean up the wound
+        if query_parents.get(wound_visual.parent_entity).is_err() {
             commands.entity(wound_entity).despawn();
         }
     }
@@ -478,106 +523,93 @@ pub fn wound_cleanup_system(
 
 ## Shader Approach
 
-### Blood Decal Shader Extension
+### Blood Spatter Decals
 
-The `ForwardDecalMaterial` uses Bevy's `StandardMaterial` as a base, so we can leverage existing PBR rendering. For custom blood effects, we can extend:
+Blood spatter uses Bevy's built-in forward decal rendering (`bevy_pbr::decal`). No custom decal shader is used — the `ForwardDecalMaterial<StandardMaterial>` base handles depth fade (via `ForwardDecalMaterialExt.depth_fade_factor`) and alpha blending. Bevy's `bevy_pbr::decal::forward::get_forward_decal_info` is available for custom decal shaders that need the decal info (depth fade, etc.).
+
+### Blood Overlay Shader
+
+Wound blood is rendered in UV space by the `RoseObjectExtension` material extension shader (`src/render/shaders/rose_object_extension.wgsl`). The extension samples the per-material blood overlay texture and blends it with the lit, lightmapped color:
 
 ```wgsl
-// assets/shaders/blood_decal.wgsl
+// src/render/shaders/rose_object_extension.wgsl (excerpt)
 
-#import bevy_pbr::{
-    pbr_fragment::pbr_input_from_standard_material,
-    pbr_bindings::mesh,
-}
+var blood_overlay_texture: texture_2d<f32>;
+var blood_overlay_sampler: sampler;
+var<uniform> blood_params: vec4<f32>;
 
-#import bevy_pbr::decal::forward::get_forward_decal_info
-
-@group(2) @binding(0)
-var<uniform> blood_config: BloodConfig;
-
-struct BloodConfig {
-    blood_color: vec4<f32>,
-    fade_distance: f32,
-    puddle_factor: f32,
-}
-
-@fragment
-fn fragment(
-    in: VertexOutput,
-    @builtin(front_facing) is_front: bool,
-) -> @location(0) vec4<f32> {
-    // Get decal info (depth fade, etc.)
-    let decal_info = get_forward_decal_info(in);
-    
-    // Sample blood texture
-    let blood_sample = textureSample(base_color_texture, base_color_sampler, in.uv);
-    
-    // Apply depth fade for smooth edges
-    let alpha = blood_sample.a * decal_info.opacity;
-    
-    // Darker blood color towards center
-    let final_color = mix(
-        vec4<f32>(0.4, 0.0, 0.0, alpha),
-        vec4<f32>(0.8, 0.1, 0.1, alpha),
-        length(in.uv - 0.5) * 2.0
-    );
-    
-    return final_color;
-}
+// Apply UV-space blood overlay on top of the lit+lightmapped color.
+let blood_sample = textureSample(blood_overlay_texture, blood_overlay_sampler, in.uv);
+let blood_alpha = clamp(blood_sample.a * blood_params.x, 0.0, 1.0);
+blood_blended_rgb = mix(lit_color.rgb, blood_sample.rgb, blood_alpha);
 ```
+
+Overlay textures are generated procedurally (512x512) from the entity's `BloodOverlay` stains by `blood_overlay_generate_system` and bound per material entity.
 
 ## File Structure
 
 ```
 src/
+├── blood_effect_plugin.rs        # BloodEffectPlugin: registers config, runtime,
+│                                 #   event, and the three sub-plugins
 ├── components/
-│   ├── blood_effect.rs          # BloodSpatter, GashWounds components
-│   └── mod.rs                   # Add pub mod blood_effect
+│   ├── blood_effect.rs           # BloodSpatter, BloodSpatterConfig, DeathBloodHandled,
+│   │                             #   GashWounds, WoundVisual
+│   ├── blood_overlay.rs          # BloodOverlay, BloodStain (UV-space wounds)
+│   └── mod.rs
 ├── events/
-│   ├── blood_effect_event.rs    # BloodEffectEvent
-│   └── mod.rs                   # Add pub mod blood_effect_event
+│   ├── blood_effect_event.rs     # BloodEffectEvent, BloodImpactProfile
+│   └── mod.rs
 ├── resources/
-│   ├── blood_effect_manager.rs  # BloodEffectManager resource
-│   └── mod.rs                   # Add pub mod blood_effect_manager
+│   ├── blood_decal_atlas.rs      # BloodDecalAtlas (procedural spatter/wound textures)
+│   ├── blood_effect_config.rs    # BloodEffectConfig
+│   ├── blood_effect_runtime.rs   # BloodEffectRuntime, BloodEffectDiagnostics
+│   ├── blood_overlay_atlas.rs    # BloodOverlayAtlas (wound stain variants)
+│   └── mod.rs
 ├── systems/
-│   ├── blood_spatter_system.rs  # Spawning and fading systems
-│   ├── wound_visibility_system.rs # HP monitoring and wound display
-│   ├── wound_cleanup_system.rs  # Cleanup on entity despawn
-│   └── mod.rs                   # Add pub mod for each
+│   ├── blood_spatter_system.rs   # initialize_blood_decal_atlas_system,
+│   │                             #   blood_spatter_on_death_system,
+│   │                             #   blood_spatter_spawn_system,
+│   │                             #   blood_spatter_fade_system
+│   ├── blood_overlay_system.rs   # blood_overlay_generate_system, BloodOverlayPlugin
+│   ├── gash_wound_system.rs      # wound_visibility_system, wound_spawn_system,
+│   │                             #   wound_cleanup_system, GashWoundPlugin
+│   └── mod.rs
 ├── render/
-│   ├── blood_decal_material.rs  # Custom material if needed
+│   ├── object_material_extension.rs # RoseObjectExtension (blood_overlay_texture, blood_params)
 │   └── shaders/
-│       └── blood_decal.wgsl     # Custom shader
-└── lib.rs                       # Register plugins and systems
+│       └── rose_object_extension.wgsl # Blood overlay sampling in the material shader
+└── lib.rs                       # pub mod blood_effect_plugin; BloodEffectPlugin registered
 ```
 
-## Implementation Phases
+## Implementation Status
+
+All phases below are implemented.
 
 ### Phase 1: Core Infrastructure
-1. Create component definitions (`blood_effect.rs`)
-2. Create event definitions (`blood_effect_event.rs`)
-3. Create resource manager (`blood_effect_manager.rs`)
-4. Register types in `lib.rs`
+1. Component definitions (`components/blood_effect.rs`, `components/blood_overlay.rs`)
+2. Event definitions (`events/blood_effect_event.rs`)
+3. Resources (`resources/blood_effect_config.rs`, `resources/blood_effect_runtime.rs`, `resources/blood_decal_atlas.rs`, `resources/blood_overlay_atlas.rs`)
+4. Plugin registration (`blood_effect_plugin.rs`, registered in `lib.rs`)
 
 ### Phase 2: Blood Spatter System
-1. Implement `blood_spatter_on_death_system`
-2. Implement `process_blood_effects_system`
-3. Implement `blood_spatter_fade_system`
-4. Add blood textures to assets
-5. Test with monster kills
+1. `blood_spatter_on_death_system` (kill triggers)
+2. `blood_spatter_spawn_system` (event processing with pooling/LOD/profile scaling)
+3. `blood_spatter_fade_system` (fade + wet-to-dry color + pooling)
+4. Procedural blood textures generated at startup (`initialize_blood_decal_atlas_system`)
 
 ### Phase 3: Gash Wounds System
-1. Implement `wound_visibility_system`
-2. Create wound mesh attachment logic
-3. Implement wound positioning on skinned meshes
-4. Test with damage below 50% HP
+1. `wound_visibility_system` (HP threshold monitoring)
+2. `wound_spawn_system` (UV-space stain placement via `project_world_to_uv` / `world_pos_to_uv`)
+3. `blood_overlay_generate_system` (per-material overlay texture generation)
+4. Test with damage below the wound visibility threshold
 
 ### Phase 4: Polish and Optimization
-1. Implement object pooling for spatters
-2. Add configuration options (enable/disable, intensity)
-3. Performance testing with many entities
-4. Add wound texture variations
-5. Implement wound cleanup on despawn
+1. Object pooling via `BloodEffectRuntime` (spatter pool, LRU eviction at `max_spatters`)
+2. Configuration options (`BloodEffectConfig`: enable/disable, intensity, LOD distances, per-frame spawn budget)
+3. Performance: distance-based LOD scaling, spawn budget per frame
+4. Wound texture variations (procedural variants, `BloodOverlayAtlas`)
+5. `wound_cleanup_system` on despawn
 
 ## Performance Considerations
 
@@ -587,45 +619,101 @@ src/
 - LRU eviction when limit reached
 
 ### Level of Detail
-- Reduce spatter count for distant entities
-- Skip wounds for entities beyond render distance
-- Fade spatters faster in high-activity areas
+- Spatter count and size are scaled down with distance from the player (`distance_lod_scale`, `lod_near_distance`/`lod_far_distance`)
+- Spatter count is capped per frame by `max_spatters_per_frame`
+- Wound count is capped per entity by `max_wounds_per_entity`
 
 ### Memory Management
-- Share blood textures across all spatters
-- Use texture atlas for wound variations
-- Limit wound visuals per entity (max 3)
+- Share blood textures across all spatters (`BloodDecalAtlas` caches procedural textures)
+- Use a texture atlas for wound variations (`BloodOverlayAtlas`)
+- Limit wound visuals per entity (`max_wounds_per_entity`, default 4, seeded 3)
 
 ## Configuration
 
 ```rust
 // src/resources/blood_effect_config.rs
 
-#[derive(Resource, Reflect)]
+#[derive(Resource, Reflect, Clone, Debug)]
+#[reflect(Resource)]
 pub struct BloodEffectConfig {
-    /// Enable/disable blood effects entirely
-    pub enabled: bool,
-    /// Blood intensity multiplier (recommended range 0.0 - 2.0)
-    pub intensity: f32,
-    /// Maximum blood spatters in scene
+    /// Whether blood effects are enabled globally.
+    pub enable_blood: bool,
+    /// Maximum number of blood spatters allowed in the scene at once.
+    /// When this limit is reached, oldest spatters are removed (LRU eviction).
     pub max_spatters: usize,
-    /// Show wounds on damaged monsters
-    pub show_wounds: bool,
-    /// Blood color tint
-    pub blood_color: Color,
-    /// Spatter lifetime in seconds
+    /// How long blood spatters persist before fading out (in seconds).
     pub spatter_lifetime: f32,
+    /// Blood intensity multiplier (0.0 - 1.0).
+    pub intensity: f32,
+    /// Whether to show gash wounds on damaged entities.
+    pub show_wounds: bool,
+    /// HP percentage threshold below which wounds become visible (default 0.5).
+    pub wound_visibility_threshold: f32,
+    /// Base color tint for blood effects.
+    pub blood_color: Color,
+    /// Dried blood tint used for wet-to-dry evolution.
+    pub dry_blood_color: Color,
+    /// Minimum size for blood spatters in world units.
+    pub min_spatter_size: f32,
+    /// Maximum size for blood spatters in world units.
+    pub max_spatter_size: f32,
+    /// Number of spatter decals to spawn on a killing blow.
+    pub spatter_count_on_kill: usize,
+    /// Number of spatter decals to spawn on a non-lethal hit.
+    pub spatter_count_on_hit: usize,
+    /// Maximum radius around death position for spatter placement.
+    pub spatter_radius: f32,
+    /// Global quality scalar for blood visuals (0.0 - 1.0).
+    pub quality_scale: f32,
+    /// Maximum number of spatter decals spawned in a single frame.
+    pub max_spatters_per_frame: usize,
+    /// Fraction of lifetime at which alpha fade begins (0.0 - 1.0).
+    pub fade_start_fraction: f32,
+    /// Depth fade factor for forward decal blending.
+    pub decal_depth_fade_factor: f32,
+    /// Minimum wound overlay size in local units.
+    pub wound_min_size: f32,
+    /// Maximum wound overlay size in local units.
+    pub wound_max_size: f32,
+    /// Maximum wound overlays to show on a single entity.
+    pub max_wounds_per_entity: usize,
+    /// Distance from the player where full blood quality is used.
+    pub lod_near_distance: f32,
+    /// Distance from the player where blood is strongly reduced.
+    pub lod_far_distance: f32,
+    /// Enable layered blood rendering (mist + droplets + decals).
+    pub enable_layered_effects: bool,
+    /// Enable lightweight diagnostics logging counters.
+    pub enable_diagnostics: bool,
 }
 
 impl Default for BloodEffectConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
-            intensity: 1.5,
+            enable_blood: true,
             max_spatters: 100,
-            show_wounds: true,
-            blood_color: Color::srgb(0.6, 0.0, 0.0),
             spatter_lifetime: 30.0,
+            intensity: 1.5,
+            show_wounds: true,
+            wound_visibility_threshold: 0.5,
+            blood_color: Color::srgb(0.6, 0.0, 0.0),
+            dry_blood_color: Color::srgb(0.28, 0.06, 0.04),
+            min_spatter_size: 0.3,
+            max_spatter_size: 1.5,
+            spatter_count_on_kill: 5,
+            spatter_count_on_hit: 1,
+            spatter_radius: 2.0,
+            quality_scale: 1.0,
+            max_spatters_per_frame: 24,
+            fade_start_fraction: 0.7,
+            decal_depth_fade_factor: 0.65,
+            wound_min_size: 0.12,
+            wound_max_size: 0.28,
+            max_wounds_per_entity: 4,
+            lod_near_distance: 40.0,
+            lod_far_distance: 140.0,
+            enable_layered_effects: true,
+            enable_diagnostics: false,
         }
     }
 }
@@ -635,45 +723,50 @@ impl Default for BloodEffectConfig {
 
 ### Hit Event Integration
 
-```rust
-// Modify src/systems/hit_event_system.rs
+Blood effects are emitted from combat resolution via `emit_blood_and_wounds` in `src/systems/damage_effects.rs`, called by both `hit_event_system` (`src/systems/hit_event_system.rs`) and `pending_damage_system`:
 
-fn apply_damage(
-    // ... existing parameters
-    blood_events: &mut EventWriter<BloodEffectEvent>,
+```rust
+// src/systems/damage_effects.rs
+
+pub fn emit_blood_and_wounds(
+    blood_effect_events: &mut MessageWriter<BloodEffectEvent>,
+    blood_config: &BloodEffectConfig,
+    defender_pos: Vec3,
+    damage_amount: u32,
+    is_killed: bool,
+    impact_direction: Vec3,
+    blood_profile: BloodImpactProfile,
+    entity: Entity,
 ) {
-    // ... existing damage logic
-    
-    // Spawn blood effect on hit
-    if damage.amount > 0 {
-        blood_events.write(BloodEffectEvent::SpawnSpatter {
-            position: defender.global_transform.translation(),
-            normal: Vec3::Y,
-            damage_amount: damage.amount,
-            is_kill,
-        });
+    if is_killed {
+        blood_effect_events.write(BloodEffectEvent::kill_spatter_with_profile(
+            defender_pos, Vec3::Y, damage_amount, impact_direction, blood_profile,
+        ));
+    } else {
+        blood_effect_events.write(BloodEffectEvent::hit_spatter_with_profile(
+            defender_pos, Vec3::Y, damage_amount, impact_direction, blood_profile,
+        ));
+    }
+
+    if blood_config.enable_blood && blood_config.show_wounds {
+        let wound_events = if is_killed { 3 } else { 2 };
+        for _ in 0..wound_events {
+            let (wound_position, wound_normal) = random_local_wound_pose();
+            blood_effect_events.write(BloodEffectEvent::show_wound(
+                entity, wound_position, wound_normal,
+            ));
+        }
     }
 }
 ```
 
 ### Death Tracking Integration
 
-```rust
-// The Dead component is added in hit_event_system.rs
-// Blood spatter should trigger on Added<Dead>
-
-// In blood_spatter_system.rs
-pub fn blood_spatter_on_death_system(
-    mut blood_events: EventWriter<BloodEffectEvent>,
-    query: Query<(Entity, &GlobalTransform, &ModelHeight), Added<Dead>>,
-) {
-    for (entity, transform, model_height) in query.iter() {
-        // Spawn blood spatter
-    }
-}
-```
+The `Dead` component is inserted in `hit_event_system.rs` and `pending_damage_system.rs` when HP reaches zero. `blood_spatter_on_death_system` (in `blood_spatter_system.rs`) reacts to `Added<Dead>` (with `With<ModelHeight>`, `Without<DeathBloodHandled>`) and emits a kill spatter. `DeathBloodHandled` prevents duplicate spatters when combat resolution already emitted one.
 
 ## Testing Plan
+
+No automated tests currently exist for the blood effects modules; the following is the intended test plan.
 
 1. **Unit Tests**
    - Test HP threshold detection
@@ -682,7 +775,7 @@ pub fn blood_spatter_on_death_system(
 
 2. **Integration Tests**
    - Test blood spawn on monster kill
-   - Test wound appearance at 50% HP
+   - Test wound appearance at the wound visibility threshold (default 50% HP)
    - Test wound persistence until despawn
 
 3. **Performance Tests**
@@ -692,9 +785,9 @@ pub fn blood_spatter_on_death_system(
 
 ## Summary
 
-This design provides a complete blood effects system that:
-- Integrates with existing combat/damage systems
-- Uses Bevy 0.16.1's Forward Decal feature for terrain blood
-- Attaches wound visuals to monster meshes
-- Maintains performance through pooling and limits
-- Allows configuration for different preferences
+The implemented blood effects system:
+- Integrates with existing combat/damage systems (`hit_event_system`, `pending_damage_system`)
+- Uses Bevy 0.18.1's Forward Decal feature for terrain blood
+- Paints UV-space blood overlay onto model textures for wounds (deforms with skeletal animation)
+- Maintains performance through pooling (LRU eviction) and limits
+- Allows configuration for different preferences (`BloodEffectConfig`)

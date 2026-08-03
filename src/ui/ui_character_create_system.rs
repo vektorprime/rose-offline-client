@@ -2,7 +2,7 @@ use bevy::{
     ecs::message::MessageWriter,
     prelude::{
         AssetServer, Assets, Camera3d, Commands, Entity, GlobalTransform, Local, Quat, Query, Res,
-        ResMut, Transform, Vec3, Visibility, With,
+        ResMut, Transform, Vec3, Visibility, With, Without,
     },
 };
 use bevy_camera::visibility::{InheritedVisibility, ViewVisibility};
@@ -89,7 +89,10 @@ pub fn ui_character_create_system(
     mut ui_sound_events: MessageWriter<UiSoundEvent>,
     mut character_select_state: ResMut<CharacterSelectState>,
     mut egui_context: EguiContexts,
-    query_camera: Query<Entity, With<Camera3d>>,
+    query_camera: Query<
+        Entity,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     mut query_create_character_info: Query<&mut CharacterInfo>,
     asset_server: Res<AssetServer>,
     dialog_assets: Res<Assets<Dialog>>,

@@ -29,7 +29,10 @@ pub fn weather_particle_system(
     spring_settings: Res<SpringSettings>,
     season_materials: Res<SeasonMaterials>,
     player_query: Query<&GlobalTransform, With<PlayerCharacter>>,
-    camera_query: Query<&GlobalTransform, With<Camera3d>>,
+    camera_query: Query<
+        &GlobalTransform,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     mut query: Query<
         (Entity, &mut Transform, &mut WeatherParticle),
         (Without<PlayerCharacter>, Without<Camera3d>),

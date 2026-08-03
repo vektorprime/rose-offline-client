@@ -1,7 +1,7 @@
 # System Architecture Documentation
 
 ## Project Overview
-`rose-offline-client` is a high-performance offline client built using the **Bevvy 0.18.1** game engine. This documentation provides a deep dive into the architectural patterns, module responsibilities, and technical implementations within the project.
+`rose-offline-client` is a high-performance offline client built using the **Bevy 0.18.1** game engine. This documentation provides a deep dive into the architectural patterns, module responsibilities, and technical implementations within the project.
 
 ## Documentation Index
 Explore the specific subsystems of the client using the links below:
@@ -30,12 +30,12 @@ The system follows a highly modular, data-driven approach powered by Bevy's ECS.
 4. **Output**: The final frame is presented through the windowing system.
 
 ## Key Technical Details
-* **Bevvy Version**: `0.18.1`
-* **Bevvy Source Location**: `C:\Users\vicha\RustroverProjects\bevvy-collection\bevvy-0.18.1\crates\`
+* **Bevy Version**: `0.18.1`
+* **Bevy Source Location**: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\`
 
 ## Quick Reference Guide
 * **State Management**: Uses Bevy's built-in `State<T>` for managing high-level application flows (e.g., Menu, Playing, Paused).
-* **Event-Driven Architecture**: Systems communicate via `EventReader` and `EventWriter` to decouple logic.
+* **Event-Driven Architecture**: Systems communicate via `MessageReader` and `MessageWriter` to decouple logic.
 * **Component-Based Design**: Logic is encapsulated in Systems that query specific Component sets.
 
 ## How to Use

@@ -64,6 +64,10 @@ pub use skinned_mesh_fix::SkinnedMeshFixPlugin;
 pub mod underwater_effect;
 pub use underwater_effect::{CameraUnderwaterState, UnderwaterEffectPlugin, UnderwaterSettings};
 
+// Planar water reflections via a mirrored camera
+pub mod water_reflection;
+pub use water_reflection::{WaterReflectionCamera, WaterReflectionImage, WaterReflectionPlugin};
+
 // Procedural starry sky material
 pub mod starry_sky_material;
 pub use starry_sky_material::{

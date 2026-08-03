@@ -4,7 +4,7 @@
 All client-side boarding validation checks were commented out in `boat_spawn_system.rs` during prototyping, making `/boat` permissive in any zone, while dead, in combat, driving, or far from water.
 
 ## Root Cause
-The prototype phase intentionally removed validation gates to simplify testing. The sailing plan documents ([`plans/sailing-system-plan.md`](plans/sailing-system-plan.md) line 40) noted this: "some client-side boarding validations... are commented out in the current source."
+The prototype phase intentionally removed validation gates to simplify testing. The sailing plan documentation noted this: "some client-side boarding validations... are commented out in the current source."
 
 ## Fix
 Restored all five validation checks in [`boat_toggle_system`](src/systems/boat_spawn_system.rs:241) in `src/systems/boat_spawn_system.rs`:

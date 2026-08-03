@@ -73,7 +73,7 @@ This project uses Bevy ECS (Entity Component System) as its core architecture. T
 | Spawn | `bevy_ecs/src/spawn.rs` |
 | Relationship | `bevy_ecs/src/relationship/mod.rs` |
 | Observer | `bevy_ecs/src/observer/mod.rs` |
-| Message (Custom) | `bevy_ecs/src/message/mod.rs` |
+| Message | `bevy_ecs/src/message/mod.rs` |
 
 ---
 
@@ -176,20 +176,23 @@ pub enum AppState {
 // src/resources/game_data.rs
 #[derive(Resource)]
 pub struct GameData {
-    pub ability_value_calculator: AbilityValueCalculator,
-    pub animation_event_flags: AnimationEventFlags,
+    pub ability_value_calculator: Box<dyn AbilityValueCalculator + Send + Sync>,
+    pub animation_event_flags: Vec<AnimationEventFlags>,
     pub character_motion_database: Arc<CharacterMotionDatabase>,
-    pub client_strings: ClientStrings,
-    pub data_decoder: DataDecoder,
-    pub effect_database: EffectDatabase,
+    pub client_strings: Arc<ClientStrings>,
+    pub data_decoder: Box<dyn DataDecoder + Send + Sync>,
+    pub effect_database: Arc<EffectDatabase>,
     pub items: Arc<ItemDatabase>,
     pub job_class: Arc<JobClassDatabase>,
     pub npcs: Arc<NpcDatabase>,
     pub quests: Arc<QuestDatabase>,
     pub skills: Arc<SkillDatabase>,
-    pub skybox: SkyboxDatabase,
-    pub sounds: SoundDatabase,
-    pub zones: Arc<ZoneList>,
+    pub skybox: Arc<SkyboxDatabase>,
+    pub sounds: Arc<SoundDatabase>,
+    pub status_effects: Arc<StatusEffectDatabase>,
+    pub string_database: Arc<StringDatabase>,
+    pub zone_list: Arc<ZoneList>,
+    pub character_select_positions: Vec<Transform>,
 }
 ```
 
@@ -231,7 +234,7 @@ Systems are functions that operate on the ECS world. They receive system paramet
 | `ResMut<T>` | Mutable resource access | Mutable |
 | `Commands` | Deferred world modifications | N/A |
 | `Local<T>` | System-local storage | Mutable |
-| `MessageWriter<T>` | Send events | N/A |
+| `MessageWriter<T>` | Write messages | N/A |
 | `Option<Res<T>>` | Optional resource | Immutable |
 
 ### Basic System Example
@@ -239,13 +242,31 @@ Systems are functions that operate on the ECS world. They receive system paramet
 ```rust
 // src/systems/update_position_system.rs
 pub fn update_position_system(
-    mut query: Query<(&Command, &mut Position)>,
+    mut query: Query<(&Command, &MoveSpeed, &mut FacingDirection, &mut Position)>,
+    time: Res<Time>,
 ) {
-    for (command, mut position) in query.iter_mut() {
-        if let Command::Move(cmd_move) = command {
-            // Update position based on move command
-            position.x = cmd_move.destination.x;
-            position.y = cmd_move.destination.y;
+    for (command, move_speed, mut facing_direction, mut position) in query.iter_mut() {
+        let Command::Move(CommandMove { destination, .. }) = *command else {
+            continue;
+        };
+
+        let direction = destination.xy() - position.xy();
+        let distance_squared = direction.length_squared();
+
+        if distance_squared == 0.0 {
+            position.position = destination;
+        } else {
+            // Update rotation
+            facing_direction.set_desired_vector(destination - position.position);
+
+            // Move to position
+            let move_vector = direction.normalize() * move_speed.speed * time.delta_secs();
+            if move_vector.length_squared() >= distance_squared {
+                position.position = destination;
+            } else {
+                position.x += move_vector.x;
+                position.y += move_vector.y;
+            }
         }
     }
 }
@@ -278,20 +299,30 @@ pub fn command_system(
     mut query: Query<
         (
             Entity,
-            &Command,
+            Option<&PlayerCharacter>,
+            &AbilityValues,
             Option<&CharacterModel>,
             Option<&NpcModel>,
+            Option<&Equipment>,
+            &Position,
+            &MoveMode,
+            &MoveSpeed,
+            Option<&Vehicle>,
+            &mut Command,
+            &mut NextCommand,
+            &mut FacingDirection,
+            Option<&Dead>,
         ),
-        With<PlayerCharacter>,
+        Or<(With<CharacterModel>, With<NpcModel>)>,
     >,
+    // ... additional queries and resources
     mut client_entity_events: MessageWriter<ClientEntityEvent>,
     game_connection: Option<Res<GameConnection>>,
 ) {
-    for (entity, command, character_model, npc_model) in query.iter_mut() {
+    for (entity, player_character, ability_values, character_model, npc_model, equipment, position, move_mode, move_speed, vehicle, command, mut next_command, mut facing_direction, dead) in query.iter_mut() {
         match command {
             Command::Die => {
                 commands.entity(entity).insert(Dead);
-                // Send death event
             }
             Command::Attack(cmd_attack) => {
                 // Handle attack command
@@ -433,15 +464,15 @@ app.add_systems(
 2. **ModelSystemSets**: Order model update and collider addition systems
 3. **EffectSystemSets**: Order combat effect systems
 4. **UiSystemSets**: Order UI rendering systems
-5. **GameStateSystemSets**: Group systems by game state
+5. **State-gated groups**: Systems are grouped per state with `run_if(in_state(AppState::...))` (no `GameStateSystemSets` enum exists)
 
 ---
 
 ## Events
 
-Events are messages that "happen" at a given moment. In Bevy 0.18, events use observers for handling. This project uses the `Message` trait for event-like patterns.
+Events are messages that "happen" at a given moment. In Bevy 0.18, `Event`s are handled via `Observer`s, while the new `Message` API provides pull-based message passing. This project uses Bevy's built-in `Message` trait (derived with `#[derive(Message)]`) for its event-like patterns.
 
-**Bevy Source**: `bevy_ecs/src/event/mod.rs`
+**Bevy Source**: `bevy_ecs/src/message/mod.rs` (Message), `bevy_ecs/src/event/mod.rs` (Event)
 
 ### Event Definition (Message Pattern)
 
@@ -453,6 +484,7 @@ pub struct HitEvent {
     pub defender: Entity,
     pub effect_id: Option<EffectId>,
     pub skill_id: Option<SkillId>,
+    pub blood_profile: BloodImpactProfile,
     pub apply_damage: bool,
     pub ignore_miss: bool,
 }
@@ -464,6 +496,7 @@ impl HitEvent {
             defender,
             effect_id,
             skill_id: None,
+            blood_profile: BloodImpactProfile::Slash,
             apply_damage: true,
             ignore_miss: false,
         }
@@ -475,6 +508,7 @@ impl HitEvent {
             defender,
             effect_id: None,
             skill_id: Some(skill_id),
+            blood_profile: BloodImpactProfile::SkillMagic,
             apply_damage: true,
             ignore_miss: false,
         }
@@ -503,11 +537,8 @@ pub fn command_system(
     mut client_entity_events: MessageWriter<ClientEntityEvent>,
     // ...
 ) {
-    // Send event
-    client_entity_events.send(ClientEntityEvent::UpdatePosition {
-        entity_id: client_entity.id,
-        position: position.into(),
-    });
+    // Send event (MessageWriter::write, not EventWriter::send)
+    client_entity_events.write(ClientEntityEvent::Die(entity));
 }
 ```
 
@@ -588,10 +619,22 @@ app.add_systems(OnExit(AppState::MapEditor), map_editor::map_editor_exit_system)
 ```rust
 // src/lib.rs
 // Only run when in Game state
-app.add_systems(Update, ability_values_system.run_if(in_state(AppState::Game)));
-app.add_systems(Update, clan_system.run_if(in_state(AppState::Game)));
-app.add_systems(Update, command_system.run_if(in_state(AppState::Game)));
-app.add_systems(Update, collision_player_system.run_if(in_state(AppState::Game)));
+app.add_systems(
+    Update,
+    (
+        move_speed_set_system,
+        // ... other game systems
+    )
+        .run_if(in_state(AppState::Game)),
+);
+app.add_systems(
+    Update,
+    player_command_system.run_if(in_state(AppState::Game)),
+);
+app.add_systems(
+    Update,
+    ensure_boat_state_system.run_if(in_state(AppState::Game)),
+);
 
 // Model viewer system only runs in ModelViewer state
 app.add_systems(
@@ -620,10 +663,11 @@ Queries provide selective access to component data on entities. They support fil
 ```rust
 // src/systems/update_position_system.rs
 pub fn update_position_system(
-    mut query: Query<(&Command, &mut Position)>,
+    mut query: Query<(&Command, &MoveSpeed, &mut FacingDirection, &mut Position)>,
+    time: Res<Time>,
 ) {
-    for (command, mut position) in query.iter_mut() {
-        // Process entities with both Command and Position
+    for (command, move_speed, mut facing_direction, mut position) in query.iter_mut() {
+        // Process entities with all four components
     }
 }
 ```
@@ -669,17 +713,26 @@ pub fn command_system(
     mut query: Query<
         (
             Entity,
-            &Command,
+            Option<&PlayerCharacter>,
+            &AbilityValues,
             Option<&CharacterModel>,
             Option<&NpcModel>,
+            Option<&Equipment>,
+            &Position,
+            &MoveMode,
+            &MoveSpeed,
             Option<&Vehicle>,
+            &mut Command,
+            &mut NextCommand,
+            &mut FacingDirection,
+            Option<&Dead>,
         ),
-        With<PlayerCharacter>,
+        Or<(With<CharacterModel>, With<NpcModel>)>,
     >,
     // ...
 ) {
-    // Only queries entities with PlayerCharacter component
-    // CharacterModel, NpcModel, and Vehicle are optional
+    // Only queries entities with a CharacterModel OR NpcModel component
+    // CharacterModel, NpcModel, Equipment, and Vehicle are optional
 }
 ```
 
@@ -687,9 +740,8 @@ pub fn command_system(
 
 ```rust
 // Query entities that have EITHER CharacterModel OR NpcModel
-Query<
-    (&mut Transform, Or<(Option<&CharacterModel>, Option<&NpcModel>)>),
->
+// (Or is a query filter, not a query data item)
+Query<&mut Transform, Or<(With<CharacterModel>, With<NpcModel>)>>
 ```
 
 ### Query Patterns in This Project
@@ -715,14 +767,22 @@ Commands provide deferred, thread-safe world modifications. They are queued and 
 pub fn spawn_effect_system(
     mut commands: Commands,
     mut events: MessageReader<SpawnEffectEvent>,
-    // ...
+    // ... other params
 ) {
-    while let Some(event) = events.read() {
-        commands.spawn((
-            Transform::from_translation(event.position),
-            Effect { id: event.effect_id },
-            // Other components
-        ));
+    for event in events.read() {
+        match event {
+            SpawnEffectEvent::AtEntity(entity, data) => {
+                spawn_effect(
+                    &vfs_resource.vfs,
+                    &mut commands,
+                    &asset_server,
+                    // ...
+                    Some(*entity),
+                    Some(&effect_cache),
+                );
+            }
+            // ...
+        }
     }
 }
 ```
@@ -819,13 +879,17 @@ pub struct ColliderParent {
 
 ```rust
 // Using Bevy's Children component
+// Children derefs to [Entity]; query each child individually (get_many
+// in Bevy 0.18 takes a fixed-size array, e.g. `get_many([entity])`)
 fn process_children(
     query: Query<(&Name, &Children)>,
     child_query: Query<&Name, With<ChildOf>>,
 ) {
     for (parent_name, children) in query.iter() {
-        for child_name in child_query.get_many(*children) {
-            // Process child entities
+        for child_entity in children.iter() {
+            if let Ok(child_name) = child_query.get(*child_entity) {
+                // Process child entity
+            }
         }
     }
 }
@@ -884,7 +948,7 @@ commands.spawn((
     Transform::from_translation(position),
     GlobalTransform::default(),
     ClientEntity::new(entity_id, entity_type),
-    Position { x, y, z },
+    Position::new(Vec3::new(x, y, z)),
     // Additional components...
 ));
 ```
@@ -940,37 +1004,36 @@ app.add_systems(
 
 ### Message System
 
-This project extends Bevy's event system with a custom `Message` trait:
+`Message` is a **built-in Bevy 0.18 trait** (not defined by this project). It is a marker trait for pull-based message passing:
 
 ```rust
-// src/events/mod.rs
-pub trait Message: Send + Sync + 'static {
-    fn handle(&self, world: &mut World);
-}
+// bevy_ecs/src/message/mod.rs (Bevy 0.18.1, line 96)
+pub trait Message: Send + Sync + 'static {}
 ```
 
-**Source**: `src/events/mod.rs`
+The project derives it for its event-like types, e.g. `#[derive(Message)] pub struct HitEvent` in `src/events/hit_event.rs`.
+
+**Source**: `bevy_ecs/src/message/mod.rs`
 
 ### MessageReader and MessageWriter
 
-Custom system parameters for reading and writing messages:
+Built-in Bevy system parameters for reading and writing messages (replacing the old `EventReader`/`EventWriter` for pull-based handling):
 
 ```rust
-// src/events/mod.rs
-pub struct MessageReader<T: Message> {
-    // Implementation
-}
+// bevy_ecs/src/message/message_reader.rs
+pub struct MessageReader<'w, 's, M: Message> { ... }
 
-pub struct MessageWriter<T: Message> {
-    // Implementation
-}
+// bevy_ecs/src/message/message_writer.rs
+pub struct MessageWriter<'w, M: Message> { ... }
 ```
 
-**Source**: `src/events/mod.rs:45-120`
+Messages are written with `MessageWriter::write()` and read with `MessageReader::read()`, which returns an iterator (`for event in events.read()`).
+
+**Source**: `bevy_ecs/src/message/message_reader.rs`, `bevy_ecs/src/message/message_writer.rs`
 
 ### RemoveColliderCommand
 
-Extension trait for entity commands:
+Project-defined extension trait for entity commands (`src/components/collision.rs`):
 
 ```rust
 // src/components/collision.rs
@@ -985,7 +1048,7 @@ impl<'a> RemoveColliderCommand for EntityCommands<'a> {
 }
 ```
 
-**Source**: `src/components/collision.rs:150-175`
+**Source**: `src/components/collision.rs:19-38`
 
 ---
 
@@ -993,47 +1056,77 @@ impl<'a> RemoveColliderCommand for EntityCommands<'a> {
 
 ### Complete Entity Spawn
 
-**File**: `src/systems/spawn_character_system.rs:25-45`
+**File**: `src/systems/game_connection_system.rs` (JoinZone handler, around line 462)
 
 ```rust
-commands.spawn((
-    Transform::from_translation(position),
-    GlobalTransform::default(),
+let mut entity_commands = commands.entity(player_entity);
+entity_commands.insert((
     ClientEntity::new(entity_id, ClientEntityType::Character),
-    Position { x, y, z },
-    CharacterModel { model_path },
-    PlayerCharacter,
     CollisionPlayer,
+    Command::with_stop(),
+    NextCommand::with_stop(),
+    FacingDirection::default(),
+    experience_points,
+    team,
+    health_points,
+    mana_points,
 ));
 ```
 
 ### State Transition with Cleanup
 
-**File**: `src/resources/app_state.rs:85-105`
+**File**: `src/systems/game_system.rs:31-56`
 
 ```rust
-fn game_state_enter_system(
+pub fn game_state_enter_system(
     mut commands: Commands,
-    mut app_state: ResMut<NextState<AppState>>,
+    query_cameras: Query<
+        Entity,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
+    query_player: Query<Entity, With<PlayerCharacter>>,
 ) {
-    // Initialize game resources
-    commands.insert_resource(GameData::default());
-    // Transition complete
+    // Reset camera to orbit the player character
+    let player_entity = match query_player.single() {
+        Ok(entity) => entity,
+        Err(_) => return,
+    };
+
+    for entity in query_cameras.iter() {
+        commands
+            .entity(entity)
+            .remove::<FreeCamera>()
+            .remove::<CameraAnimation>()
+            .insert(OrbitCamera::new(
+                player_entity,
+                Vec3::new(0.0, 1.7, 0.0),
+                15.0,
+            ));
+    }
 }
 ```
 
 ### Complex Query Pattern
 
-**File**: `src/systems/collision_system.rs:45-70`
+**File**: `src/systems/collision_system.rs:266`
 
 ```rust
 pub fn collision_player_system(
-    mut query: Query<
-        (Entity, &mut Position, &mut Transform),
-        (With<CollisionPlayer>, Without<Dead>),
+    mut commands: Commands,
+    mut query_collision_entity: Query<
+        (
+            Entity,
+            &mut Position,
+            &mut Transform,
+            Option<&FlightState>,
+            Option<&mut BoatState>,
+        ),
+        With<CollisionPlayer>,
     >,
-    rapier_context: ReadRapierContext,
+    // ... additional queries and resources
     current_zone: Option<Res<CurrentZone>>,
+    rapier_context: ReadRapierContext,
+    time: Res<Time>,
 ) {
     // Collision logic
 }
@@ -1049,7 +1142,7 @@ pub fn collision_player_system(
 |--------|-------------|---------|
 | `passthrough_terrain_textures` | Render terrain textures without modification | `false` |
 | `trail_effect_duration_multiplier` | Scale duration of trail effects | `1.0` |
-| `use_new_terrain` | Enable new terrain rendering system | `true` |
+| `use_new_terrain` | Enable new terrain rendering system | `false` |
 
 **Source**: `src/resources/render_configuration.rs`
 
@@ -1071,45 +1164,38 @@ pub fn collision_player_system(
 
 #### Issue 1: System Parameter Trait Bounds
 
-**Problem**: After upgrading to Bevy 0.18, systems fail to compile with complex query parameter trait bounds.
+**Problem**: Systems fail to compile because query data, filters, and system parameters do not satisfy the required trait bounds.
 
 **Error**:
 ```
-the trait `for<'s> SystemParamSet<DynSystemParamGetter<...>>` is not implemented
+the trait bound `MyQueryData: QueryData` is not satisfied
+the trait bound `MyFilter: QueryFilter` is not satisfied
 ```
 
-**Solution**: Ensure all query parameters implement `Send + Sync + 'static`. Use explicit type annotations when combining multiple queries:
+**Solution**: Query data types must implement `QueryData` (`&T`, `&mut T`, tuples, etc.), filters must implement `QueryFilter` (`With<T>`, `Without<T>`, `Or<...>`), and system parameters must implement `SystemParam`. System functions support at most 16 parameters; group excess parameters into tuples or a custom `SystemParam` struct. Explicit `&'static` annotations are not required — lifetimes are inferred:
 
 ```rust
-// Before (may fail)
-Query<(&mut A, &B), With<C>>
-
-// After (explicit)
-Query<(
-    &'static mut A,
-    &'static B,
-), With<C>>
+// Correct: inferred lifetimes
+fn my_system(query: Query<(&mut A, &B), With<C>>) { ... }
 ```
 
-**Source**: `bevy_ecs/src/system/system_param.rs:245-290`
+**Source**: `bevy_ecs/src/system/system_param.rs`
 
 #### Issue 2: MessageWriter vs EventWriter
 
-**Problem**: Custom `MessageWriter` conflicts with Bevy's built-in `EventWriter`.
+**Problem**: Confusion between the old `EventWriter` API and Bevy 0.18's pull-based `MessageWriter`.
 
-**Solution**: Use fully qualified syntax or alias:
+**Solution**: In Bevy 0.18, `Message`/`MessageReader`/`MessageWriter` are built-in types replacing the pull-based `Event`/`EventReader`/`EventWriter` pattern (this project does not define a custom `MessageWriter`). Register messages with `app.add_message::<T>()`, write with `MessageWriter::write()`:
 
 ```rust
-use crate::events::MessageWriter as CustomMessageWriter;
-
 fn my_system(
-    mut events: CustomMessageWriter<MyEvent>,
+    mut events: MessageWriter<MyEvent>,
 ) {
-    // Use custom message writer
+    events.write(MyEvent {});
 }
 ```
 
-**Source**: `src/events/mod.rs:45-80`
+**Source**: `bevy_ecs/src/message/message_writer.rs`
 
 #### Issue 3: State Transition Timing
 
@@ -1130,7 +1216,7 @@ app.add_systems(
 );
 ```
 
-**Source**: `bevy_state/src/app.rs:156-198`
+**Source**: `bevy_state/src/state/mod.rs` (OnEnter/OnExit schedules)
 
 #### Issue 4: Query Filter Conflicts
 
@@ -1152,7 +1238,7 @@ Query<&mut A, Without<B>>
 Query<(&mut A, Option<&B>)>
 ```
 
-**Source**: `bevy_ecs/src/query/filter.rs:89-156`
+**Source**: `bevy_ecs/src/query/filter.rs`
 
 #### Issue 5: Commands Not Applied Immediately
 
@@ -1171,7 +1257,7 @@ app.add_systems(
 );
 ```
 
-**Source**: `bevy_ecs/src/schedule/auto_insert_apply_deferred.rs:45-120`
+**Source**: `bevy_ecs/src/schedule/auto_insert_apply_deferred.rs`
 
 #### Issue 6: SystemSet Ordering Not Respected
 
@@ -1189,7 +1275,7 @@ app.add_systems(
 );
 ```
 
-**Source**: `bevy_ecs/src/schedule/set.rs:78-145`
+**Source**: `bevy_ecs/src/schedule/set.rs`
 
 #### Issue 7: Resource Mutability Conflicts
 
@@ -1210,22 +1296,21 @@ fn system_a(resource: Res<MyResource>) { }
 fn system_b(mut resource: ResMut<MyResource>) { }
 ```
 
-**Source**: `bevy_ecs/src/resource.rs:56-98`
+**Source**: `bevy_ecs/src/resource.rs`
 
-#### Issue 8: Event Reader Consumes All Events
+#### Issue 8: MessageReader Consumes All Messages
 
-**Problem**: MessageReader clears events before all handlers process them.
+**Problem**: A message written once is not seen by every system that needs it.
 
-**Solution**: Use multiple readers or event cloning:
+**Solution**: Each system gets its own `MessageReader`, and every reader sees all messages written since the last update (no cloning needed). Messages are cleared every frame by Bevy's built-in `message_update_system`:
 
 ```rust
-#[derive(Message, Clone)]
-pub struct MyEvent {
-    // Cloneable fields
-}
+// Both systems receive every message of type MyEvent
+fn system_a(mut events: MessageReader<MyEvent>) { ... }
+fn system_b(mut events: MessageReader<MyEvent>) { ... }
 ```
 
-**Source**: `src/events/mod.rs:12-35`
+**Source**: `bevy_ecs/src/message/update.rs`
 
 #### Issue 9: Component Required By Not Enforced
 
@@ -1239,17 +1324,17 @@ pub struct MyEvent {
 pub struct ComponentA { }
 ```
 
-**Source**: `bevy_ecs/src/component/required.rs:125-245`
+**Source**: `bevy_ecs/src/component/required.rs`
 
 #### Issue 10: Hierarchy Despawn Order
 
 **Problem**: Children despawned before parents cause issues.
 
-**Solution**: Use Bevy hierarchy or manual ordering:
+**Solution**: In Bevy 0.18, `EntityCommands::despawn()` automatically recursively despawns descendants through relationship targets (there is no `despawn_recursive()` method anymore — it was removed in the relationship refactor):
 
 ```rust
 // Bevy hierarchy handles this automatically
-commands.entity(parent).despawn_recursive();
+commands.entity(parent).despawn();
 
 // Manual: despawn children first
 for child in children.iter() {
@@ -1258,7 +1343,7 @@ for child in children.iter() {
 commands.entity(parent).despawn();
 ```
 
-**Source**: `bevy_ecs/src/hierarchy.rs:234-298`
+**Source**: `bevy_ecs/src/system/commands/mod.rs` (`despawn`, around line 1860)
 
 ---
 

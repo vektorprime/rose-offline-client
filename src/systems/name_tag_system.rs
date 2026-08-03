@@ -230,7 +230,7 @@ fn create_nametag_data(
             row_max = row_max.max(glyph_max);
         }
 
-        let row_start_y = row_index as f32 * 8.0;
+        let row_start_y = row.pos.y * pixels_per_point;
         row_min.y += row_start_y;
         row_max.y += row_start_y + 8.0;
         row_max.x += 8.0;
@@ -246,7 +246,7 @@ fn create_nametag_data(
     let mut data = vec![0; data_len];
 
     // Copy letters to texture
-    for (row_index, row) in pending_data.galley.rows.iter().enumerate() {
+    for row in pending_data.galley.rows.iter() {
         let row_font_texture = &font_source_texture;
 
         unsafe {
@@ -259,10 +259,10 @@ fn create_nametag_data(
                 let uv_min = glyph.uv_rect.min;
                 let uv_max = glyph.uv_rect.max;
 
-                let mut dst_y = ((glyph.pos.y + glyph.uv_rect.offset.y) * pixels_per_point).round()
-                    as usize
-                    + 4
-                    + row_index * 8;
+                let mut dst_y = ((row.pos.y + glyph.pos.y + glyph.uv_rect.offset.y)
+                    * pixels_per_point)
+                    .round() as usize
+                    + 4;
 
                 let dst_x = ((glyph.pos.x + glyph.uv_rect.offset.x) * pixels_per_point).round()
                     as usize
@@ -321,14 +321,15 @@ fn create_nametag_data(
     let image = images.add(image);
 
     let mut rects: ArrayVec<WorldUiRect, 2> = ArrayVec::new();
-    let mut row_offset_y = max_bounds.y - 8.0 * (pending_data.colors.len() - 1) as f32;
+    // Monsters get extra space under the name for their health bar.
+    let row_offset = if matches!(pending_data.name_tag_type, NameTagType::Monster) {
+        15.0
+    } else {
+        0.0
+    };
 
-    if matches!(pending_data.name_tag_type, NameTagType::Monster) {
-        // Give some space for monster health bar under name
-        row_offset_y += 15.0;
-    }
-
-    // Create WorldUiRect for the outlined text
+    // Create WorldUiRect for each text row. Rows are stacked in galley order
+    // (title on top, name below); the tag anchor sits at the top of the first row.
     for (row_index, row_color) in pending_data.colors.iter().enumerate() {
         let (row_bounds_min, row_bounds_max) = row_bounds[row_index];
         let row_size = row_bounds_max - row_bounds_min;
@@ -338,7 +339,7 @@ fn create_nametag_data(
         let uv_y1 = row_bounds_max.y / target_texture_height as f32;
 
         rects.push(WorldUiRect {
-            screen_offset: Vec2::new(-row_size.x / 2.0, row_offset_y - row_size.y),
+            screen_offset: Vec2::new(-row_size.x / 2.0, row_bounds_min.y + row_offset),
             screen_size: row_size,
             image: image.clone(),
             uv_min: Vec2::new(uv_x0, uv_y0),
@@ -346,7 +347,6 @@ fn create_nametag_data(
             color: *row_color,
             order: ORDER_NAME,
         });
-        row_offset_y -= row_size.y - 8.0;
     }
 
     Some(NameTagData {

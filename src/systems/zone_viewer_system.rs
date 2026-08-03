@@ -1,6 +1,6 @@
 use bevy::{
     math::Vec3,
-    prelude::{Camera3d, Commands, Entity, Query, ResMut, With},
+    prelude::{Camera3d, Commands, Entity, Query, ResMut, With, Without},
 };
 
 use crate::{
@@ -11,7 +11,10 @@ use crate::{
 
 pub fn zone_viewer_enter_system(
     mut commands: Commands,
-    query_cameras: Query<Entity, With<Camera3d>>,
+    query_cameras: Query<
+        Entity,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
     mut ui_state_debug_windows: ResMut<UiStateDebugWindows>,
 ) {
     // Reset camera to optimal zone viewing position

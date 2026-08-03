@@ -52,6 +52,7 @@ mod login_system;
 mod model_viewer_system;
 mod monster_chatter_system;
 mod monster_separation_system;
+mod memory_diagnostics;
 mod move_destination_effect_system;
 mod move_speed_command_system;
 mod move_speed_set_system;
@@ -113,7 +114,8 @@ pub use blood_spatter_system::{
 pub use boat_buoyancy_system::boat_buoyancy_system;
 pub use boat_spawn_system::{boat_toggle_system, ensure_boat_state_system, is_boat_command};
 pub(crate) use boat_spawn_system::{
-    find_nearest_shore_position, set_character_model_visibility, spawn_boat_visual,
+    find_nearest_shore_position, nearest_water_surface_height_cm, set_character_model_visibility,
+    spawn_boat_visual, OCEAN_ZONE_ID,
 };
 pub use boat_wake_system::{
     boat_wake_spawn_system, boat_wake_update_system, ensure_boat_wake_emitter_system,
@@ -180,6 +182,7 @@ pub use model_viewer_system::{
 };
 pub use monster_chatter_system::{add_monster_chatter_system, monster_chatter_system};
 pub use monster_separation_system::monster_separation_system;
+pub use memory_diagnostics::memory_diagnostics_system;
 pub use move_destination_effect_system::move_destination_effect_system;
 pub use move_speed_command_system::parse_move_speed_command;
 pub use move_speed_set_system::move_speed_set_system;

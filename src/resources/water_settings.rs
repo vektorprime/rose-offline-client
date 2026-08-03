@@ -58,6 +58,15 @@ pub struct WaterSettings {
     pub caustics_scale: f32,
     /// Caustics animation speed
     pub caustics_speed: f32,
+
+    // === Planar reflection settings ===
+    /// Whether planar reflections are rendered (mirrored camera into an
+    /// off-screen texture sampled by the water shader)
+    pub reflection_enabled: bool,
+    /// Scale of the reflection render target relative to the window (0.25-1.0)
+    pub reflection_scale: f32,
+    /// DEBUG: output the raw reflection texture instead of the final water color
+    pub debug_show_reflection: bool,
 }
 
 impl Default for WaterSettings {
@@ -75,7 +84,7 @@ impl Default for WaterSettings {
 
             // Depth settings
             min_depth: 0.5,                               // Shallow water at edges
-            max_depth: 10.0,                              // Deep water in center
+            max_depth: 30.0,                              // Deep water in center (ocean floor is 20 m)
             shallow_threshold: 2.0,                       // Bottom visible below 2m depth
             deep_color: Vec4::new(0.0, 0.2, 0.4, 0.9),    // Deep blue
             shallow_color: Vec4::new(0.3, 0.6, 0.7, 0.5), // Light turquoise
@@ -91,6 +100,11 @@ impl Default for WaterSettings {
             caustics_intensity: 0.3,
             caustics_scale: 0.1,
             caustics_speed: 0.5,
+
+            // Planar reflection settings
+            reflection_enabled: true,
+            reflection_scale: 0.5,
+            debug_show_reflection: false,
         }
     }
 }

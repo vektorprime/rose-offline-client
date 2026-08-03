@@ -67,7 +67,7 @@ pub fn dirt_dash_spawn_system(
     settings: Res<DirtDashSettings>,
     assets: Res<DirtDashAssets>,
     mut commands: Commands,
-    mut query: Query<(&Position, &Command, &mut DirtDashEffect)>,
+    mut query: Query<(&Position, &Command, &Transform, &mut DirtDashEffect)>,
     particle_count: Query<(), With<DirtDashParticle>>,
 ) {
     let delta_time = time.delta_secs();
@@ -79,7 +79,7 @@ pub fn dirt_dash_spawn_system(
         return;
     }
 
-    for (position, command, mut dirt_dash) in query.iter_mut() {
+    for (position, command, transform, mut dirt_dash) in query.iter_mut() {
         // Check if the entity is moving
         let Command::Move(CommandMove { destination, .. }) = *command else {
             // Not moving, reset timer
@@ -117,7 +117,10 @@ pub fn dirt_dash_spawn_system(
 
                 let spawn_position = Vec3::new(
                     position.x / 100.0 + spread_x,
-                    position.z / 100.0 + dirt_dash.feet_offset,
+                    // Use the visual transform height (terrain-following) instead of
+                    // Position.z which is server-frozen during movement and goes stale
+                    // when the player runs up or down hills.
+                    transform.translation.y + dirt_dash.feet_offset,
                     -position.y / 100.0 + spread_z,
                 );
 

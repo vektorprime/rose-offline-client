@@ -37,58 +37,69 @@ impl Plugin for BirdPlugin {
 }
 
 /// Spawns birds when a zone is loaded
+///
+/// Uses a `Local<bool>` guard (same pattern as the ocean zone-content spawners)
+/// so repeated `ZoneEvent::Loaded` events for an already-loaded zone do not
+/// spawn additional flocks. Without this guard, every respawn/teleport into an
+/// already-loaded zone leaked a new flock of bird entities and their meshes.
+/// The guard is reset when the zone entity is gone (zone unloaded), so re-entry
+/// after a real unload respawns the birds.
 pub fn spawn_birds_on_zone_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     settings: Res<BirdSettings>,
     mut zone_events: MessageReader<ZoneEvent>,
-    zone_query: Query<(Entity, &Transform), With<Zone>>,
+    zone_query: Query<(Entity, &Zone)>,
+    mut spawned: Local<bool>,
 ) {
     if !settings.enabled {
         return;
     }
 
     let mut event_count = 0;
+    let mut zone_loaded = false;
     for event in zone_events.read() {
         // Only handle Loaded events
-        let ZoneEvent::Loaded(zone_id) = event;
-
+        let ZoneEvent::Loaded(_) = event;
         event_count += 1;
+        zone_loaded = true;
+    }
 
-        // Get zone entity from query - zone should exist now since ZoneEvent::Loaded
-        // is sent AFTER the zone entity is spawned
-        // NOTE: We use Vec3::ZERO as the spawn center because birds will be parented
-        // to the zone entity. If we used zone_transform.translation, birds would be
-        // positioned at double the offset (zone pos + local pos) after parenting.
-        let zone_entity = zone_query
-            .iter()
-            .next()
-            .map(|(e, _)| e)
-            .unwrap_or(Entity::PLACEHOLDER);
+    let zone_entity = zone_query.iter().next().map(|(entity, _)| entity);
 
-        log::info!(
-            "[BIRD] Received ZoneEvent::Loaded for zone {}, spawning birds parented to zone entity {:?}",
-            zone_id.get(),
-            zone_entity
-        );
+    match (zone_loaded, *spawned, zone_entity) {
+        // Zone was unloaded: reset the guard so a future load respawns.
+        (false, true, None) => *spawned = false,
+        // Already spawned: do nothing.
+        (_, true, _) => {}
+        // Spawn on the Loaded event, or on the fallback path if it was missed.
+        (_, false, Some(zone_entity)) => {
+            log::info!(
+                "[BIRD] Zone loaded, spawning birds parented to zone entity {:?}",
+                zone_entity
+            );
 
-        // Calculate zone size for relative bird count
-        // Default zone size is based on 64x64 blocks with grid_size * grid_per_patch * 16.0 per block
-        // Typical values: grid_size=1.0, grid_per_patch=1.0, so ~160 units per block, ~10240 units per zone
-        let zone_size = 10240.0; // Default zone size in units
-        let bird_count = calculate_bird_count(zone_size, &settings);
+            // Calculate zone size for relative bird count
+            // Default zone size is based on 64x64 blocks with grid_size * grid_per_patch * 16.0 per block
+            // Typical values: grid_size=1.0, grid_per_patch=1.0, so ~160 units per block, ~10240 units per zone
+            let zone_size = 10240.0; // Default zone size in units
+            let bird_count = calculate_bird_count(zone_size, &settings);
 
-        spawn_birds(
-            &mut commands,
-            &mut meshes,
-            &mut materials,
-            &settings,
-            Vec3::ZERO, // Use zero since birds are parented to zone (zone-local coordinates)
-            zone_entity,
-            zone_size,
-            bird_count,
-        );
+            spawn_birds(
+                &mut commands,
+                &mut meshes,
+                &mut materials,
+                &settings,
+                Vec3::ZERO, // Use zero since birds are parented to zone (zone-local coordinates)
+                zone_entity,
+                zone_size,
+                bird_count,
+            );
+            *spawned = true;
+        }
+        // No zone entity yet, nothing to parent to.
+        (_, false, None) => {}
     }
 
     if event_count > 0 {

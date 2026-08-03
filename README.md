@@ -9,7 +9,7 @@ This is a fork modified with an LLM. I take no credit for this and can't speak t
 
 ## Features added by AI
 
--Bevy has been upgraded to 0.16.1.
+-Bevy has been upgraded to 0.18.1.
 
 - MAP EDITOR with --map-editor
 

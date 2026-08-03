@@ -2,15 +2,22 @@
 
 ## Overview
 
-This document describes the architecture for a player flying system triggered by the `/fly` chat command. When activated, the player gains angelic wings and can fly forward in the direction they are facing by pressing the Space bar.
+This document describes the architecture for the player flying system triggered by the `/fly` chat command. When activated, the player can fly by holding the Space bar, moving in the direction the camera is facing (with vertical control from camera pitch and a 15% upward bias), instead of the direction they are facing.
+
+**Status**: The design has been implemented, with deviations:
+- `/fly` command detection is implemented (Option A below), flight movement, wind particle effects, and a visual flight pose are active
+- Angelic wing model spawning is currently **DISABLED** — `wing_spawn_system` only logs; `AngelicWings` is defined and exported but no system spawns or animates wing entities
+- There is no procedural wing mesh; only a simplified `create_wing_material` helper exists in `src/render/wing_material.rs`
+- Flight movement is **camera-directed** (not facing-direction), is client-authoritative, and bypasses the `Command` system entirely
+- Bevy 0.18 API names apply (`Message`/`MessageReader`/`MessageWriter`/`add_message`, renamed from `Event`/`EventReader`/`EventWriter`/`add_event`)
 
 ## Design Goals
 
 1. **Chat Command Trigger**: Flying is initiated by typing `/fly` in the chat
-2. **Flight Controls**: Space bar makes the character fly forward in the direction they are facing
-3. **Angelic Wings**: Big, high-quality angelic wings appear when flight is initiated
-4. **Wing Animation**: Wings should animate/move while flying
-5. **Wind Effects**: Particle-based wind effects while flying
+2. **Flight Controls**: Space bar makes the character fly forward in the direction the camera is facing
+3. **Angelic Wings**: Big, high-quality angelic wings appear when flight is initiated — **not yet implemented** (wing spawning disabled)
+4. **Wing Animation**: Wings should animate/move while flying — **not yet implemented**; instead a character model flight pose (`flight_pose_system`) is applied
+5. **Wind Effects**: Particle-based wind effects while flying — **implemented**
 
 ## Architecture Diagram
 
@@ -24,22 +31,24 @@ flowchart TB
     subgraph Components
         FlightState[FlightState]
         AngelicWings[AngelicWings]
-        WingAnimationState[WingAnimationState]
-        WindEffectState[WindEffectState]
+        WindEffectParticle[WindEffectParticle]
+        WindEffectEmitter[WindEffectEmitter]
     end
     
     subgraph Resources
         FlightSettings[FlightSettings]
-        WingAssets[WingAssets]
+        WindEffectAssets[WindEffectAssets]
     end
     
     subgraph Systems
-        ChatCommandSystem[chat_command_detection_system]
+        ChatCommandSystem[ui_chatbox_system + is_fly_command]
         FlightToggleSystem[flight_toggle_system]
         FlightMovementSystem[flight_movement_system]
-        WingSpawnSystem[wing_spawn_system]
-        WingAnimationSystem[wing_animation_system]
-        WindEffectSystem[wind_effect_system]
+        WingSpawnSystem[wing_spawn_system - DISABLED]
+        FlightPoseSystem[flight_pose_system]
+        WindEmitterSystem[wind_emitter_spawn_system]
+        WindSpawnSystem[wind_particle_spawn_system]
+        WindUpdateSystem[wind_particle_update_system]
     end
     
     subgraph Input
@@ -55,50 +64,45 @@ flowchart TB
     FlightState --> FlightMovementSystem
     SpaceBar --> FlightMovementSystem
     
-    WingSpawnSystem --> AngelicWings
-    AngelicWings --> WingAnimationSystem
-    WingAnimationState --> WingAnimationSystem
+    FlightState --> FlightPoseSystem
     
-    FlightState --> WindEffectSystem
-    WindEffectSystem --> WindEffectState
+    WingSpawnSystem --> AngelicWings
+    FlightState --> WindEmitterSystem
+    WindEmitterSystem --> WindEffectEmitter
+    FlightState --> WindSpawnSystem
+    WindSpawnSystem --> WindEffectParticle
+    WindEffectParticle --> WindUpdateSystem
 ```
 
 ## Components
 
 ### FlightState Component
 
-Location: `src/components/flight_state.rs`
+Location: `src/components/flight.rs` (module `flight_state.rs` was never created)
 
 ```rust
 /// Represents the current flight state of a character
-#[derive(Component, Debug, Clone, Reflect)]
+#[derive(Component, Default, Reflect)]
 #[reflect(Component)]
 pub struct FlightState {
     /// Whether the character is currently in flying mode
     pub is_flying: bool,
-    /// Whether the character is actively moving forward in flight
+    /// Whether the character is actively thrusting forward (Space bar held)
     pub is_thrusting: bool,
-    /// Current flight speed multiplier
-    pub speed_multiplier: f32,
-    /// Time accumulator for flight effects
-    pub flight_time: f32,
-    /// Entity ID of the attached wings
-    pub wings_entity: Option<Entity>,
+    /// Current flight speed
+    pub current_speed: f32,
+    /// Last flight direction (normalized) - used for momentum when stopping thrust
+    pub last_flight_direction: Vec3,
+    /// Entity ID of the left wing
+    pub wing_entity_left: Option<Entity>,
+    /// Entity ID of the right wing
+    pub wing_entity_right: Option<Entity>,
     /// Entity ID of the wind effect emitter
-    pub wind_emitter: Option<Entity>,
-}
-
-impl Default for FlightState {
-    fn default() -> Self {
-        Self {
-            is_flying: false,
-            is_thrusting: false,
-            speed_multiplier: 1.0,
-            flight_time: 0.0,
-            wings_entity: None,
-            wind_emitter: None,
-        }
-    }
+    pub wind_emitter_entity: Option<Entity>,
+    /// Original rotation before flight pose was applied (for restoration when flight ends)
+    pub original_rotation: Option<Quat>,
+    /// Current flight pose blend factor (0.0 = no pose, 1.0 = full pose)
+    pub pose_blend: f32,
 }
 ```
 
@@ -108,38 +112,30 @@ Location: `src/components/angelic_wings.rs`
 
 ```rust
 /// Component attached to wing entities for rendering and animation
-#[derive(Component, Debug, Clone, Reflect)]
+#[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct AngelicWings {
-    /// Reference to the parent character entity
-    pub owner_entity: Entity,
+    /// Which side this wing is on (left or right)
+    pub side: WingSide,
     /// Current flap animation phase - 0 to 2*PI
     pub flap_phase: f32,
-    /// Speed of wing flapping animation
-    pub flap_speed: f32,
     /// Wing spread amount - 0.0 = folded, 1.0 = fully spread
     pub spread_amount: f32,
-    /// Target spread amount for smooth transitions
-    pub target_spread: f32,
     /// Glow intensity for the ethereal effect
     pub glow_intensity: f32,
-    /// Wing color tint
-    pub color_tint: Color,
+    /// Whether the wing is currently spreading
+    pub is_spreading: bool,
 }
 
-/// Marker component for individual wing parts - left and right
-#[derive(Component, Debug, Clone, Copy, Reflect)]
-pub struct WingPart {
-    /// Which side this wing is on
-    pub side: WingSide,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]
+/// Which side of the character a wing is attached to
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Reflect)]
 pub enum WingSide {
     Left,
     Right,
 }
 ```
+
+Note: there is no `WingPart` marker component — `AngelicWings` stores the side directly. The component is exported from `src/components/mod.rs` but is currently **unused** (no system spawns wing entities).
 
 ### WindEffectParticle Component
 
@@ -147,35 +143,35 @@ Location: `src/components/wind_effect.rs`
 
 ```rust
 /// Component for individual wind particles during flight
-#[derive(Component, Debug, Clone, Reflect)]
+#[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct WindEffectParticle {
-    /// Current age of the particle in seconds
-    pub age: f32,
-    /// Total lifetime of the particle in seconds
-    pub lifetime: f32,
     /// Current velocity of the particle
     pub velocity: Vec3,
-    /// Initial size of the particle
-    pub initial_size: f32,
-    /// Current alpha value for fading
-    pub current_alpha: f32,
-    /// Stretch factor based on velocity
-    pub stretch: f32,
+    /// Lifetime timer for the particle
+    pub lifetime: Timer,
+    /// Initial alpha value for fading calculations
+    pub initial_alpha: f32,
 }
 
 /// Component for the wind effect emitter attached to flying characters
-#[derive(Component, Debug, Clone, Reflect)]
+#[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct WindEffectEmitter {
-    /// Time accumulator for particle spawning
-    pub spawn_timer: f32,
-    /// Interval between particle spawns
-    pub spawn_interval: f32,
-    /// Number of particles to spawn per burst
-    pub particles_per_burst: usize,
+    /// Timer for controlling particle spawn rate
+    pub spawn_timer: Timer,
+}
+
+impl Default for WindEffectEmitter {
+    fn default() -> Self {
+        Self {
+            spawn_timer: Timer::from_seconds(0.033, TimerMode::Repeating),
+        }
+    }
 }
 ```
+
+Note: the same file also houses the vegetation wind-sway types (`WindSway`, `WindSwaySettings`, `wind_sway_system`, `VegetationSwayPlugin`), which are unrelated to flying.
 
 ## Resources
 
@@ -185,506 +181,454 @@ Location: `src/resources/flight_settings.rs`
 
 ```rust
 /// Resource holding global flight system settings
-#[derive(Resource, Debug, Clone, Reflect)]
+#[derive(Resource, Reflect, Clone)]
 #[reflect(Resource)]
 pub struct FlightSettings {
-    /// Base flight speed in units per second
-    pub base_flight_speed: f32,
     /// Maximum flight speed
-    pub max_flight_speed: f32,
+    pub max_speed: f32,
     /// Acceleration when starting to fly
     pub acceleration: f32,
     /// Deceleration when stopping
     pub deceleration: f32,
-    /// Vertical lift when pressing space
-    pub vertical_lift: f32,
-    /// Enable/disable flight system
-    pub enabled: bool,
-    /// Wing flap speed when idle
-    pub wing_flap_speed_idle: f32,
-    /// Wing flap speed when flying
-    pub wing_flap_speed_flying: f32,
-    /// Wind particle spawn rate
-    pub wind_particle_rate: f32,
-    /// Maximum wind particles per flyer
-    pub max_wind_particles: usize,
+    /// Speed of wing flapping animation
+    pub wing_flap_speed: f32,
+    /// Duration for wings to fully spread (seconds)
+    pub wing_spread_duration: f32,
+    /// Wind particle spawn rate (particles per second)
+    pub wind_particle_spawn_rate: f32,
 }
 
 impl Default for FlightSettings {
     fn default() -> Self {
         Self {
-            base_flight_speed: 400.0,
-            max_flight_speed: 800.0,
-            acceleration: 200.0,
-            deceleration: 150.0,
-            vertical_lift: 100.0,
-            enabled: true,
-            wing_flap_speed_idle: 2.0,
-            wing_flap_speed_flying: 6.0,
-            wind_particle_rate: 0.02,
-            max_wind_particles: 100,
+            max_speed: 15.0,
+            acceleration: 8.0,
+            deceleration: 5.0,
+            wing_flap_speed: 3.0,
+            wing_spread_duration: 0.5,
+            wind_particle_spawn_rate: 30.0,
         }
     }
 }
 ```
 
-### WingAssets Resource
+Registered via `.init_resource::<FlightSettings>()` in `src/lib.rs:1351`. Speeds are in meters/second and are scaled to centimeters (`* 100.0`) in the movement system.
 
-Location: `src/resources/wing_assets.rs`
+### WingAssets Resource — not created
+
+The proposed `src/resources/wing_assets.rs` resource was never created. The shared-asset resource that exists is `WindEffectAssets` (wind particle mesh + material), defined inside `src/systems/wind_effect_system.rs`:
 
 ```rust
-/// Resource holding shared wing mesh and material assets
-#[derive(Resource, Debug, Clone)]
-pub struct WingAssets {
-    /// Procedurally generated wing mesh
-    pub wing_mesh: Handle<Mesh>,
-    /// Primary wing material with glow effect
-    pub wing_material: Handle<StandardMaterial>,
-    /// Wing feather texture
-    pub feather_texture: Handle<Image>,
-    /// Wing glow texture for additive blending
-    pub glow_texture: Handle<Image>,
+/// Resource holding the shared mesh and material handles for wind particles
+#[derive(Resource)]
+pub struct WindEffectAssets {
+    pub mesh: Handle<Mesh>,
+    pub material: Handle<StandardMaterial>,
 }
 ```
+
+Wing material helpers instead live in `src/render/wing_material.rs` (`create_wing_material`, `WingMaterial` type alias, `WingMaterialPlugin`).
 
 ## Events
 
 ### FlightToggleEvent
 
-Location: `src/events/flight_toggle_event.rs`
+Location: `src/events/flight_event.rs` (module `flight_toggle_event.rs` was never created)
 
 ```rust
-/// Event sent when flight mode should be toggled for an entity
-#[derive(Event, Debug, Clone)]
+/// Message sent when flight mode should be toggled for an entity
+#[derive(Message, Clone, Debug)]
 pub struct FlightToggleEvent {
     /// The entity to toggle flight for
     pub entity: Entity,
-    /// Force enable - if Some, sets to this state regardless of current
-    pub force_state: Option<bool>,
 }
 ```
+
+There is no `force_state` field — the event always toggles. It is registered with `.add_message::<FlightToggleEvent>()` in `src/lib.rs:974`.
 
 ## Systems
 
-### 1. Chat Command Detection System
+The proposed single-file `src/systems/flight_system.rs` was never created. Each system lives in its own file:
 
-Location: `src/systems/flight_system.rs`
+| System | Location |
+|--------|----------|
+| `is_fly_command` helper + `flight_command_system` | `src/systems/flight_command_system.rs` |
+| `ensure_flight_state_system`, `flight_toggle_system` | `src/systems/flight_toggle_system.rs` |
+| `flight_movement_system` | `src/systems/flight_movement_system.rs` |
+| `flight_pose_system`, `flight_pose_blend_update_system` | `src/systems/flight_pose_system.rs` |
+| `wing_spawn_system` (disabled) | `src/systems/wing_spawn_system.rs` |
+| `wind_emitter_spawn_system`, `wind_particle_spawn_system`, `wind_particle_update_system` | `src/systems/wind_effect_system.rs` |
+
+### 1. Chat Command Detection
 
 **Purpose**: Intercepts chat messages and detects `/fly` command
 
-**Implementation Approach**:
-- The existing chat system in [`ui_chatbox_system.rs`](src/ui/ui_chatbox_system.rs:78) sends chat via `ClientMessage::Chat`
-- We need to intercept messages BEFORE they are sent to check for `/fly`
-- This requires modifying the chatbox system or adding a pre-send hook
+**Implementation**: Option A was implemented. The chat system in [`ui_chatbox_system.rs`](src/ui/ui_chatbox_system.rs:408) checks the textbox text with `is_fly_command` (defined in `src/systems/flight_command_system.rs`) **before** sending anything to the server:
 
-**Two Options for Implementation**:
-
-**Option A**: Modify `ui_chatbox_system.rs` to check for `/fly` before sending:
 ```rust
 // In ui_chatbox_system.rs, before sending ClientMessage::Chat
-if ui_state_chatbox.textbox_text == "/fly" {
-    flight_toggle_events.write(FlightToggleEvent {
-        entity: player_entity,
-        force_state: None,
-    });
+if is_fly_command(&ui_state_chatbox.textbox_text) {
+    // Get the player entity and send flight toggle event
+    if let Ok(player_entity) = player_query.single() {
+        flight_toggle_events.write(FlightToggleEvent {
+            entity: player_entity,
+        });
+    }
+    // Clear the textbox without sending to server
     ui_state_chatbox.textbox_text.clear();
-    // Don't send to server - it's a local command
+} else if is_boat_command(&ui_state_chatbox.textbox_text) {
+    // ...
 } else {
     // Existing code to send chat message
-    game_connection.client_message_tx.send(ClientMessage::Chat { ... });
+    game_connection
+        .client_message_tx
+        .send(ClientMessage::Chat { text: ... });
 }
 ```
 
-**Option B**: Add a new system that reads outgoing chat messages (requires architecture change)
+The normal chat send via `ClientMessage::Chat` happens at `src/ui/ui_chatbox_system.rs:469` (and at `:434` for `/ping`).
 
-**Recommended**: Option A is simpler and follows existing patterns.
-
-**System Signature**:
+**Helper** (`src/systems/flight_command_system.rs`):
 ```rust
-pub fn chat_command_detection_system(
-    mut chatbox_events: EventReader<ChatboxEvent>,  // May need custom event
-    mut flight_toggle_events: EventWriter<FlightToggleEvent>,
-    player_query: Query<Entity, With<PlayerCharacter>>,
-)
+/// Checks if a chat message is a flight command (case-insensitive)
+/// Returns true if the message is a "/fly" command and should be consumed
+pub fn is_fly_command(message: &str) -> bool {
+    let trimmed = message.trim();
+    trimmed.eq_ignore_ascii_case("/fly")
+}
 ```
+
+**Additional facts**:
+- `flight_command_system` exists as a stub for alternative command input methods (it does nothing today).
+- `src/systems/chat_command_system.rs` also recognizes `/fly` as a client-side-only command via `ParsedChatInput::is_client_command()`.
+- `/fly` is listed in the chatbox help overlay (`ui_chatbox_system.rs:298`).
 
 ### 2. Flight Toggle System
 
-Location: `src/systems/flight_system.rs`
+Location: `src/systems/flight_toggle_system.rs`
 
 **Purpose**: Handles toggling flight mode on/off
 
 **Responsibilities**:
-- Listen for `FlightToggleEvent`
-- Toggle `FlightState::is_flying` 
-- Spawn/despawn wing entities
-- Spawn/despawn wind effect emitter
-- Send feedback to chat
+- Listen for `FlightToggleEvent` (via `MessageReader`, Bevy 0.18)
+- Toggle `FlightState::is_flying`
+- Despawn wing entities and wind emitter on exit (stored as `Entity` handles on `FlightState`)
+- Reset `current_speed`/`is_thrusting` on toggle
 
 ```rust
 pub fn flight_toggle_system(
     mut commands: Commands,
-    mut flight_toggle_events: EventReader<FlightToggleEvent>,
-    mut flight_state_query: Query<&mut FlightState>,
-    mut chatbox_events: EventWriter<ChatboxEvent>,
-    wing_assets: Res<WingAssets>,
-    settings: Res<FlightSettings>,
+    mut events: MessageReader<FlightToggleEvent>,
+    mut query: Query<(Entity, &mut FlightState), With<PlayerCharacter>>,
 )
 ```
 
+There is also `ensure_flight_state_system`, which inserts `FlightState::default()` on any `PlayerCharacter` missing it and runs **before** `flight_toggle_system` (`src/lib.rs:1413-1414`). Wing *spawning* is not done here — that is the (disabled) wing spawn system.
+
 ### 3. Flight Movement System
 
-Location: `src/systems/flight_system.rs`
+Location: `src/systems/flight_movement_system.rs`
 
 **Purpose**: Handles movement while flying
 
 **Responsibilities**:
 - Check for Space bar input when `FlightState::is_flying` is true
-- Move character forward in facing direction
-- Apply acceleration/deceleration
-- Update `FlightState::is_thrusting`
-- Integrate with existing `Command` and `Position` systems
-
-**Key Integration Points**:
-- Read [`FacingDirection`](src/components/facing_direction.rs:6) to determine forward direction
-- Update [`Position`](src/components/position.rs) for movement
-- May need to set [`Command::Move`](src/components/command.rs:62) or create flight-specific command
+- Move character in the **camera's** view direction (not facing direction), including vertical movement from camera pitch plus a 15% upward bias
+- Apply acceleration/deceleration to `FlightState::current_speed`
+- Enforce a minimum height of 1 meter above terrain
+- On thrust release: glide with momentum, then hover in place (no descent)
+- Move `Position` locally (client-authoritative) and report to the server via `ClientMessage::MoveCollision`
+- Cancel ground movement with `NextCommand::with_stop()` so run animation/speed never apply
+- Update `FacingDirection::desired` from the horizontal flight direction
 
 ```rust
 pub fn flight_movement_system(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    flight_settings: Res<FlightSettings>,
     time: Res<Time>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    settings: Res<FlightSettings>,
-    mut query: Query<(
-        Entity,
-        &mut FlightState,
-        &FacingDirection,
-        &mut Position,
-        Option<&mut Command>,
-    ), With<PlayerCharacter>>,
-    egui_context: Option<Res<EguiContexts>>,
+    camera_query: Query<&Transform, With<OrbitCamera>>,
+    current_zone: Option<Res<CurrentZone>>,
+    zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
+    mut commands: Commands,
+    game_connection: Option<Res<GameConnection>>,
+    mut query: Query<
+        (Entity, &mut FlightState, &mut FacingDirection, &mut Position),
+        With<PlayerCharacter>,
+    >,
 )
 ```
 
-### 4. Wing Spawn System
+**Key Integration Points**:
+- Reads [`FacingDirection`](src/components/facing_direction.rs:7) only as fallback when the camera transform is unavailable; the camera direction is the primary input
+- Updates [`Position`](src/components/position.rs) directly (cm space, `* 100.0` conversion)
+- Does **not** use `Command::Move` — flight bypasses the Command system (see "Command System Integration" below)
+- The collision system (`collision_system.rs:313`) checks `FlightState::is_flying` to skip ground collision while flying, and `game_keyboard_input_system.rs:80` disables WASD ground movement while flying
 
-Location: `src/systems/flight_system.rs`
+### 4. Wing Spawn System — DISABLED
 
-**Purpose**: Spawns angelic wing entities attached to character
+Location: `src/systems/wing_spawn_system.rs`
 
-**Responsibilities**:
-- Create wing mesh entities as children of character
-- Position wings on character back
-- Apply materials and textures
-- Handle wing despawn when flight ends
+**Purpose**: (Planned) spawn angelic wing entities attached to character
 
-**Wing Attachment Strategy**:
-- Attach to the character model's back bone or root entity
-- Use `commands.entity(character_entity).add_child(wing_entity)`
-- Follow pattern from [`bird_system.rs`](src/systems/bird_system.rs:187) for child attachment
+**Current behavior**: Wing model spawning is disabled. `wing_spawn_system` only reads `FlightToggleEvent`s and logs:
 
 ```rust
 pub fn wing_spawn_system(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    wing_assets: Res<WingAssets>,
-    character_query: Query<(Entity, &Transform), With<FlightState>>,
-)
+    mut flight_events: MessageReader<FlightToggleEvent>,
+    player_query: Query<Entity, With<PlayerCharacter>>,
+) {
+    for event in flight_events.read() {
+        if player_query.contains(event.entity) {
+            log::info!(
+                "[WingSpawn] Flight toggled for entity {:?} - wing spawning disabled",
+                event.entity
+            );
+        }
+    }
+}
 ```
 
-### 5. Wing Animation System
+`WingSpawnPlugin` exists and adds `WingMaterialPlugin` (`src/render/wing_material.rs`). When wings are re-enabled, the original plan was to attach via `commands.entity(character_entity).add_child(wing_entity)`; the bird system still demonstrates this pattern (see [`bird_system.rs`](src/systems/bird_system.rs:254) for `add_child` usage).
 
-Location: `src/systems/flight_system.rs`
+### 5. Flight Pose System (replaces the planned Wing Animation System)
 
-**Purpose**: Animates wing flapping and spreading
+Location: `src/systems/flight_pose_system.rs`
+
+**Purpose**: Applies a visual-only flight pose to the character model while flying (the planned `wing_animation_system` was never implemented)
 
 **Responsibilities**:
-- Update flap phase based on flight state
-- Smoothly interpolate spread amount
-- Apply rotation/scale transforms for flapping
-- Adjust glow intensity based on speed
+- Forward lean (pitch) on the body
+- Toe-down rotation on the feet
+- Ragdoll "hanging from wings" pose: body lowered, arms dangling, legs hanging, head tilted up
+- Pose only activates when airborne (`current_speed > 0.1`), blends in/out at 5.0/sec
+- Rotations are applied to `CharacterModel` part entities (Body, Hands, Feet, Head) so movement is unaffected
 
 ```rust
-pub fn wing_animation_system(
+pub fn flight_pose_system(
     time: Res<Time>,
-    settings: Res<FlightSettings>,
-    flight_query: Query<&FlightState>,
-    mut wing_query: Query<(&mut AngelicWings, &mut Transform), Without<FlightState>>,
+    player_query: Query<(&FlightState, &FacingDirection, &CharacterModel), With<PlayerCharacter>>,
+    mut body_transforms: Query<&mut Transform, (With<CharacterModel>, Without<PlayerCharacter>)>,
 )
 ```
 
-### 6. Wind Effect System
+`flight_pose_blend_update_system` tracks `FlightState::pose_blend`. Both run after `flight_toggle_system` and `character_model_update_system` (`src/lib.rs:1416-1423`).
 
-Location: `src/systems/flight_system.rs`
+### 6. Wind Effect Systems
+
+Location: `src/systems/wind_effect_system.rs`
 
 **Purpose**: Spawns and updates wind particles during flight
 
-**Responsibilities**:
-- Spawn wind particles when flying forward
-- Update particle positions and velocities
-- Handle particle lifetime and fading
-- Despawn expired particles
+**Responsibilities** (`wind_effect_system.rs`):
+- `wind_emitter_spawn_system`: spawns a `WindEffectEmitter` child entity when flight starts, despawns it when flight ends
+- `wind_particle_spawn_system`: spawns capsule-shaped streak particles around the character's torso, streaking backward opposite the facing direction; 2.5x more particles when thrusting; capped at `MAX_WIND_PARTICLES = 200`
+- `wind_particle_update_system`: moves particles along velocity, fades/shrinks them over lifetime, despawns expired ones
 
-**Pattern Reference**: Follow [`dirt_dash_system.rs`](src/systems/dirt_dash_system.rs:65) for particle spawning approach
+**Pattern Reference**: particle spawning mirrors [`dirt_dash_system.rs`](src/systems/dirt_dash_system.rs:65) (`dirt_dash_spawn_system`).
 
 ```rust
-pub fn wind_effect_spawn_system(
+pub fn wind_emitter_spawn_system(
+    mut commands: Commands,
+    mut flight_states: Query<(Entity, &mut FlightState), With<PlayerCharacter>>,
+)
+
+pub fn wind_particle_spawn_system(
     time: Res<Time>,
     settings: Res<FlightSettings>,
+    assets: Res<WindEffectAssets>,
     mut commands: Commands,
-    flight_query: Query<(&FlightState, &Position, &FacingDirection)>,
+    flight_query: Query<(&FlightState, &Position, &FacingDirection), With<PlayerCharacter>>,
     mut emitter_query: Query<&mut WindEffectEmitter>,
     particle_count: Query<(), With<WindEffectParticle>>,
 )
 
-pub fn wind_effect_update_system(
+pub fn wind_particle_update_system(
     time: Res<Time>,
     mut commands: Commands,
     mut query: Query<(Entity, &mut WindEffectParticle, &mut Transform)>,
 )
 ```
 
-## Wing Mesh Generation
+`WindEffectPlugin` registers all three plus `setup_wind_effect_assets` (Startup).
 
-### Procedural Wing Mesh
+## Wing Mesh Generation — not implemented
 
-Location: `src/systems/flight_system.rs` or separate `src/render/wing_mesh.rs`
+The proposed procedural wing mesh (`create_angel_wing_mesh`, `src/render/wing_mesh.rs`) was never created. Wing meshes cannot be generated procedurally at runtime because wing spawning is disabled. The bird system's mesh builders exist as a reference: [`create_bird_body_mesh`](src/systems/bird_system.rs:303) and [`create_bird_wing_mesh`](src/systems/bird_system.rs:449) (there is no single `create_bird_mesh` function).
 
-**Approach**: Generate wing mesh procedurally similar to [`create_bird_mesh`](src/systems/bird_system.rs:206)
-
-**Wing Design**:
-- Large, feathered angel wings
-- Multiple segments for animation
-- High vertex count for quality (100-200 vertices per wing)
-- Separate left and right wing meshes
-
-**Mesh Structure**:
-```rust
-fn create_angel_wing_mesh(side: WingSide) -> Mesh {
-    // Wing segments:
-    // - Arm bone (upper wing)
-    // - Forearm bone (lower wing)  
-    // - Primary feathers (wing tips)
-    // - Secondary feathers (mid-wing)
-    // - Coverts (small feathers near body)
-    
-    // Vertex positions with UVs for feather texture
-    // Normals for proper lighting
-    // Bone weights for potential skeletal animation
-}
-```
-
-**Material Approach**:
-- Use `StandardMaterial` with:
-  - Semi-transparency for ethereal look
-  - Emissive color for glow effect
-  - Double-sided rendering
-  - Alpha blending
+**Material approach (as implemented in `src/render/wing_material.rs`)** — simplified `StandardMaterial`, no shader:
 
 ```rust
-fn create_wing_material(texture: Handle<Image>) -> StandardMaterial {
-    StandardMaterial {
-        base_color: Color::srgba(1.0, 1.0, 1.0, 0.9),
-        base_color_texture: Some(texture),
-        emissive: Color::srgb(0.5, 0.7, 1.0),  // Soft blue glow
-        emissive_texture: Some(glow_texture),
-        alpha_mode: AlphaMode::Blend,
-        cull_mode: None,  // Double-sided
+pub fn create_wing_material(
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+) -> Handle<StandardMaterial> {
+    materials.add(StandardMaterial {
+        base_color: Color::srgba(0.95, 0.95, 1.0, 0.85),
+        alpha_mode: bevy::render::alpha::AlphaMode::Blend,
+        unlit: false,
+        cull_mode: None, // Double-sided
         perceptual_roughness: 0.3,
         metallic: 0.1,
-        ..default()
-    }
+        ..Default::default()
+    })
 }
 ```
+
+There is no emissive/glow texture and no feather texture — `base_color_texture`, `emissive`, and `emissive_texture` from the original design were dropped to avoid shader compilation issues.
 
 ## Integration Points
 
 ### Character Model Integration
 
-The wings need to attach to the character model. Reference [`CharacterModel`](src/components/character_model.rs:30):
-
-```rust
-// CharacterModel has a Back part slot
-pub enum CharacterModelPart {
-    // ...
-    Back,  // Existing slot for back equipment
-    // ...
-}
-```
-
-**Options**:
-1. Use existing `Back` slot - may conflict with capes/back items
-2. Create separate wing attachment point
-3. Attach to character root entity
-
-**Recommended**: Attach to character root entity as a separate child, avoiding equipment slot conflicts.
+[`CharacterModelPart`](src/components/character_model.rs:10) has an existing `Back` variant (`character_model.rs:18`) that could hold wings, and [`CharacterModel`](src/components/character_model.rs:30) maps parts to entities. As implemented:
+- Wings are **not** spawned, so no slot/attachment decision was finalized
+- The flight pose system directly animates `CharacterModel` part entities (Body, Hands, Feet, Head)
 
 ### Command System Integration
 
-The flight movement should integrate with the existing [`Command`](src/components/command.rs:61) system:
-
-**Options**:
-1. Add new `Command::Fly` variant
-2. Use `Command::Move` with special `MoveMode::Fly`
-3. Flight bypasses Command system entirely
-
-**Recommended**: Add `MoveMode::Fly` and use `Command::Move` with this mode. This integrates with existing movement systems.
-
-```rust
-// In rose_game_common::components::MoveMode (external crate)
-// May need to extend or wrap
-
-// Alternative: Create local FlightCommand
-#[derive(Clone, Debug, PartialEq, Reflect)]
-pub struct FlightCommand {
-    pub direction: Vec3,
-    pub speed: f32,
-}
-```
+Flight **bypasses** the Command system entirely (option 3). The original recommendation to add `MoveMode::Fly` and use `Command::Move` was not adopted. Instead:
+- The local `Position` is written directly (client-authoritative)
+- `NextCommand::with_stop()` is inserted every frame to cancel any ground move command (`src/components/command.rs:62` defines the `Command` enum; `NextCommand` wraps it at `:219`)
+- Movement intent is reported to the server via `ClientMessage::MoveCollision` (`src/systems/flight_movement_system.rs:125`)
+- The `command_system` (`src/systems/command_system.rs:692`) and `collision_system` (`src/systems/collision_system.rs:313`) both special-case `FlightState::is_flying`
 
 ### Input System Integration
 
-Check Space bar input following pattern from [`ui_hotbar_system.rs`](src/ui/ui_hotbar_system.rs:228):
+Space bar input follows the pattern from [`ui_hotbar_system.rs`](src/ui/ui_hotbar_system.rs:228):
 
 ```rust
 // Check if egui wants keyboard input first
-let allow_input = !egui_context.ctx_mut().wants_keyboard_input();
-
-if allow_input && keyboard_input.pressed(KeyCode::Space) {
-    // Trigger flight thrust
-}
+let use_hotbar_index = if !egui_context.ctx_mut().unwrap().wants_keyboard_input() {
+    if keyboard_input.just_pressed(KeyCode::F1) { ... }
+};
 ```
+
+The flight movement system uses `keyboard.pressed(KeyCode::Space)` directly (flight is uninterruptible by egui), and `game_keyboard_input_system.rs:80` disables WASD ground movement while flying.
 
 ## File Structure
 
-### New Files to Create
+### Implementation Files
 
-| File | Description |
-|------|-------------|
-| `src/components/flight_state.rs` | FlightState component |
-| `src/components/angelic_wings.rs` | AngelicWings, WingPart components |
-| `src/components/wind_effect.rs` | WindEffectParticle, WindEffectEmitter components |
+| File | Contents |
+|------|----------|
+| `src/components/flight.rs` | FlightState component |
+| `src/components/angelic_wings.rs` | AngelicWings component, WingSide enum (currently unused) |
+| `src/components/wind_effect.rs` | WindEffectParticle, WindEffectEmitter, WindSway, WindSwaySettings, VegetationSwayPlugin |
 | `src/resources/flight_settings.rs` | FlightSettings resource |
-| `src/resources/wing_assets.rs` | WingAssets resource |
-| `src/events/flight_toggle_event.rs` | FlightToggleEvent |
-| `src/systems/flight_system.rs` | All flight-related systems |
-| `src/render/wing_mesh.rs` | Procedural wing mesh generation |
+| `src/events/flight_event.rs` | FlightToggleEvent |
+| `src/systems/flight_command_system.rs` | is_fly_command helper, flight_command_system stub |
+| `src/systems/flight_toggle_system.rs` | ensure_flight_state_system, flight_toggle_system |
+| `src/systems/flight_movement_system.rs` | flight_movement_system |
+| `src/systems/flight_pose_system.rs` | flight_pose_system, flight_pose_blend_update_system |
+| `src/systems/wing_spawn_system.rs` | wing_spawn_system (disabled), WingSpawnPlugin |
+| `src/systems/wind_effect_system.rs` | wind emitter/particle systems, WindEffectPlugin, WindEffectAssets |
+| `src/render/wing_material.rs` | create_wing_material, WingMaterial, WingMaterialPlugin |
 
-### Files to Modify
+### Modified Files
 
 | File | Changes |
 |------|---------|
-| `src/components/mod.rs` | Add module declarations and exports |
-| `src/resources/mod.rs` | Add module declarations and exports |
-| `src/events/mod.rs` | Add module declaration and export |
-| `src/systems/mod.rs` | Add module declaration and export |
-| `src/ui/ui_chatbox_system.rs` | Add `/fly` command detection |
-| `src/lib.rs` | Register components, resources, events, and add FlightPlugin |
+| `src/components/mod.rs` | Module declarations and exports (`flight`, `angelic_wings`, `wind_effect`) |
+| `src/resources/mod.rs` | Module declaration and export (`flight_settings`) |
+| `src/events/mod.rs` | Module declaration and export (`flight_event`) |
+| `src/systems/mod.rs` | Module declarations and exports for all flight systems |
+| `src/ui/ui_chatbox_system.rs` | `/fly` command detection via `is_fly_command` |
+| `src/lib.rs` | Register `FlightToggleEvent` message, init `FlightSettings`, add `WingSpawnPlugin`/`WindEffectPlugin`/`VegetationSwayPlugin`, add flight systems with ordering |
 
 ## Plugin Structure
 
-```rust
-// src/systems/flight_system.rs
-pub struct FlightPlugin;
+There is no `FlightPlugin`. The pieces are registered as follows in `src/lib.rs`:
 
-impl Plugin for FlightPlugin {
-    fn build(&self, app: &mut App) {
-        app
-            // Register types for reflection
-            .register_type::<FlightState>()
-            .register_type::<AngelicWings>()
-            .register_type::<WingPart>()
-            .register_type::<WindEffectParticle>()
-            .register_type::<WindEffectEmitter>()
-            .register_type::<FlightSettings>()
-            
-            // Add resources
-            .init_resource::<FlightSettings>()
-            
-            // Add events
-            .add_event::<FlightToggleEvent>()
-            
-            // Add systems
-            .add_systems(Startup, setup_wing_assets)
-            .add_systems(Update, (
-                chat_command_detection_system,
-                flight_toggle_system,
-                flight_movement_system,
-                wing_animation_system,
-                wind_effect_spawn_system,
-                wind_effect_update_system,
-            ).chain());
-    }
-}
+```rust
+// lib.rs:974 - events (Bevy 0.18: add_message, formerly add_event)
+app.add_message::<FlightToggleEvent>()
+
+// lib.rs:1351 - resources
+app.init_resource::<FlightSettings>()
+
+// lib.rs:937-941 - plugins
+app.add_plugins((
+    WingSpawnPlugin,     // adds WingMaterialPlugin internally
+    WindEffectPlugin,
+    VegetationSwayPlugin,
+));
+
+// lib.rs:1412-1423 - systems
+app.add_systems(
+    Update,
+    (
+        ensure_flight_state_system,
+        flight_toggle_system.after(ensure_flight_state_system),
+        flight_movement_system.after(flight_toggle_system),
+        flight_pose_blend_update_system.after(flight_toggle_system),
+        flight_pose_system
+            .after(facing_direction_system)
+            .after(flight_toggle_system)
+            .after(character_model_update_system),
+    )
+        .run_if(in_state(AppState::Game)),
+);
 ```
+
+Note: Bevy 0.18 renamed `Event`/`EventReader`/`EventWriter`/`add_event` to `Message`/`MessageReader`/`MessageWriter`/`add_message`. Reflection registration for `WindEffectParticle`/`WindEffectEmitter` happens inside `VegetationSwayPlugin` (`src/components/wind_effect.rs:192`); the flight types use `#[reflect(Component)]`/`#[reflect(Resource)]` derives.
 
 ## Performance Considerations
 
-1. **Particle Limits**: Use `max_wind_particles` to limit particle count per flyer
-2. **Wing LOD**: Consider simpler wing mesh for distant characters
-3. **Effect Culling**: Disable wind effects when character is off-screen
-4. **Asset Sharing**: All flyers share the same wing mesh and material assets
+1. **Particle Limits**: A hard cap of `MAX_WIND_PARTICLES = 200` particles total is enforced in `wind_particle_spawn_system` (`src/systems/wind_effect_system.rs:115`) — not a per-flyer setting
+2. **Wing LOD**: Consider simpler wing mesh for distant characters — n/a while wings are disabled
+3. **Effect Culling**: Wind particles spawn only while flying and moving (`current_speed >= 0.1`); particles are globally capped
+4. **Asset Sharing**: All wind particles share the same `WindEffectAssets` mesh/material; the wing material would likewise be shared
 
 ## Visual Effects
 
-### Wing Glow Effect
+### Wing Glow Effect — not implemented
 
-- Emissive material with blue-white color
-- Pulsing intensity based on flight speed
-- Additive blending for ethereal look
+Emissive blue-white glow with pulsing intensity was planned but dropped; `create_wing_material` uses a static semi-transparent white `StandardMaterial`.
 
-### Wind Streak Particles
+### Wind Streak Particles — implemented
 
-- White/transparent streak particles
-- Stretch based on velocity
-- Fade out over lifetime
-- Spawn behind character when flying
+- Thin capsule meshes (radius 0.1, half-length 0.9), rotated to align with velocity
+- Light-blue semi-transparent material with soft blue emissive
+- Elongated scale (3x along velocity), shrink and fade over lifetime, slight deceleration
+- Spawned around the character's torso, streaking backward opposite the facing direction
+- More and faster particles while thrusting (2.5x rate, 3 per burst)
 
 ### Optional Enhancements
 
-- Dust/dirt particles when taking off from ground
-- Trail effect similar to [`trail_effect.rs`](src/render/trail_effect.rs)
-- Sound effects for wing flapping and wind
+- Dust/dirt particles when taking off from ground — not implemented
+- Trail effect — [`trail_effect.rs`](src/render/trail_effect.rs) exists and could be reused
+- Sound effects for wing flapping and wind — not implemented
 
 ## Implementation Order
 
-1. **Phase 1: Core Infrastructure**
-   - Create `FlightState` component
-   - Create `FlightToggleEvent`
-   - Create `FlightSettings` resource
-   - Implement `chat_command_detection_system`
-   - Implement `flight_toggle_system`
-   - Test: `/fly` command toggles flight state
+1. **Phase 1: Core Infrastructure** — DONE
+   - `FlightState` component, `FlightToggleEvent`, `FlightSettings` resource
+   - `is_fly_command` detection + `/fly` handling in chatbox
+   - `ensure_flight_state_system` + `flight_toggle_system`
+   - Result: `/fly` command toggles flight state
 
-2. **Phase 2: Movement**
-   - Implement `flight_movement_system`
-   - Integrate with `Position` and `FacingDirection`
-   - Test: Space bar moves character forward when flying
+2. **Phase 2: Movement** — DONE
+   - `flight_movement_system` (camera-directed, client-authoritative, `MoveCollision`)
+   - Integrates with `Position` and `FacingDirection`
+   - Result: Space bar moves character forward (with vertical control) when flying
 
-3. **Phase 3: Wing Visuals**
-   - Create procedural wing mesh
-   - Create wing materials
-   - Implement `wing_spawn_system`
-   - Implement `wing_animation_system`
-   - Test: Wings appear and animate when flying
+3. **Phase 3: Wing Visuals** — PARTIAL (wing mesh/material created, spawning DISABLED)
+   - `src/render/wing_material.rs` material helper created
+   - `wing_spawn_system` is disabled (logs only); `AngelicWings` unused
+   - `flight_pose_system` provides the character pose instead of wing animation
 
-4. **Phase 4: Wind Effects**
-   - Create wind particle components
-   - Implement `wind_effect_spawn_system`
-   - Implement `wind_effect_update_system`
-   - Test: Wind particles appear when flying forward
+4. **Phase 4: Wind Effects** — DONE
+   - Wind particle components, emitter spawn/despawn, spawn/update systems
+   - Result: Wind particles appear when flying forward
 
-5. **Phase 5: Polish**
-   - Add glow effects
-   - Tune animation speeds
-   - Add chat feedback messages
-   - Performance optimization
+5. **Phase 5: Polish** — PARTIAL
+   - Chat feedback via info! logs
+   - Tuning constants in `FlightSettings`
+   - Glow effects, wing visuals, and sound remain unimplemented
 
 ## Questions for Clarification
 
-1. **Flight Duration**: Should flight have a limited duration or be unlimited?
-2. **Collision**: Should flying characters collide with terrain/objects?
-3. **Multiplayer**: Should flight state sync with other clients?
-4. **Animation Override**: Should flight override character animations?
+1. **Flight Duration**: Should flight have a limited duration or be unlimited? (Currently unlimited)
+2. **Collision**: Should flying characters collide with terrain/objects? (Currently only a 1m minimum terrain height; ground collision is skipped while flying)
+3. **Multiplayer**: Should flight state sync with other clients? (Position is reported via `ClientMessage::MoveCollision`)
+4. **Animation Override**: Should flight override character animations? (Currently a flight pose is applied; the planned wing animation is absent)
 5. **Wing Design**: Any specific wing design preferences beyond "angelic"?

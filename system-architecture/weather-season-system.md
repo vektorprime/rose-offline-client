@@ -2,12 +2,12 @@
 
 ## Overview
 
-This document describes the architecture for implementing a weather season system in the Bevy 0.15.4 game client. The system supports three seasons - Fall, Spring, and Winter - each with unique particle effects and visual characteristics.
+This document describes the architecture of the weather season system in the Bevy 0.18.1 game client (note: not 0.15.4). The system supports four seasons - Spring, Summer, Fall, and Winter - with particle effects for Fall (falling leaves), Spring (rain), and Winter (snow). Summer defines flower and procedural grass settings, but has no active weather effects (the `bevy_procedural_grass` plugin is disabled in `src/lib.rs` because it is not compatible with Bevy 0.18).
 
 ## Design Goals
 
-1. **Modularity**: Each season is self-contained with its own particle configuration
-2. **Performance**: Efficient particle spawning and culling
+1. **Modularity**: Each season has its own settings resource and particle configuration
+2. **Performance**: Particle count capped by `max_particles`, particles despawned below ground
 3. **UI Integration**: Easy switching between seasons via settings UI
 4. **Extensibility**: Simple to add new seasons or modify existing ones
 
@@ -18,39 +18,40 @@ This document describes the architecture for implementing a weather season syste
 ```mermaid
 flowchart TB
     subgraph UI Layer
-        SettingsUI[Settings UI]
+        SettingsUI[Settings UI - render_seasons_page]
         SeasonSettings[SeasonSettings Resource]
     end
-    
+
     subgraph Core Systems
         SeasonPlugin[SeasonPlugin]
-        SeasonState[SeasonState Resource]
-        SeasonManager[Season Manager System]
+        SeasonMaterials[SeasonMaterials Resource]
+        CleanupSystem[season_cleanup_system]
+        WeatherSystem[weather_particle_system]
     end
-    
-    subgraph Particle Systems
-        FallSystem[Fall Particle System]
-        SpringSystem[Spring Particle System]
-        WinterSystem[Winter Particle System]
+
+    subgraph Particle Entities
+        Mesh3d[Mesh3d + MeshMaterial3d]
+        WeatherParticle[WeatherParticle Component]
+        SeasonMarker[SeasonMarker Component]
     end
-    
+
     subgraph Rendering
-        ParticleMaterial[ParticleMaterial]
-        ParticleRenderData[ParticleRenderData]
+        StandardMaterial[StandardMaterial - unlit, alpha blend]
         GPU[GPU Rendering]
     end
-    
+
     SettingsUI --> SeasonSettings
-    SeasonSettings --> SeasonManager
-    SeasonManager --> SeasonState
-    SeasonState --> FallSystem
-    SeasonState --> SpringSystem
-    SeasonState --> WinterSystem
-    FallSystem --> ParticleRenderData
-    SpringSystem --> ParticleRenderData
-    WinterSystem --> ParticleRenderData
-    ParticleRenderData --> ParticleMaterial
-    ParticleMaterial --> GPU
+    SeasonPlugin --> SeasonMaterials
+    SeasonPlugin --> CleanupSystem
+    SeasonPlugin --> WeatherSystem
+    SeasonMaterials --> WeatherSystem
+    SeasonSettings --> CleanupSystem
+    SeasonSettings --> WeatherSystem
+    WeatherSystem --> Mesh3d
+    WeatherSystem --> WeatherParticle
+    WeatherSystem --> SeasonMarker
+    Mesh3d --> StandardMaterial
+    StandardMaterial --> GPU
 ```
 
 ---
@@ -62,13 +63,14 @@ flowchart TB
 Location: `src/components/season.rs`
 
 ```rust
-/// Available seasons in the game
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect, Default)]
+/// Season types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Reflect)]
 pub enum Season {
     #[default]
     None,
-    Fall,
     Spring,
+    Summer,
+    Fall,
     Winter,
 }
 ```
@@ -79,25 +81,16 @@ Location: `src/components/season.rs`
 
 ```rust
 /// Component attached to weather particle entities
-#[derive(Component, Reflect, Debug, Clone)]
-#[reflect(Component)]
+#[derive(Component, Debug, Clone, Reflect)]
 pub struct WeatherParticle {
-    /// Current age of the particle in seconds
     pub age: f32,
-    /// Maximum lifetime in seconds
     pub lifetime: f32,
-    /// Current velocity in world units per second
     pub velocity: Vec3,
-    /// Base size of the particle
-    pub base_size: Vec2,
-    /// Current rotation in radians
+    pub base_size: f32,
     pub rotation: f32,
-    /// Rotation speed in radians per second
     pub rotation_speed: f32,
-    /// Wobble phase for organic movement
     pub wobble_phase: f32,
-    /// Which season this particle belongs to
-    pub season: Season,
+    pub wobble_amplitude: f32,
 }
 ```
 
@@ -106,12 +99,12 @@ pub struct WeatherParticle {
 Location: `src/components/season.rs`
 
 ```rust
-/// Marker component for season-specific entities that should be cleaned up on season change
-#[derive(Component, Debug, Clone, Copy)]
-pub struct SeasonMarker {
-    pub season: Season,
-}
+/// Marker component for season-specific entities (for cleanup)
+#[derive(Component, Debug, Clone, Reflect)]
+pub struct SeasonMarker(pub Season);
 ```
+
+`src/components/season.rs` also defines `SpringFlower`, `SummerFlower`, the deprecated `GrassBlade` (old CPU-based grass; replaced by GPU-based `bevy_procedural_grass`), and the `TerrainMeshForGrass` marker.
 
 ---
 
@@ -122,207 +115,199 @@ pub struct SeasonMarker {
 Location: `src/resources/season_settings.rs`
 
 ```rust
-/// Resource for season configuration settings
-#[derive(Resource, Reflect, Debug, Clone, Serialize, Deserialize)]
-#[reflect(Resource, Default, Serialize, Deserialize)]
+/// Global season settings
+#[derive(Resource, Debug, Clone, Reflect)]
 pub struct SeasonSettings {
-    /// Currently active season
-    pub current_season: Season,
-    /// Whether weather effects are enabled
     pub enabled: bool,
-    /// Maximum number of particles per season
+    pub current_season: Season,
     pub max_particles: usize,
-    /// Particle spawn rate per second
-    pub spawn_rate: f32,
-    /// Wind strength affecting particle drift
+    pub spawn_rate: f32, // particles per second
     pub wind_strength: f32,
-    /// Wind direction in radians
-    pub wind_direction: f32,
-    /// Player proximity radius for particle spawning
-    pub spawn_radius: f32,
-    /// Height above player to spawn particles
-    pub spawn_height: f32,
+    pub wind_direction: Vec2,
 }
 ```
+
+Default values: `enabled: true`, `current_season: Season::None`, `max_particles: 2000`, `spawn_rate: 100.0`, `wind_strength: 1.0`, `wind_direction: Vec2::X`.
+
+Note: there are no `spawn_radius` / `spawn_height` settings; the spawn radius (100.0 units) and spawn height (15-25 units above the player) are hardcoded in `weather_system.rs`.
 
 ### 2. FallSettings Resource
 
 Location: `src/resources/season_settings.rs`
 
 ```rust
-/// Fall-specific particle settings
-#[derive(Resource, Reflect, Debug, Clone)]
-#[reflect(Resource, Default)]
+/// Fall-specific settings
+#[derive(Resource, Debug, Clone, Reflect)]
 pub struct FallSettings {
-    /// Leaf colors as RGBA colors
-    pub leaf_colors: Vec<LinearRgba>,
-    /// Minimum leaf size
-    pub min_leaf_size: f32,
-    /// Maximum leaf size
-    pub max_leaf_size: f32,
-    /// Minimum fall speed
-    pub min_fall_speed: f32,
-    /// Maximum fall speed
-    pub max_fall_speed: f32,
-    /// Horizontal drift amount
-    pub drift_amount: f32,
-    /// Wobble frequency for swaying motion
+    pub leaf_colors: Vec<Color>,
+    pub fall_speed: f32,
+    pub drift_factor: f32,
     pub wobble_frequency: f32,
-    /// Wobble amplitude
-    pub wobble_amplitude: f32,
-    /// Rotation speed range
-    pub rotation_speed_range: Range<f32>,
+    pub leaf_size_range: (f32, f32),
+    pub lifetime_range: (f32, f32),
 }
 ```
+
+Default values: `leaf_colors` orange-red/orange/gold/brown, `fall_speed: 2.0`, `drift_factor: 1.5`, `wobble_frequency: 2.0`, `leaf_size_range: (0.5, 1.5)`, `lifetime_range: (8.0, 15.0)`.
 
 ### 3. SpringSettings Resource
 
 Location: `src/resources/season_settings.rs`
 
 ```rust
-/// Spring-specific particle and effect settings
-#[derive(Resource, Reflect, Debug, Clone)]
-#[reflect(Resource, Default)]
+/// Spring-specific settings
+#[derive(Resource, Debug, Clone, Reflect)]
 pub struct SpringSettings {
-    // Rain settings
-    /// Rain drop color
-    pub rain_color: LinearRgba,
-    /// Rain drop size
-    pub rain_drop_size: Vec2,
-    /// Rain fall speed
-    pub rain_fall_speed: f32,
-    /// Rain streak length
-    pub rain_streak_length: f32,
-    /// Rain splash probability on ground hit
-    pub splash_probability: f32,
-    
-    // Flower settings
-    /// Flower spawn probability near player
-    pub flower_spawn_probability: f32,
-    /// Maximum flowers to spawn
-    pub max_flowers: usize,
-    /// Flower colors
-    pub flower_colors: Vec<LinearRgba>,
-    /// Flower lifetime in seconds
-    pub flower_lifetime: Range<f32>,
+    pub rain_drop_size: f32,
+    pub rain_speed: f32,
+    pub rain_color: Color,
+    pub flower_spawn_chance: f32,
+    pub flower_lifetime: f32,
+    pub flower_colors: Vec<Color>,
 }
 ```
+
+Default values: `rain_drop_size: 0.5`, `rain_speed: 15.0`, `rain_color: srgba(0.6, 0.75, 0.9, 0.8)`, `flower_spawn_chance: 0.01`, `flower_lifetime: 30.0`, pink/purple/yellow/white `flower_colors`.
 
 ### 4. WinterSettings Resource
 
 Location: `src/resources/season_settings.rs`
 
 ```rust
-/// Winter-specific particle settings
-#[derive(Resource, Reflect, Debug, Clone)]
-#[reflect(Resource, Default)]
+/// Winter-specific settings
+#[derive(Resource, Debug, Clone, Reflect)]
 pub struct WinterSettings {
-    /// Snowflake color
-    pub snow_color: LinearRgba,
-    /// Minimum snowflake size
-    pub min_snow_size: f32,
-    /// Maximum snowflake size
-    pub max_snow_size: f32,
-    /// Minimum fall speed
-    pub min_fall_speed: f32,
-    /// Maximum fall speed
-    pub max_fall_speed: f32,
-    /// Horizontal drift amount
-    pub drift_amount: f32,
-    /// Turbulence strength for swirling motion
-    pub turbulence_strength: f32,
-    /// Turbulence scale
-    pub turbulence_scale: f32,
-    /// Snow accumulation on ground - visual only
-    pub ground_tint_strength: f32,
+    pub snowflake_size_range: (f32, f32),
+    pub fall_speed: f32,
+    pub turbulence: f32,
+    pub snow_color: Color,
+    pub lifetime_range: (f32, f32),
 }
 ```
+
+Default values: `snowflake_size_range: (0.2, 0.6)`, `fall_speed: 1.0`, `turbulence: 0.5`, `snow_color: srgba(1.0, 1.0, 1.0, 0.9)`, `lifetime_range: (10.0, 20.0)`.
+
+### 5. SummerSettings Resource
+
+Location: `src/resources/season_settings.rs`
+
+```rust
+/// Summer-specific settings
+#[derive(Resource, Debug, Clone, Reflect)]
+pub struct SummerSettings {
+    pub max_flowers: usize,
+    pub spawn_radius: f32,
+    pub flower_spawn_chance: f32,
+    pub flower_colors: Vec<Color>,
+    pub flower_stem_height_range: (f32, f32),
+    pub flower_head_size: f32,
+    pub wind_intensity: f32,
+    // Procedural grass settings (GPU-based)
+    pub grass_density: u32,
+    pub blade_length: f32,
+    pub blade_width: f32,
+    pub blade_tilt: f32,
+    pub blade_tilt_variance: f32,
+    pub blade_p1_flexibility: f32,
+    pub blade_p2_flexibility: f32,
+    pub blade_curve: f32,
+}
+```
+
+Default values: `max_flowers: 1000`, `spawn_radius: 50.0`, `flower_spawn_chance: 0.02`, `flower_stem_height_range: (4.0, 7.0)`, `flower_head_size: 1.5`, `wind_intensity: 1.0`, `grass_density: 25`, `blade_length: 1.5`, `blade_width: 0.05`, `blade_tilt: 0.5`, `blade_tilt_variance: 0.2`, flexibilities 0.5, `blade_curve: 15.0`.
+
+### 6. SeasonMaterials Resource
+
+Location: `src/resources/season_materials.rs`
+
+Pre-created meshes and materials for season particles, created once at startup by `setup_season_materials` (registered in `PreUpdate`) to avoid `ResMut` conflicts:
+
+- Leaf mesh (`Rhombus(0.4, 0.8)`) and leaf materials (orange-red/orange/gold/brown, alpha blend, unlit)
+- Rain mesh (`Rectangle(0.1, 0.6)`) and rain material (srgba(0.7, 0.8, 0.9, 0.7))
+- Flower mesh (`Circle(0.15)`) and flower materials (pink/purple/yellow/white)
+- Snow mesh (`RegularPolygon(0.25, 6)` hexagon) and snow material (white, alpha 0.9)
+- Grass mesh (`Rectangle(0.1, 0.6)`) and grass materials (green shades, opaque)
+- Summer flower mesh (`Circle(0.15)`) and summer flower materials (bright warm colors, opaque)
 
 ---
 
 ## System Scheduling and Ordering
 
-### System Sets
-
-Location: `src/lib.rs` or `src/systems/season_plugin.rs`
+The `SeasonPlugin` (`src/systems/season/mod.rs`) does not define custom `SystemSet`s. It registers:
 
 ```rust
-#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
-pub enum SeasonSystemSets {
-    /// Season state management - runs first
-    SeasonManagement,
-    /// Particle spawning systems
-    ParticleSpawning,
-    /// Particle update systems
-    ParticleUpdate,
-    /// Particle cleanup systems - runs last
-    ParticleCleanup,
+impl Plugin for SeasonPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<crate::resources::SeasonSettings>()
+            .init_resource::<crate::resources::FallSettings>()
+            .init_resource::<crate::resources::SpringSettings>()
+            .init_resource::<crate::resources::SummerSettings>()
+            .init_resource::<crate::resources::WinterSettings>()
+            .add_systems(PreUpdate, crate::resources::setup_season_materials)
+            .add_systems(
+                Update,
+                (
+                    season_manager::season_cleanup_system,
+                    weather_system::weather_particle_system,
+                ),
+            );
+    }
 }
 ```
 
-### System Configuration
+`SeasonPlugin` is registered in `src/lib.rs` with the comment `// Weather season system`.
 
-```rust
-app.configure_sets(
-    Update,
-    (
-        SeasonSystemSets::SeasonManagement,
-        SeasonSystemSets::ParticleSpawning.after(SeasonSystemSets::SeasonManagement),
-        SeasonSystemSets::ParticleUpdate.after(SeasonSystemSets::ParticleSpawning),
-        SeasonSystemSets::ParticleCleanup.after(SeasonSystemSets::ParticleUpdate),
-    )
-        .chain(),
-);
-```
-
-### System Registration Order
+### System Flow
 
 ```mermaid
 sequenceDiagram
-    participant SM as SeasonManagerSystem
-    participant PS as ParticleSpawnSystem
-    participant PU as ParticleUpdateSystem
-    participant PC as ParticleCleanupSystem
+    participant SM as season_cleanup_system
+    participant WS as weather_particle_system
     participant R as Rendering
-    
+
     Note over SM,R: Update Schedule
-    
-    SM->>SM: Check season changes
-    SM->>SM: Update SeasonState
-    
-    PS->>PS: Get current season
-    PS->>PS: Spawn particles near player
-    
-    PU->>PU: Update particle positions
-    PU->>PU: Apply wind and gravity
-    PU->>PU: Update particle ages
-    
-    PC->>PC: Remove dead particles
-    PC->>PC: Handle ground collisions
-    
-    R->>R: Render particles via ParticleMaterial
+
+    SM->>SM: If SeasonSettings changed, despawn entities whose SeasonMarker != current_season
+
+    WS->>WS: Skip if !settings.enabled
+    WS->>WS: Spawn particles near player (radius 0-100, 15-25 above player)
+    WS->>WS: Update particle ages and movement (wind, wobble, turbulence)
+    WS->>WS: Despawn particles below y=0.5 or age >= lifetime
+    WS->>WS: Billboard: rotate particle to face camera
+
+    R->>R: Render particles via StandardMaterial (unlit, alpha blend)
 ```
 
 ---
 
 ## UI Integration
 
-### Settings Page Addition
+### Settings Page
 
 Location: `src/ui/ui_settings_system.rs`
 
-Add a new `SettingsPage` variant:
+The `SettingsPage` enum already contains a `Seasons` variant:
 
 ```rust
 #[derive(Copy, Clone, PartialEq, Debug)]
 enum SettingsPage {
     Sound,
+    Blood,
+    Sky,
+    Stars,
+    Clouds,
+    StarrySkyRender,
     DepthOfField,
     VolumetricFog,
     Water,
     Fish,
     Birds,
-    Seasons,  // NEW
+    Seasons,
+    DirtDash,
+    WindSway,
+    PostProcessing,
+    Graphics,
+    Terrain,
 }
 ```
 
@@ -333,379 +318,260 @@ flowchart LR
     subgraph Settings Window
         Tab[Seasons Tab]
     end
-    
+
     subgraph Seasons Tab Content
         Enabled[Enabled Checkbox]
-        Season[Season Dropdown: None/Fall/Spring/Winter]
+        Season[Season Dropdown: None/Spring/Summer/Fall/Winter]
         MaxParticles[Max Particles Slider]
         SpawnRate[Spawn Rate Slider]
         WindStrength[Wind Strength Slider]
-        WindDirection[Wind Direction Slider]
+        Grass[Procedural Grass Sliders]
     end
-    
+
     Tab --> Enabled
     Tab --> Season
     Tab --> MaxParticles
     Tab --> SpawnRate
     Tab --> WindStrength
-    Tab --> WindDirection
+    Tab --> Grass
 ```
 
-### UI Implementation Pattern
+### UI Implementation
 
-Following the existing pattern in [`ui_settings_system.rs`](src/ui/ui_settings_system.rs:405):
+The seasons page is rendered by `render_seasons_page(ui, &mut season_settings, &mut summer_settings)` in `src/ui/ui_settings_system.rs`:
 
 ```rust
-SettingsPage::Seasons => {
+fn render_seasons_page(
+    ui: &mut egui::Ui,
+    season_settings: &mut SeasonSettings,
+    summer_settings: &mut SummerSettings,
+) {
     egui::Grid::new("season_settings")
         .num_columns(2)
         .show(ui, |ui| {
-            ui.label("Weather Effects:");
-            ui.checkbox(&mut season_settings.enabled, "Enabled");
-            ui.end_row();
-            
-            ui.label("Season:");
-            egui::ComboBox::from_label("")
-                .selected_text(format!("{:?}", season_settings.current_season))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut season_settings.current_season, Season::None, "None");
-                    ui.selectable_value(&mut season_settings.current_season, Season::Fall, "Fall");
-                    ui.selectable_value(&mut season_settings.current_season, Season::Spring, "Spring");
-                    ui.selectable_value(&mut season_settings.current_season, Season::Winter, "Winter");
-                });
-            ui.end_row();
-            
-            ui.label("Max Particles:");
-            ui.add(egui::Slider::new(&mut season_settings.max_particles, 100..=5000).show_value(true));
-            ui.end_row();
-            
-            ui.label("Spawn Rate:");
-            ui.add(egui::Slider::new(&mut season_settings.spawn_rate, 1.0..=100.0).show_value(true));
-            ui.end_row();
-            
-            ui.label("Wind Strength:");
-            ui.add(egui::Slider::new(&mut season_settings.wind_strength, 0.0..=10.0).show_value(true));
-            ui.end_row();
-            
-            ui.label("Wind Direction:");
-            ui.add(egui::Slider::new(&mut season_settings.wind_direction, 0.0..=std::f32::consts::TAU).show_value(true));
-            ui.end_row();
+            settings_checkbox(ui, "Weather Effects:", &mut season_settings.enabled, "Enabled");
+
+            let season_text = match season_settings.current_season {
+                Season::None => "None",
+                Season::Spring => "Spring",
+                Season::Summer => "Summer",
+                Season::Fall => "Fall",
+                Season::Winter => "Winter",
+            };
+            settings_combo(
+                ui,
+                "season",
+                "Season:",
+                season_text,
+                &mut season_settings.current_season,
+                &[
+                    (Season::None, "None"),
+                    (Season::Spring, "Spring"),
+                    (Season::Summer, "Summer"),
+                    (Season::Fall, "Fall"),
+                    (Season::Winter, "Winter"),
+                ],
+            );
+
+            settings_slider(ui, "Max Particles:", &mut season_settings.max_particles, 1000..=20000, None);
+            settings_slider(ui, "Spawn Rate:", &mut season_settings.spawn_rate, 100.0..=5000.0, Some("/s"));
+            settings_slider(ui, "Wind Strength:", &mut season_settings.wind_strength, 0.0..=5.0, None);
         });
-    
-    ui.separator();
-    ui.label("Tip: Season changes apply immediately. Disable weather effects for best performance.");
+    // ... procedural grass sliders (grass_density, blade_length, ...)
+    // ... tip: "Season changes apply immediately. Disable to turn off all weather effects."
 }
 ```
+
+There is no wind-direction slider; `wind_direction` is a fixed `Vec2` (default `Vec2::X`).
 
 ---
 
 ## Particle Effect Specifications
 
+Particles are spawned as ordinary mesh entities (`Mesh3d` + `MeshMaterial3d<StandardMaterial>`) with the `WeatherParticle` component; billboarding (facing the camera) is applied per-frame in `weather_particle_system`.
+
 ### Fall - Falling Leaves
 
 **Visual Characteristics:**
-- Leaf-shaped particles with warm autumn colors
+- Rhombus (diamond) shaped particles with warm autumn colors
 - Gentle swaying motion with wobble
 - Slow descent with horizontal drift
-- Rotation around multiple axes
+- Rotation around the z-axis while billboarded
 
-**Particle Parameters:**
+**Particle Parameters (from `FallSettings` defaults):**
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| Size | 0.3 - 0.8 units | Leaf size variation |
+| Size | 0.5 - 1.5 units | Leaf size variation |
 | Lifetime | 8 - 15 seconds | Time before despawn |
-| Fall Speed | 1.0 - 3.0 units/sec | Vertical descent rate |
-| Drift | 2.0 - 5.0 units/sec | Horizontal wind effect |
-| Wobble Freq | 0.5 - 1.5 Hz | Swaying frequency |
-| Wobble Amp | 0.5 - 1.5 units | Swaying amplitude |
-| Rotation | 0.5 - 2.0 rad/sec | Spinning speed |
+| Fall Speed | 2.0 units/sec | Vertical descent rate |
+| Drift | 1.5 units/sec | Horizontal drift factor |
+| Wobble Freq | 2.0 Hz | Swaying frequency |
+| Wobble Amp | 0.5 - 1.0 units | Swaying amplitude |
+| Rotation | -1.0 - 1.0 rad/sec | Spinning speed |
 
-**Colors:**
+**Colors (from `FallSettings` defaults):**
 ```rust
 vec![
-    LinearRgba::new(0.8, 0.2, 0.1, 1.0),  // Red
-    LinearRgba::new(0.9, 0.4, 0.1, 1.0),  // Orange
-    LinearRgba::new(0.9, 0.6, 0.2, 1.0),  // Light orange
-    LinearRgba::new(0.7, 0.5, 0.2, 1.0),  // Brown
-    LinearRgba::new(0.8, 0.7, 0.2, 1.0),  // Gold
+    Color::srgb(0.8, 0.3, 0.1), // Orange-red
+    Color::srgb(0.9, 0.5, 0.0), // Orange
+    Color::srgb(0.8, 0.6, 0.1), // Gold
+    Color::srgb(0.6, 0.2, 0.0), // Brown
 ]
 ```
 
-### Spring - Rain and Flowers
+### Spring - Rain
 
 **Rain Visual Characteristics:**
-- Thin elongated droplets
+- Elongated rectangle droplets
 - Fast vertical descent
-- Slight angle based on wind
-- Splash effect on ground contact
+- Slight horizontal velocity based on wind direction
+- No splash effect (a `splash_probability` setting does not exist)
 
-**Rain Parameters:**
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| Size | (0.05, 0.3) units | Drop width and length |
-| Lifetime | 1.0 - 2.0 seconds | Time before despawn |
-| Fall Speed | 15.0 - 25.0 units/sec | Fast vertical descent |
-| Streak Length | 0.5 - 1.0 units | Motion blur effect |
-| Splash Chance | 10% | Probability of splash |
-
-**Flower Parameters:**
+**Rain Parameters (from `SpringSettings` defaults):**
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| Spawn Prob | 0.01 per frame | Chance to spawn near player |
-| Max Flowers | 100 | Maximum simultaneous flowers |
-| Lifetime | 30 - 60 seconds | Time before fading |
-| Size | 0.2 - 0.4 units | Flower size |
+| Size | 0.5 x 1.0 units | Drop width and length (scaled 0.5, 1.0, 0.5) |
+| Lifetime | 2.0 - 3.0 seconds | Time before despawn |
+| Fall Speed | 15.0 units/sec | Fast vertical descent |
+| Color | srgba(0.6, 0.75, 0.9, 0.8) | Semi-transparent blue-grey |
 
-**Flower Colors:**
-```rust
-vec![
-    LinearRgba::new(1.0, 0.8, 0.9, 1.0),  // Pink
-    LinearRgba::new(1.0, 1.0, 0.8, 1.0),  // Light yellow
-    LinearRgba::new(0.9, 0.9, 1.0, 1.0),  // Light purple
-    LinearRgba::new(1.0, 1.0, 1.0, 1.0),  // White
-]
-```
+Note: `SpringSettings` also defines `flower_spawn_chance`, `flower_lifetime`, and `flower_colors`, and a `SpringFlower` component exists, but no flower spawning logic is currently implemented in the season systems.
 
 ### Winter - Snow
 
 **Visual Characteristics:**
-- Soft round snowflakes
+- Soft hexagon snowflakes
 - Slow, gentle descent
 - Turbulent swirling motion
-- Accumulation tint on ground
 
-**Snow Parameters:**
+**Snow Parameters (from `WinterSettings` defaults):**
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| Size | 0.1 - 0.4 units | Snowflake size |
+| Size | 0.2 - 0.6 units | Snowflake size |
 | Lifetime | 10 - 20 seconds | Time before despawn |
-| Fall Speed | 0.5 - 2.0 units/sec | Slow descent |
-| Drift | 1.0 - 3.0 units/sec | Horizontal movement |
-| Turbulence | 0.5 - 1.5 units | Swirling amplitude |
-| Turb Scale | 2.0 - 5.0 | Noise frequency |
+| Fall Speed | 1.0 units/sec | Slow descent |
+| Turbulence | 0.5 units | Swirling amplitude |
 
 **Color:**
 ```rust
-LinearRgba::new(0.95, 0.95, 1.0, 0.9)  // Slightly blue-white
+Color::srgba(1.0, 1.0, 1.0, 0.9)  // White, slightly transparent
 ```
+
+### Summer
+
+`Season::Summer` currently has no weather particles: `particle_spawn` in `weather_system.rs` returns `None` for summer (`_ => None`), and the GPU-based procedural grass plugin is disabled (`src/lib.rs`). `SummerSettings` and the summer materials (grass, flowers) exist and are exposed in the settings UI, but have no active effect.
 
 ---
 
-## File Organization Plan
+## File Organization
 
-### New Files to Create
+### Implemented Files
 
 ```
 src/
 ├── components/
-│   └── season.rs              # Season enum, WeatherParticle, SeasonMarker
+│   └── season.rs              # Season enum, WeatherParticle, SeasonMarker, SpringFlower, SummerFlower, GrassBlade (deprecated), TerrainMeshForGrass
 │
 ├── resources/
-│   └── season_settings.rs     # SeasonSettings, FallSettings, SpringSettings, WinterSettings
+│   ├── season_settings.rs     # SeasonSettings, FallSettings, SpringSettings, WinterSettings, SummerSettings
+│   └── season_materials.rs    # SeasonMaterials + setup_season_materials
 │
 ├── systems/
 │   └── season/
-│       ├── mod.rs             # SeasonPlugin definition
-│       ├── season_manager.rs  # Season state management
-│       ├── fall_system.rs     # Fall leaf particle system
-│       ├── spring_system.rs   # Spring rain and flower system
-│       ├── winter_system.rs   # Winter snow particle system
-│       └── particle_spawner.rs # Shared particle spawning utilities
+│       ├── mod.rs             # SeasonPlugin definition and registration
+│       ├── season_manager.rs  # season_cleanup_system (despawn on season change)
+│       └── weather_system.rs  # weather_particle_system, particle_spawn, update_particle_movement
 │
-└── render/
-    └── shaders/
-        └── weather_particle.wgsl  # Optional: custom weather shader
+└── ui/
+    └── ui_settings_system.rs  # Seasons settings page (render_seasons_page)
 ```
 
-### Files to Modify
+There is no custom WGSL shader (`render/shaders/weather_particle.wgsl` does not exist); particles use the built-in `StandardMaterial` pipeline.
 
-1. **`src/components/mod.rs`** - Add `mod season;` and export
-2. **`src/resources/mod.rs`** - Add `mod season_settings;` and export
-3. **`src/ui/ui_settings_system.rs`** - Add Seasons settings page
-4. **`src/lib.rs`** - Register SeasonPlugin and resources
+### Wired-Up Modules
+
+1. **`src/components/mod.rs`** - `pub use season::{GrassBlade, Season, SeasonMarker, SpringFlower, SummerFlower, TerrainMeshForGrass, WeatherParticle};`
+2. **`src/resources/mod.rs`** - exports `season_settings` types and `season_materials::{setup_season_materials, SeasonMaterials}`
+3. **`src/ui/ui_settings_system.rs`** - Seasons settings page
+4. **`src/lib.rs`** - registers `systems::season::SeasonPlugin`
 
 ---
 
 ## Integration with Existing Systems
 
-### Particle Material Integration
+### Rendering Integration
 
-The weather system integrates with the existing [`ParticleMaterial`](src/render/particle_material.rs:16) system:
+The weather system does **not** use `ParticleMaterial` / `ParticleRenderData` (the storage-buffer-based rose effect particle pipeline in `src/render/particle_material.rs` and `src/render/particle_render_data.rs`, which is used for in-game rose effect files). Instead, weather particles are:
 
-```mermaid
-flowchart LR
-    subgraph Weather System
-        WS[WeatherParticle Component]
-        WD[Weather Particle Data]
-    end
-    
-    subgraph Existing Particle System
-        PRD[ParticleRenderData]
-        PM[ParticleMaterial]
-        SB[ShaderStorageBuffer]
-    end
-    
-    WS --> WD
-    WD --> PRD
-    PRD --> PM
-    PM --> SB
-```
+1. **Mesh entities**: spawned with `Mesh3d` + `MeshMaterial3d<StandardMaterial>` (unlit, `AlphaMode::Blend`)
+2. **CPU billboards**: each frame the system builds a camera-facing rotation matrix (`Quat::from_mat3`) and applies it to the particle transform; `Season::Winter | Season::Fall` additionally apply their own z-rotation on top
 
-**Integration Points:**
+### Player and Camera Tracking
 
-1. **ParticleRenderData**: Weather particles populate the same [`ParticleRenderData`](src/render/particle_render_data.rs:17) structure used by existing particle effects
-
-2. **Storage Buffers**: Use the same storage buffer pattern for positions, sizes, colors, and textures
-
-3. **Billboard Types**: Use [`ParticleRenderBillboardType::Full`](src/render/particle_render_data.rs:13) for camera-facing particles
-
-### Camera and Player Tracking
-
-Weather particles spawn around the player camera position:
+Weather particles spawn around the **player** position (not the camera), using `PlayerCharacter`:
 
 ```rust
-fn get_spawn_position(
-    camera_transform: &GlobalTransform,
-    settings: &SeasonSettings,
-    rng: &mut impl Rng,
-) -> Vec3 {
-    let camera_pos = camera_transform.translation();
-    
-    // Random position in a cylinder above the camera
-    let angle = rng.gen::<f32>() * std::f32::consts::TAU;
-    let radius = rng.gen::<f32>() * settings.spawn_radius;
-    let height = settings.spawn_height;
-    
-    Vec3::new(
-        camera_pos.x + radius * angle.cos(),
-        camera_pos.y + height,
-        camera_pos.z + radius * angle.sin(),
-    )
-}
+// Spawn in a circle around player using radius
+let spawn_radius = 100.0; // Distance from player
+let angle = rand::random::<f32>() * std::f32::consts::TAU;
+let radius_offset = rand::random::<f32>() * spawn_radius;
+let offset_x = angle.cos() * radius_offset;
+let offset_z = angle.sin() * radius_offset;
+// Spawn 15-25 units above player
+let spawn_y = player_pos.y + 15.0 + rand::random::<f32>() * 10.0;
+
+let position = Vec3::new(player_pos.x + offset_x, spawn_y, player_pos.z + offset_z);
 ```
+
+The main `Camera3d` (excluding `WaterReflectionCamera`) transform is queried only for billboard orientation.
 
 ---
 
 ## Performance Considerations
 
-### Particle Pooling
+### Particle Cap
 
-Implement object pooling to avoid allocation overhead:
+Spawning is gated by `max_particles`:
 
 ```rust
-#[derive(Resource)]
-pub struct ParticlePool {
-    particles: Vec<Entity>,
-    active_count: usize,
-    max_particles: usize,
+let current_count = query.iter().len();
+if current_count < settings.max_particles {
+    let particles_this_frame = ((settings.spawn_rate * dt) as usize).max(10);
+    // ...
 }
 ```
 
-### Level of Detail
+### Despawn Rules
 
-Reduce particle count based on performance:
-
-```rust
-fn get_effective_spawn_rate(
-    settings: &SeasonSettings,
-    diagnostics: &Res<FrameDiagnostics>,
-) -> f32 {
-    let fps = diagnostics.fps as f32;
-    
-    if fps < 30.0 {
-        settings.spawn_rate * 0.5  // Reduce at low FPS
-    } else if fps < 45.0 {
-        settings.spawn_rate * 0.75
-    } else {
-        settings.spawn_rate
-    }
-}
-```
-
-### Spatial Culling
-
-Only spawn particles within view distance:
-
-```rust
-fn is_in_view_range(
-    particle_pos: Vec3,
-    camera_pos: Vec3,
-    view_distance: f32,
-) -> bool {
-    particle_pos.distance_squared(camera_pos) < view_distance * view_distance
-}
-```
+Particles are despawned when `age >= lifetime` or when `transform.translation.y < 0.5` (ground level). There is no object pooling, no FPS-based LOD (`FrameDiagnostics` does not exist in the codebase), and no explicit view-distance culling - particles are always spawned in a fixed 100-unit radius around the player.
 
 ---
 
-## Implementation Checklist
+## Implementation Status
 
-### Phase 1: Core Infrastructure
-- [ ] Create `src/components/season.rs` with Season enum and WeatherParticle
-- [ ] Create `src/resources/season_settings.rs` with all settings resources
-- [ ] Create `src/systems/season/mod.rs` with SeasonPlugin
-- [ ] Register components and resources in `lib.rs`
+### Completed
+- [x] `src/components/season.rs` with Season enum, WeatherParticle, SeasonMarker
+- [x] `src/resources/season_settings.rs` with all season settings resources
+- [x] `src/resources/season_materials.rs` with pre-created meshes/materials
+- [x] `src/systems/season/mod.rs` with SeasonPlugin
+- [x] Weather systems: `season_cleanup_system`, `weather_particle_system` (rain/snow/leaves)
+- [x] Seasons page in `ui_settings_system.rs`
+- [x] SeasonPlugin and resources registered in `lib.rs`
 
-### Phase 2: Season Implementation
-- [ ] Implement `fall_system.rs` with leaf particle spawning
-- [ ] Implement `spring_system.rs` with rain and flowers
-- [ ] Implement `winter_system.rs` with snow particles
-- [ ] Create shared `particle_spawner.rs` utilities
-
-### Phase 3: UI Integration
-- [ ] Add Seasons page to `ui_settings_system.rs`
-- [ ] Add season settings tab with all controls
-- [ ] Connect UI to SeasonSettings resource
-
-### Phase 4: Polish and Optimization
-- [ ] Implement particle pooling
-- [ ] Add LOD system for performance
-- [ ] Test all season transitions
-- [ ] Profile and optimize
+### Not Implemented
+- [ ] Particle pooling
+- [ ] FPS-based LOD system
+- [ ] Spring flower spawning (`SpringFlower` component unused)
+- [ ] Summer weather/grass (procedural grass plugin disabled - not compatible with Bevy 0.18)
 
 ---
 
 ## Testing Strategy
 
-### Unit Tests
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_season_default() {
-        assert_eq!(Season::default(), Season::None);
-    }
-    
-    #[test]
-    fn test_particle_lifetime() {
-        let particle = WeatherParticle::new(Season::Fall);
-        assert!(particle.lifetime > 0.0);
-        assert!(particle.age == 0.0);
-    }
-    
-    #[test]
-    fn test_settings_serialization() {
-        let settings = SeasonSettings::default();
-        let json = serde_json::to_string(&settings).unwrap();
-        let decoded: SeasonSettings = serde_json::from_str(&json).unwrap();
-        assert_eq!(settings.current_season, decoded.current_season);
-    }
-}
-```
-
-### Integration Tests
-
-1. **Season Switching**: Verify particles despawn on season change
-2. **Particle Limits**: Ensure max_particles is respected
-3. **UI Responsiveness**: Settings changes apply immediately
-4. **Performance**: Maintain 60 FPS with max particles
+The season modules contain no automated `#[cfg(test)]` tests. Verification is done manually through the settings UI (season switching, particle limits, immediate application of settings changes).
 
 ---
 
@@ -718,11 +584,13 @@ mod tests {
 3. **Sound Integration**: Rain sounds, wind sounds per season
 4. **Ground Effects**: Snow accumulation, wet ground shaders
 5. **NPC Reactions**: NPCs react to weather changes
+6. **Summer effects**: flower spawning and GPU grass once the plugin is updated for Bevy 0.18
+7. **Spring splash effects** on ground contact
 
-### Configuration File Support
+### Configuration File Support (not implemented)
 
 ```toml
-# seasons.toml
+# seasons.toml (proposed, not yet implemented)
 [seasons.default]
 enabled = true
 max_particles = 1000
@@ -744,12 +612,10 @@ ground_tint = "#EEF0FF"
 
 ## Summary
 
-This architecture provides a modular, performant weather season system that:
+The implemented weather season system:
 
-1. **Follows existing patterns** established by Bird and Fish systems
-2. **Integrates cleanly** with the existing particle rendering pipeline
-3. **Provides UI controls** consistent with other settings pages
-4. **Supports easy extension** for new seasons or effects
-5. **Maintains performance** through pooling and LOD systems
-
-The implementation should proceed in phases, starting with core infrastructure, then individual seasons, followed by UI integration and optimization.
+1. **Follows existing patterns** established by Bird and Fish systems (settings resources + UI page)
+2. **Renders weather particles** as simple unlit alpha-blended mesh entities with per-frame CPU billboarding (no custom shader or storage-buffer pipeline required)
+3. **Provides UI controls** consistent with other settings pages (checkbox, dropdown, sliders)
+4. **Supports easy extension** for new seasons or effects (a `Season::Summer` variant and summer settings/materials already exist)
+5. **Maintains performance** through `max_particles` capping and ground/lifetime despawn rules

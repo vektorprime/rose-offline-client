@@ -4,8 +4,6 @@
 //! - Volumetric fog using Beer-Lambert law
 //! - Depth-based color absorption (red absorbed fastest, blue penetrates)
 //! - Procedural caustics effect
-//!
-//! Based on the implementation plan in `plans/underwater-rendering-fix.md`
 
 use bevy::{
     asset::{load_internal_asset, weak_handle, Handle},

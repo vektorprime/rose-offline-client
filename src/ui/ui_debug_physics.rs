@@ -5,7 +5,7 @@ use bevy::{
     prelude::{
         AlphaMode, Assets, ButtonInput, Camera, Camera3d, Color, Commands, GlobalTransform, Handle,
         KeyCode, Local, Mesh, Mesh3d, MeshMaterial3d, Query, Res, ResMut, StandardMaterial, Time,
-        Transform, Visibility, With,
+        Transform, Visibility, With, Without,
     },
     window::{PrimaryWindow, Window},
 };
@@ -75,7 +75,10 @@ pub fn ui_debug_physics_system(
     rapier_context: RapierContext,
     time: Res<Time>,
     query_primary_window: Query<&Window, With<PrimaryWindow>>,
-    query_camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    query_camera: Query<
+        (&Camera, &GlobalTransform),
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
 ) {
     if !ui_state_debug_windows.debug_ui_open {
         return;

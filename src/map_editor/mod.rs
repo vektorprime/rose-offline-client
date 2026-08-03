@@ -128,7 +128,10 @@ pub fn map_editor_enter_system(
     mut commands: Commands,
     mut map_editor_state: ResMut<MapEditorState>,
     mut zone_list_state: ResMut<ZoneListPanelState>,
-    query_cameras: Query<Entity, With<Camera3d>>,
+    query_cameras: Query<
+        Entity,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
 ) {
     log::info!("[MapEditor] Entering map editor mode");
     map_editor_state.enabled = true;
