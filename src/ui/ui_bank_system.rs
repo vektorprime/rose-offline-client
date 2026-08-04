@@ -6,7 +6,7 @@ use bevy::{
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::{
-    components::{CharacterInfo, ItemSlot},
+    components::CharacterInfo,
     messages::client::ClientMessage,
 };
 
@@ -18,7 +18,8 @@ use crate::{
         tooltips::PlayerTooltipQuery,
         tooltip_on_hover,
         widgets::{DataBindings, Dialog},
-        DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop, UiStateWindows,
+        DragAndDropId, DragAndDropSlot, SlotAccept, UiSoundEvent, UiStateDragAndDrop,
+        UiStateWindows,
     },
 };
 
@@ -71,12 +72,7 @@ fn ui_add_bank_slot(
                         None,
                         game_data,
                         ui_resources,
-                        |drag_source: &DragAndDropId| -> bool {
-                            matches!(
-                                drag_source,
-                                DragAndDropId::Inventory(ItemSlot::Inventory(_, _))
-                            )
-                        },
+                        SlotAccept::InventoryItem,
                         &mut ui_state_dnd.dragged_item,
                         &mut dropped_item,
                         [40.0, 40.0],

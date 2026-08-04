@@ -4,7 +4,7 @@ use super::*;
 pub(super) fn spawn_terrain(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    terrain_materials: &mut Assets<TerrainMaterial>,
+    terrain_material: &Handle<TerrainMaterial>,
     tile_textures: &Vec<Handle<Image>>,
     zone_data: &ZoneLoaderAsset,
     block_data: &ZoneLoaderBlock,
@@ -16,7 +16,7 @@ pub(super) fn spawn_terrain(
         block_y = block_data.block_y
     )
     .entered();
-    log::info!(
+    log::debug!(
         "[SPAWN TERRAIN] Spawning terrain block {}_{}",
         block_data.block_x,
         block_data.block_y
@@ -203,9 +203,9 @@ pub(super) fn spawn_terrain(
     // This was the missing piece - tile_ids was computed but never added to the mesh!
     mesh.insert_attribute(crate::render::TERRAIN_MESH_ATTRIBUTE_TILE_INFO, tile_ids);
 
-    log::info!("[SPAWN TERRAIN] Block {}_{}: Mesh created with {} vertices, {} triangles (with tile_info attribute)",
+    log::debug!("[SPAWN TERRAIN] Block {}_{}: Mesh created with {} vertices, {} triangles (with tile_info attribute)",
         block_data.block_x, block_data.block_y, vertex_count, triangle_count);
-    log::info!(
+    log::debug!(
         "[MEMORY] Terrain mesh created for block {}_{}",
         block_data.block_x,
         block_data.block_y
@@ -243,14 +243,8 @@ pub(super) fn spawn_terrain(
         }
     }
 
-    // Create TerrainMaterial with all tile textures for proper multi-texture terrain rendering
     // The shader uses binding_array to sample from up to 100 textures based on per-vertex tile_info
-    let material_handle = terrain_materials.add(TerrainMaterial {
-        textures: tile_textures.clone(),
-        light_direction: Vec3::new(0.5, 1.0, 0.3).normalize(),
-        light_color: Color::WHITE,
-        ambient_color: Color::srgb(0.9, 0.9, 1.0),
-    });
+    // The TerrainMaterial is created once per zone and shared by all blocks.
 
     // Split spawn to avoid Bundle tuple limit (15+ components not supported)
     let terrain_entity = commands
@@ -275,7 +269,7 @@ pub(super) fn spawn_terrain(
             },
             TerrainMeshForGrass,
             Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(material_handle),
+            MeshMaterial3d(terrain_material.clone()),
             Transform::from_xyz(offset_x - 5200.0, 0.0, -offset_y + 5200.0),
             GlobalTransform::default(),
             Visibility::Visible,
@@ -299,16 +293,11 @@ pub(super) fn spawn_terrain(
             ),
         ))
         .id();
-    log::info!(
+    log::debug!(
         "[SPAWN TERRAIN] Terrain entity created: {:?} at position ({}, 0, {})",
         terrain_entity,
         offset_x,
         offset_y
-    );
-    log::info!(
-        "[MEMORY] Terrain material created for block {}_{}",
-        block_data.block_x,
-        block_data.block_y
     );
     terrain_entity
 }
@@ -327,7 +316,7 @@ pub(super) fn spawn_new_terrain(
         block_y = block_data.block_y
     )
     .entered();
-    log::info!(
+    log::debug!(
         "[SPAWN NEW TERRAIN] Spawning new terrain block {}_{}",
         block_data.block_x,
         block_data.block_y

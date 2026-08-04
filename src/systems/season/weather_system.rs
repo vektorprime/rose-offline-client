@@ -45,6 +45,12 @@ pub fn weather_particle_system(
 
     let dt = time.delta_secs();
 
+    // Clamp what can actually be spawned: every particle is its own mesh entity
+    // with a per-frame CPU billboard, so the UI's upper bound (20,000) would
+    // drown the transparent phase in draw calls. Settings below the cap are
+    // still honored.
+    let max_particles = settings.max_particles.clamp(0, 1000);
+
     // Get player position for player-relative spawning
     let Ok(player_transform) = player_query.single() else {
         return;
@@ -53,7 +59,7 @@ pub fn weather_particle_system(
 
     // Spawn new particles
     let current_count = query.iter().len();
-    if current_count < settings.max_particles {
+    if current_count < max_particles {
         let particles_this_frame = ((settings.spawn_rate * dt) as usize).max(10);
         for _ in 0..particles_this_frame {
             let Some(spawn) = particle_spawn(
@@ -102,6 +108,7 @@ pub fn weather_particle_system(
         return;
     };
     let camera_pos = camera_transform.translation();
+    let camera_forward = camera_transform.forward();
 
     // Update existing particles
     for (entity, mut transform, mut particle) in query.iter_mut() {
@@ -122,9 +129,13 @@ pub fn weather_particle_system(
             dt,
         );
 
-        // Billboard: Make particle face the camera
+        // Billboard: Make particle face the camera. Particles too far from the
+        // camera or behind it are not visible; skipping them avoids the matrix
+        // build + quaternion normalize + transform write per particle per frame.
         let to_camera = camera_pos - transform.translation;
-        if to_camera.length_squared() > 0.001 {
+        let dist_sq = to_camera.length_squared();
+        let in_front_of_camera = camera_forward.dot(transform.translation - camera_pos) > 0.0;
+        if dist_sq > 0.001 && dist_sq <= 150.0 * 150.0 && in_front_of_camera {
             let forward = to_camera.normalize();
             let up = Vec3::Y;
             let right = up.cross(forward).normalize();

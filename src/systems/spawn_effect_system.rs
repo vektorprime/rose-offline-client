@@ -47,13 +47,13 @@ pub fn spawn_effect_system(
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     for event in events.read() {
-        log::info!("[SPAWN EFFECT SYSTEM] Processing event: {:?}", event);
+        log::debug!("[SPAWN EFFECT SYSTEM] Processing event: {:?}", event);
 
         match event {
             SpawnEffectEvent::InEntity(effect_entity, spawn_effect_data) => {
                 if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data)
                 {
-                    log::info!(
+                    log::debug!(
                         "[SPAWN EFFECT SYSTEM] Spawning effect InEntity: {}",
                         effect_file_path.path().to_string_lossy()
                     );
@@ -80,7 +80,7 @@ pub fn spawn_effect_system(
             SpawnEffectEvent::AtEntity(at_entity, spawn_effect_data) => {
                 if let Some(effect_file_path) = get_effect_file_path(spawn_effect_data, &game_data)
                 {
-                    log::info!(
+                    log::debug!(
                         "[SPAWN EFFECT SYSTEM] Spawning effect AtEntity: {}",
                         effect_file_path.path().to_string_lossy()
                     );

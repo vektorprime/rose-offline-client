@@ -755,7 +755,7 @@ pub fn player_command_system(
                         })
                         .ok();
                 } else {
-                    log::warn!("[RESPAWN_MOVE_DIAG] No game connection available!");
+                    log::debug!("[RESPAWN_MOVE_DIAG] No game connection available!");
                 }
             }
             PlayerCommandEvent::SetHotbar(page, page_index, hotbar_slot) => {

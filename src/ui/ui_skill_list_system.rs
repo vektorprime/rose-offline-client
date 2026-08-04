@@ -15,7 +15,8 @@ use crate::{
         tooltips::{PlayerTooltipQuery, SkillTooltipType},
         ui_add_skill_tooltip,
         widgets::{DataBindings, Dialog, DrawTextTrait, Widget},
-        DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop, UiStateWindows,
+        DragAndDropId, DragAndDropSlot, SlotAccept, UiSoundEvent, UiStateDragAndDrop,
+        UiStateWindows,
     },
 };
 
@@ -81,7 +82,7 @@ fn ui_add_skill_list_slot(
                         Some(player.3),
                         game_data,
                         ui_resources,
-                        |_| false,
+                        SlotAccept::None,
                         &mut ui_state_dnd.dragged_item,
                         &mut dropped_item,
                         [40.0, 40.0],

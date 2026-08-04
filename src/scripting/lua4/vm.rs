@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use thiserror::Error;
 
 use crate::scripting::lua4::{Lua4Function, Lua4Instruction, Lua4Value};
@@ -19,7 +20,12 @@ pub enum Lua4VMError {
 
     #[error("Upvalue at index {0} not found")]
     UpvalueNotFound(u32),
+
+    #[error("Maximum call depth of {0} exceeded")]
+    CallDepthExceeded(usize),
 }
+
+const MAX_CALL_DEPTH: usize = 512;
 
 fn pop_value(stack: &mut Vec<Lua4Value>) -> Result<Lua4Value, Lua4VMError> {
     stack.pop().ok_or(Lua4VMError::MissingStackValue)
@@ -67,7 +73,7 @@ fn jump_if(
 fn table_get(table_value: &Lua4Value, key: &Lua4Value) -> Result<Lua4Value, Lua4VMError> {
     if let Lua4Value::Table { fields, array } = table_value {
         let result = if let Lua4Value::String(key_str) = key {
-            fields.get(key_str).cloned()
+            fields.get(key_str.as_ref()).cloned()
         } else if let Lua4Value::Number(key_num) = key {
             let idx = (*key_num as usize).saturating_sub(1);
             array.get(idx).cloned()
@@ -75,6 +81,14 @@ fn table_get(table_value: &Lua4Value, key: &Lua4Value) -> Result<Lua4Value, Lua4
             None
         };
         Ok(result.unwrap_or(Lua4Value::Nil))
+    } else {
+        Err(Lua4VMError::NotTable.into())
+    }
+}
+
+fn table_get_field(table_value: &Lua4Value, key: &str) -> Result<Lua4Value, Lua4VMError> {
+    if let Lua4Value::Table { fields, .. } = table_value {
+        Ok(fields.get(key).cloned().unwrap_or(Lua4Value::Nil))
     } else {
         Err(Lua4VMError::NotTable.into())
     }
@@ -90,7 +104,7 @@ pub trait Lua4VMRustClosures {
 
 #[derive(Default)]
 pub struct Lua4VM {
-    pub globals: HashMap<String, Lua4Value>,
+    pub globals: HashMap<Arc<str>, Lua4Value>,
 }
 
 impl Lua4VM {
@@ -98,8 +112,8 @@ impl Lua4VM {
         Self::default()
     }
 
-    pub fn set_global(&mut self, name: String, value: Lua4Value) {
-        self.globals.insert(name, value);
+    pub fn set_global(&mut self, name: &str, value: Lua4Value) {
+        self.globals.insert(name.into(), value);
     }
 
     pub fn get_global(&mut self, name: &str) -> Option<&Lua4Value> {
@@ -113,9 +127,25 @@ impl Lua4VM {
         parameters: &[Lua4Value],
     ) -> Result<Vec<Lua4Value>, anyhow::Error> {
         let mut stack = Vec::with_capacity(function.max_stack_size as usize);
-        let local_stack_index = stack.len();
         for i in 0..function.num_parameters as usize {
             stack.push(parameters.get(i).cloned().unwrap_or(Lua4Value::Nil));
+        }
+
+        self.run_function(rust_closures, function, &mut stack, 0, 0)?;
+
+        Ok(stack)
+    }
+
+    fn run_function<T: Lua4VMRustClosures>(
+        &mut self,
+        rust_closures: &mut T,
+        function: &Lua4Function,
+        stack: &mut Vec<Lua4Value>,
+        base: usize,
+        depth: usize,
+    ) -> Result<(), anyhow::Error> {
+        if depth > MAX_CALL_DEPTH {
+            return Err(Lua4VMError::CallDepthExceeded(depth).into());
         }
 
         let mut pc = 0;
@@ -127,55 +157,81 @@ impl Lua4VM {
                 Lua4Instruction::OP_END => break,
                 Lua4Instruction::OP_RETURN(return_stack_index) => {
                     // Leave only results on stack
-                    stack.drain(0..local_stack_index + return_stack_index as usize);
+                    let results_start = base + return_stack_index as usize;
+                    stack.drain(base..results_start);
                     break;
                 }
                 Lua4Instruction::OP_CALL(parameter_stack_index, num_results) => {
-                    let parameters =
-                        stack.split_off(local_stack_index + parameter_stack_index as usize + 1);
-                    let closure = pop_value(&mut stack)?;
+                    let closure = pop_value(stack)?;
+                    let args_start = base + parameter_stack_index as usize + 1;
 
-                    let mut results = if let Lua4Value::Closure(function, _upvalues) = closure {
-                        let function = function.clone();
-                        self.call_lua_function(rust_closures, &function, &parameters)?
+                    if let Lua4Value::Closure(function, _upvalues) = closure {
+                        // Clone the arguments into the callee's parameter slots (values are
+                        // copied so the callee can never mutate the caller's data), then
+                        // pad missing parameters with Nil.
+                        let num_args = stack.len() - args_start;
+                        for i in 0..num_args {
+                            stack.push(stack[args_start + i].clone());
+                        }
+                        stack.drain(args_start..args_start + num_args);
+                        stack.truncate(args_start + function.num_parameters as usize);
+                        while stack.len() - args_start < function.num_parameters as usize {
+                            stack.push(Lua4Value::Nil);
+                        }
+
+                        self.run_function(rust_closures, &function, stack, args_start, depth + 1)?;
+
+                        // Keep only the requested number of results, padding with Nil
+                        while stack.len() - args_start < num_results as usize {
+                            stack.push(Lua4Value::Nil);
+                        }
+                        stack.truncate(args_start + num_results as usize);
                     } else if let Lua4Value::RustClosure(function_name) = closure {
+                        let parameters = stack.split_off(args_start);
                         log::debug!(target: "lua", "Call rust closure: {}({:?})", function_name, parameters);
                         let results = rust_closures.call_rust_closure(&function_name, parameters)?;
                         log::debug!(target: "lua", "Call rust closure {} => {:?}", function_name, results);
-                        results
+
+                        stack.extend(results.into_iter().take(num_results as usize));
+                        while stack.len() - args_start < num_results as usize {
+                            stack.push(Lua4Value::Nil);
+                        }
                     } else {
                         return Err(Lua4VMError::NotClosure.into());
-                    };
-
-                    results.reverse();
-                    for _ in 0..num_results {
-                        stack.push(results.pop().unwrap_or(Lua4Value::Nil));
                     }
                 }
                 Lua4Instruction::OP_TAILCALL(parameter_stack_index, num_results) => {
-                    let parameters =
-                        stack.split_off(local_stack_index + parameter_stack_index as usize + 1);
-                    let closure = pop_value(&mut stack)?;
+                    let closure = pop_value(stack)?;
+                    let args_start = base + parameter_stack_index as usize + 1;
 
-                    let results = if let Lua4Value::Closure(function, _upvalues) = closure {
-                        let function = function.clone();
-                        self.call_lua_function(rust_closures, &function, &parameters)?
+                    if let Lua4Value::Closure(function, _upvalues) = closure {
+                        let num_args = stack.len() - args_start;
+                        for i in 0..num_args {
+                            stack.push(stack[args_start + i].clone());
+                        }
+                        stack.drain(args_start..args_start + num_args);
+                        stack.truncate(args_start + function.num_parameters as usize);
+                        while stack.len() - args_start < function.num_parameters as usize {
+                            stack.push(Lua4Value::Nil);
+                        }
+
+                        self.run_function(rust_closures, &function, stack, args_start, depth + 1)?;
+
+                        // Replace this frame with the callee's results
+                        stack.drain(base..args_start);
                     } else if let Lua4Value::RustClosure(function_name) = closure {
-                        rust_closures.call_rust_closure(&function_name, parameters)?
+                        let results =
+                            rust_closures.call_rust_closure(&function_name, stack.split_off(args_start))?;
+                        stack.extend(results);
                     } else {
                         return Err(Lua4VMError::NotClosure.into());
-                    };
-
-                    // For tail call, replace the entire stack with results
-                    stack.clear();
-                    for result in results {
-                        stack.push(result);
                     }
-                    // Adjust to return correct number of results
-                    while stack.len() < num_results as usize {
+
+                    // Pad to the requested number of results, then return
+                    while stack.len() - base < num_results as usize {
                         stack.push(Lua4Value::Nil);
                     }
-                    break; // Exit the loop to return
+                    break;
                 }
                 Lua4Instruction::OP_PUSHNIL(count) => {
                     for _ in 0..count {
@@ -204,7 +260,7 @@ impl Lua4VM {
                 Lua4Instruction::OP_PUSHUPVALUE(index) => {
                     // Push upvalue from the current closure's upvalue list
                     // Upvalues are stored after the local stack area
-                    let upvalue_index = local_stack_index + index as usize;
+                    let upvalue_index = base + index as usize;
                     let value = stack
                         .get(upvalue_index)
                         .ok_or(Lua4VMError::UpvalueNotFound(index))?
@@ -213,7 +269,7 @@ impl Lua4VM {
                 }
                 Lua4Instruction::OP_GETLOCAL(index) => {
                     let value = stack
-                        .get(local_stack_index + index as usize)
+                        .get(base + index as usize)
                         .ok_or(Lua4VMError::MissingStackValue)?
                         .clone();
                     stack.push(value);
@@ -222,30 +278,34 @@ impl Lua4VM {
                     let name = &function.constant_strings[kstr as usize];
                     let value = self
                         .get_global(name)
-                        .ok_or_else(|| Lua4VMError::GlobalNotFound(name.into()))?
+                        .ok_or_else(|| Lua4VMError::GlobalNotFound(name.to_string()))?
                         .clone();
                     stack.push(value);
                 }
                 Lua4Instruction::OP_GETTABLE => {
                     // Pop key and table, push table[key]
-                    let key = pop_value(&mut stack)?;
-                    let table_value = pop_value(&mut stack)?;
+                    let key = pop_value(stack)?;
+                    let table_value = pop_value(stack)?;
                     stack.push(table_get(&table_value, &key)?);
                 }
                 Lua4Instruction::OP_GETDOTTED(kstr) | Lua4Instruction::OP_GETINDEXED(kstr) => {
                     // Pop table, push table[field_name]
-                    let field_name = function.constant_strings[kstr as usize].clone();
-                    let table_value = pop_value(&mut stack)?;
-                    stack.push(table_get(&table_value, &Lua4Value::String(field_name))?);
+                    let table_value = pop_value(stack)?;
+                    stack.push(table_get_field(
+                        &table_value,
+                        &function.constant_strings[kstr as usize],
+                    )?);
                 }
                 Lua4Instruction::OP_PUSHSELF(kstr) => {
                     // Pop table, push (table, table[field_name]) for method call
-                    let field_name = function.constant_strings[kstr as usize].clone();
-                    let table_value = pop_value(&mut stack)?;
+                    let table_value = pop_value(stack)?;
 
                     // Push table again (as 'self')
                     stack.push(table_value.clone());
-                    stack.push(table_get(&table_value, &Lua4Value::String(field_name))?);
+                    stack.push(table_get_field(
+                        &table_value,
+                        &function.constant_strings[kstr as usize],
+                    )?);
                 }
                 Lua4Instruction::OP_CREATETABLE(array_size) => {
                     // Create a new table with specified initial array size
@@ -257,21 +317,21 @@ impl Lua4VM {
                     stack.push(table);
                 }
                 Lua4Instruction::OP_SETLOCAL(index) => {
-                    stack[local_stack_index + index as usize] = pop_value(&mut stack)?;
+                    stack[base + index as usize] = pop_value(stack)?;
                 }
                 Lua4Instruction::OP_SETGLOBAL(kstr) => {
                     self.set_global(
-                        function.constant_strings[kstr as usize].clone(),
-                        pop_value(&mut stack)?,
+                        &function.constant_strings[kstr as usize],
+                        pop_value(stack)?,
                     );
                 }
                 Lua4Instruction::OP_SETTABLE(a, b) => {
                     // Pop value, key; set table[a][key] = value where table is at stack[a] and key is in constant_strings[b]
-                    let value = pop_value(&mut stack)?;
+                    let value = pop_value(stack)?;
                     let key_str = function.constant_strings[b as usize].clone();
 
                     // Get table at index a (relative to local stack)
-                    let table_index = local_stack_index + a as usize;
+                    let table_index = base + a as usize;
                     if table_index < stack.len() {
                         if let Lua4Value::Table { fields, .. } = &mut stack[table_index] {
                             fields.insert(key_str, value);
@@ -282,7 +342,7 @@ impl Lua4VM {
                 }
                 Lua4Instruction::OP_SETLIST(a, count) => {
                     // Pop count values and set them as array elements in table at stack[a]
-                    let table_index = local_stack_index + a as usize;
+                    let table_index = base + a as usize;
                     if table_index >= stack.len() {
                         return Err(Lua4VMError::MissingStackValue.into());
                     }
@@ -290,7 +350,7 @@ impl Lua4VM {
                     // Collect values to set (they're on stack in reverse order)
                     let mut values = Vec::new();
                     for _ in 0..count {
-                        values.push(pop_value(&mut stack)?);
+                        values.push(pop_value(stack)?);
                     }
                     values.reverse();
 
@@ -307,12 +367,12 @@ impl Lua4VM {
                 }
                 Lua4Instruction::OP_SETMAP(n) => {
                     // Pop n pairs of (key, value) and set them in the table on top of stack
-                    let table_value = pop_value(&mut stack)?;
+                    let table_value = pop_value(stack)?;
 
                     let mut pairs = Vec::new();
                     for _ in 0..n {
-                        let value = pop_value(&mut stack)?;
-                        let key = pop_value(&mut stack)?;
+                        let value = pop_value(stack)?;
+                        let key = pop_value(stack)?;
                         pairs.push((key, value));
                     }
 
@@ -332,93 +392,93 @@ impl Lua4VM {
                     }
                 }
                 Lua4Instruction::OP_ADD => {
-                    let rhs = pop_value(&mut stack)?;
-                    let lhs = pop_value(&mut stack)?;
+                    let rhs = pop_value(stack)?;
+                    let lhs = pop_value(stack)?;
 
                     let result = match (&lhs, &rhs) {
                         (Lua4Value::Number(a), Lua4Value::Number(b)) => Lua4Value::Number(a + b),
                         (Lua4Value::String(a), Lua4Value::String(b)) => {
-                            Lua4Value::String(format!("{}{}", a, b))
+                            Lua4Value::String(format!("{}{}", a, b).into())
                         }
                         _ => Lua4Value::Nil,
                     };
                     stack.push(result);
                 }
                 Lua4Instruction::OP_ADDI(s) => {
-                    let result = match pop_number(&mut stack)? {
+                    let result = match pop_number(stack)? {
                         Some(n) => Lua4Value::Number(n + s as f64),
                         None => Lua4Value::Nil,
                     };
                     stack.push(result);
                 }
                 Lua4Instruction::OP_SUB => {
-                    binary_arith(&mut stack, |a, b| Some(a - b))?;
+                    binary_arith(stack, |a, b| Some(a - b))?;
                 }
                 Lua4Instruction::OP_MULT => {
-                    binary_arith(&mut stack, |a, b| Some(a * b))?;
+                    binary_arith(stack, |a, b| Some(a * b))?;
                 }
                 Lua4Instruction::OP_DIV => {
-                    binary_arith(&mut stack, |a, b| if b != 0.0 { Some(a / b) } else { None })?;
+                    binary_arith(stack, |a, b| if b != 0.0 { Some(a / b) } else { None })?;
                 }
                 Lua4Instruction::OP_POW => {
-                    binary_arith(&mut stack, |a, b| Some(a.powf(b)))?;
+                    binary_arith(stack, |a, b| Some(a.powf(b)))?;
                 }
                 Lua4Instruction::OP_CONCAT(count) => {
                     // Pop count strings and concatenate them
                     let mut parts = Vec::new();
                     for _ in 0..count {
-                        let value = pop_value(&mut stack)?;
+                        let value = pop_value(stack)?;
                         let str = match value {
-                            Lua4Value::String(s) => s,
+                            Lua4Value::String(s) => s.to_string(),
                             Lua4Value::Number(n) => n.to_string(),
                             _ => String::new(),
                         };
                         parts.push(str);
                     }
                     parts.reverse();
-                    stack.push(Lua4Value::String(parts.join("")));
+                    stack.push(Lua4Value::String(parts.join("").into()));
                 }
                 Lua4Instruction::OP_MINUS => {
-                    let result = match pop_number(&mut stack)? {
+                    let result = match pop_number(stack)? {
                         Some(n) => Lua4Value::Number(-n),
                         None => Lua4Value::Nil,
                     };
                     stack.push(result);
                 }
                 Lua4Instruction::OP_NOT => {
-                    let result = match pop_value(&mut stack)? {
+                    let result = match pop_value(stack)? {
                         Lua4Value::Nil => Lua4Value::Number(1.0), // true in Lua4 (1.0 = true)
                         _ => Lua4Value::Nil,                      // false in Lua4 (nil = false)
                     };
                     stack.push(result);
                 }
                 Lua4Instruction::OP_JMPNE(target) => {
-                    jump_if(&mut stack, &mut pc, target, |lhs, rhs| lhs != rhs)?;
+                    jump_if(stack, &mut pc, target, |lhs, rhs| lhs != rhs)?;
                 }
                 Lua4Instruction::OP_JMPEQ(target) => {
-                    jump_if(&mut stack, &mut pc, target, |lhs, rhs| lhs == rhs)?;
+                    jump_if(stack, &mut pc, target, |lhs, rhs| lhs == rhs)?;
                 }
                 Lua4Instruction::OP_JMPLT(target) => {
-                    jump_if(&mut stack, &mut pc, target, |lhs, rhs| lhs < rhs)?;
+                    jump_if(stack, &mut pc, target, |lhs, rhs| lhs < rhs)?;
                 }
                 Lua4Instruction::OP_JMPLE(target) => {
-                    jump_if(&mut stack, &mut pc, target, |lhs, rhs| lhs <= rhs)?;
+                    jump_if(stack, &mut pc, target, |lhs, rhs| lhs <= rhs)?;
                 }
                 Lua4Instruction::OP_JMPGT(target) => {
-                    jump_if(&mut stack, &mut pc, target, |lhs, rhs| lhs > rhs)?;
+                    jump_if(stack, &mut pc, target, |lhs, rhs| lhs > rhs)?;
                 }
                 Lua4Instruction::OP_JMPGE(target) => {
-                    jump_if(&mut stack, &mut pc, target, |lhs, rhs| lhs >= rhs)?;
+                    jump_if(stack, &mut pc, target, |lhs, rhs| lhs >= rhs)?;
                 }
                 Lua4Instruction::OP_JMPT(target) => {
-                    let value = pop_value(&mut stack)?;
+                    let value = pop_value(stack)?;
 
                     if !matches!(value, Lua4Value::Nil) {
                         pc = (pc as i32 + target) as usize;
                     }
                 }
                 Lua4Instruction::OP_JMPF(target) => {
-                    let value = pop_value(&mut stack)?;
+                    let value = pop_value(stack)?;
 
                     if matches!(value, Lua4Value::Nil) {
                         pc = (pc as i32 + target) as usize;
@@ -536,13 +596,13 @@ impl Lua4VM {
                     let upvalues = stack.split_off(stack.len() - b as usize);
                     stack.push(Lua4Value::Closure(
                         function.constant_functions[kproto as usize].clone(),
-                        upvalues,
+                        Arc::new(upvalues),
                     ));
                 }
             }
         }
 
-        Ok(stack)
+        Ok(())
     }
 
     pub fn call_global_closure<T: Lua4VMRustClosures>(

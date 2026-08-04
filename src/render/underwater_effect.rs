@@ -228,13 +228,21 @@ impl ViewNode for UnderwaterEffectNode {
         &self,
         _graph: &mut RenderGraphContext,
         render_context: &mut RenderContext<'w>,
-        (view_target, pipeline_id, _underwater_state, uniform_offset): QueryItem<
+        (view_target, pipeline_id, underwater_state, uniform_offset): QueryItem<
             'w,
             '_,
             Self::ViewQuery,
         >,
         world: &'w World,
     ) -> Result<(), NodeRunError> {
+        // OPTIMIZATION: Skip the pass entirely when the camera is not underwater.
+        // This must happen before post_process_write() so the main texture
+        // ping-pong is not disturbed (subsequent post-process nodes still pop and
+        // write the post-process texture, keeping the graph state consistent).
+        if !underwater_state.is_underwater {
+            return Ok(());
+        }
+
         let pipeline_cache = world.resource::<PipelineCache>();
         let underwater_pipeline = world.resource::<UnderwaterEffectPipeline>();
         let underwater_uniform_buffers = world.resource::<UnderwaterEffectUniformBuffers>();

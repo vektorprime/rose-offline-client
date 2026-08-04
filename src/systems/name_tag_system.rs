@@ -408,14 +408,10 @@ pub fn name_tag_system(
     }
 
     // Check if we have pending entries but no entities to process - clear them
-    if !name_tag_cache.pending.is_empty() {
-        let add_count = query_add.iter().len();
-        if add_count == 0 {
-            name_tag_cache.pending.clear();
-        }
-    }
+    let mut add_count = 0;
 
     for object in query_add.iter() {
+        add_count += 1;
         let name_tag_type = if let Some(npc) = object.npc {
             if object
                 .team
@@ -685,6 +681,7 @@ pub fn name_tag_system(
                         full_width: health_bar_size.x,
                         uv_min_x: health_bar_foreground_uv_x_bounds.0,
                         uv_max_x: health_bar_foreground_uv_x_bounds.1,
+                        last_health_percent: -1.0, // Force first write
                     },
                     NoFrustumCulling,
                     rect,
@@ -700,5 +697,9 @@ pub fn name_tag_system(
             .entity(object.entity)
             .insert(NameTagEntity(name_tag_entity))
             .add_child(name_tag_entity);
+    }
+
+    if !name_tag_cache.pending.is_empty() && add_count == 0 {
+        name_tag_cache.pending.clear();
     }
 }

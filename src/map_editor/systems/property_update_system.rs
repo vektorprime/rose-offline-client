@@ -11,6 +11,7 @@ use crate::components::{
 };
 use crate::map_editor::components::SelectedInEditor;
 use crate::map_editor::resources::{EditorAction, MapEditorState};
+use crate::resources::AppState;
 
 /// Messages for property changes from the UI
 #[derive(Message, Debug, Clone)]
@@ -729,6 +730,11 @@ impl Plugin for PropertyUpdatePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PendingPropertyChanges>()
             .add_message::<PropertyChangeEvent>()
-            .add_systems(Update, (property_update_system, apply_undo_system).chain());
+            .add_systems(
+                Update,
+                (property_update_system, apply_undo_system)
+                    .chain()
+                    .run_if(in_state(AppState::MapEditor)),
+            );
     }
 }

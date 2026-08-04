@@ -16,7 +16,7 @@ pub fn move_speed_set_system(
         // Try to get the MoveSpeed component for the entity
         if let Ok(mut move_speed) = query.get_mut(event.entity) {
             move_speed.speed = event.speed;
-            info!(
+            debug!(
                 "Set move speed for entity {:?} to {}",
                 event.entity, event.speed
             );

@@ -3,16 +3,22 @@
 //! This module provides a visual grid for the map editor at y=0.
 //! The grid helps with positioning and alignment of objects.
 
-use bevy::prelude::{App, Color, Gizmos, Plugin, Res, Update, Vec3};
+use bevy::prelude::{
+    in_state, App, Color, Gizmos, IntoScheduleConfigs, Plugin, Res, Update, Vec3,
+};
 
 use crate::map_editor::resources::{EditorGridSettings, MapEditorState};
+use crate::resources::AppState;
 
 /// Plugin for the editor grid system
 pub struct EditorGridPlugin;
 
 impl Plugin for EditorGridPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, grid_render_system);
+        app.add_systems(
+            Update,
+            grid_render_system.run_if(in_state(AppState::MapEditor)),
+        );
     }
 }
 
@@ -35,6 +41,7 @@ pub fn grid_render_system(
     let cell_size = grid_settings.cell_size;
     let extent = grid_settings.extent;
     let grid_color = grid_settings.color;
+    let grid_srgba = grid_color.to_srgba();
 
     // Draw grid lines along X axis
     let half_extent = extent / 2.0;
@@ -46,12 +53,7 @@ pub fn grid_render_system(
         // Vary line intensity for major lines
         let is_major_line = i % 10 == 0;
         let line_color = if is_major_line {
-            Color::srgba(
-                grid_color.to_srgba().red,
-                grid_color.to_srgba().green,
-                grid_color.to_srgba().blue,
-                0.8,
-            )
+            Color::srgba(grid_srgba.red, grid_srgba.green, grid_srgba.blue, 0.8)
         } else {
             grid_color
         };
@@ -71,12 +73,7 @@ pub fn grid_render_system(
         // Vary line intensity for major lines
         let is_major_line = i % 10 == 0;
         let line_color = if is_major_line {
-            Color::srgba(
-                grid_color.to_srgba().red,
-                grid_color.to_srgba().green,
-                grid_color.to_srgba().blue,
-                0.8,
-            )
+            Color::srgba(grid_srgba.red, grid_srgba.green, grid_srgba.blue, 0.8)
         } else {
             grid_color
         };

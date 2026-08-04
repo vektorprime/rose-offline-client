@@ -60,18 +60,7 @@ impl Plugin for BlinkClipPlugin {
 /// This ensures mesh entities have BlinkClipState for proper extraction
 pub fn sync_blink_clip_to_state(
     mut commands: Commands,
-    query: Query<(Entity, &BlinkClip), With<Mesh3d>>,
-) {
-    for (entity, blink_clip) in query.iter() {
-        let state = BlinkClipState(blink_clip.as_u32());
-        commands.entity(entity).insert(state);
-    }
-}
-
-/// System to update existing BlinkClipState when BlinkClip changes
-pub fn update_blink_clip_state(
-    mut commands: Commands,
-    query: Query<(Entity, &BlinkClip), With<BlinkClipState>>,
+    query: Query<(Entity, &BlinkClip), (With<Mesh3d>, Changed<BlinkClip>)>,
 ) {
     for (entity, blink_clip) in query.iter() {
         let state = BlinkClipState(blink_clip.as_u32());

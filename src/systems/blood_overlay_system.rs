@@ -100,7 +100,37 @@ pub fn blood_overlay_generate_system(
 
     for (entity, mut blood_overlay, _children, own_material, existing_textures) in query.iter_mut()
     {
-        // Collect all material entities from this entity and descendants
+        // If the overlay texture data is already generated and clean, we still need to
+        // synchronize it onto the currently-live material handles. Character/NPC model parts
+        // can be respawned or reassigned new material handles after blood was originally painted,
+        // which leaves BloodOverlayTextures populated but the visible materials unbound.
+        // The cached part-entity list avoids a recursive subtree walk on clean frames; the
+        // current material handle is re-queried per part so reassigned handles are picked up.
+        if !blood_overlay.texture_dirty {
+            let Some(existing) = existing_textures else {
+                continue;
+            };
+
+            for mat_entity in &blood_overlay.material_part_entities {
+                if let Ok((_, mat_handle)) = query_materials.get(*mat_entity) {
+                    if let Some(material) = materials.get_mut(mat_handle) {
+                        if let Some(overlay_handle) = existing.textures.get(mat_entity) {
+                            material.extension.blood_overlay_texture = Some(overlay_handle.clone());
+                            material.extension.blood_params =
+                                Vec4::new(config.intensity.clamp(0.0, 1.0), 1.0, 0.0, 0.0);
+                        } else {
+                            material.extension.blood_overlay_texture = None;
+                            material.extension.blood_params = Vec4::new(0.0, 0.0, 0.0, 0.0);
+                        }
+                    }
+                }
+            }
+
+            continue;
+        }
+
+        // Dirty: collect all material entities from this entity and descendants,
+        // refreshing the cached part list so clean frames do not re-walk the subtree.
         let mut material_entities: Vec<(
             Entity,
             Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
@@ -121,30 +151,10 @@ pub fn blood_overlay_generate_system(
             &mut visited,
         );
 
-        // If the overlay texture data is already generated and clean, we still need to
-        // synchronize it onto the currently-live material handles. Character/NPC model parts
-        // can be respawned or reassigned new material handles after blood was originally painted,
-        // which leaves BloodOverlayTextures populated but the visible materials unbound.
-        if !blood_overlay.texture_dirty {
-            let Some(existing) = existing_textures else {
-                continue;
-            };
-
-            for (mat_entity, mat_handle) in &material_entities {
-                if let Some(material) = materials.get_mut(mat_handle) {
-                    if let Some(overlay_handle) = existing.textures.get(mat_entity) {
-                        material.extension.blood_overlay_texture = Some(overlay_handle.clone());
-                        material.extension.blood_params =
-                            Vec4::new(config.intensity.clamp(0.0, 1.0), 1.0, 0.0, 0.0);
-                    } else {
-                        material.extension.blood_overlay_texture = None;
-                        material.extension.blood_params = Vec4::new(0.0, 0.0, 0.0, 0.0);
-                    }
-                }
-            }
-
-            continue;
-        }
+        blood_overlay.material_part_entities.clear();
+        blood_overlay
+            .material_part_entities
+            .extend(material_entities.iter().map(|(mat_entity, _)| *mat_entity));
 
         // Build or update per-material overlay textures
         let mut per_material_textures: HashMap<Entity, Handle<Image>> = HashMap::new();

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use bevy::{
     asset::Assets,
@@ -12,7 +12,7 @@ use bevy::{
 };
 use bevy_egui::{egui, EguiContexts};
 
-use rose_data::ZoneId;
+use rose_data::{NpcId, ZoneId};
 use rose_game_common::components::{CharacterInfo, Npc, Team};
 
 use crate::{
@@ -82,6 +82,22 @@ pub struct UiStateMinimap {
     pub show_players: bool,
     pub show_npcs: bool,
     pub show_monsters: bool,
+
+    // Icon sprite caches (built once textures are loaded, cleared on zone change)
+    pub icons_cached: bool,
+    pub cached_enemy_character_icon: Option<UiSprite>,
+    pub cached_party_character_icon: Option<UiSprite>,
+    pub cached_other_character_icon: Option<UiSprite>,
+    pub cached_monster_icon: Option<UiSprite>,
+    pub cached_player_sprite: Option<UiSprite>,
+    pub npc_icon_cache: HashMap<NpcId, Option<UiSprite>>,
+
+    // Zoom label cache
+    pub zoom_label: String,
+    pub zoom_label_zoom: f32,
+
+    // Scratch buffer for party member ids (reused each frame)
+    pub party_member_ids: Vec<u32>,
 
     // Image scale factor (for upscaled images)
     // 1.0 = original resolution, 2.0 = 2x upscaled, 4.0 = 4x upscaled
@@ -169,6 +185,8 @@ fn draw_minimap_icon(
     if minimap_rect.contains_rect(icon_rect) {
         if let Some(tint) = tint {
             let mut mesh = egui::epaint::Mesh::with_texture(icon.texture_id);
+            mesh.vertices.reserve(4);
+            mesh.indices.reserve(6);
             mesh.add_rect_with_uv(icon_rect, icon.uv, tint);
             ui.painter().add(egui::epaint::Shape::mesh(mesh));
         } else {
@@ -274,6 +292,8 @@ pub fn ui_minimap_system(
             ui_state.scroll = Vec2::ZERO; // Reset scroll on zone change
             ui_state.image_scale = 1.0; // Reset scale on zone change
             ui_state.scaled_outline_pixels = ORIGINAL_MAP_OUTLINE_PIXELS;
+            ui_state.icons_cached = false;
+            ui_state.npc_icon_cache.clear();
 
             if let Some(minimap_path) =
                 zone_data.and_then(|zone_data| zone_data.minimap_path.as_ref())
@@ -381,6 +401,31 @@ pub fn ui_minimap_system(
         } else {
             (None, None, None)
         };
+
+    ui_state.party_member_ids.clear();
+    if let Some(player_party) = player_party {
+        ui_state.party_member_ids.extend(
+            player_party
+                .members
+                .iter()
+                .map(|member| member.get_character_id()),
+        );
+    }
+
+    if !ui_state.icons_cached && ui_resources.loaded_all_textures {
+        ui_state.cached_enemy_character_icon =
+            ui_resources.get_sprite_by_index(UiSpriteSheetType::StateIcon, 73);
+        ui_state.cached_party_character_icon = ui_resources.get_sprite(
+            UiSpriteSheetType::Ui as i32,
+            "ID_MINIMAP_PARTYMEMBER",
+        );
+        ui_state.cached_other_character_icon =
+            ui_resources.get_sprite(UiSpriteSheetType::Ui as i32, "ID_OTHER_AVATAR");
+        ui_state.cached_monster_icon =
+            ui_resources.get_sprite_by_index(UiSpriteSheetType::StateIcon, 73);
+        ui_state.cached_player_sprite = ui_resources.get_minimap_player_sprite();
+        ui_state.icons_cached = true;
+    }
     let player_position_changed = if let Some(player_position) = player_position {
         if ui_state.minimap_image_size.is_some()
             && ui_state.last_player_position != player_position.xy()
@@ -558,6 +603,8 @@ pub fn ui_minimap_system(
                 // Draw map texture
                 if ui.is_rect_visible(minimap_rect) {
                     let mut mesh = egui::epaint::Mesh::with_texture(ui_state.minimap_texture);
+                    mesh.vertices.reserve(4);
+                    mesh.indices.reserve(6);
                     mesh.add_rect_with_uv(minimap_rect, minimap_uv, egui::Color32::WHITE);
                     ui.painter().add(egui::epaint::Shape::mesh(mesh));
                 }
@@ -611,15 +658,34 @@ pub fn ui_minimap_system(
             if !minimised {
                 let zoom = ui_state.zoom_level;
 
-                // Get icon sprites
-                let enemy_character_icon =
-                    ui_resources.get_sprite_by_index(UiSpriteSheetType::StateIcon, 73);
-                let party_character_icon =
-                    ui_resources.get_sprite(UiSpriteSheetType::Ui as i32, "ID_MINIMAP_PARTYMEMBER");
-                let other_character_icon =
-                    ui_resources.get_sprite(UiSpriteSheetType::Ui as i32, "ID_OTHER_AVATAR");
-                let monster_icon =
-                    ui_resources.get_sprite_by_index(UiSpriteSheetType::StateIcon, 73); // Use enemy icon for monsters
+                let enemy_icon_temp;
+                let party_icon_temp;
+                let other_icon_temp;
+                let monster_icon_temp;
+                let (enemy_character_icon, party_character_icon, other_character_icon, monster_icon) =
+                    if ui_state.icons_cached {
+                        (
+                            ui_state.cached_enemy_character_icon.as_ref(),
+                            ui_state.cached_party_character_icon.as_ref(),
+                            ui_state.cached_other_character_icon.as_ref(),
+                            ui_state.cached_monster_icon.as_ref(),
+                        )
+                    } else {
+                        enemy_icon_temp = ui_resources
+                            .get_sprite_by_index(UiSpriteSheetType::StateIcon, 73);
+                        party_icon_temp =
+                            ui_resources.get_sprite(UiSpriteSheetType::Ui as i32, "ID_MINIMAP_PARTYMEMBER");
+                        other_icon_temp =
+                            ui_resources.get_sprite(UiSpriteSheetType::Ui as i32, "ID_OTHER_AVATAR");
+                        monster_icon_temp = ui_resources
+                            .get_sprite_by_index(UiSpriteSheetType::StateIcon, 73);
+                        (
+                            enemy_icon_temp.as_ref(),
+                            party_icon_temp.as_ref(),
+                            other_icon_temp.as_ref(),
+                            monster_icon_temp.as_ref(),
+                        )
+                    };
 
                 // Draw other characters (if enabled)
                 if ui_state.show_players {
@@ -629,16 +695,11 @@ pub fn ui_minimap_system(
                         let icon_image = if player_team
                             .map_or(false, |player_team| character_team.id != player_team.id)
                         {
-                            enemy_character_icon.as_ref()
-                        } else if player_party.map_or(false, |player_party| {
-                            player_party
-                                .members
-                                .iter()
-                                .any(|member| member.get_character_id() == character_info.unique_id)
-                        }) {
-                            party_character_icon.as_ref()
+                            enemy_character_icon
+                        } else if ui_state.party_member_ids.contains(&character_info.unique_id) {
+                            party_character_icon
                         } else {
-                            other_character_icon.as_ref()
+                            other_character_icon
                         };
                         let Some(icon_image) = icon_image else {
                             continue;
@@ -661,6 +722,7 @@ pub fn ui_minimap_system(
 
                 // Draw NPC markers (if enabled)
                 if ui_state.show_npcs {
+                    let icon_scale = zoom.clamp(0.75, 1.5);
                     for &ZoneNpc {
                         npc_id,
                         position: npc_position,
@@ -669,14 +731,41 @@ pub fn ui_minimap_system(
                         let Some(npc_data) = game_data.npcs.get_npc(npc_id) else {
                             continue;
                         };
-                        let Some(icon_image) = ui_resources.get_sprite_by_index(
-                            UiSpriteSheetType::StateIcon,
-                            npc_data.npc_minimap_icon_index as usize,
-                        ) else {
+                        let npc_icon_temp;
+                        let icon_image: Option<UiSprite> =
+                            match ui_state.npc_icon_cache.entry(npc_id) {
+                                std::collections::hash_map::Entry::Occupied(entry) => {
+                                    *entry.get()
+                                }
+                                std::collections::hash_map::Entry::Vacant(entry) => {
+                                    let icon = ui_resources.get_sprite_by_index(
+                                        UiSpriteSheetType::StateIcon,
+                                        npc_data.npc_minimap_icon_index as usize,
+                                    );
+                                    if ui_resources.loaded_all_textures {
+                                        *entry.insert(icon)
+                                    } else {
+                                        npc_icon_temp = icon;
+                                        npc_icon_temp
+                                    }
+                                }
+                            };
+                        let Some(icon_image) = icon_image else {
                             continue;
                         };
 
                         let npc_minimap_position = map_absolute_position(ui_state, npc_position);
+                        let icon_size =
+                            Vec2::new(icon_image.width, icon_image.height) * icon_scale;
+                        let icon_half = icon_size / 2.0;
+                        if npc_minimap_position.x - icon_half.x < minimap_rect.min.x
+                            || npc_minimap_position.x + icon_half.x > minimap_rect.max.x
+                            || npc_minimap_position.y - icon_half.y < minimap_rect.min.y
+                            || npc_minimap_position.y + icon_half.y > minimap_rect.max.y
+                        {
+                            continue;
+                        }
+
                         draw_minimap_icon(
                             ui,
                             minimap_rect,
@@ -700,7 +789,7 @@ pub fn ui_minimap_system(
                                 continue;
                             }
 
-                            let Some(icon_image) = monster_icon.as_ref() else {
+                            let Some(icon_image) = monster_icon else {
                                 continue;
                             };
 
@@ -721,7 +810,13 @@ pub fn ui_minimap_system(
 
                 // Draw player position arrow texture on a rotated rectangle to face camera position
                 if let Some(minimap_player_pos) = minimap_player_pos {
-                    let minimap_player_sprite = ui_resources.get_minimap_player_sprite().unwrap();
+                    let player_sprite_temp;
+                    let minimap_player_sprite: &UiSprite = if ui_state.icons_cached {
+                        ui_state.cached_player_sprite.as_ref().unwrap()
+                    } else {
+                        player_sprite_temp = ui_resources.get_minimap_player_sprite();
+                        player_sprite_temp.as_ref().unwrap()
+                    };
                     let player_icon_size =
                         Vec2::new(minimap_player_sprite.width, minimap_player_sprite.height);
                     let minimap_player_pos_screen =
@@ -763,6 +858,8 @@ pub fn ui_minimap_system(
                                     let mut mesh = egui::Mesh::with_texture(
                                         minimap_player_sprite.texture_id,
                                     );
+                                    mesh.vertices.reserve(4);
+                                    mesh.indices.reserve(6);
                                     let uv = minimap_player_sprite.uv;
                                     let color = egui::Color32::WHITE;
                                     let idx = mesh.vertices.len() as u32;
@@ -805,6 +902,8 @@ pub fn ui_minimap_system(
                 );
 
                 let mut mesh = egui::epaint::Mesh::default();
+                mesh.vertices.reserve(4);
+                mesh.indices.reserve(6);
                 mesh.add_colored_rect(
                     toggle_bar_rect,
                     egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180),
@@ -874,8 +973,12 @@ pub fn ui_minimap_system(
                         ui.separator();
 
                         // Zoom indicator
+                        if ui_state.zoom_label_zoom != ui_state.zoom_level {
+                            ui_state.zoom_label = format!("🔍 {:.1}x", ui_state.zoom_level);
+                            ui_state.zoom_label_zoom = ui_state.zoom_level;
+                        }
                         ui.label(
-                            egui::RichText::new(format!("🔍 {:.1}x", ui_state.zoom_level))
+                            egui::RichText::new(ui_state.zoom_label.as_str())
                                 .color(egui::Color32::WHITE)
                                 .size(10.0),
                         );
@@ -913,6 +1016,8 @@ pub fn ui_minimap_system(
                 );
 
                 let mut mesh = egui::epaint::Mesh::default();
+                mesh.vertices.reserve(4);
+                mesh.indices.reserve(6);
                 mesh.add_colored_rect(
                     player_xy_rect,
                     egui::Color32::from_rgba_unmultiplied(0, 0, 0, 190),

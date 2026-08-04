@@ -1,6 +1,6 @@
 use bevy::{
     math::{Quat, Vec3},
-    prelude::{Commands, Entity, GlobalTransform, MessageWriter, Query, Res, Time, Transform},
+    prelude::{Commands, Entity, GlobalTransform, MessageWriter, Query, Res, ResMut, Time, Transform},
 };
 use bevy_mesh::skinning::SkinnedMesh;
 
@@ -9,17 +9,19 @@ use rose_data::EffectBulletMoveType;
 use crate::{
     components::{DummyBoneOffset, Projectile, ProjectileParabola, ProjectileTarget},
     events::{BloodImpactProfile, HitEvent},
+    resources::ProjectileIndex,
 };
 
 pub fn projectile_system(
     mut commands: Commands,
     mut hit_events: MessageWriter<HitEvent>,
-    mut query_bullets: Query<(Entity, &mut Projectile, &Transform)>,
+    mut query_bullets: Query<(Entity, &mut Projectile, &mut Transform)>,
     query_global_transform: Query<&GlobalTransform>,
     query_skeleton: Query<(&SkinnedMesh, &DummyBoneOffset)>,
+    mut projectile_index: ResMut<ProjectileIndex>,
     time: Res<Time>,
 ) {
-    for (entity, mut projectile, transform) in query_bullets.iter_mut() {
+    for (entity, mut projectile, mut transform) in query_bullets.iter_mut() {
         let target_translation = match projectile.target {
             ProjectileTarget::Entity {
                 entity: target_entity,
@@ -40,6 +42,7 @@ pub fn projectile_system(
 
         if target_translation.is_none() {
             // Cannot find target, despawn projectile
+            projectile_index.remove(projectile.source, entity);
             commands.entity(entity).despawn();
             continue;
         };
@@ -116,14 +119,13 @@ pub fn projectile_system(
                 }
             }
 
+            projectile_index.remove(projectile.source, entity);
             commands.entity(entity).despawn();
             continue;
         }
 
         // Update transform
-        let mut transform = *transform;
         transform.translation += move_vec;
         transform.rotation = Quat::from_rotation_arc(Vec3::X, move_vec.normalize());
-        commands.entity(entity).insert(transform);
     }
 }

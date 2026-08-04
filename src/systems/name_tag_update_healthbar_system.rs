@@ -5,11 +5,15 @@ use rose_game_common::components::{AbilityValues, HealthPoints};
 use crate::{components::NameTagHealthbarForeground, render::WorldUiRect};
 
 pub fn name_tag_update_healthbar_system(
-    mut query_nametag_healthbar: Query<(&ChildOf, &NameTagHealthbarForeground, &mut WorldUiRect)>,
+    mut query_nametag_healthbar: Query<(
+        &ChildOf,
+        &mut NameTagHealthbarForeground,
+        &mut WorldUiRect,
+    )>,
     query_parent: Query<&ChildOf>,
     query_health: Query<(&HealthPoints, &AbilityValues)>,
 ) {
-    for (parent, name_tag_healthbar_fg, mut rect) in query_nametag_healthbar.iter_mut() {
+    for (parent, mut name_tag_healthbar_fg, mut rect) in query_nametag_healthbar.iter_mut() {
         let parent_entity: Entity = parent.0;
         if let Ok((health_points, ability_values)) = query_parent
             .get(parent_entity)
@@ -18,10 +22,16 @@ pub fn name_tag_update_healthbar_system(
             let health_percent =
                 (health_points.hp as f32 / ability_values.get_max_health() as f32).max(0.0);
 
-            rect.uv_max.x = name_tag_healthbar_fg.uv_min_x
-                + health_percent
-                    * (name_tag_healthbar_fg.uv_max_x - name_tag_healthbar_fg.uv_min_x);
-            rect.screen_size.x = name_tag_healthbar_fg.full_width * health_percent;
+            // Only rewrite the rect when the health fraction actually changed
+            // (name tags can spawn several frames after the entity, so a plain
+            // Changed<HealthPoints> filter could skip initialization entirely)
+            if health_percent != name_tag_healthbar_fg.last_health_percent {
+                name_tag_healthbar_fg.last_health_percent = health_percent;
+                rect.uv_max.x = name_tag_healthbar_fg.uv_min_x
+                    + health_percent
+                        * (name_tag_healthbar_fg.uv_max_x - name_tag_healthbar_fg.uv_min_x);
+                rect.screen_size.x = name_tag_healthbar_fg.full_width * health_percent;
+            }
         }
     }
 }

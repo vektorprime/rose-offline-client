@@ -27,6 +27,9 @@ pub struct NameTagHealthbarForeground {
     pub uv_min_x: f32,
     pub uv_max_x: f32,
     pub full_width: f32,
+    /// Last health fraction applied to the rect, used to skip redundant
+    /// per-frame writes when the target's health has not changed.
+    pub last_health_percent: f32,
 }
 
 #[derive(Component)]

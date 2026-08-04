@@ -174,8 +174,7 @@ impl Default for DepthOfFieldSettings {
 
 /// Grouped system parameters for ui_settings_system to avoid parameter count limit
 #[derive(SystemParam)]
-pub struct SettingsSystemParams<'w, 's> {
-    pub egui_context: EguiContexts<'w, 's>,
+pub struct SettingsSystemParams<'w, 's> {    pub egui_context: EguiContexts<'w, 's>,
     pub ui_state_windows: ResMut<'w, UiStateWindows>,
     pub ui_state_settings: Local<'s, UiStateSettings>,
     pub sound_settings: ResMut<'w, SoundSettings>,
@@ -248,6 +247,10 @@ fn settings_combo<T: PartialEq + Clone>(
             }
         });
     ui.end_row();
+}
+
+pub fn settings_window_open(ui_state_windows: Res<UiStateWindows>) -> bool {
+    ui_state_windows.settings_open
 }
 
 pub fn ui_settings_system(mut params: SettingsSystemParams) {

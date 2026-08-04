@@ -79,6 +79,25 @@ impl SingleLerp for f32 {
     }
 }
 
+/// Write a value only when it changed beyond an epsilon.
+/// Any `ResMut` write marks the resource changed, so writing identical values
+/// every frame defeats every `is_changed()` guard downstream (fog volumes,
+/// terrain/water materials, sun position). The epsilon keeps smooth
+/// transitions continuous while suppressing redundant writes.
+fn write_f32_if_changed(field: &mut f32, value: f32, epsilon: f32) {
+    if (*field - value).abs() >= epsilon {
+        *field = value;
+    }
+}
+
+/// Same as [`write_f32_if_changed`] for Vec3 colors (max per-component delta).
+fn write_vec3_if_changed(field: &mut Vec3, value: Vec3, epsilon: f32) {
+    let delta = *field - value;
+    if delta.x.abs() >= epsilon || delta.y.abs() >= epsilon || delta.z.abs() >= epsilon {
+        *field = value;
+    }
+}
+
 pub fn zone_time_system(
     mut zone_lighting: ResMut<ZoneLighting>,
     current_zone: Option<Res<CurrentZone>>,
@@ -244,25 +263,44 @@ pub fn zone_time_system(
             for entity in query_night_effects.iter_mut() {
                 set_visible_recursive(true, entity, &mut query_visibility, &query_children);
             }
+            zone_time.state = ZoneTimeState::Night;
         }
-
-        zone_time.state = ZoneTimeState::Night;
-        zone_time.state_percent_complete =
-            (state_ticks_hours + partial_tick / 24.0) / NIGHT_LENGTH_HOURS;
+        write_f32_if_changed(
+            &mut zone_time.state_percent_complete,
+            (state_ticks_hours + partial_tick / 24.0) / NIGHT_LENGTH_HOURS,
+            1e-3,
+        );
 
         // Update volumetric fog for night time
-        zone_lighting.volumetric_fog_color = VOLUMETRIC_NIGHT_COLOR;
-        zone_lighting.volumetric_density_factor = VOLUMETRIC_NIGHT_DENSITY;
+        write_vec3_if_changed(
+            &mut zone_lighting.volumetric_fog_color,
+            VOLUMETRIC_NIGHT_COLOR,
+            1e-4,
+        );
+        write_f32_if_changed(
+            &mut zone_lighting.volumetric_density_factor,
+            VOLUMETRIC_NIGHT_DENSITY,
+            1e-4,
+        );
 
         if let Some(skybox_data) = skybox_data {
-            zone_lighting.map_ambient_color =
-                skybox_data.map_ambient_color[SkyboxState::Night].xyz();
-            zone_lighting.character_ambient_color =
-                skybox_data.character_ambient_color[SkyboxState::Night].xyz();
-            zone_lighting.character_diffuse_color =
-                skybox_data.character_diffuse_color[SkyboxState::Night].xyz();
-            zone_lighting.fog_color = NIGHT_FOG_COLOR;
-            zone_lighting.fog_density = NIGHT_FOG_DENSITY;
+            write_vec3_if_changed(
+                &mut zone_lighting.map_ambient_color,
+                skybox_data.map_ambient_color[SkyboxState::Night].xyz(),
+                1e-4,
+            );
+            write_vec3_if_changed(
+                &mut zone_lighting.character_ambient_color,
+                skybox_data.character_ambient_color[SkyboxState::Night].xyz(),
+                1e-4,
+            );
+            write_vec3_if_changed(
+                &mut zone_lighting.character_diffuse_color,
+                skybox_data.character_diffuse_color[SkyboxState::Night].xyz(),
+                1e-4,
+            );
+            write_vec3_if_changed(&mut zone_lighting.fog_color, NIGHT_FOG_COLOR, 1e-4);
+            write_f32_if_changed(&mut zone_lighting.fog_density, NIGHT_FOG_DENSITY, 1e-4);
         }
     } else if is_evening {
         // Evening: 17:00-19:00 (2 hours total) - dusk transition
@@ -276,90 +314,138 @@ pub fn zone_time_system(
             for entity in query_night_effects.iter_mut() {
                 set_visible_recursive(true, entity, &mut query_visibility, &query_children);
             }
+            zone_time.state = ZoneTimeState::Evening;
         }
-
-        zone_time.state = ZoneTimeState::Evening;
-        zone_time.state_percent_complete =
-            (state_ticks_hours + partial_tick / 24.0) / EVENING_LENGTH_HOURS;
+        write_f32_if_changed(
+            &mut zone_time.state_percent_complete,
+            (state_ticks_hours + partial_tick / 24.0) / EVENING_LENGTH_HOURS,
+            1e-3,
+        );
 
         // Update volumetric fog for evening/dusk with smooth interpolation
         if zone_time.state_percent_complete < 0.5 {
             // First half: transition from day to evening colors
-            zone_lighting.volumetric_fog_color = VOLUMETRIC_DAY_COLOR.lerp(
-                VOLUMETRIC_EVENING_COLOR,
-                zone_time.state_percent_complete * 2.0,
+            write_vec3_if_changed(
+                &mut zone_lighting.volumetric_fog_color,
+                VOLUMETRIC_DAY_COLOR.lerp(
+                    VOLUMETRIC_EVENING_COLOR,
+                    zone_time.state_percent_complete * 2.0,
+                ),
+                1e-4,
             );
-            zone_lighting.volumetric_density_factor = VOLUMETRIC_DAY_DENSITY.lerp(
-                VOLUMETRIC_EVENING_DENSITY,
-                zone_time.state_percent_complete * 2.0,
+            write_f32_if_changed(
+                &mut zone_lighting.volumetric_density_factor,
+                VOLUMETRIC_DAY_DENSITY.lerp(
+                    VOLUMETRIC_EVENING_DENSITY,
+                    zone_time.state_percent_complete * 2.0,
+                ),
+                1e-4,
             );
         } else {
             // Second half: transition from evening to night colors
-            zone_lighting.volumetric_fog_color = VOLUMETRIC_EVENING_COLOR.lerp(
-                VOLUMETRIC_NIGHT_COLOR,
-                (zone_time.state_percent_complete - 0.5) * 2.0,
+            write_vec3_if_changed(
+                &mut zone_lighting.volumetric_fog_color,
+                VOLUMETRIC_EVENING_COLOR.lerp(
+                    VOLUMETRIC_NIGHT_COLOR,
+                    (zone_time.state_percent_complete - 0.5) * 2.0,
+                ),
+                1e-4,
             );
-            zone_lighting.volumetric_density_factor = VOLUMETRIC_EVENING_DENSITY.lerp(
-                VOLUMETRIC_NIGHT_DENSITY,
-                (zone_time.state_percent_complete - 0.5) * 2.0,
+            write_f32_if_changed(
+                &mut zone_lighting.volumetric_density_factor,
+                VOLUMETRIC_EVENING_DENSITY.lerp(
+                    VOLUMETRIC_NIGHT_DENSITY,
+                    (zone_time.state_percent_complete - 0.5) * 2.0,
+                ),
+                1e-4,
             );
         }
 
         if let Some(skybox_data) = skybox_data {
             if zone_time.state_percent_complete < 0.5 {
-                zone_lighting.map_ambient_color = skybox_data.map_ambient_color[SkyboxState::Day]
-                    .lerp(
-                        skybox_data.map_ambient_color[SkyboxState::Evening],
-                        zone_time.state_percent_complete * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.character_ambient_color = skybox_data.character_ambient_color
-                    [SkyboxState::Day]
-                    .lerp(
-                        skybox_data.character_ambient_color[SkyboxState::Evening],
-                        zone_time.state_percent_complete * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.character_diffuse_color = skybox_data.character_diffuse_color
-                    [SkyboxState::Day]
-                    .lerp(
-                        skybox_data.character_diffuse_color[SkyboxState::Evening],
-                        zone_time.state_percent_complete * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.fog_color =
-                    DAY_FOG_COLOR.lerp(EVENING_FOG_COLOR, zone_time.state_percent_complete * 2.0);
-                zone_lighting.fog_density = DAY_FOG_DENSITY
-                    .lerp(EVENING_FOG_DENSITY, zone_time.state_percent_complete * 2.0);
-            } else {
-                zone_lighting.map_ambient_color = skybox_data.map_ambient_color
-                    [SkyboxState::Evening]
-                    .lerp(
-                        skybox_data.map_ambient_color[SkyboxState::Night],
-                        (zone_time.state_percent_complete - 0.5) * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.character_ambient_color = skybox_data.character_ambient_color
-                    [SkyboxState::Evening]
-                    .lerp(
-                        skybox_data.character_ambient_color[SkyboxState::Night],
-                        (zone_time.state_percent_complete - 0.5) * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.character_diffuse_color = skybox_data.character_diffuse_color
-                    [SkyboxState::Evening]
-                    .lerp(
-                        skybox_data.character_diffuse_color[SkyboxState::Night],
-                        (zone_time.state_percent_complete - 0.5) * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.fog_color = EVENING_FOG_COLOR.lerp(
-                    NIGHT_FOG_COLOR,
-                    (zone_time.state_percent_complete - 0.5) * 2.0,
+                write_vec3_if_changed(
+                    &mut zone_lighting.map_ambient_color,
+                    skybox_data.map_ambient_color[SkyboxState::Day]
+                        .lerp(
+                            skybox_data.map_ambient_color[SkyboxState::Evening],
+                            zone_time.state_percent_complete * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
                 );
-                zone_lighting.fog_density = EVENING_FOG_DENSITY.lerp(
-                    NIGHT_FOG_DENSITY,
-                    (zone_time.state_percent_complete - 0.5) * 2.0,
+                write_vec3_if_changed(
+                    &mut zone_lighting.character_ambient_color,
+                    skybox_data.character_ambient_color[SkyboxState::Day]
+                        .lerp(
+                            skybox_data.character_ambient_color[SkyboxState::Evening],
+                            zone_time.state_percent_complete * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
+                );
+                write_vec3_if_changed(
+                    &mut zone_lighting.character_diffuse_color,
+                    skybox_data.character_diffuse_color[SkyboxState::Day]
+                        .lerp(
+                            skybox_data.character_diffuse_color[SkyboxState::Evening],
+                            zone_time.state_percent_complete * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
+                );
+                write_vec3_if_changed(
+                    &mut zone_lighting.fog_color,
+                    DAY_FOG_COLOR.lerp(EVENING_FOG_COLOR, zone_time.state_percent_complete * 2.0),
+                    1e-4,
+                );
+                write_f32_if_changed(
+                    &mut zone_lighting.fog_density,
+                    DAY_FOG_DENSITY
+                        .lerp(EVENING_FOG_DENSITY, zone_time.state_percent_complete * 2.0),
+                    1e-4,
+                );
+            } else {
+                write_vec3_if_changed(
+                    &mut zone_lighting.map_ambient_color,
+                    skybox_data.map_ambient_color[SkyboxState::Evening]
+                        .lerp(
+                            skybox_data.map_ambient_color[SkyboxState::Night],
+                            (zone_time.state_percent_complete - 0.5) * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
+                );
+                write_vec3_if_changed(
+                    &mut zone_lighting.character_ambient_color,
+                    skybox_data.character_ambient_color[SkyboxState::Evening]
+                        .lerp(
+                            skybox_data.character_ambient_color[SkyboxState::Night],
+                            (zone_time.state_percent_complete - 0.5) * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
+                );
+                write_vec3_if_changed(
+                    &mut zone_lighting.character_diffuse_color,
+                    skybox_data.character_diffuse_color[SkyboxState::Evening]
+                        .lerp(
+                            skybox_data.character_diffuse_color[SkyboxState::Night],
+                            (zone_time.state_percent_complete - 0.5) * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
+                );
+                write_vec3_if_changed(
+                    &mut zone_lighting.fog_color,
+                    EVENING_FOG_COLOR
+                        .lerp(NIGHT_FOG_COLOR, (zone_time.state_percent_complete - 0.5) * 2.0),
+                    1e-4,
+                );
+                write_f32_if_changed(
+                    &mut zone_lighting.fog_density,
+                    EVENING_FOG_DENSITY
+                        .lerp(NIGHT_FOG_DENSITY, (zone_time.state_percent_complete - 0.5) * 2.0),
+                    1e-4,
                 );
             }
         }
@@ -375,24 +461,40 @@ pub fn zone_time_system(
             for entity in query_night_effects.iter_mut() {
                 set_visible_recursive(false, entity, &mut query_visibility, &query_children);
             }
+            zone_time.state = ZoneTimeState::Day;
         }
-
-        zone_time.state = ZoneTimeState::Day;
-        zone_time.state_percent_complete =
-            (state_ticks_hours + partial_tick / 24.0) / DAY_LENGTH_HOURS;
+        write_f32_if_changed(
+            &mut zone_time.state_percent_complete,
+            (state_ticks_hours + partial_tick / 24.0) / DAY_LENGTH_HOURS,
+            1e-3,
+        );
 
         // Update volumetric fog for day time
-        zone_lighting.volumetric_fog_color = VOLUMETRIC_DAY_COLOR;
-        zone_lighting.volumetric_density_factor = VOLUMETRIC_DAY_DENSITY;
+        write_vec3_if_changed(&mut zone_lighting.volumetric_fog_color, VOLUMETRIC_DAY_COLOR, 1e-4);
+        write_f32_if_changed(
+            &mut zone_lighting.volumetric_density_factor,
+            VOLUMETRIC_DAY_DENSITY,
+            1e-4,
+        );
 
         if let Some(skybox_data) = skybox_data {
-            zone_lighting.map_ambient_color = skybox_data.map_ambient_color[SkyboxState::Day].xyz();
-            zone_lighting.character_ambient_color =
-                skybox_data.character_ambient_color[SkyboxState::Day].xyz();
-            zone_lighting.character_diffuse_color =
-                skybox_data.character_diffuse_color[SkyboxState::Day].xyz();
-            zone_lighting.fog_color = DAY_FOG_COLOR;
-            zone_lighting.fog_density = DAY_FOG_DENSITY;
+            write_vec3_if_changed(
+                &mut zone_lighting.map_ambient_color,
+                skybox_data.map_ambient_color[SkyboxState::Day].xyz(),
+                1e-4,
+            );
+            write_vec3_if_changed(
+                &mut zone_lighting.character_ambient_color,
+                skybox_data.character_ambient_color[SkyboxState::Day].xyz(),
+                1e-4,
+            );
+            write_vec3_if_changed(
+                &mut zone_lighting.character_diffuse_color,
+                skybox_data.character_diffuse_color[SkyboxState::Day].xyz(),
+                1e-4,
+            );
+            write_vec3_if_changed(&mut zone_lighting.fog_color, DAY_FOG_COLOR, 1e-4);
+            write_f32_if_changed(&mut zone_lighting.fog_density, DAY_FOG_DENSITY, 1e-4);
         }
     } else if is_morning {
         // Morning: 6:00-12:00 (6 hours total)
@@ -406,94 +508,151 @@ pub fn zone_time_system(
             for entity in query_night_effects.iter_mut() {
                 set_visible_recursive(false, entity, &mut query_visibility, &query_children);
             }
+            zone_time.state = ZoneTimeState::Morning;
         }
-
-        zone_time.state = ZoneTimeState::Morning;
-        zone_time.state_percent_complete =
-            (state_ticks_hours + partial_tick / 24.0) / MORNING_LENGTH_HOURS;
+        write_f32_if_changed(
+            &mut zone_time.state_percent_complete,
+            (state_ticks_hours + partial_tick / 24.0) / MORNING_LENGTH_HOURS,
+            1e-3,
+        );
 
         // Update volumetric fog for morning/dawn with smooth interpolation
         if zone_time.state_percent_complete < 0.5 {
             // First half: transition from night to morning colors
-            zone_lighting.volumetric_fog_color = VOLUMETRIC_NIGHT_COLOR.lerp(
-                VOLUMETRIC_MORNING_COLOR,
-                zone_time.state_percent_complete * 2.0,
+            write_vec3_if_changed(
+                &mut zone_lighting.volumetric_fog_color,
+                VOLUMETRIC_NIGHT_COLOR.lerp(
+                    VOLUMETRIC_MORNING_COLOR,
+                    zone_time.state_percent_complete * 2.0,
+                ),
+                1e-4,
             );
-            zone_lighting.volumetric_density_factor = VOLUMETRIC_NIGHT_DENSITY.lerp(
-                VOLUMETRIC_MORNING_DENSITY,
-                zone_time.state_percent_complete * 2.0,
+            write_f32_if_changed(
+                &mut zone_lighting.volumetric_density_factor,
+                VOLUMETRIC_NIGHT_DENSITY.lerp(
+                    VOLUMETRIC_MORNING_DENSITY,
+                    zone_time.state_percent_complete * 2.0,
+                ),
+                1e-4,
             );
         } else {
             // Second half: transition from morning to day colors
-            zone_lighting.volumetric_fog_color = VOLUMETRIC_MORNING_COLOR.lerp(
-                VOLUMETRIC_DAY_COLOR,
-                (zone_time.state_percent_complete - 0.5) * 2.0,
+            write_vec3_if_changed(
+                &mut zone_lighting.volumetric_fog_color,
+                VOLUMETRIC_MORNING_COLOR.lerp(
+                    VOLUMETRIC_DAY_COLOR,
+                    (zone_time.state_percent_complete - 0.5) * 2.0,
+                ),
+                1e-4,
             );
-            zone_lighting.volumetric_density_factor = VOLUMETRIC_MORNING_DENSITY.lerp(
-                VOLUMETRIC_DAY_DENSITY,
-                (zone_time.state_percent_complete - 0.5) * 2.0,
+            write_f32_if_changed(
+                &mut zone_lighting.volumetric_density_factor,
+                VOLUMETRIC_MORNING_DENSITY.lerp(
+                    VOLUMETRIC_DAY_DENSITY,
+                    (zone_time.state_percent_complete - 0.5) * 2.0,
+                ),
+                1e-4,
             );
         }
 
         if let Some(skybox_data) = skybox_data {
             if zone_time.state_percent_complete < 0.5 {
-                zone_lighting.map_ambient_color = skybox_data.map_ambient_color[SkyboxState::Night]
-                    .lerp(
-                        skybox_data.map_ambient_color[SkyboxState::Morning],
-                        zone_time.state_percent_complete * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.character_ambient_color = skybox_data.character_ambient_color
-                    [SkyboxState::Night]
-                    .lerp(
-                        skybox_data.character_ambient_color[SkyboxState::Morning],
-                        zone_time.state_percent_complete * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.character_diffuse_color = skybox_data.character_diffuse_color
-                    [SkyboxState::Night]
-                    .lerp(
-                        skybox_data.character_diffuse_color[SkyboxState::Morning],
-                        zone_time.state_percent_complete * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.fog_color =
-                    NIGHT_FOG_COLOR.lerp(MORNING_FOG_COLOR, zone_time.state_percent_complete * 2.0);
-                zone_lighting.fog_density = NIGHT_FOG_DENSITY
-                    .lerp(MORNING_FOG_DENSITY, zone_time.state_percent_complete * 2.0);
-            } else {
-                zone_lighting.map_ambient_color = skybox_data.map_ambient_color
-                    [SkyboxState::Morning]
-                    .lerp(
-                        skybox_data.map_ambient_color[SkyboxState::Day],
-                        (zone_time.state_percent_complete - 0.5) * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.character_ambient_color = skybox_data.character_ambient_color
-                    [SkyboxState::Morning]
-                    .lerp(
-                        skybox_data.character_ambient_color[SkyboxState::Day],
-                        (zone_time.state_percent_complete - 0.5) * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.character_diffuse_color = skybox_data.character_diffuse_color
-                    [SkyboxState::Morning]
-                    .lerp(
-                        skybox_data.character_diffuse_color[SkyboxState::Day],
-                        (zone_time.state_percent_complete - 0.5) * 2.0,
-                    )
-                    .xyz();
-                zone_lighting.fog_color = MORNING_FOG_COLOR.lerp(
-                    DAY_FOG_COLOR,
-                    (zone_time.state_percent_complete - 0.5) * 2.0,
+                write_vec3_if_changed(
+                    &mut zone_lighting.map_ambient_color,
+                    skybox_data.map_ambient_color[SkyboxState::Night]
+                        .lerp(
+                            skybox_data.map_ambient_color[SkyboxState::Morning],
+                            zone_time.state_percent_complete * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
                 );
-                zone_lighting.fog_density = MORNING_FOG_DENSITY.lerp(
-                    DAY_FOG_DENSITY,
-                    (zone_time.state_percent_complete - 0.5) * 2.0,
+                write_vec3_if_changed(
+                    &mut zone_lighting.character_ambient_color,
+                    skybox_data.character_ambient_color[SkyboxState::Night]
+                        .lerp(
+                            skybox_data.character_ambient_color[SkyboxState::Morning],
+                            zone_time.state_percent_complete * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
+                );
+                write_vec3_if_changed(
+                    &mut zone_lighting.character_diffuse_color,
+                    skybox_data.character_diffuse_color[SkyboxState::Night]
+                        .lerp(
+                            skybox_data.character_diffuse_color[SkyboxState::Morning],
+                            zone_time.state_percent_complete * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
+                );
+                write_vec3_if_changed(
+                    &mut zone_lighting.fog_color,
+                    NIGHT_FOG_COLOR
+                        .lerp(MORNING_FOG_COLOR, zone_time.state_percent_complete * 2.0),
+                    1e-4,
+                );
+                write_f32_if_changed(
+                    &mut zone_lighting.fog_density,
+                    NIGHT_FOG_DENSITY
+                        .lerp(MORNING_FOG_DENSITY, zone_time.state_percent_complete * 2.0),
+                    1e-4,
+                );
+            } else {
+                write_vec3_if_changed(
+                    &mut zone_lighting.map_ambient_color,
+                    skybox_data.map_ambient_color[SkyboxState::Morning]
+                        .lerp(
+                            skybox_data.map_ambient_color[SkyboxState::Day],
+                            (zone_time.state_percent_complete - 0.5) * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
+                );
+                write_vec3_if_changed(
+                    &mut zone_lighting.character_ambient_color,
+                    skybox_data.character_ambient_color[SkyboxState::Morning]
+                        .lerp(
+                            skybox_data.character_ambient_color[SkyboxState::Day],
+                            (zone_time.state_percent_complete - 0.5) * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
+                );
+                write_vec3_if_changed(
+                    &mut zone_lighting.character_diffuse_color,
+                    skybox_data.character_diffuse_color[SkyboxState::Morning]
+                        .lerp(
+                            skybox_data.character_diffuse_color[SkyboxState::Day],
+                            (zone_time.state_percent_complete - 0.5) * 2.0,
+                        )
+                        .xyz(),
+                    1e-4,
+                );
+                write_vec3_if_changed(
+                    &mut zone_lighting.fog_color,
+                    MORNING_FOG_COLOR.lerp(
+                        DAY_FOG_COLOR,
+                        (zone_time.state_percent_complete - 0.5) * 2.0,
+                    ),
+                    1e-4,
+                );
+                write_f32_if_changed(
+                    &mut zone_lighting.fog_density,
+                    MORNING_FOG_DENSITY.lerp(
+                        DAY_FOG_DENSITY,
+                        (zone_time.state_percent_complete - 0.5) * 2.0,
+                    ),
+                    1e-4,
                 );
             }
         }
     }
 
-    zone_time.time = day_time;
+    // Only write the tick value when it actually advanced (it changes at most
+    // once per world tick), so `zone_time.is_changed()` stops being always true
+    if zone_time.time != day_time {
+        zone_time.time = day_time;
+    }
 }

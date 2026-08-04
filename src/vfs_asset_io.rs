@@ -29,22 +29,130 @@ pub fn format_bytes(bytes: usize) -> String {
     }
 }
 
-/// Global file cache shared between all VfsAssetIo instances
-/// This cache persists file data in memory to avoid repeated disk/VFS reads
-static VFS_FILE_CACHE: std::sync::OnceLock<std::sync::RwLock<HashMap<String, Arc<Vec<u8>>>>> =
-    std::sync::OnceLock::new();
-
-/// Get or initialize the global file cache
-fn get_file_cache() -> &'static std::sync::RwLock<HashMap<String, Arc<Vec<u8>>>> {
-    VFS_FILE_CACHE.get_or_init(|| std::sync::RwLock::new(HashMap::new()))
+/// Cached file entry. Zone-tagged entries are scoped to a single zone and are
+/// evicted on zone change (see `evict_zone_tagged_files`), while untagged
+/// entries (UI textures, models, skybox, etc.) are shared across zones.
+struct CachedFile {
+    data: Arc<Vec<u8>>,
+    zone: Option<u16>,
 }
 
-/// Clear the global VFS file cache
+struct FileCache {
+    files: HashMap<String, CachedFile>,
+    bytes: usize,
+}
+
+/// Soft byte budget for the shared (non-zone-tagged) portion of the cache.
+/// Once exceeded, shared entries are evicted to bound memory growth over long
+/// sessions; zone-tagged entries are bounded by the per-zone-change eviction.
+const VFS_FILE_CACHE_BUDGET_BYTES: usize = 512 * 1024 * 1024;
+
+/// Global file cache shared between all VfsAssetIo instances
+/// This cache persists file data in memory to avoid repeated disk/VFS reads
+static VFS_FILE_CACHE: std::sync::OnceLock<std::sync::RwLock<FileCache>> = std::sync::OnceLock::new();
+
+/// Get or initialize the global file cache
+fn get_file_cache() -> &'static std::sync::RwLock<FileCache> {
+    VFS_FILE_CACHE.get_or_init(|| {
+        std::sync::RwLock::new(FileCache {
+            files: HashMap::new(),
+            bytes: 0,
+        })
+    })
+}
+
+/// Normalize a cache key so case and slash variants of the same path share one
+/// entry (VFS paths are uppercased internally).
+fn normalize_cache_key(path: &str) -> String {
+    path.replace('\\', "/").to_uppercase()
+}
+
+/// Try to get a file from the global cache by normalized path.
+pub fn get_cached_bytes(path: &str) -> Option<Arc<Vec<u8>>> {
+    let key = normalize_cache_key(path);
+    if let Ok(cache) = get_file_cache().read() {
+        cache.files.get(&key).map(|file| file.data.clone())
+    } else {
+        None
+    }
+}
+
+/// Store a file in the global cache by normalized path.
+/// `zone` tags the entry as scoped to a zone so it is evicted on zone change.
+pub fn store_cached_bytes(path: &str, data: Vec<u8>, zone: Option<u16>) -> Arc<Vec<u8>> {
+    let key = normalize_cache_key(path);
+    let data = Arc::new(data);
+    if let Ok(mut cache) = get_file_cache().write() {
+        if let Some(existing) = cache.files.get(&key) {
+            cache.bytes = cache
+                .bytes
+                .saturating_add(data.len().saturating_sub(existing.data.len()));
+        } else {
+            cache.bytes = cache.bytes.saturating_add(data.len());
+        }
+        cache.files.insert(
+            key,
+            CachedFile {
+                data: data.clone(),
+                zone,
+            },
+        );
+
+        if cache.bytes > VFS_FILE_CACHE_BUDGET_BYTES {
+            let mut freed = 0usize;
+            cache.files.retain(|_, file| {
+                if file.zone.is_some() {
+                    true
+                } else {
+                    freed = freed.saturating_add(file.data.len());
+                    false
+                }
+            });
+            cache.bytes = cache.bytes.saturating_sub(freed);
+            log::info!(
+                "[VFS CACHE] Cache over budget, evicted {} of shared cached files",
+                format_bytes(freed)
+            );
+        }
+    }
+    data
+}
+
+/// Evict zone-tagged entries whose zone is not in `keep_zones`, keeping the
+/// shared (non-zone-tagged) entries. Called on zone change so block data for
+/// the current and previous zones stays cached for fast revisits.
+pub fn evict_zone_tagged_files(keep_zones: &[u16]) {
+    if let Ok(mut cache) = get_file_cache().write() {
+        let mut count = 0usize;
+        let mut freed = 0usize;
+        cache.files.retain(|_, file| {
+            match file.zone {
+                Some(zone) if !keep_zones.contains(&zone) => {
+                    count += 1;
+                    freed = freed.saturating_add(file.data.len());
+                    false
+                }
+                _ => true,
+            }
+        });
+        cache.bytes = cache.bytes.saturating_sub(freed);
+        if count > 0 {
+            log::info!(
+                "[VFS CACHE] Evicted {} zone-scoped cached files ({}), keeping current/previous zones",
+                count,
+                format_bytes(freed)
+            );
+        }
+    }
+}
+
+/// Clear the entire global VFS file cache
 /// Call this when switching zones to free memory
 pub fn clear_vfs_file_cache() {
     if let Ok(mut cache) = get_file_cache().write() {
-        let count = cache.len();
-        cache.clear();
+        let count = cache.files.len();
+        cache.files.clear();
+        cache.bytes = 0;
         log::info!("[VFS CACHE] Cleared {} cached files from memory", count);
     }
 }
@@ -54,9 +162,10 @@ pub fn clear_vfs_file_cache() {
 pub fn vfs_file_cache_stats() -> (usize, usize) {
     if let Ok(cache) = get_file_cache().read() {
         let bytes = cache
+            .files
             .values()
-            .fold(0usize, |acc, data| acc.saturating_add(data.len()));
-        (cache.len(), bytes)
+            .fold(0usize, |acc, file| acc.saturating_add(file.data.len()));
+        (cache.files.len(), bytes)
     } else {
         (0, 0)
     }
@@ -90,24 +199,16 @@ impl VfsAssetIo {
             return None;
         }
 
-        if let Ok(cache) = get_file_cache().read() {
-            cache.get(path).cloned()
-        } else {
-            None
-        }
+        get_cached_bytes(path)
     }
 
     /// Store a file in the cache
     fn store_in_cache(&self, path: &str, data: Vec<u8>) -> Arc<Vec<u8>> {
-        let arc_data = Arc::new(data);
-
         if self.use_cache {
-            if let Ok(mut cache) = get_file_cache().write() {
-                cache.insert(path.to_string(), arc_data.clone());
-            }
+            store_cached_bytes(path, data, None)
+        } else {
+            Arc::new(data)
         }
-
-        arc_data
     }
 }
 
@@ -276,10 +377,7 @@ impl AssetReader for VfsAssetIo {
         &'a self,
         path: &'a Path,
     ) -> impl Future<Output = Result<bool, AssetReaderError>> + Send {
-        async move {
-            log::info!("[VFS DIAGNOSTIC] is_directory called for path: {:?}", path);
-            Ok(false)
-        }
+        async move { Ok(false) }
     }
 }
 

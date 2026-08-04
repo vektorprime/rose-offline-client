@@ -98,22 +98,34 @@ pub fn update_terrain_lighting_system(
     let intensity_scale = (base_intensity * time_multiplier) / 5.0;
 
     for (_, material) in terrain_materials.iter_mut() {
-        material.light_direction = zone_lighting.light_direction;
+        // OPTIMIZATION: ZoneLighting/zone_time are rewritten every frame, so the
+        // guard above is almost always true. Diff the computed values against the
+        // material's current values instead and only mutate when something really
+        // changed (i.e. a time-of-day transition). Mutating the material triggers a
+        // render-world bind group + storage buffer rebuild, which is wasteful when
+        // the values are identical.
         let char_diffuse = zone_lighting.character_diffuse_color;
-        // Scale the light color to match the perceptual brightness of DirectionalLight's HDR illuminance
-        material.light_color = Color::from(LinearRgba::new(
+        let new_light_color = Color::from(LinearRgba::new(
             char_diffuse.x * intensity_scale,
             char_diffuse.y * intensity_scale,
             char_diffuse.z * intensity_scale,
             1.0,
         ));
         let map_ambient = zone_lighting.map_ambient_color;
-        material.ambient_color = Color::from(LinearRgba::new(
+        let new_ambient_color = Color::from(LinearRgba::new(
             map_ambient.x,
             map_ambient.y,
             map_ambient.z,
             1.0,
         ));
+        if material.light_direction != zone_lighting.light_direction
+            || material.light_color != new_light_color
+            || material.ambient_color != new_ambient_color
+        {
+            material.light_direction = zone_lighting.light_direction;
+            material.light_color = new_light_color;
+            material.ambient_color = new_ambient_color;
+        }
     }
 }
 

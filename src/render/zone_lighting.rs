@@ -9,9 +9,9 @@ use bevy::{
     math::{Vec3, Vec4},
     prelude::{
         App, Color, ColorToComponents, Commands, DetectChanges, Dir3, DirectionalLight, EulerRot,
-        FromWorld, GlobalAmbientLight, GlobalTransform, IntoScheduleConfigs, LinearRgba, Plugin,
-        Quat, Query, ReflectResource, Res, ResMut, Resource, Shader, Startup, Transform, Update,
-        With, Without, World,
+        FromWorld, GlobalAmbientLight, GlobalTransform, IntoScheduleConfigs, LinearRgba, Local,
+        Plugin, Quat, Query, ReflectResource, Res, ResMut, Resource, Shader, Startup, Transform,
+        Update, With, Without, World,
     },
     reflect::{Reflect, TypePath},
     render::{
@@ -299,18 +299,26 @@ fn sync_zone_lighting_to_bevy_lights_system(
         )
     };
 
-    ambient_light.color = final_color;
-    ambient_light.brightness = final_brightness;
+    // Write only when the computed values actually differ, so the global
+    // ambient resource is not marked changed for the whole render graph every
+    // frame (GlobalAmbientLight writes force re-evaluation of ambient terms).
+    if ambient_light.color != final_color || ambient_light.brightness != final_brightness {
+        ambient_light.color = final_color;
+        ambient_light.brightness = final_brightness;
+    }
 
     if let Ok((mut light, transform)) = query_directional_light.single_mut() {
         // Sync directional light color from zone_lighting.character_diffuse_color
         let char_diffuse = zone_lighting.character_diffuse_color;
-        light.color = Color::from(LinearRgba::new(
+        let new_light_color = Color::from(LinearRgba::new(
             char_diffuse.x,
             char_diffuse.y,
             char_diffuse.z,
             1.0,
         ));
+        if light.color != new_light_color {
+            light.color = new_light_color;
+        }
 
         // Update zone_lighting.light_direction from the actual light transform
         // This ensures custom shaders (like terrain) stay in sync with the sun position
@@ -420,12 +428,18 @@ fn update_sun_position_system(
         // At 23:00 (day_fract = 0.75): sun setting at horizon
         //
         // This keeps sun visible from 6:00 through 17:00+ (extended daylight)
-        transform.rotation = Quat::from_euler(
+        let new_rotation = Quat::from_euler(
             EulerRot::ZYX,
             earth_tilt_rad,
             0.0,
             -day_fract * std::f32::consts::TAU,
         );
+        // Only write when the rotation actually changed (it only moves when the
+        // tick-based time advances), so the shadow-casting directional light is
+        // not dirtied every frame.
+        if transform.rotation != new_rotation {
+            transform.rotation = new_rotation;
+        }
     }
 }
 
@@ -501,12 +515,23 @@ pub fn update_shadows_for_time_of_day_system(
     mut sun_query: Query<&mut DirectionalLight, (With<VolumetricLight>, Without<MoonLight>)>,
     mut moon_query: Query<&mut DirectionalLight, With<MoonLight>>,
     graphics_settings: Option<Res<GraphicsSettings>>,
+    mut last_applied: Local<Option<(ZoneTimeState, bool)>>,
 ) {
     // Check if shadows are enabled in graphics settings
     // If shadows are disabled by quality settings, don't override
     let shadows_enabled_by_settings = graphics_settings
         .map(|g| g.shadow_quality != ShadowQuality::Off)
         .unwrap_or(true);
+
+    // The values below only depend on the time state (changes at most twice
+    // per game day) and the shadow-quality setting. Latch the last-applied
+    // key so the lights are not rewritten (and marked changed, re-validating
+    // shadow state) every frame.
+    let latch_key = (zone_time.state, shadows_enabled_by_settings);
+    if *last_applied == Some(latch_key) {
+        return;
+    }
+    *last_applied = Some(latch_key);
 
     if !shadows_enabled_by_settings {
         return; // Shadows disabled in settings, nothing to do

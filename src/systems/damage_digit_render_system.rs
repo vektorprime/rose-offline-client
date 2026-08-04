@@ -1,6 +1,6 @@
 use bevy::{
     asset::RenderAssetUsages,
-    math::{Vec3Swizzles, Vec4},
+    math::{Vec2, Vec3Swizzles, Vec4},
     mesh::PrimitiveTopology,
     pbr::MeshMaterial3d,
     prelude::{Assets, Commands, Entity, GlobalTransform, Mesh, Mesh3d, Query, ResMut},
@@ -143,32 +143,74 @@ pub fn damage_digit_render_system(
         // Only the storage buffers need to be updated with actual digit data
 
         // Update the storage buffers with new render data
+        // OPTIMIZATION: Reuse the same storage buffer handles; only recreate them
+        // when the capacity is insufficient (buffer_description.size is the byte
+        // capacity set at creation). Assets::get_mut emits AssetEvent::Modified,
+        // which re-extracts + re-uploads the buffers and re-prepares the material
+        // bind group (Bevy resolves the storage-buffer bindings into wgpu buffers
+        // only when the material asset is re-prepared).
         if let Some(material) = materials.get_mut(&material_handle.0) {
-            // Store old buffer handles to prevent memory leak
-            let old_positions = material.positions.clone();
-            let old_sizes = material.sizes.clone();
-            let old_uvs = material.uvs.clone();
+            // Positions
+            let needed = damage_digit_render_data.positions.len() * std::mem::size_of::<Vec4>();
+            let grow = match storage_buffers.get_mut(&material.positions) {
+                Some(buffer) if buffer.buffer_description.size >= needed as u64 => {
+                    buffer.set_data(damage_digit_render_data.positions.clone());
+                    false
+                }
+                _ => true,
+            };
+            if grow {
+                let old = std::mem::replace(
+                    &mut material.positions,
+                    storage_buffers.add(ShaderStorageBuffer::from(
+                        damage_digit_render_data.positions.clone(),
+                    )),
+                );
+                storage_buffers.remove(&old);
+            }
 
-            // Create new storage buffers with updated data
-            let positions_buffer = storage_buffers.add(ShaderStorageBuffer::from(
-                damage_digit_render_data.positions.clone(),
-            ));
-            let sizes_buffer = storage_buffers.add(ShaderStorageBuffer::from(
-                damage_digit_render_data.sizes.clone(),
-            ));
-            let uvs_buffer = storage_buffers.add(ShaderStorageBuffer::from(
-                damage_digit_render_data.uvs.clone(),
-            ));
+            // Sizes
+            let needed = damage_digit_render_data.sizes.len() * std::mem::size_of::<Vec2>();
+            let grow = match storage_buffers.get_mut(&material.sizes) {
+                Some(buffer) if buffer.buffer_description.size >= needed as u64 => {
+                    buffer.set_data(damage_digit_render_data.sizes.clone());
+                    false
+                }
+                _ => true,
+            };
+            if grow {
+                let old = std::mem::replace(
+                    &mut material.sizes,
+                    storage_buffers.add(ShaderStorageBuffer::from(
+                        damage_digit_render_data.sizes.clone(),
+                    )),
+                );
+                storage_buffers.remove(&old);
+            }
 
-            // Update material with new buffer handles
-            material.positions = positions_buffer;
-            material.sizes = sizes_buffer;
-            material.uvs = uvs_buffer;
+            // Uvs
+            let needed = damage_digit_render_data.uvs.len() * std::mem::size_of::<Vec4>();
+            let grow = match storage_buffers.get_mut(&material.uvs) {
+                Some(buffer) if buffer.buffer_description.size >= needed as u64 => {
+                    buffer.set_data(damage_digit_render_data.uvs.clone());
+                    false
+                }
+                _ => true,
+            };
+            if grow {
+                let old = std::mem::replace(
+                    &mut material.uvs,
+                    storage_buffers.add(ShaderStorageBuffer::from(
+                        damage_digit_render_data.uvs.clone(),
+                    )),
+                );
+                storage_buffers.remove(&old);
+            }
 
-            // Remove old buffers to prevent memory leak
-            storage_buffers.remove(&old_positions);
-            storage_buffers.remove(&old_sizes);
-            storage_buffers.remove(&old_uvs);
+            // No explicit "mark changed" call is needed: Assets::get_mut (called
+            // above for the material and the storage buffers) automatically emits
+            // AssetEvent::Modified, which drives re-extraction + re-upload of the
+            // modified buffers and re-preparation of the material bind group.
         } else {
             log::warn!(
                 "[DAMAGE_DIGIT_RENDER] Could NOT find material for entity {:?} with handle {:?}",

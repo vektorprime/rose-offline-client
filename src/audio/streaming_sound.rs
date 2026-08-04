@@ -6,6 +6,7 @@ pub enum StreamingSound {
     Streaming {
         source: Box<dyn StreamingAudioSource + Send + Sync>,
         buffer: Vec<f32>,
+        start: usize,
     },
     Buffered {
         decoded: Arc<AudioSourceDecoded>,
@@ -24,6 +25,7 @@ impl StreamingSound {
             Self::Streaming {
                 source: audio_source.create_streaming_source().unwrap(),
                 buffer: Vec::with_capacity(1024),
+                start: 0,
             }
         }
     }
@@ -56,38 +58,56 @@ impl StreamingSound {
 
     fn fill(&mut self, mut write: impl FnMut(&[f32]) -> usize, repeating: bool) -> bool {
         match self {
-            StreamingSound::Streaming { source, buffer } => {
-                if !buffer.is_empty() {
-                    let samples_read = write(buffer);
-                    buffer.drain(0..samples_read);
+            StreamingSound::Streaming {
+                source,
+                buffer,
+                start,
+            } => {
+                if *start < buffer.len() {
+                    let samples_read = write(&buffer[*start..]);
+                    *start += samples_read;
+                    if *start == buffer.len() {
+                        buffer.clear();
+                        *start = 0;
+                    }
+                    return true;
                 }
 
-                if buffer.is_empty() {
-                    let mut did_repeat = false;
+                let mut did_repeat = false;
+                let mut decoded_samples = 0;
+                // Spread decoding across frames instead of refilling the whole ring in one burst
+                let refill_budget = source.sample_rate() as usize / 20;
 
-                    loop {
-                        let packet = source.read_packet();
-                        if packet.is_empty() {
-                            if repeating {
-                                if !did_repeat {
-                                    source.rewind();
-                                    did_repeat = true;
-                                    continue;
-                                } else {
-                                    return false; // Encountered an error
-                                }
+                loop {
+                    if decoded_samples >= refill_budget {
+                        return true;
+                    }
+
+                    let mut packet = source.read_packet();
+                    if packet.is_empty() {
+                        if repeating {
+                            if !did_repeat {
+                                source.rewind();
+                                did_repeat = true;
+                                continue;
                             } else {
-                                return false; // Reached end of stream
+                                return false; // Encountered an error
                             }
-                        }
-
-                        let samples_read = write(&packet);
-                        if samples_read == packet.len() {
-                            continue;
                         } else {
-                            buffer.extend_from_slice(&packet[samples_read..]);
-                            break;
+                            return false; // Reached end of stream
                         }
+                    }
+
+                    let samples_read = write(&packet);
+                    if samples_read == packet.len() {
+                        decoded_samples += samples_read;
+                        continue;
+                    } else {
+                        // Stream internal buffer full, keep the remainder without copying
+                        packet.drain(0..samples_read);
+                        std::mem::swap(buffer, &mut packet);
+                        *start = 0;
+                        break;
                     }
                 }
 

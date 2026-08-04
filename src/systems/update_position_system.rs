@@ -20,10 +20,17 @@ pub fn update_position_system(
         let distance_squared = direction.length_squared();
 
         if distance_squared == 0.0 {
-            position.position = destination;
+            // Arrived: only write back when the position actually differs, so an
+            // idle mover stops marking Position changed every frame.
+            if position.position != destination {
+                position.position = destination;
+            }
         } else {
-            // Update rotation
-            facing_direction.set_desired_vector(destination - position.position);
+            // Update rotation only when the desired angle actually changes
+            let desired_angle = direction.y.atan2(direction.x) + std::f32::consts::PI;
+            if (facing_direction.desired - desired_angle).abs() > 0.001 {
+                facing_direction.desired = desired_angle;
+            }
 
             // Move to position
             let move_vector = direction.normalize() * move_speed.speed * time.delta_secs();

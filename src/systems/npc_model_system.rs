@@ -32,7 +32,7 @@ pub fn npc_model_update_system(
         Changed<Npc>,
     >,
     asset_server: Res<AssetServer>,
-    model_loader: Res<ModelLoader>,
+    mut model_loader: ResMut<ModelLoader>,
     mut effect_mesh_materials: ResMut<
         Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
     >,

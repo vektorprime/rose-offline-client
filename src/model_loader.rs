@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use arrayvec::ArrayVec;
 use bevy::{
@@ -123,6 +123,7 @@ pub struct ModelLoader {
     // Npc
     npc_chr: ChrFile,
     npc_zsc: ZscFile,
+    npc_skeleton_cache: HashMap<u16, Option<Arc<ZmdFile>>>,
 
     // Field Item
     field_item: ZscFile,
@@ -174,6 +175,7 @@ impl ModelLoader {
             // NPC
             npc_chr: vfs.read_file::<ChrFile, _>("3DDATA/NPC/LIST_NPC.CHR")?,
             npc_zsc: vfs.read_file::<ZscFile, _>("3DDATA/NPC/PART_NPC.ZSC")?,
+            npc_skeleton_cache: HashMap::new(),
 
             // Field items
             field_item: vfs.read_file::<ZscFile, _>("3DDATA/ITEM/LIST_FIELDITEM.ZSC")?,
@@ -236,7 +238,7 @@ impl ModelLoader {
 
     #[allow(clippy::too_many_arguments)]
     pub fn spawn_npc_model(
-        &self,
+        &mut self,
         commands: &mut Commands,
         asset_server: &AssetServer,
         standard_materials: &mut Assets<bevy::pbr::StandardMaterial>,
@@ -250,11 +252,21 @@ impl ModelLoader {
         npc_id: NpcId,
     ) -> Option<(NpcModel, SkinnedMesh, DummyBoneOffset)> {
         let npc_model_data = self.npc_chr.npcs.get(&npc_id.get())?;
-        let (skinned_mesh, root_bone_position, dummy_bone_offset) = if let Some(skeleton) = self
-            .npc_chr
-            .skeleton_files
-            .get(npc_model_data.skeleton_index as usize)
-            .and_then(|p| self.vfs.read_file::<ZmdFile, _>(p).ok())
+        let skeleton = match self.npc_skeleton_cache.get(&npc_id.get()) {
+            Some(skeleton) => skeleton.clone(),
+            None => {
+                let loaded = self
+                    .npc_chr
+                    .skeleton_files
+                    .get(npc_model_data.skeleton_index as usize)
+                    .and_then(|p| self.vfs.read_file::<ZmdFile, _>(p).ok())
+                    .map(Arc::new);
+                self.npc_skeleton_cache.insert(npc_id.get(), loaded.clone());
+                loaded
+            }
+        };
+        let (skinned_mesh, root_bone_position, dummy_bone_offset) = if let Some(skeleton) =
+            skeleton.as_ref()
         {
             (
                 spawn_skeleton(

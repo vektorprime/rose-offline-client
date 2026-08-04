@@ -14,6 +14,10 @@ use crate::{
     systems::network_thread_system::handle_connection_lost,
 };
 
+/// Maximum server messages processed per frame; the remainder is carried
+/// over to the next frame to smooth burst spikes.
+const MAX_MESSAGES_PER_FRAME: u32 = 64;
+
 pub fn login_connection_system(
     mut commands: Commands,
     account: Option<Res<Account>>,
@@ -27,7 +31,12 @@ pub fn login_connection_system(
     }
 
     let login_connection = login_connection.unwrap();
+    let mut messages_processed = 0u32;
     let result: Result<(), anyhow::Error> = loop {
+        messages_processed += 1;
+        if messages_processed > MAX_MESSAGES_PER_FRAME {
+            break Ok(());
+        }
         match login_connection.server_message_rx.try_recv() {
             Ok(ServerMessage::ConnectionRequestSuccess {
                 packet_sequence_id: _,

@@ -17,7 +17,8 @@ use crate::{
         ui_add_item_tooltip, ui_add_skill_tooltip,
         ui_inventory_system::GetItem,
         widgets::{DataBindings, Dialog, Widget},
-        DialogInstance, DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop,
+        DialogInstance, DragAndDropId, DragAndDropSlot, SlotAccept, UiSoundEvent,
+        UiStateDragAndDrop,
     },
 };
 
@@ -56,13 +57,6 @@ pub struct PlayerQuery<'w> {
     skill_list: &'w SkillList,
 }
 
-fn hotbar_drag_accepts(drag_source: &DragAndDropId) -> bool {
-    matches!(
-        drag_source,
-        DragAndDropId::Inventory(_) | DragAndDropId::Skill(_) | DragAndDropId::Hotbar(_, _)
-    )
-}
-
 fn ui_add_hotbar_slot(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
@@ -87,7 +81,7 @@ fn ui_add_hotbar_slot(
                 Some(player.cooldowns),
                 game_data,
                 ui_resources,
-                hotbar_drag_accepts,
+                SlotAccept::Hotbar,
                 &mut ui_state_dnd.dragged_item,
                 &mut dropped_item,
                 [40.0, 40.0],
@@ -102,7 +96,7 @@ fn ui_add_hotbar_slot(
                 Some(player.cooldowns),
                 game_data,
                 ui_resources,
-                hotbar_drag_accepts,
+                SlotAccept::Hotbar,
                 &mut ui_state_dnd.dragged_item,
                 &mut dropped_item,
                 [40.0, 40.0],
@@ -115,7 +109,7 @@ fn ui_add_hotbar_slot(
             false,
             None,
             None,
-            hotbar_drag_accepts,
+            SlotAccept::Hotbar,
             &mut ui_state_dnd.dragged_item,
             &mut dropped_item,
             [40.0, 40.0],

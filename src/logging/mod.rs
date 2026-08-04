@@ -95,7 +95,7 @@ pub struct LoggingGuard {
 pub struct LoggingConfig {
     /// Base directory for log folders (default: "logs")
     pub log_directory: PathBuf,
-    /// Minimum log level (default: "debug")
+    /// Minimum log level (default: "info"; can be overridden with the RUST_LOG env var)
     pub level: String,
     /// Whether to also output to console (default: true)
     pub console_output: bool,

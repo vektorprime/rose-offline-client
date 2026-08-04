@@ -10,10 +10,10 @@ use bevy::{
     math::{primitives::Cuboid, Vec4},
     pbr::ExtendedMaterial,
     prelude::{
-        App, AssetServer, Assets, Camera, Camera3d, Color, Commands, Entity, GlobalTransform,
-        Handle, InheritedVisibility, KeyCode, Local, Mesh3d, MeshMaterial3d, MouseButton, Name,
-        Plugin, Quat, Query, Res, ResMut, StandardMaterial, Transform, Update, Vec3,
-        ViewVisibility, Visibility, With, Without,
+        in_state, App, AssetServer, Assets, Camera, Camera3d, Color, Commands, Entity,
+        GlobalTransform, Handle, InheritedVisibility, KeyCode, Local, Mesh3d, MeshMaterial3d,
+        MouseButton, Name, Plugin, Quat, Query, Res, ResMut, StandardMaterial, Transform, Update,
+        Vec3, ViewVisibility, Visibility, With, Without,
     },
     render::alpha::AlphaMode,
     window::{PrimaryWindow, Window},
@@ -39,6 +39,7 @@ use crate::{
     zone_loader::ZoneLoaderAsset,
     VfsResource,
 };
+use crate::resources::AppState;
 
 /// Plugin for the model placement system
 pub struct ModelPlacementPlugin;
@@ -47,15 +48,21 @@ impl Plugin for ModelPlacementPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            model_placement_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+            model_placement_system
+                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+                .run_if(in_state(AppState::MapEditor)),
         )
         .add_systems(
             Update,
-            model_preview_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+            model_preview_system
+                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+                .run_if(in_state(AppState::MapEditor)),
         )
         .add_systems(
             Update,
-            add_to_zone_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+            add_to_zone_system
+                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+                .run_if(in_state(AppState::MapEditor)),
         );
     }
 }

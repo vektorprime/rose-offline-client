@@ -17,7 +17,7 @@ use crate::{
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog},
-        DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop,
+        DragAndDropId, DragAndDropSlot, SlotAccept, UiSoundEvent, UiStateDragAndDrop,
     },
 };
 
@@ -74,7 +74,7 @@ fn ui_add_store_item_slot(
                         None,
                         game_data,
                         ui_resources,
-                        |_| false,
+                        SlotAccept::None,
                         &mut ui_state_dnd.dragged_item,
                         &mut dropped_item,
                         [40.0, 40.0],

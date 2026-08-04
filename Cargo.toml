@@ -62,6 +62,7 @@ rose-network-common = { path = "C:/Users/vicha/RustroverProjects/rose-offline/ro
 rose-network-irose = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-network-irose" }
 bevy_procedural_grass = { path = "../bevy_procedural_grass" }
 
+
 [dependencies.bevy]
 version = "0.18"
 default-features = false

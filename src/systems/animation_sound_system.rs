@@ -16,7 +16,7 @@ use crate::components::{Command, DummyBoneOffset, PlayerCharacter};
 
 use crate::{
     animation::AnimationFrameEvent,
-    audio::{queue_monster_sound, MonsterSoundQueue, SpatialSound},
+    audio::{queue_monster_sound, MonsterSoundQueue, SpatialSound, AUDIBLE_CUTOFF},
     components::SoundCategory,
     resources::{CurrentZone, GameData, SoundCache, SoundSettings},
     systems::effect_resolution::{resolve_vehicle_arms_bullet_effect_id, resolve_weapon_bullet_effect_id},
@@ -99,6 +99,8 @@ pub fn animation_sound_system(
         .map(|transform| transform.translation())
         .unwrap_or(Vec3::ZERO);
 
+    let default_step_sound_data = game_data.sounds.get_sound(SoundId::new(653).unwrap());
+
     for event in animation_frame_events.read() {
         let event_entity_full =
             if let Ok(event_entity_full) = query_event_entity_full.get(event.entity) {
@@ -117,11 +119,15 @@ pub fn animation_sound_system(
             .map_or(false, |target_entity| target_entity.player.is_some());
 
         if event.flags.contains(AnimationEventFlags::SOUND_FOOTSTEP) {
-            let default_step_sound_data = game_data.sounds.get_sound(SoundId::new(653).unwrap());
+            let translation = event_entity_full.global_transform.translation();
 
-            let step_sound_data = if let Some(current_zone) = current_zone.as_ref() {
+            // Cheap distance gate before the terrain/tile lookups
+            let step_sound_data = if translation.distance_squared(player_position)
+                > AUDIBLE_CUTOFF * AUDIBLE_CUTOFF
+            {
+                None
+            } else if let Some(current_zone) = current_zone.as_ref() {
                 if let Some(current_zone_data) = zone_loader_assets.get(&current_zone.handle) {
-                    let translation = event_entity_full.global_transform.translation();
                     let position =
                         Vec3::new(translation.x * 100.0, -translation.z * 100.0, translation.y);
 

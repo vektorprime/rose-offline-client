@@ -57,9 +57,15 @@ impl DrawWidget for Editbox {
             return;
         }
 
-        let mut unbound_buffer = format!("<{} unbound>", self.id);
         let enabled = bindings.get_enabled(self.id);
-        let buffer = bindings.get_text(self.id).unwrap_or(&mut unbound_buffer);
+        let mut unbound_buffer;
+        let buffer = match bindings.get_text(self.id) {
+            Some(buffer) => buffer,
+            None => {
+                unbound_buffer = format!("<{} unbound>", self.id);
+                &mut unbound_buffer
+            }
+        };
 
         let rect = self.widget_rect(ui.min_rect().min);
         let text_edit = if self.multiline != 0 {

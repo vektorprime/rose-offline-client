@@ -66,6 +66,11 @@ pub fn editor_zone_list_panel(
     let mut is_open = state.is_open;
     let current_zone_id = current_zone.map(|c| c.id);
 
+    // Take the filtered list out of state to avoid cloning it every frame
+    // (the table closure needs an immutable borrow of it while `state` is
+    // borrowed mutably); it is moved back after the panel renders.
+    let filtered_zones = std::mem::take(&mut state.filtered_zones);
+
     egui::Window::new("Open Zone")
         .open(&mut is_open)
         .resizable(true)
@@ -109,7 +114,6 @@ pub fn editor_zone_list_panel(
             }
 
             // Zone list table
-            let filtered_zones = state.filtered_zones.clone();
             egui_extras::TableBuilder::new(ui)
                 .striped(true)
                 .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
@@ -181,12 +185,13 @@ pub fn editor_zone_list_panel(
             ui.horizontal(|ui| {
                 ui.label(format!(
                     "Showing {} of {} zones",
-                    state.filtered_zones.len(),
+                    filtered_zones.len(),
                     game_data.zone_list.len()
                 ));
             });
         });
 
+    state.filtered_zones = filtered_zones;
     state.is_open = is_open;
 }
 

@@ -11,7 +11,7 @@ use crate::{
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
         tooltip_on_hover,
         widgets::{DataBindings, Dialog, Widget},
-        DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateWindows,
+        DragAndDropId, DragAndDropSlot, SlotAccept, UiSoundEvent, UiStateWindows,
     },
 };
 
@@ -50,7 +50,7 @@ fn ui_add_quest_item_slot(
                         None,
                         game_data,
                         ui_resources,
-                        |_| false,
+                        SlotAccept::None,
                         &mut dragged_item,
                         &mut dropped_item,
                         [40.0, 40.0],

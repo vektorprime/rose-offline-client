@@ -18,8 +18,8 @@ use crate::{
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
         tooltip_on_hover,
         widgets::{DataBindings, Dialog, Widget},
-        DialogInstance, DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateDragAndDrop,
-        UiStateWindows,
+        DialogInstance, DragAndDropId, DragAndDropSlot, SlotAccept, UiSoundEvent,
+        UiStateDragAndDrop, UiStateWindows,
     },
 };
 
@@ -143,31 +143,6 @@ const VEHICLE_GRID_SLOTS: [(rose_game_common::components::ItemSlot, egui::Pos2);
     ),
 ];
 
-fn drag_accepts(
-    page: InventoryPageType,
-    allow_bank: bool,
-    drag_source: &DragAndDropId,
-) -> bool {
-    match drag_source {
-        DragAndDropId::Inventory(ItemSlot::Inventory(actual_page, _)) => *actual_page == page,
-        DragAndDropId::Inventory(ItemSlot::Equipment(_)) => {
-            matches!(page, InventoryPageType::Equipment)
-        }
-        DragAndDropId::Inventory(ItemSlot::Ammo(_)) => {
-            matches!(page, InventoryPageType::Materials)
-        }
-        DragAndDropId::Inventory(ItemSlot::Vehicle(_)) => {
-            matches!(page, InventoryPageType::Vehicles)
-        }
-        // Store items can be dropped onto the inventory to buy them.
-        DragAndDropId::NpcStore(_, _) => true,
-        // Personal store items can be dropped onto the inventory to buy them.
-        DragAndDropId::PersonalStoreSell(_) => true,
-        DragAndDropId::Bank(_) => allow_bank,
-        _ => false,
-    }
-}
-
 pub trait GetItem {
     fn get_item(&self, item_slot: ItemSlot) -> Option<Item>;
 }
@@ -217,8 +192,7 @@ fn ui_add_inventory_slot(
         ItemSlot::Ammo(_) => (InventoryPageType::Materials, false),
         ItemSlot::Vehicle(_) => (InventoryPageType::Vehicles, false),
     };
-    let drag_accepts =
-        move |drag_source: &DragAndDropId| drag_accepts(page, allow_bank, drag_source);
+    let slot_accept = SlotAccept::Inventory { page, allow_bank };
     let item = (player.0, player.1).get_item(inventory_slot);
 
     let mut dropped_item = None;
@@ -233,7 +207,7 @@ fn ui_add_inventory_slot(
                         Some(player.2),
                         game_data,
                         ui_resources,
-                        drag_accepts,
+                        slot_accept,
                         &mut ui_state_dnd.dragged_item,
                         &mut dropped_item,
                         [40.0, 40.0],

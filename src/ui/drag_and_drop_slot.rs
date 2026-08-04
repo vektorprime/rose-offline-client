@@ -1,7 +1,7 @@
 use bevy_egui::egui;
 
 use rose_data::{Item, ItemClass, ItemType, SkillCooldown, SkillId, StatusEffectType};
-use rose_game_common::components::{ItemSlot, SkillSlot};
+use rose_game_common::components::{InventoryPageType, ItemSlot, SkillSlot};
 
 use crate::{
     components::{ConsumableCooldownGroup, Cooldowns},
@@ -21,6 +21,49 @@ pub enum DragAndDropId {
     Bank(usize),
 }
 
+#[derive(Copy, Clone)]
+pub enum SlotAccept {
+    None,
+    Hotbar,
+    InventoryItem,
+    NpcStoreBuy,
+    Inventory { page: InventoryPageType, allow_bank: bool },
+}
+
+impl SlotAccept {
+    fn accepts(&self, drag_source: &DragAndDropId) -> bool {
+        match self {
+            SlotAccept::None => false,
+            SlotAccept::Hotbar => matches!(
+                drag_source,
+                DragAndDropId::Inventory(_) | DragAndDropId::Skill(_) | DragAndDropId::Hotbar(_, _)
+            ),
+            SlotAccept::InventoryItem => {
+                matches!(drag_source, DragAndDropId::Inventory(ItemSlot::Inventory(_, _)))
+            }
+            SlotAccept::NpcStoreBuy => matches!(drag_source, DragAndDropId::NpcStore(_, _)),
+            SlotAccept::Inventory { page, allow_bank } => match drag_source {
+                DragAndDropId::Inventory(ItemSlot::Inventory(actual_page, _)) => {
+                    *actual_page == *page
+                }
+                DragAndDropId::Inventory(ItemSlot::Equipment(_)) => {
+                    matches!(page, InventoryPageType::Equipment)
+                }
+                DragAndDropId::Inventory(ItemSlot::Ammo(_)) => {
+                    matches!(page, InventoryPageType::Materials)
+                }
+                DragAndDropId::Inventory(ItemSlot::Vehicle(_)) => {
+                    matches!(page, InventoryPageType::Vehicles)
+                }
+                DragAndDropId::NpcStore(_, _) => true,
+                DragAndDropId::PersonalStoreSell(_) => true,
+                DragAndDropId::Bank(_) => *allow_bank,
+                _ => false,
+            },
+        }
+    }
+}
+
 pub struct DragAndDropSlot<'a> {
     dnd_id: DragAndDropId,
     size: egui::Vec2,
@@ -31,7 +74,7 @@ pub struct DragAndDropSlot<'a> {
     cooldown_percent: Option<f32>,
     quantity: Option<usize>,
     quantity_margin: f32,
-    accepts: Box<dyn Fn(&DragAndDropId) -> bool>,
+    accepts: SlotAccept,
     dragged_item: Option<&'a mut Option<DragAndDropId>>,
     dropped_item: Option<&'a mut Option<DragAndDropId>>,
 }
@@ -44,7 +87,7 @@ impl<'a> DragAndDropSlot<'a> {
         broken: bool,
         quantity: Option<usize>,
         cooldown_percent: Option<f32>,
-        accepts: impl Fn(&DragAndDropId) -> bool + 'static,
+        accepts: SlotAccept,
         dragged_item: &'a mut Option<DragAndDropId>,
         dropped_item: &'a mut Option<DragAndDropId>,
         size: impl Into<egui::Vec2>,
@@ -59,7 +102,7 @@ impl<'a> DragAndDropSlot<'a> {
             cooldown_percent,
             quantity,
             quantity_margin: 2.0,
-            accepts: Box::new(accepts),
+            accepts,
             dragged_item: Some(dragged_item),
             dropped_item: Some(dropped_item),
         }
@@ -71,7 +114,7 @@ impl<'a> DragAndDropSlot<'a> {
         cooldowns: Option<&Cooldowns>,
         game_data: &GameData,
         ui_resources: &UiResources,
-        accepts: impl Fn(&DragAndDropId) -> bool + 'static,
+        accepts: SlotAccept,
         dragged_item: &'a mut Option<DragAndDropId>,
         dropped_item: &'a mut Option<DragAndDropId>,
         size: impl Into<egui::Vec2>,
@@ -159,7 +202,7 @@ impl<'a> DragAndDropSlot<'a> {
             cooldown_percent,
             quantity,
             quantity_margin: 2.0,
-            accepts: Box::new(accepts),
+            accepts,
             dragged_item: Some(dragged_item),
             dropped_item: Some(dropped_item),
         }
@@ -171,7 +214,7 @@ impl<'a> DragAndDropSlot<'a> {
         cooldowns: Option<&Cooldowns>,
         game_data: &GameData,
         ui_resources: &UiResources,
-        accepts: impl Fn(&DragAndDropId) -> bool + 'static,
+        accepts: SlotAccept,
         dragged_item: &'a mut Option<DragAndDropId>,
         dropped_item: &'a mut Option<DragAndDropId>,
         size: impl Into<egui::Vec2>,
@@ -204,7 +247,7 @@ impl<'a> DragAndDropSlot<'a> {
             cooldown_percent,
             quantity: None,
             quantity_margin: 2.0,
-            accepts: Box::new(accepts),
+            accepts,
             dragged_item: Some(dragged_item),
             dropped_item: Some(dropped_item),
         }
@@ -216,6 +259,8 @@ fn generate_cooldown_mesh(cooldown: f32, content_rect: egui::Rect) -> egui::epai
 
     let segment_size = Vec2::new(content_rect.width() / 2.0, content_rect.height() / 2.0);
     let mut mesh = Mesh::default();
+    mesh.vertices.reserve(10);
+    mesh.indices.reserve(27);
 
     let add_vert = |mesh: &mut Mesh, x, y| {
         let pos = mesh.vertices.len();
@@ -338,6 +383,8 @@ impl<'w> DragAndDropSlot<'w> {
             if let Some(sprite) = self.sprite.as_ref() {
                 let content_rect = rect;
                 let mut mesh = Mesh::with_texture(sprite.texture_id);
+                mesh.vertices.reserve(4);
+                mesh.indices.reserve(6);
                 mesh.add_rect_with_uv(
                     content_rect,
                     sprite.uv,
@@ -351,6 +398,8 @@ impl<'w> DragAndDropSlot<'w> {
 
                 if let Some(socket_sprite) = self.socket_sprite.as_ref() {
                     let mut mesh = Mesh::with_texture(socket_sprite.texture_id);
+                    mesh.vertices.reserve(4);
+                    mesh.indices.reserve(6);
                     mesh.add_rect_with_uv(
                         egui::Rect::from_min_size(
                             content_rect.min,
@@ -413,6 +462,8 @@ impl<'w> DragAndDropSlot<'w> {
                             ));
                             let mut tooltip_mesh =
                                 egui::epaint::Mesh::with_texture(sprite.texture_id);
+                            tooltip_mesh.vertices.reserve(4);
+                            tooltip_mesh.indices.reserve(6);
                             tooltip_mesh.add_rect_with_uv(
                                 response
                                     .rect
@@ -449,7 +500,7 @@ impl<'w> egui::Widget for DragAndDropSlot<'w> {
         let dropped_item = self.dropped_item.take().unwrap();
         let accepts_dragged_item = dragged_item
             .as_ref()
-            .map(|dnd_id| (self.accepts)(dnd_id))
+            .map(|dnd_id| self.accepts.accepts(dnd_id))
             .unwrap_or(false);
 
         let (dropped, mut response) = self.draw(ui, accepts_dragged_item);

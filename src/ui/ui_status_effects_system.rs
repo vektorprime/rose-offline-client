@@ -1,7 +1,6 @@
 use std::time::{Duration, Instant};
 
 use bevy::prelude::{Entity, Query, Res, With};
-use bevy::time::Time;
 use bevy_egui::{egui, EguiContexts};
 
 use rose_game_common::components::StatusEffects;
@@ -13,10 +12,9 @@ use crate::{
 
 pub fn ui_status_effects_system(
     mut egui_context: EguiContexts,
-    mut query_player: Query<(Entity, &StatusEffects), With<PlayerCharacter>>,
+    query_player: Query<(Entity, &StatusEffects), With<PlayerCharacter>>,
     game_data: Res<GameData>,
     ui_resources: Res<UiResources>,
-    time: Res<Time>,
 ) {
     let player = if let Ok(player) = query_player.single() {
         player
@@ -24,9 +22,10 @@ pub fn ui_status_effects_system(
         return;
     };
 
-    let (entity, status_effects) = player;
+    let (_, status_effects) = player;
+    let now = Instant::now();
 
-    egui::Window::new("Player Status Effects}")
+    egui::Window::new("Player Status Effects")
         .anchor(egui::Align2::LEFT_TOP, [250.0, 40.0])
         .frame(egui::Frame::none())
         .title_bar(false)
@@ -42,7 +41,6 @@ pub fn ui_status_effects_system(
                             let remaining_time = if let Some(expire_time) =
                                 status_effects.expire_times[status_effect_type]
                             {
-                                let now = Instant::now();
                                 if now >= expire_time {
                                     Some(Duration::ZERO)
                                 } else {

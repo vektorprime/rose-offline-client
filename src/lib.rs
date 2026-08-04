@@ -19,14 +19,14 @@ use bevy::{
     post_process::{
         auto_exposure::AutoExposure,
         bloom::Bloom,
-        dof::{DepthOfField, DepthOfFieldMode},
+        dof::{DepthOfField},
         motion_blur::MotionBlur,
     },
     prelude::{
         default, in_state, resource_exists, App, AppExtStates, AssetServer, Assets, Camera3d,
         ClearColorConfig, Color, Commands, Entity, IntoScheduleConfigs, Msaa, OnEnter, OnExit,
         PerspectiveProjection, PluginGroup, PostStartup, PostUpdate, PreUpdate, Projection, Quat,
-        Query, Res, ResMut, Startup, SystemSet, Transform, Update, Vec3,
+        Query, Res, ResMut, Startup, SystemSet, Transform, Update, Vec3, With, Without,
     },
     render::experimental::occlusion_culling::OcclusionCulling,
     render::view::ColorGrading,
@@ -126,6 +126,7 @@ use render::{
     // New 3D volumetric cloud system:
     VolumetricCloudPlugin,
     WaterMaterial,
+    WaterReflectionCamera,
     WaterReflectionPlugin,
     WorldUiRenderPlugin,
     ZoneLightingPlugin,
@@ -134,9 +135,9 @@ use resources::{
     load_ui_resources, run_network_thread, update_ui_resources,
     AppState, ClientEntityList, CurrentZone, DamageDigitsSpawner, DebugRenderConfig,
     FlightSettings, GameData, LoginCameraAnimation, MonsterChatterPhrases, NameTagSettings,
-    NetworkThread, NetworkThreadMessage, RenderConfiguration, RenderExtractionDiagnostics,
-    SelectedTarget, ServerConfiguration, SoundCache, SoundSettings, SpecularTexture, VfsResource,
-    WaterSettings, WindSettings, WindState, WorldTime, ZoneTime,
+    NetworkThread, NetworkThreadMessage, ProjectileIndex, RenderConfiguration,
+    RenderExtractionDiagnostics, SelectedTarget, ServerConfiguration, SoundCache, SoundSettings,
+    SpecularTexture, VfsResource, WaterSettings, WindSettings, WindState, WorldTime, ZoneTime,
 };
 use scripting::RoseScriptingPlugin;
 use systems::{
@@ -174,7 +175,6 @@ use systems::{
     create_damage_digit_material_system,
     create_default_particle_texture,
     damage_digit_render_system,
-    directional_light_system,
     effect_system,
     ensure_boat_state_system,
     ensure_boat_wake_emitter_system,
@@ -205,6 +205,7 @@ use systems::{
     monster_separation_system,
     move_destination_effect_system,
     move_speed_set_system,
+    memory_diagnostics_run_condition,
     memory_diagnostics_system,
     name_tag_system,
     name_tag_update_color_system,
@@ -273,12 +274,14 @@ use ui::{
     ui_skill_list_system, ui_skill_tree_system, ui_sound_event_system, ui_status_effects_system,
     ui_window_sound_system, widgets::Dialog, DepthOfFieldSettings, DialogLoader, UiSoundEvent,
     UiStateAdminMenu, UiStateDebugWindows, UiStateDragAndDrop, UiStateWindows,
+    settings_window_open,
 };
 use vfs_asset_io::VfsAssetReaderPlugin;
 use zms_asset_loader::{ZmsAssetLoader, ZmsMaterialNumFaces, ZmsNoSkinAssetLoader};
 use zone_loader::{
     force_zone_visibility_system, zone_loaded_from_vfs_system, zone_loader_system,
-    MemoryTrackingResource, ZoneLoadChannelReceiver, ZoneLoadChannelSender, ZoneLoaderAsset,
+    LastRequestedZone, MemoryTrackingResource, ZoneLoadChannelReceiver, ZoneLoadChannelSender,
+    ZoneLoaderAsset,
 };
 
 use crate::components::{SoundCategory, VegetationSwayPlugin};
@@ -664,7 +667,6 @@ enum GameStages {
     ZoneChangeFlush,
     AfterUpdate,
     DebugRenderPreFlush,
-    DebugRender,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
@@ -832,6 +834,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.insert_resource(ZoneLoadChannelSender(tx));
     app.insert_resource(ZoneLoadChannelReceiver(std::sync::Mutex::new(rx)));
     app.init_resource::<Assets<ZoneLoaderAsset>>();
+    app.init_resource::<LastRequestedZone>();
     log::info!("[ZONE LOADER] Channel for async zone loading created and registered");
 
     // Initialize memory tracking resource for zone loading
@@ -999,8 +1002,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_message::<ZoneLoadedFromVfsEvent>()
         .add_message::<UiSoundEvent>();
 
-    app.add_systems(PostUpdate, ApplyDeferred);
-
     app.add_systems(
         PostUpdate,
         (ApplyDeferred,).in_set(GameStages::DebugRenderPreFlush),
@@ -1079,7 +1080,10 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             character_model_add_collider_system,
         ),
     );
-    app.add_systems(Update, memory_diagnostics_system);
+    app.add_systems(
+        Update,
+        memory_diagnostics_system.run_if(memory_diagnostics_run_condition),
+    );
     // name_tag_system uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
     app.add_systems(bevy_egui::EguiPrimaryContextPass, name_tag_system);
     // chat_bubble_spawn_system uses EguiContexts for text rendering - must run in EguiPrimaryContextPass for bevy_egui 0.39
@@ -1105,8 +1109,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             item_drop_model_system,
             item_drop_model_add_collider_system,
             animation_effect_system,
-            projectile_system,
-            spawn_projectile_system,
+            projectile_system.run_if(in_state(AppState::Game)),
+            spawn_projectile_system.run_if(in_state(AppState::Game)),
         ),
     );
 
@@ -1117,6 +1121,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             pending_skill_effect_system,
             hit_event_system,
             spawn_effect_system
+                .run_if(in_state(AppState::Game))
                 .after(visible_status_effects_system)
                 .after(ui_debug_effect_list_system),
             visible_status_effects_system,
@@ -1140,7 +1145,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             // This system was applying time-based color grading (temperature/saturation changes)
             // which conflicts with the new atmospheric scattering system.
             // color_grading_time_of_day_system,
-            directional_light_system,
             // Update terrain lighting based on zone lighting and time of day
             // Must run after zone_time_system to get current time state for intensity adjustment
             render::terrain_material::update_terrain_lighting_system.after(zone_time_system),
@@ -1339,6 +1343,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<UiStateAdminMenu>()
         .init_resource::<PingState>()
         .init_resource::<ClientEntityList>()
+        .init_resource::<ProjectileIndex>()
         .init_resource::<DebugRenderConfig>()
         .init_resource::<WorldTime>()
         .init_resource::<ZoneTime>()
@@ -1384,6 +1389,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             graphics::apply_shadow_filtering_system,
             graphics::apply_msaa_system,
             graphics::apply_ambient_light_system,
+            graphics::apply_motion_blur_system,
+            graphics::apply_fxaa_system,
+            graphics::apply_smaa_system,
         ),
     );
 
@@ -1608,11 +1616,16 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             ui_selected_target_system,
             ui_skill_list_system,
             ui_skill_tree_system,
-            ui_settings_system,
             ui_status_effects_system,
             conversation_dialog_system,
         )
             .run_if(in_state(AppState::Game)),
+    );
+    app.add_systems(
+        bevy_egui::EguiPrimaryContextPass,
+        ui_settings_system
+            .run_if(in_state(AppState::Game))
+            .run_if(settings_window_open),
     );
     app.add_systems(
         bevy_egui::EguiPrimaryContextPass,
@@ -1715,11 +1728,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             GameStages::AfterUpdate,
         )
             .before(PhysicsSet::SyncBackend),
-    );
-
-    app.configure_sets(
-        PostUpdate,
-        (GameStages::DebugRenderPreFlush, GameStages::DebugRender).chain(),
     );
 
     // CRITICAL FIX: Use Bevy's default ordering for internal systems
@@ -1904,6 +1912,10 @@ fn load_common_game_data(
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut scattering_mediums: ResMut<Assets<bevy::pbr::ScatteringMedium>>,
+    // F11: spawn FX from the settings resources so frame 0 matches what the
+    // apply systems will enforce on frame 1 (single source of truth).
+    dof_settings: Res<DepthOfFieldSettings>,
+    post_process_settings: Res<ui::PostProcessingSettings>,
 ) {
 
 
@@ -2003,30 +2015,39 @@ fn load_common_game_data(
             // Bevy 0.18 built-in atmospheric scattering for realistic sky
             Atmosphere::earthlike(scattering_mediums.add(bevy::pbr::ScatteringMedium::default())),
             AtmosphereSettings::default(),
-            // Add Depth of Field effect
-            DepthOfField {
-                mode: DepthOfFieldMode::Bokeh,
-                focal_distance: 10.0,   // Focus 10 meters away
-                aperture_f_stops: 3.3,  // f/3.3 aperture
-                sensor_height: 0.01866, // Super 35 format (default)
-                max_circle_of_confusion_diameter: 64.0,
-                max_depth: 2000.0, // Max depth range
-            },
-            // Add VolumetricFog for light shafts/god rays effect
-            // Configured for 60fps target with balanced quality
-            VolumetricFog {
+        ));
+        // Depth of Field - spawned from the settings resource: the apply system
+        // would insert the exact same component on frame 1 anyway (and would
+        // REMOVE it when the user saved DoF off, which the old hardcoded spawn
+        // ignored for frame 0).
+        if dof_settings.enabled {
+            commands.entity(camera_entity).insert(DepthOfField {
+                mode: dof_settings.mode,
+                focal_distance: dof_settings.focal_distance,
+                aperture_f_stops: dof_settings.aperture_f_stops,
+                sensor_height: dof_settings.sensor_height,
+                max_circle_of_confusion_diameter: dof_settings.max_circle_of_confusion_diameter,
+                max_depth: dof_settings.max_depth,
+            });
+        }
+        // VolumetricFog for light shafts/god rays effect - spawned from the
+        // settings resource (apply system normalizes to step_count 64 when on).
+        if post_process_settings.volumetric_fog_enabled {
+            commands.entity(camera_entity).insert(VolumetricFog {
                 ambient_intensity: 0.1,
                 jitter: 0.0,
-                step_count: 128,
+                step_count: 64,
                 ..default()
-            },
-            // SSAO for contact shadows - adds darkening in crevices and where objects meet ground
-            // Requires Msaa::Off (which is the default in Bevy 0.15)
-            ScreenSpaceAmbientOcclusion {
-                quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
+            });
+        }
+        // SSAO for contact shadows - requires Msaa::Off. Spawned from the
+        // settings resource (apply system normalizes to Medium when on).
+        if post_process_settings.ssao_enabled {
+            commands.entity(camera_entity).insert(ScreenSpaceAmbientOcclusion {
+                quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium,
                 constant_object_thickness: 0.25, // Adjust if AO is too strong/weak
-            },
-        ));
+            });
+        }
     }
     info!(
         "[CAMERA] Camera entity spawned with id: {:?}, position: ~5120.0, 100.0, -5120.0 (game world center)",
@@ -2077,26 +2098,54 @@ fn print_diagnostic_summary(
 
 /// System to apply depth of field settings from the resource to the camera
 /// This allows live adjustment of DoF parameters via the Settings UI
+/// When disabled, the DepthOfField component is removed entirely so the
+/// full-screen gather pass is skipped (instead of falling back to a Gaussian
+/// mode that still renders).
 fn apply_depth_of_field_settings(
     dof_settings: Res<DepthOfFieldSettings>,
-    mut query: Query<&mut DepthOfField>,
+    // Only main-world cameras: the water reflection camera renders to an LDR
+    // image target and must never receive post-process components (their
+    // required prepasses would create prepass-only phases for a deferred
+    // renderer, panicking bevy_pbr's prepass queue).
+    mut query: Query<
+        (Entity, Option<&mut DepthOfField>),
+        (With<Camera>, Without<WaterReflectionCamera>),
+    >,
+    mut commands: Commands,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
 
     // Only update if settings have changed
     if dof_settings.is_changed() {
-        for mut dof in query.iter_mut() {
+        for (entity, dof) in query.iter_mut() {
             if dof_settings.enabled {
-                dof.mode = dof_settings.mode;
-                dof.focal_distance = dof_settings.focal_distance;
-                dof.aperture_f_stops = dof_settings.aperture_f_stops;
-                dof.sensor_height = dof_settings.sensor_height;
-                dof.max_circle_of_confusion_diameter =
-                    dof_settings.max_circle_of_confusion_diameter;
-                dof.max_depth = dof_settings.max_depth;
-            } else {
-                // When disabled, use Gaussian mode with minimal effect (effectively off)
-                dof.mode = DepthOfFieldMode::Gaussian;
+                match dof {
+                    Some(mut dof) => {
+                        dof.mode = dof_settings.mode;
+                        dof.focal_distance = dof_settings.focal_distance;
+                        dof.aperture_f_stops = dof_settings.aperture_f_stops;
+                        dof.sensor_height = dof_settings.sensor_height;
+                        dof.max_circle_of_confusion_diameter =
+                            dof_settings.max_circle_of_confusion_diameter;
+                        dof.max_depth = dof_settings.max_depth;
+                    }
+                    None => {
+                        commands.entity(entity).insert(DepthOfField {
+                            mode: dof_settings.mode,
+                            focal_distance: dof_settings.focal_distance,
+                            aperture_f_stops: dof_settings.aperture_f_stops,
+                            sensor_height: dof_settings.sensor_height,
+                            max_circle_of_confusion_diameter:
+                                dof_settings.max_circle_of_confusion_diameter,
+                            max_depth: dof_settings.max_depth,
+                        });
+                        info!("[PostProcess] Depth of field enabled on camera");
+                    }
+                }
+            } else if dof.is_some() {
+                // Remove the component so the DoF pass no longer runs
+                commands.entity(entity).remove::<DepthOfField>();
+                info!("[PostProcess] Depth of field disabled on camera");
             }
         }
     }
@@ -2106,13 +2155,20 @@ fn apply_depth_of_field_settings(
 /// This allows live toggling of bloom, SSAO, volumetric fog, and color grading via the Settings UI
 fn apply_post_processing_settings(
     post_process_settings: Res<ui::PostProcessingSettings>,
-    mut camera_query: Query<(
-        Entity,
-        Option<&mut Bloom>,
-        Option<&mut ScreenSpaceAmbientOcclusion>,
-        Option<&mut VolumetricFog>,
-        Option<&mut ColorGrading>,
-    )>,
+    // Only main-world cameras: the water reflection camera renders to an LDR
+    // image target and must never receive post-process components (their
+    // required prepasses would create prepass-only phases for a deferred
+    // renderer, panicking bevy_pbr's prepass queue).
+    mut camera_query: Query<
+        (
+            Entity,
+            Option<&mut Bloom>,
+            Option<&mut ScreenSpaceAmbientOcclusion>,
+            Option<&mut VolumetricFog>,
+            Option<&mut ColorGrading>,
+        ),
+        (With<Camera>, Without<WaterReflectionCamera>),
+    >,
     mut commands: Commands,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
@@ -2138,24 +2194,32 @@ fn apply_post_processing_settings(
             }
         }
 
-        // Handle SSAO
-        if let Some(mut ssao_comp) = ssao {
-            if !post_process_settings.ssao_enabled {
-                // Set quality to lowest effectively disabling it
-                ssao_comp.quality_level = ScreenSpaceAmbientOcclusionQualityLevel::Low;
-            } else {
-                ssao_comp.quality_level = ScreenSpaceAmbientOcclusionQualityLevel::Medium;
+        // Handle SSAO - remove/insert the component instead of re-targeting
+        // quality levels: ScreenSpaceAmbientOcclusion requires a depth prepass
+        // and SSAO's own render pass (which includes a deep graph node); with
+        // quality Low it still runs the full node pipeline, so only removing the
+        // component actually stops the pass. Quality is applied by the new
+        // apply_ssao_quality_system from GraphicsSettings.
+        if post_process_settings.ssao_enabled {
+            if ssao.is_none() {
+                commands.entity(entity).insert(ScreenSpaceAmbientOcclusion::default());
+                info!("[PostProcess] SSAO enabled on camera");
             }
+        } else if ssao.is_some() {
+            commands.entity(entity).remove::<ScreenSpaceAmbientOcclusion>();
+            info!("[PostProcess] SSAO disabled on camera");
         }
 
-        // Handle Volumetric Fog
-        if let Some(mut fog) = volumetric_fog {
-            if post_process_settings.volumetric_fog_enabled {
-                fog.step_count = 64;
-            } else {
-                // Effectively disable by setting step count to minimum
-                fog.step_count = 1;
+        // Handle Volumetric Fog - same rationale: with step_count 1 the
+        // VolumetricFogNode pass still renders, so remove the component instead.
+        if post_process_settings.volumetric_fog_enabled {
+            if volumetric_fog.is_none() {
+                commands.entity(entity).insert(VolumetricFog::default());
+                info!("[PostProcess] Volumetric fog enabled on camera");
             }
+        } else if volumetric_fog.is_some() {
+            commands.entity(entity).remove::<VolumetricFog>();
+            info!("[PostProcess] Volumetric fog disabled on camera");
         }
     }
 }
@@ -2173,12 +2237,26 @@ fn apply_water_settings(
     // Update if water settings or zone lighting have changed
     if water_settings.is_changed() || zone_lighting.is_changed() {
         for (_, material) in water_materials.iter_mut() {
-            material.settings = water_settings.clone();
+            // OPTIMIZATION: ZoneLighting is rewritten every frame (time-of-day
+            // sync systems), so the guard above is almost always true. Diff the
+            // fog values against the material's current values instead and only
+            // mutate when something really changed. The settings struct itself is
+            // only cloned when the user actually edited the water panel.
+            if water_settings.is_changed() {
+                material.settings = water_settings.clone();
+            }
             // Sync fog parameters from ZoneLighting for water-scene integration
-            material.fog_color = zone_lighting.fog_color.extend(1.0);
-            material.fog_density = zone_lighting.fog_density;
-            material.fog_min_density = zone_lighting.fog_min_density;
-            material.fog_max_density = zone_lighting.fog_max_density;
+            let fog_color = zone_lighting.fog_color.extend(1.0);
+            if material.fog_color != fog_color
+                || material.fog_density != zone_lighting.fog_density
+                || material.fog_min_density != zone_lighting.fog_min_density
+                || material.fog_max_density != zone_lighting.fog_max_density
+            {
+                material.fog_color = fog_color;
+                material.fog_density = zone_lighting.fog_density;
+                material.fog_min_density = zone_lighting.fog_min_density;
+                material.fog_max_density = zone_lighting.fog_max_density;
+            }
         }
     }
 }

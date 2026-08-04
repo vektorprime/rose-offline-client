@@ -109,10 +109,9 @@ pub fn ui_chatbox_system(
         return;
     };
 
-    let local_time = chrono::Local::now();
-    let timestamp = local_time.format("%H:%M:%S");
-
     for event in chatbox_events.read() {
+        let timestamp = chrono::Local::now().format("%H:%M:%S");
+
         if ui_state_chatbox.textbox_layout_job.sections.len() == MAX_CHATBOX_ENTRIES {
             ui_state_chatbox.textbox_layout_job.sections.remove(0);
             ui_state_chatbox.cleanup_layout_text_counter += 1;
@@ -173,14 +172,6 @@ pub fn ui_chatbox_system(
             },
         );
     }
-
-    let mut chatbox_style = (*egui_context.ctx_mut().unwrap().style()).clone();
-    chatbox_style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgba_unmultiplied(
-        chatbox_style.visuals.widgets.noninteractive.bg_fill.r(),
-        chatbox_style.visuals.widgets.noninteractive.bg_fill.g(),
-        chatbox_style.visuals.widgets.noninteractive.bg_fill.b(),
-        128,
-    );
 
     let style = egui_context.ctx_mut().unwrap().style();
     let frame_fill = style.visuals.window_fill();

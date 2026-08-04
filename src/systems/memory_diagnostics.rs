@@ -28,13 +28,12 @@ use crate::{
     zone_loader::ZoneLoaderAsset,
 };
 
-/// Bundled time/state/entity params. Each derived SystemParam struct counts as a
+/// Bundled time/entity params. Each derived SystemParam struct counts as a
 /// single system parameter, so bundling keeps the system within Bevy's 20-parameter
 /// limit (this system would otherwise expand to 22 parameters).
 #[derive(SystemParam)]
-pub struct MemoryDiagMeta<'w, 's> {
+pub struct MemoryDiagMeta<'w> {
     time: Res<'w, Time>,
-    state: Local<'s, MemoryDiagState>,
     entities: &'w Entities,
 }
 
@@ -77,23 +76,25 @@ pub struct MemoryDiagState {
     last_log: Option<Instant>,
 }
 
+/// Run condition that only lets the diagnostics system run once every 30 seconds,
+/// so the entity/asset scans (which are O(entities)) never run every frame.
+pub fn memory_diagnostics_run_condition(mut state: Local<MemoryDiagState>) -> bool {
+    let now = Instant::now();
+    let should_run = state
+        .last_log
+        .map_or(true, |last| now.duration_since(last) >= Duration::from_secs(30));
+    if should_run {
+        state.last_log = Some(now);
+    }
+    should_run
+}
+
 pub fn memory_diagnostics_system(
-    mut meta: MemoryDiagMeta,
+    meta: MemoryDiagMeta,
     assets: MemoryDiagAssets,
     queries: MemoryDiagQueries,
     events: MemoryDiagEvents,
 ) {
-    let now = Instant::now();
-    let should_log = meta
-        .state
-        .last_log
-        .map_or(true, |last| now.duration_since(last) >= Duration::from_secs(30));
-
-    if !should_log {
-        return;
-    }
-    meta.state.last_log = Some(now);
-
     let (vfs_files, vfs_bytes) = vfs_file_cache_stats();
 
     let zones: Vec<String> = queries

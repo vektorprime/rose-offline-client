@@ -61,6 +61,7 @@ pub use resources::{
 pub use save::{SavePlugin, SaveStatus, SaveZoneEvent};
 
 use crate::animation::CameraAnimation;
+use crate::resources::AppState;
 use crate::systems::{FreeCamera, OrbitCamera};
 use bevy::prelude::*;
 use systems::duplicate_system::DuplicateSystemPlugin;
@@ -106,12 +107,18 @@ impl Plugin for MapEditorPlugin {
             .add_plugins(save::SavePlugin);
 
         // Phase 2.5: Load available models on startup (after GameData is loaded)
-        app.add_systems(Update, load_models_system::load_available_models_system);
+        // Only runs in MapEditor mode; the model list is only used by the editor UI.
+        app.add_systems(
+            Update,
+            load_models_system::load_available_models_system
+                .run_if(in_state(AppState::MapEditor)),
+        );
 
         // Update models when a zone is loaded (fixes empty CNST/DECO tabs)
         app.add_systems(
             Update,
-            load_models_system::update_models_on_zone_load_system,
+            load_models_system::update_models_on_zone_load_system
+                .run_if(in_state(AppState::MapEditor)),
         );
 
         // Log plugin initialization

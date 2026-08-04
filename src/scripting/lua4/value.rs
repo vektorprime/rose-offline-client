@@ -9,12 +9,12 @@ pub enum Lua4Value {
     Nil,
     UserData(Arc<dyn Any + Send + Sync>),
     Number(f64),
-    String(String),
+    String(Arc<str>),
     Table {
-        fields: HashMap<String, Lua4Value>,
+        fields: HashMap<Arc<str>, Lua4Value>,
         array: Vec<Lua4Value>,
     },
-    Closure(Arc<Lua4Function>, Vec<Lua4Value>),
+    Closure(Arc<Lua4Function>, Arc<Vec<Lua4Value>>),
     RustClosure(String),
 }
 
@@ -139,7 +139,7 @@ impl From<f64> for Lua4Value {
 
 impl From<String> for Lua4Value {
     fn from(value: String) -> Self {
-        Lua4Value::String(value)
+        Lua4Value::String(value.into())
     }
 }
 
@@ -175,7 +175,7 @@ impl TryFrom<&Lua4Value> for String {
     fn try_from(value: &Lua4Value) -> Result<Self, Self::Error> {
         match value {
             Lua4Value::Number(number) => Ok(format!("{}", *number)),
-            Lua4Value::String(string) => Ok(string.clone()),
+            Lua4Value::String(string) => Ok(string.to_string()),
             _ => Err(LuaValueConversionError::InvalidType),
         }
     }

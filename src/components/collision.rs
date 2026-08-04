@@ -54,6 +54,20 @@ pub struct CollisionPlayer;
 #[derive(Component)]
 pub struct CollisionHeightOnly;
 
+/// Cached ground height for a `CollisionHeightOnly` entity. The per-frame
+/// Rapier ground queries (downward ray + feet-sphere intersect) are skipped
+/// while the entity has not moved horizontally or is far from the camera, and
+/// this last resolved height is reused instead.
+#[derive(Component, Clone, Copy, Debug, Reflect)]
+pub struct GroundHeightCache {
+    /// Last `Position.x` (cm) the ground height was resolved at.
+    pub last_x: f32,
+    /// Last `Position.y` (cm) the ground height was resolved at.
+    pub last_y: f32,
+    /// Resolved ground height in meters (max of terrain/ray/object top).
+    pub cached_ground_y: f32,
+}
+
 pub const COLLISION_GROUP_ZONE_OBJECT: Group = Group::from_bits_truncate(1 << 0);
 pub const COLLISION_GROUP_ZONE_TERRAIN: Group = Group::from_bits_truncate(1 << 1);
 pub const COLLISION_GROUP_ZONE_WATER: Group = Group::from_bits_truncate(1 << 2);

@@ -31,12 +31,22 @@ use bevy::{
     image::Image,
     light::EnvironmentMapLight,
     math::{vec2, Isometry3d, Mat4, primitives::InfinitePlane3d, reflection_matrix},
+    pbr::{
+        ExtractedClusterConfig, ExtractedClusterableObjects, MeshViewBindGroup, ViewClusterBindings,
+        ViewEnvironmentMapUniformOffset, ViewFogUniformOffset, ViewLightProbesUniformOffset,
+        ViewLightsUniformOffset, ViewScreenSpaceReflectionsUniformOffset, ViewShadowBindings,
+    },
     prelude::{
         App, Assets, Camera3d, Commands, Component, Entity, GlobalTransform, Handle,
-        IntoScheduleConfigs, Local, Mesh3d, Msaa, PerspectiveProjection, Plugin, Query, Res,
+        IntoScheduleConfigs, Has, Local, Mesh3d, Msaa, PerspectiveProjection, Plugin, Query, Res,
         ResMut, Resource, Transform, UVec2, Vec3, Vec3A, Visibility, Window, With, Without,
     },
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
+    render::{
+        camera::ExtractedCamera,
+        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
+        view::{ViewDepthTexture, ViewTarget, ViewUniformOffset},
+        Render, RenderApp, RenderSystems,
+    },
 };
 
 use crate::{
@@ -87,6 +97,13 @@ impl Plugin for WaterReflectionPlugin {
                 bevy::prelude::PostUpdate,
                 sync_reflection_camera.before(bevy::transform::TransformSystems::Propagate),
             );
+
+        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+            render_app.add_systems(
+                Render,
+                cleanup_inactive_camera_views.in_set(RenderSystems::ManageViews),
+            );
+        }
     }
 }
 
@@ -322,7 +339,14 @@ fn sync_reflection_camera(
         // determine whether the clip plane or the mirror transform breaks the
         // frustum culling.
         *projection = Projection::Perspective(main_perspective.clone());
-        camera.is_active = reflection_active;
+        // Only flip `is_active` when the desired state actually changes.
+        // Writing it every frame keeps `Camera` permanently change-detected
+        // (camera_system, update_frusta, ...) and makes the activation/
+        // deactivation transitions the only discrete events, which keeps the
+        // render-world view in a stable state between transitions.
+        if camera.is_active != reflection_active {
+            camera.is_active = reflection_active;
+        }
 
         // Write the frustum directly: update_frusta only recomputes the frustum
         // when the GlobalTransform or Projection is change-detected, and if that
@@ -427,5 +451,49 @@ fn sync_reflection_camera(
             reflection_log.map_or(0, |(_, c, _, _)| c),
             reflection_log.map_or(0, |(_, _, m, _)| m),
         );
+    }
+}
+
+/// Removes the stale render-world view components from camera views that are
+/// not extracted in the current frame (i.e. deactivated cameras).
+///
+/// Bevy's `extract_cameras` only removes `ExtractedCameraComponents`
+/// (`ExtractedCamera`, `ExtractedView`, `ViewUniformOffset`, ...) from a
+/// camera's render-world view entity when the camera is deactivated; the view
+/// keeps its old `ViewTarget`, `ViewDepthTexture` and PBR view bind group
+/// components, while the main pass phases are retained out. On the frame the
+/// camera becomes active again the phases are recreated by the extract while
+/// the view's prepared components are re-inserted by the prepare systems — if
+/// a phase receives draw items before every component of the view query is
+/// prepared (the transparent pass node's view query notably does not include
+/// `ViewUniformOffset`), the draw commands fail with `InvalidViewQuery` and
+/// the whole phase is skipped for that frame (meshes pop in/out).
+///
+/// Removing the stale components here means every activation starts from a
+/// fully fresh, consistent view: the first frame a camera draws again is
+/// always a frame in which the complete component set was prepared.
+fn cleanup_inactive_camera_views(
+    mut commands: Commands,
+    views: Query<(Entity, Has<ExtractedCamera>), With<Camera3d>>,
+) {
+    for (entity, is_extracted) in &views {
+        if is_extracted {
+            continue;
+        }
+        commands.entity(entity).remove::<(
+            ViewTarget,
+            ViewDepthTexture,
+            ViewUniformOffset,
+            MeshViewBindGroup,
+            ViewShadowBindings,
+            ViewClusterBindings,
+            ViewLightsUniformOffset,
+            ViewFogUniformOffset,
+            ViewLightProbesUniformOffset,
+            ViewScreenSpaceReflectionsUniformOffset,
+            ViewEnvironmentMapUniformOffset,
+            ExtractedClusterConfig,
+            ExtractedClusterableObjects,
+        )>();
     }
 }

@@ -2,16 +2,23 @@ use bevy::{
     asset::Handle,
     ecs::system::ResMut,
     math::Vec3,
-    prelude::{Commands, Resource},
+    prelude::{Commands, Component, Query, Resource, With},
 };
 
 use crate::{
-    audio::{spawn_spatial_sound, AudioSource, SoundGain},
+    audio::{spawn_spatial_sound, AudioSource, SoundGain, AUDIBLE_CUTOFF},
     components::SoundCategory,
 };
 
-/// Maximum number of concurrent monster sounds allowed
+/// Maximum number of monster sounds to spawn per frame
 const MAX_CONCURRENT_MONSTER_SOUNDS: usize = 3;
+
+/// Maximum number of concurrently active monster one-shot sounds
+const MAX_ACTIVE_MONSTER_SOUNDS: usize = 64;
+
+/// Marker for spatial sounds spawned from the monster sound queue, used to count active sounds
+#[derive(Component)]
+pub struct MonsterSound;
 
 /// Resource to track active monster sounds in the current frame
 #[derive(Resource, Default)]
@@ -34,6 +41,7 @@ pub struct PendingMonsterSoundData {
 pub fn process_monster_sound_queue_system(
     mut commands: Commands,
     mut sound_queue: ResMut<MonsterSoundQueue>,
+    query_active_monster_sounds: Query<(), With<MonsterSound>>,
 ) {
     // Sort by distance to player (closest first)
     sound_queue.pending_sounds.sort_by(|a, b| {
@@ -42,14 +50,21 @@ pub fn process_monster_sound_queue_system(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Only spawn the closest N sounds
+    // Cap the number of concurrently active monster sounds
+    let mut active_sounds = query_active_monster_sounds.iter().count();
+
+    // Only spawn the closest N sounds, refusing once the concurrency cap is reached
     for sound_data in sound_queue
         .pending_sounds
         .drain(..)
         .take(MAX_CONCURRENT_MONSTER_SOUNDS)
     {
+        if active_sounds >= MAX_ACTIVE_MONSTER_SOUNDS {
+            break;
+        }
+
         let SoundGain::Ratio(gain) = sound_data.gain;
-        spawn_spatial_sound(
+        let entity = spawn_spatial_sound(
             &mut commands,
             sound_data.audio_source,
             sound_data.position,
@@ -58,10 +73,9 @@ pub fn process_monster_sound_queue_system(
             sound_data.category,
             false,
         );
+        commands.entity(entity).insert(MonsterSound);
+        active_sounds += 1;
     }
-
-    // Clear any remaining sounds that didn't make the cut
-    sound_queue.pending_sounds.clear();
 }
 
 /// Helper function to add a monster sound to the queue instead of spawning directly
@@ -76,6 +90,11 @@ pub fn queue_monster_sound(
     category: SoundCategory,
 ) {
     let distance_to_player = position.distance(player_position);
+
+    // Sounds beyond the audible cutoff are never queued
+    if distance_to_player > AUDIBLE_CUTOFF {
+        return;
+    }
 
     sound_queue.pending_sounds.push(PendingMonsterSoundData {
         audio_source,

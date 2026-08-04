@@ -86,6 +86,10 @@ pub struct BloodOverlay {
     /// Per-material dirty flags. When a material entity is present here,
     /// its overlay texture needs regeneration.
     pub material_dirty: HashMap<Entity, bool>,
+    /// Cache of material-bearing entities in this entity's model subtree.
+    /// Refreshed when the overlay textures are regenerated; clean frames use it
+    /// to re-bind overlay handles without walking the subtree again.
+    pub material_part_entities: Vec<Entity>,
 }
 
 impl BloodOverlay {
@@ -97,6 +101,7 @@ impl BloodOverlay {
             is_bloodied: false,
             max_stains: 20,
             material_dirty: HashMap::new(),
+            material_part_entities: Vec::new(),
         }
     }
 

@@ -91,7 +91,7 @@ pub fn wound_visibility_system(
             Option<&mut GashWounds>,
             Option<&ModelHeight>,
         ),
-        Without<Dead>,
+        (Without<Dead>, Changed<HealthPoints>),
     >,
     mut blood_events: MessageWriter<BloodEffectEvent>,
     config: Res<BloodEffectConfig>,
@@ -228,31 +228,34 @@ pub fn wound_spawn_system(
                 // Try accurate UV projection first (Fix #2)
                 // For entities with CharacterModel, use project_world_to_uv() which
                 // does proper triangle-ray intersection with skinned mesh vertex transformation.
-                let projection_result = if let Some(character_model) = character_model_opt {
-                    // Convert wound_position to world space if we have a global transform
-                    let world_pos = if let Some(gt) = global_transform_opt {
-                        gt.transform_point(*wound_position)
-                    } else {
-                        *wound_position
-                    };
+                // The projection only runs when the wound cap has not been reached.
+                let project_to_uv = || {
+                    if let Some(character_model) = character_model_opt {
+                        // Convert wound_position to world space if we have a global transform
+                        let world_pos = if let Some(gt) = global_transform_opt {
+                            gt.transform_point(*wound_position)
+                        } else {
+                            *wound_position
+                        };
 
-                    project_world_to_uv(
-                        world_pos,
-                        *entity,
-                        &meshes,
-                        &inverse_bindposes,
-                        &transforms,
-                        &mesh_query,
-                        &skinned_mesh_query,
-                        character_model,
-                    )
-                } else {
-                    None
+                        project_world_to_uv(
+                            world_pos,
+                            *entity,
+                            &meshes,
+                            &inverse_bindposes,
+                            &transforms,
+                            &mesh_query,
+                            &skinned_mesh_query,
+                            character_model,
+                        )
+                    } else {
+                        None
+                    }
                 };
 
                 if let Some(overlay) = overlay_opt.as_deref_mut() {
                     if overlay.stain_count() < config.max_wounds_per_entity {
-                        if let Some(proj) = projection_result {
+                        if let Some(proj) = project_to_uv() {
                             // Accurate UV projection succeeded — add stain for the specific material
                             // Resolve material_index to the actual mesh entity
                             let material_entity = resolve_material_entity(
@@ -283,7 +286,7 @@ pub fn wound_spawn_system(
                     // Create new BloodOverlay with the first stain
                     let mut new_overlay = BloodOverlay::new();
                     if new_overlay.stain_count() < config.max_wounds_per_entity {
-                        if let Some(proj) = projection_result {
+                        if let Some(proj) = project_to_uv() {
                             let material_entity = resolve_material_entity(
                                 *entity,
                                 proj.material_index,

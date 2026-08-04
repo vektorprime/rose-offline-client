@@ -6,8 +6,8 @@
 use bevy::{
     input::ButtonInput,
     prelude::{
-        App, Camera, Camera3d, Commands, Entity, GlobalTransform, IntoScheduleConfigs, KeyCode,
-        MouseButton, Plugin, Query, Res, ResMut, Update, With,
+        in_state, App, Camera, Camera3d, Commands, Entity, GlobalTransform, IntoScheduleConfigs,
+        KeyCode, MouseButton, Plugin, Query, Res, ResMut, Update, With,
     },
     window::{PrimaryWindow, Window},
 };
@@ -21,6 +21,7 @@ use crate::{
         components::SelectedInEditor,
         resources::MapEditorState,
     },
+    resources::AppState,
 };
 
 /// Plugin for the editor selection system
@@ -30,7 +31,9 @@ impl Plugin for EditorSelectionPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            editor_picking_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+            editor_picking_system
+                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+                .run_if(in_state(AppState::MapEditor)),
         );
     }
 }

@@ -26,7 +26,7 @@ pub struct Lua4Function {
     pub max_stack_size: u32,
     pub local_vars: Vec<Lua4LocalVar>,
     pub line_infos: Vec<u32>,
-    pub constant_strings: Vec<String>,
+    pub constant_strings: Vec<Arc<str>>,
     pub constant_numbers: Vec<f64>,
     pub constant_functions: Vec<Arc<Lua4Function>>,
     pub instructions: Vec<Lua4Instruction>,
@@ -140,7 +140,7 @@ fn read_lua_function(
     let num_constant_strings = read_lua_int(reader, endian)? as usize;
     let mut constant_strings = Vec::with_capacity(num_constant_strings);
     for _ in 0..num_constant_strings {
-        constant_strings.push(read_lua_string(reader, endian)?.to_string());
+        constant_strings.push(Arc::from(read_lua_string(reader, endian)?.as_ref()));
     }
 
     let num_constant_numbers = read_lua_int(reader, endian)? as usize;

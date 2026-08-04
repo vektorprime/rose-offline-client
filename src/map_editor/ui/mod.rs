@@ -49,7 +49,7 @@ use crate::map_editor::save::ifo_types::IfoBlock;
 use crate::map_editor::save::{SaveStatus, SaveZoneEvent};
 use crate::map_editor::systems::property_update_system::PropertyChangeEvent;
 use crate::render::WaterMaterial;
-use crate::resources::{CurrentZone, GameData};
+use crate::resources::{AppState, CurrentZone, GameData};
 use crate::VfsResource;
 use rose_data::ZoneId;
 
@@ -98,31 +98,45 @@ impl Plugin for EditorUiPlugin {
             .add_message::<NewZoneEvent>()
             .add_message::<AddWaterPlaneEvent>()
             // Map editor UI systems must run in EguiPrimaryContextPass for bevy_egui 0.39
+            // All editor systems are gated on AppState::MapEditor so they never run in
+            // Game/ZoneViewer/ModelViewer modes (the editor's own `enabled` flag would
+            // already early-return there, this avoids the schedule entries entirely).
             .add_systems(
                 bevy_egui::EguiPrimaryContextPass,
-                editor_ui_system.run_if(resource_exists::<MapEditorState>),
+                editor_ui_system
+                    .run_if(resource_exists::<MapEditorState>)
+                    .run_if(in_state(AppState::MapEditor)),
             )
             .add_systems(
                 bevy_egui::EguiPrimaryContextPass,
-                model_browser_panel_system.run_if(resource_exists::<AvailableModels>),
+                model_browser_panel_system
+                    .run_if(resource_exists::<AvailableModels>)
+                    .run_if(in_state(AppState::MapEditor)),
             )
             // Keyboard shortcuts don't render UI, can stay in Update
             .add_systems(
                 Update,
                 model_browser_panel::model_browser_keyboard_shortcuts
-                    .run_if(resource_exists::<SelectedModel>),
+                    .run_if(resource_exists::<SelectedModel>)
+                    .run_if(in_state(AppState::MapEditor)),
             )
             .add_systems(
                 bevy_egui::EguiPrimaryContextPass,
-                zone_list_panel_system.run_if(resource_exists::<MapEditorState>),
+                zone_list_panel_system
+                    .run_if(resource_exists::<MapEditorState>)
+                    .run_if(in_state(AppState::MapEditor)),
             )
             .add_systems(
                 bevy_egui::EguiPrimaryContextPass,
-                new_zone_system.run_if(resource_exists::<MapEditorState>),
+                new_zone_system
+                    .run_if(resource_exists::<MapEditorState>)
+                    .run_if(in_state(AppState::MapEditor)),
             )
             .add_systems(
                 bevy_egui::EguiPrimaryContextPass,
-                add_water_plane_system.run_if(resource_exists::<MapEditorState>),
+                add_water_plane_system
+                    .run_if(resource_exists::<MapEditorState>)
+                    .run_if(in_state(AppState::MapEditor)),
             );
 
         log::info!("[EditorUiPlugin] Editor UI plugin initialized with model browser, zone list, and new zone handler");

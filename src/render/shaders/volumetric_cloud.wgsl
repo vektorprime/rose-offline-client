@@ -36,7 +36,7 @@ struct Vertex {
 }
 
 struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
+    @builtin(position) @invariant clip_position: vec4<f32>,
     @location(0) world_position: vec3<f32>,
     @location(1) local_position: vec3<f32>,
     @location(2) view_direction: vec3<f32>,

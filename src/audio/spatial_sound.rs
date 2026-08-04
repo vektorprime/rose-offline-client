@@ -9,9 +9,15 @@ use bevy::{
 };
 
 use crate::{
-    audio::{AudioSource, OddioContext, SoundGain, SoundRadius, StreamingSound},
+    audio::{
+        AudioSource, OddioContext, SoundGain, SoundRadius, StreamingSound, AUDIBLE_CUTOFF,
+        SPATIAL_RESUME_DISTANCE,
+    },
     components::PlayerCharacter,
 };
+
+/// Max distance the buffered spatial delay ring is sized for (safety margin over `AUDIBLE_CUTOFF`)
+const MAX_BUFFERED_DISTANCE: f32 = 150.0;
 
 struct SpatialControlHandle(
     oddio::Handle<oddio::SpatialBuffered<oddio::Stop<oddio::Gain<oddio::Stream<f32>>>>>,
@@ -42,6 +48,8 @@ pub struct SpatialSound {
     control_handle: Option<SpatialControlHandle>,
     streaming_sound: Option<StreamingSound>,
     last_position: Option<Vec3>,
+    /// True while a repeating sound is stopped because it is beyond the audible cutoff
+    culled: bool,
 }
 
 impl SpatialSound {
@@ -52,6 +60,7 @@ impl SpatialSound {
             control_handle: None,
             streaming_sound: None,
             last_position: None,
+            culled: false,
         }
     }
 
@@ -62,6 +71,7 @@ impl SpatialSound {
             control_handle: None,
             streaming_sound: None,
             last_position: None,
+            culled: false,
         }
     }
 }
@@ -118,6 +128,8 @@ pub fn spatial_sound_system(
     };
     *last_listener_position = Some(listener_position);
 
+    let delta_secs = time.delta_secs().max(1e-6);
+
     player
         .control()
         .set_listener_rotation(camera_rotation.to_array().into());
@@ -126,14 +138,42 @@ pub fn spatial_sound_system(
         query_spatial_sounds.iter_mut()
     {
         let repeating = spatial_sound.repeating;
+        let sound_global_translation = global_transform.translation();
+
+        let distance = (sound_global_translation - listener_position).length();
+
+        // Cull sounds beyond the audible cutoff: stop filling/mixing distant loops and drop distant one-shots
+        if distance > AUDIBLE_CUTOFF {
+            if repeating {
+                if !spatial_sound.culled {
+                    if let Some(handle) = spatial_sound.control_handle.as_mut() {
+                        handle.stop_control().stop();
+                    }
+                    spatial_sound.culled = true;
+                }
+                continue;
+            }
+
+            spatial_sound.control_handle = None;
+            spatial_sound.asset_handle = Handle::default();
+            commands.entity(entity).despawn();
+            continue;
+        }
+
+        if spatial_sound.culled && distance < SPATIAL_RESUME_DISTANCE {
+            // Restart loops that were stopped while beyond the cutoff
+            spatial_sound.control_handle = None;
+            spatial_sound.streaming_sound = None;
+            spatial_sound.last_position = None;
+            spatial_sound.culled = false;
+        }
+
         let SpatialSound {
             control_handle,
             streaming_sound,
             last_position,
             ..
         } = &mut *spatial_sound;
-
-        let sound_global_translation = global_transform.translation();
 
         let spatial_velocity = {
             // Guess sound velocity by distance between current and last position.
@@ -148,12 +188,14 @@ pub fn spatial_sound_system(
             let relative_velocity = sound_velocity - listener_velocity;
 
             // Velocity is in metres per second
-            relative_velocity / time.delta_secs()
+            relative_velocity / delta_secs
         };
 
         // Adjust spatial position to be in direction of camera, but distance from player
-        let spatial_position = (sound_global_translation - camera_position).normalize()
-            * (sound_global_translation - listener_position).length();
+        let spatial_position = (sound_global_translation - camera_position)
+            .try_normalize()
+            .unwrap_or(Vec3::Z)
+            * distance;
 
         if let Some(handle) = control_handle.as_mut() {
             let has_more_audio = if let Some(streaming_sound) = streaming_sound.as_mut() {
@@ -190,7 +232,7 @@ pub fn spatial_sound_system(
                     velocity: spatial_velocity.to_array().into(),
                     radius: sound_radius.map(|x| x.0).unwrap_or(4.0),
                 },
-                500.0,
+                MAX_BUFFERED_DISTANCE,
                 sample_rate,
                 0.1,
             ));

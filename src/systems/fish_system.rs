@@ -670,6 +670,15 @@ fn pick_new_target(
     )
 }
 
+/// Reusable per-frame buffers for the fish separation pass, so the system
+/// does not allocate fresh Vecs every frame.
+#[derive(Default)]
+pub struct FishSeparationBuffers {
+    positions: Vec<Vec3>,
+    order: Vec<usize>,
+    pushes: Vec<Vec3>,
+}
+
 /// System to update fish movement and swimming behavior
 ///
 /// Fish farther than [`FishSettings::simulation_distance`] from the camera
@@ -685,9 +694,14 @@ pub fn update_fish_movement_system(
             Without<crate::render::WaterReflectionCamera>,
         ),
     >,
+    mut buffers: Local<FishSeparationBuffers>,
 ) {
     let mut rng = rand::thread_rng();
     let delta = time.delta_secs();
+
+    // Dereference the Local once so field borrows split (borrows through the
+    // DerefMut of Local are not split by the borrow checker)
+    let buffers = &mut *buffers;
 
     // Camera position for distance culling (no culling if there is no camera)
     let camera_pos = camera_query.iter().next().map(|gt| gt.translation());
@@ -698,10 +712,16 @@ pub fn update_fish_movement_system(
     // overlapping fish apart without borrowing the query twice. World space is
     // used so fish from different (possibly overlapping) water planes also
     // separate, and so the camera distance check has comparable coordinates.
-    let positions: Vec<Vec3> = query
-        .iter()
-        .map(|(_, global_transform, _)| global_transform.translation())
-        .collect();
+    // Only fish that will actually be simulated (inside the cull radius) take
+    // part in the separation pass, so distant schools cost nothing here.
+    buffers.positions.clear();
+    for (_, global_transform, _) in query.iter() {
+        let pos = global_transform.translation();
+        if cull_enabled && pos.distance_squared(camera_pos.unwrap()) > cull_dist_sq {
+            continue;
+        }
+        buffers.positions.push(pos);
+    }
 
     // Separation: push overlapping fish closer than the separation radius
     // apart so spawn piles and schools spread out instead of converging.
@@ -711,16 +731,20 @@ pub fn update_fish_movement_system(
     // separation radius, keeping this cheap even with thousands of fish
     // across many water planes.
     const SEPARATION_RADIUS: f32 = 0.9;
-    let mut order: Vec<usize> = (0..positions.len()).collect();
-    order.sort_by(|&a, &b| positions[a].x.total_cmp(&positions[b].x));
+    buffers.order.clear();
+    buffers.order.extend(0..buffers.positions.len());
+    buffers
+        .order
+        .sort_by(|&a, &b| buffers.positions[a].x.total_cmp(&buffers.positions[b].x));
 
-    let mut pushes = vec![Vec3::ZERO; positions.len()];
-    for k in 0..order.len() {
-        let i = order[k];
-        let pos_i = positions[i];
-        for l in (k + 1)..order.len() {
-            let j = order[l];
-            let pos_j = positions[j];
+    buffers.pushes.clear();
+    buffers.pushes.resize(buffers.positions.len(), Vec3::ZERO);
+    for k in 0..buffers.order.len() {
+        let i = buffers.order[k];
+        let pos_i = buffers.positions[i];
+        for l in (k + 1)..buffers.order.len() {
+            let j = buffers.order[l];
+            let pos_j = buffers.positions[j];
             if pos_j.x - pos_i.x > SEPARATION_RADIUS {
                 break;
             }
@@ -734,12 +758,13 @@ pub fn update_fish_movement_system(
             let dist = dist_sq.sqrt();
             let strength = (SEPARATION_RADIUS - dist) / SEPARATION_RADIUS;
             let push = Vec3::new(dx, dy, dz) / dist * strength;
-            pushes[i] += push;
-            pushes[j] -= push;
+            buffers.pushes[i] += push;
+            buffers.pushes[j] -= push;
         }
     }
 
-    for (idx, (mut transform, global_transform, mut fish)) in query.iter_mut().enumerate() {
+    let mut near_idx = 0usize;
+    for (mut transform, global_transform, mut fish) in query.iter_mut() {
         // Skip fish too far from the camera to be noticed (world positions are
         // at most one frame stale, which is fine for a culling decision)
         if cull_enabled {
@@ -748,6 +773,12 @@ pub fn update_fish_movement_system(
                 continue;
             }
         }
+
+        // Index into the separation buffers: collected fish are exactly the
+        // non-culled ones, in query iteration order, so this stays in sync
+        // with `buffers.pushes`.
+        let push = buffers.pushes[near_idx];
+        near_idx += 1;
 
         // Update wobble time for swimming animation - each fish has unique wobble speed
         fish.wobble_time += delta * fish.speed * (2.5 + rng.gen_range(0.0..1.0));
@@ -808,7 +839,7 @@ pub fn update_fish_movement_system(
         // Push apart from neighbors (frame-rate independent). Pushes are
         // world-space directions applied to the local translation, which is
         // valid because zone parents are pure translations (no rotation/scale).
-        transform.translation += pushes[idx].clamp_length_max(1.0) * 2.0 * delta;
+        transform.translation += push.clamp_length_max(1.0) * 2.0 * delta;
 
         // Keep fish within water bounds (clamp position)
         let min_x = fish.water_center.x - fish.water_half_extents.x * settings.boundary_margin;

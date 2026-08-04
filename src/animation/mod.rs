@@ -1,5 +1,9 @@
 use bevy::{
-    prelude::{App, AssetApp, IntoScheduleConfigs, Plugin, PostUpdate, SystemSet},
+    math::Vec3,
+    prelude::{
+        App, AssetApp, GlobalTransform, IntoScheduleConfigs, Plugin, PostUpdate, SystemSet,
+        ViewVisibility,
+    },
     transform::TransformSystems,
 };
 
@@ -24,6 +28,30 @@ use camera_animation::camera_animation_system;
 use mesh_animation::mesh_animation_system;
 use skeletal_animation::skeletal_animation_system;
 use transform_animation::transform_animation_system;
+
+/// Off-screen entities within this distance of the main camera are still animated
+/// as a safety margin against visible pop-in at the frustum edge.
+const ANIMATION_CULL_MARGIN: f32 = 200.0;
+
+pub(crate) fn should_animate_entity(
+    view_visibility: Option<&ViewVisibility>,
+    global_transform: Option<&GlobalTransform>,
+    camera_position: Option<Vec3>,
+) -> bool {
+    let Some(view_visibility) = view_visibility else {
+        return true;
+    };
+    if view_visibility.get() {
+        return true;
+    }
+    match (global_transform, camera_position) {
+        (Some(transform), Some(camera_position)) => {
+            transform.translation().distance_squared(camera_position)
+                <= ANIMATION_CULL_MARGIN * ANIMATION_CULL_MARGIN
+        }
+        _ => false,
+    }
+}
 
 #[derive(Default)]
 pub struct RoseAnimationPlugin;

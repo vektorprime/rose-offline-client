@@ -21,7 +21,7 @@ use crate::map_editor::{
     systems::model_placement_system::EditorPlacedObject,
 };
 use crate::render::RoseObjectExtension;
-use crate::resources::CurrentZone;
+use crate::resources::{AppState, CurrentZone};
 use crate::zone_loader::ZoneLoaderAsset;
 
 /// Plugin for the duplicate system
@@ -30,7 +30,10 @@ pub struct DuplicateSystemPlugin;
 impl Plugin for DuplicateSystemPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<DuplicateSelectedEvent>()
-            .add_systems(Update, handle_duplicate_event);
+            .add_systems(
+                Update,
+                handle_duplicate_event.run_if(in_state(AppState::MapEditor)),
+            );
     }
 }
 

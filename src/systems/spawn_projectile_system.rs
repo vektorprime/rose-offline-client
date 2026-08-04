@@ -1,13 +1,13 @@
 use bevy::prelude::{
     Commands, GlobalTransform, InheritedVisibility, MessageReader, MessageWriter, Query, Res,
-    Transform, ViewVisibility, Visibility,
+    ResMut, Transform, ViewVisibility, Visibility,
 };
 use bevy_mesh::skinning::SkinnedMesh;
 
 use crate::{
     components::{CharacterModel, CharacterModelPart, DummyBoneOffset, Projectile},
     events::{SpawnEffectData, SpawnEffectEvent, SpawnProjectileEvent},
-    resources::GameData,
+    resources::{GameData, ProjectileIndex},
 };
 
 pub fn spawn_projectile_system(
@@ -17,6 +17,7 @@ pub fn spawn_projectile_system(
     query_character: Query<&CharacterModel>,
     query_skeleton: Query<(&SkinnedMesh, &DummyBoneOffset)>,
     mut spawn_effect_events: MessageWriter<SpawnEffectEvent>,
+    mut projectile_index: ResMut<ProjectileIndex>,
     game_data: Res<GameData>,
 ) {
     for event in events.read() {
@@ -70,6 +71,8 @@ pub fn spawn_projectile_system(
                 ViewVisibility::default(),
             ))
             .id();
+
+        projectile_index.add(event.source, projectile_entity);
 
         if let Some(projectile_effect_file_id) = game_data
             .effect_database

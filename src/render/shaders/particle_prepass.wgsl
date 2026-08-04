@@ -44,7 +44,7 @@ struct VertexInput {
 
 // Prepass output - MUST have @location(0) world_position
 struct PrepassOutput {
-    @builtin(position) clip_position: vec4<f32>,
+    @builtin(position) @invariant clip_position: vec4<f32>,
     @location(0) world_position: vec3<f32>,
     #ifdef NORMAL_PREPASS
     @location(1) world_normal: vec3<f32>,

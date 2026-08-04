@@ -29,7 +29,7 @@ use bevy::{
         render_resource::{
             BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
             BindGroupLayoutEntry, BindingResource, BindingType, BlendComponent, BlendFactor,
-            BlendOperation, BlendState, BufferBindingType, BufferUsages, ColorTargetState,
+            BlendOperation, BlendState, BufferBindingType, BufferId, BufferUsages, ColorTargetState,
             ColorWrites, CompareFunction, DepthBiasState, DepthStencilState, Face, FragmentState,
             FrontFace, MultisampleState, PipelineCache, PolygonMode, PrimitiveState,
             PrimitiveTopology, RawBufferVec, RenderPipelineDescriptor, SamplerBindingType,
@@ -47,6 +47,7 @@ use bevy::{
     },
 };
 use bevy_camera::visibility::VisibilityClass;
+use bevy_image::BevyDefault;
 use bevy_mesh::VertexBufferLayout;
 use bytemuck::{Pod, Zeroable};
 
@@ -189,6 +190,7 @@ struct WorldUiVertex {
 pub struct WorldUiMeta {
     vertices: RawBufferVec<WorldUiVertex>,
     view_bind_group: Option<BindGroup>,
+    view_bind_group_buffer_id: Option<BufferId>,
 }
 
 impl Default for WorldUiMeta {
@@ -196,6 +198,7 @@ impl Default for WorldUiMeta {
         Self {
             vertices: RawBufferVec::new(BufferUsages::VERTEX),
             view_bind_group: None,
+            view_bind_group_buffer_id: None,
         }
     }
 }
@@ -253,9 +256,16 @@ impl SpecializedRenderPipeline for WorldUiPipeline {
                 shader_defs: vec![],
                 entry_point: Some(std::borrow::Cow::Borrowed("fragment")),
                 targets: vec![Some(ColorTargetState {
+                    // Match the ViewTarget's main texture format exactly:
+                    // HDR views use the HDR format, non-HDR views use
+                    // TextureFormat::bevy_default() (Rgba8UnormSrgb). The old
+                    // hardcoded Bgra8UnormSrgb (window surface format) never
+                    // matched Bevy 0.18's non-HDR main texture and caused a
+                    // wgpu validation error whenever a name tag / chat bubble
+                    // was actually drawn (e.g. through the reflection camera).
                     format: match key.contains(MeshPipelineKey::HDR) {
                         true => ViewTarget::TEXTURE_FORMAT_HDR,
-                        false => TextureFormat::Bgra8UnormSrgb,
+                        false => TextureFormat::bevy_default(),
                     },
                     blend: Some(BlendState {
                         color: BlendComponent {
@@ -535,20 +545,25 @@ pub fn queue_world_ui_meshes(
         .get_id::<DrawWorldUi>()
         .unwrap();
 
-    // NOTE: We recreate the bind group every frame instead of caching it.
-    // This is necessary because the view uniforms buffer can be resized when
-    // shadow cascade counts change (e.g., changing shadow quality settings).
-    // If we cached the bind group, it would point to an old buffer that's too small.
+    // NOTE: The bind group is cached and only recreated when the view uniforms
+    // buffer itself changes. The buffer can be resized when shadow cascade
+    // counts change (e.g., changing shadow quality settings); keying the cache
+    // on the buffer id handles exactly that case, so the bind group always
+    // points at the current buffer without being recreated every frame.
     if let Some(view_bindings) = view_uniforms.uniforms.binding() {
-        let view_layout = pipeline_cache.get_bind_group_layout(&world_ui_pipeline.view_layout);
-        world_ui_meta.view_bind_group = Some(render_device.create_bind_group(
-            "world_ui_view_bind_group",
-            &view_layout,
-            &[BindGroupEntry {
-                binding: 0,
-                resource: view_bindings,
-            }],
-        ));
+        let buffer_id = view_uniforms.uniforms.buffer().map(|b| b.id());
+        if world_ui_meta.view_bind_group_buffer_id != buffer_id {
+            let view_layout = pipeline_cache.get_bind_group_layout(&world_ui_pipeline.view_layout);
+            world_ui_meta.view_bind_group = Some(render_device.create_bind_group(
+                "world_ui_view_bind_group",
+                &view_layout,
+                &[BindGroupEntry {
+                    binding: 0,
+                    resource: view_bindings,
+                }],
+            ));
+            world_ui_meta.view_bind_group_buffer_id = buffer_id;
+        }
     }
 
     for (view_entity, view, msaa) in views.iter() {

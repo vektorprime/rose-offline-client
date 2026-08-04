@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use bevy::{
@@ -5,7 +6,7 @@ use bevy::{
     prelude::{Assets, Entity, Local, MessageReader, Query, Res, With},
 };
 use bevy_egui::{egui, EguiContexts};
-use rose_file_readers::{ConFile, ConMessageType};
+use rose_file_readers::{ConFile, ConMessageType, VfsPathBuf};
 use rose_game_common::components::QuestState;
 
 use crate::{
@@ -39,10 +40,15 @@ pub struct GeneratedDialog {
 
 pub struct ConversationDialogState {
     pub owner_entity: Option<Entity>,
-    pub con_file: ConFile,
+    pub con_file: Arc<ConFile>,
     pub generated_dialog: GeneratedDialog,
     pub lua_vm: Lua4VM,
     pub event_object_handle: Arc<dyn std::any::Any + Send + Sync>,
+}
+
+pub struct CachedConScript {
+    pub con_file: Arc<ConFile>,
+    pub lua_function: Arc<Lua4Function>,
 }
 
 pub struct LuaVMContext<'a, 'w1, 's1, 'w2, 's2> {
@@ -78,28 +84,26 @@ impl<'a, 'w1, 's1, 'w2, 's2> Lua4VMRustClosures for LuaVMContext<'a, 'w1, 's1, '
 }
 
 fn create_conversation_dialog(
-    con_file: ConFile,
+    con_file: Arc<ConFile>,
+    lua_function: Arc<Lua4Function>,
     user_context: &mut LuaVMContext,
     owner_entity: Option<Entity>,
 ) -> Option<ConversationDialogState> {
     let mut lua_vm = Lua4VM::new();
 
     for (name, value) in user_context.game_constants.constants.iter() {
-        lua_vm.set_global(name.clone(), value.clone());
+        lua_vm.set_global(name, value.clone());
     }
 
     for (name, _) in user_context.game_functions.closures.iter() {
-        lua_vm.set_global(name.clone(), Lua4Value::RustClosure(name.clone()));
+        lua_vm.set_global(name, Lua4Value::RustClosure(name.clone()));
     }
 
     for (name, _) in user_context.quest_functions.closures.iter() {
-        lua_vm.set_global(name.clone(), Lua4Value::RustClosure(name.clone()));
+        lua_vm.set_global(name, Lua4Value::RustClosure(name.clone()));
     }
 
-    let lua_function = Lua4Function::from_bytes(&con_file.script_binary).ok()?;
-    lua_vm
-        .call_lua_function(user_context, &lua_function, &[])
-        .ok()?;
+    lua_vm.call_lua_function(user_context, &lua_function, &[]).ok()?;
 
     Some(ConversationDialogState {
         owner_entity,
@@ -316,6 +320,7 @@ struct UiConversationDialogSprites {
 pub struct UiConversationDialogState {
     dialog_instance: DialogInstance,
     sprites: Option<UiConversationDialogSprites>,
+    con_script_cache: HashMap<VfsPathBuf, Option<Arc<CachedConScript>>>,
 }
 
 impl Default for UiConversationDialogState {
@@ -323,6 +328,7 @@ impl Default for UiConversationDialogState {
         Self {
             dialog_instance: DialogInstance::new("DLGDIALOG.XML"),
             sprites: None,
+            con_script_cache: HashMap::new(),
         }
     }
 }
@@ -390,14 +396,35 @@ pub fn conversation_dialog_system(
         };
         *current_dialog_state = None;
 
-        if let Some(mut next_dialog_state) = vfs_resource
-            .vfs
-            .read_file::<ConFile, _>(con_file_path)
-            .ok()
-            .and_then(|con_file| {
-                create_conversation_dialog(con_file, &mut user_context, owner_entity)
+        let next_dialog_state = {
+            let cached = ui_state
+                .con_script_cache
+                .entry(con_file_path.clone())
+                .or_insert_with(|| {
+                    vfs_resource
+                        .vfs
+                        .read_file::<ConFile, _>(con_file_path)
+                        .ok()
+                        .and_then(|con_file| {
+                            Lua4Function::from_bytes(&con_file.script_binary).ok().map(|lua_function| {
+                                Arc::new(CachedConScript {
+                                    con_file: Arc::new(con_file),
+                                    lua_function,
+                                })
+                            })
+                        })
+                });
+            cached.as_ref().and_then(|cached| {
+                create_conversation_dialog(
+                    Arc::clone(&cached.con_file),
+                    Arc::clone(&cached.lua_function),
+                    &mut user_context,
+                    owner_entity,
+                )
             })
-        {
+        };
+
+        if let Some(mut next_dialog_state) = next_dialog_state {
             let check_open_function =
                 &next_dialog_state.con_file.initial_messages[0].condition_function;
 

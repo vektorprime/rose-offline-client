@@ -18,9 +18,9 @@ mod login_camera_animation;
 mod login_connection;
 mod login_state;
 mod monster_chatter_phrases;
-mod name_tag_cache;
 mod name_tag_settings;
 mod network_thread;
+mod projectile_index;
 mod render_configuration;
 mod season_materials;
 mod season_settings;
@@ -61,6 +61,7 @@ pub use login_state::LoginState;
 pub use monster_chatter_phrases::MonsterChatterPhrases;
 pub use name_tag_settings::NameTagSettings;
 pub use network_thread::{run_network_thread, NetworkThread, NetworkThreadMessage};
+pub use projectile_index::ProjectileIndex;
 pub use render_configuration::RenderConfiguration;
 pub use season_materials::{setup_season_materials, SeasonMaterials};
 pub use season_settings::{

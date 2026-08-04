@@ -83,6 +83,19 @@ const BLOCKED_PROBE_M: f32 = 30.0;
 /// forever.
 const MAX_BLOCKED_FRAMES: u32 = 8;
 
+/// Interval (seconds) between recomputations of the blocked-path navigation
+/// (slide probes, 30 m side probes, escape turn). The per-frame candidate
+/// terrain/dock check is kept per-frame so boats never ride up a beach
+/// between updates; only the extra probes that run once a boat is blocked
+/// are throttled.
+const BOAT_NAV_INTERVAL_S: f32 = 0.1;
+
+/// Bounding radius (m) of a dock footprint around the dock origin: the deck
+/// spans local x in [-2, 50] and |local z| <= 6.4, so no point of the
+/// footprint is farther than ~50.4 m. Boats beyond this radius need no
+/// per-dock rotation test.
+const DOCK_REJECT_RADIUS_M: f32 = 51.0;
+
 /// Open-water patrol routes in game-space centimeters (z filled at spawn).
 /// Cleared of the current map's land: main island (520000, 520000) r300 m,
 /// east island (~560000, 559000) r150 m, west island (~465000, 544000)
@@ -159,6 +172,8 @@ pub struct NpcBoat {
     turn_rate: f32,
     /// Consecutive frames the boat could not move (land/dock/boat blocking).
     blocked_frames: u32,
+    /// Time accumulator for the throttled blocked-path navigation (10 Hz).
+    nav_timer: f32,
 }
 
 /// Nearest water surface height in game cm. Mirrors
@@ -201,6 +216,13 @@ fn boat_zone_local_xy(position_cm: Vec3) -> Vec2 {
 fn is_clear_of_docks(position_cm: Vec3, docks: &[(Vec2, Quat)]) -> bool {
     let local = boat_zone_local_xy(position_cm);
     for (dock_xy, dock_rotation) in docks {
+        // Cheap rejection: the whole deck footprint is within ~50.4 m of the
+        // dock origin, so boats farther away skip the per-dock rotation test.
+        let dx = local.x - dock_xy.x;
+        let dz = local.y - dock_xy.y;
+        if dx * dx + dz * dz > DOCK_REJECT_RADIUS_M * DOCK_REJECT_RADIUS_M {
+            continue;
+        }
         let dock_local = dock_rotation.inverse() * Vec3::new(local.x, 0.0, local.y);
         if dock_local.x >= -DOCK_MARGIN_M
             && dock_local.x <= DOCK_LENGTH_M + DOCK_MARGIN_M
@@ -288,6 +310,7 @@ fn spawn_npc_boat(
                 speed,
                 turn_rate,
                 blocked_frames: 0,
+                nav_timer: 0.0,
             },
             BoatState {
                 active: true,
@@ -398,6 +421,9 @@ pub fn npc_boat_movement_system(
     >,
     player_boat: Query<(&Position, &BoatState), (With<PlayerCharacter>, Without<NpcBoat>)>,
     docks: Query<&Transform, With<Dock>>,
+    mut dock_spaces: Local<Vec<(Vec2, Quat)>>,
+    mut cached_zone_handle: Local<Option<AssetId<ZoneLoaderAsset>>>,
+    mut boat_positions: Local<Vec<(Entity, Vec2)>>,
 ) {
     let dt = time.delta_secs();
     if dt <= 0.0 {
@@ -408,18 +434,27 @@ pub fn npc_boat_movement_system(
         .as_ref()
         .and_then(|zone| zone_loader_assets.get(&zone.handle));
 
-    // Dock parent transforms are static, so capture them once for the frame.
-    let dock_spaces: Vec<(Vec2, Quat)> = docks
-        .iter()
-        .map(|transform| (transform.translation.xz(), transform.rotation))
-        .collect();
+    // Dock parent transforms are static per zone, so capture them once and
+    // only refresh when the zone changes (not every frame).
+    let zone_handle = current_zone.as_ref().map(|zone| zone.handle.id());
+    if zone_handle != *cached_zone_handle {
+        *cached_zone_handle = zone_handle;
+        dock_spaces.clear();
+        dock_spaces.extend(
+            docks
+                .iter()
+                .map(|transform| (transform.translation.xz(), transform.rotation)),
+        );
+    }
 
     // Snapshot every boat's position for pairwise separation; self is
-    // excluded by entity id during the loop.
-    let boat_positions: Vec<(Entity, Vec2)> = query
-        .iter()
-        .map(|(entity, _, position, _, _)| (entity, position.position.xy()))
-        .collect();
+    // excluded by entity id during the loop. Buffer is reused across frames.
+    boat_positions.clear();
+    boat_positions.extend(
+        query
+            .iter()
+            .map(|(entity, _, position, _, _)| (entity, position.position.xy())),
+    );
 
     for (entity, mut boat, mut position, mut transform, mut npc) in query.iter_mut() {
         if !boat.active || npc.route.is_empty() {
@@ -486,75 +521,88 @@ pub fn npc_boat_movement_system(
             position.position.x = candidate.x;
             position.position.y = candidate.y;
             npc.blocked_frames = 0;
+            npc.nav_timer = 0.0;
         } else {
-            // Blocked by land or a dock. Try sliding along each axis; a slide
-            // counts as progress, a fully stuck frame increments the counter.
-            let slide_x = Vec2::new(candidate.x, position.position.y);
-            let slide_y = Vec2::new(position.position.x, candidate.y);
-            let mut moved = false;
-            if is_position_navigable(zone_data, Vec3::new(slide_x.x, slide_x.y, 0.0), &dock_spaces)
-            {
-                position.position.x = slide_x.x;
-                moved = true;
-            } else if is_position_navigable(
-                zone_data,
-                Vec3::new(slide_y.x, slide_y.y, 0.0),
-                &dock_spaces,
-            ) {
-                position.position.y = slide_y.y;
-                moved = true;
-            }
+            // Blocked by land or a dock. The slide/probe/escape recomputation
+            // is throttled to ~10 Hz (a blocked boat barely moves, so a 0.1 s
+            // cadence is invisible); the per-frame candidate check above still
+            // keeps boats off beaches between updates.
+            npc.nav_timer += dt;
+            if npc.nav_timer >= BOAT_NAV_INTERVAL_S {
+                npc.nav_timer = 0.0;
 
-            if moved {
-                npc.blocked_frames = 0;
-            } else {
-                npc.blocked_frames += 1;
-            }
-
-            // Probe 30 m ahead at heading +/- 90 deg and turn toward the side
-            // that stays in open water (preferring the side closer to the
-            // waypoint so the detour makes progress). Both sides blocked:
-            // hold course; the blocked-frames skip below gets us out.
-            let side_a_heading = normalize_angle(boat.heading + std::f32::consts::FRAC_PI_2);
-            let side_b_heading = normalize_angle(boat.heading - std::f32::consts::FRAC_PI_2);
-            let probe_cm = BLOCKED_PROBE_M * 100.0;
-            let a_point = Vec3::new(
-                position.position.x + side_a_heading.sin() * probe_cm,
-                position.position.y + side_a_heading.cos() * probe_cm,
-                0.0,
-            );
-            let b_point = Vec3::new(
-                position.position.x + side_b_heading.sin() * probe_cm,
-                position.position.y + side_b_heading.cos() * probe_cm,
-                0.0,
-            );
-            let a_clear = is_position_navigable(zone_data, a_point, &dock_spaces);
-            let b_clear = is_position_navigable(zone_data, b_point, &dock_spaces);
-            let escape_heading = match (a_clear, b_clear) {
-                (true, false) => Some(side_a_heading),
-                (false, true) => Some(side_b_heading),
-                (true, true) => {
-                    let a_dist = a_point.xy().distance_squared(waypoint.xy());
-                    let b_dist = b_point.xy().distance_squared(waypoint.xy());
-                    if a_dist <= b_dist {
-                        Some(side_a_heading)
-                    } else {
-                        Some(side_b_heading)
-                    }
+                // Try sliding along each axis; a slide counts as progress, a
+                // fully stuck tick increments the counter.
+                let slide_x = Vec2::new(candidate.x, position.position.y);
+                let slide_y = Vec2::new(position.position.x, candidate.y);
+                let mut moved = false;
+                if is_position_navigable(
+                    zone_data,
+                    Vec3::new(slide_x.x, slide_x.y, 0.0),
+                    &dock_spaces,
+                ) {
+                    position.position.x = slide_x.x;
+                    moved = true;
+                } else if is_position_navigable(
+                    zone_data,
+                    Vec3::new(slide_y.x, slide_y.y, 0.0),
+                    &dock_spaces,
+                ) {
+                    position.position.y = slide_y.y;
+                    moved = true;
                 }
-                (false, false) => None,
-            };
-            if let Some(escape_heading) = escape_heading {
-                let escape_turn = shortest_angle_delta(boat.heading, escape_heading)
-                    .clamp(-npc.turn_rate * dt, npc.turn_rate * dt);
-                boat.heading = normalize_angle(boat.heading + escape_turn);
-            }
 
-            // A route now crossing generated land must not trap a boat
-            // forever: skip to the next waypoint after too many stuck frames.
-            if npc.blocked_frames > MAX_BLOCKED_FRAMES {
-                npc.next_waypoint = (npc.next_waypoint + 1) % npc.route.len();
-                npc.blocked_frames = 0;
+                if moved {
+                    npc.blocked_frames = 0;
+                } else {
+                    npc.blocked_frames += 1;
+                }
+
+                // Probe 30 m ahead at heading +/- 90 deg and turn toward the side
+                // that stays in open water (preferring the side closer to the
+                // waypoint so the detour makes progress). Both sides blocked:
+                // hold course; the blocked-frames skip below gets us out.
+                let side_a_heading = normalize_angle(boat.heading + std::f32::consts::FRAC_PI_2);
+                let side_b_heading = normalize_angle(boat.heading - std::f32::consts::FRAC_PI_2);
+                let probe_cm = BLOCKED_PROBE_M * 100.0;
+                let a_point = Vec3::new(
+                    position.position.x + side_a_heading.sin() * probe_cm,
+                    position.position.y + side_a_heading.cos() * probe_cm,
+                    0.0,
+                );
+                let b_point = Vec3::new(
+                    position.position.x + side_b_heading.sin() * probe_cm,
+                    position.position.y + side_b_heading.cos() * probe_cm,
+                    0.0,
+                );
+                let a_clear = is_position_navigable(zone_data, a_point, &dock_spaces);
+                let b_clear = is_position_navigable(zone_data, b_point, &dock_spaces);
+                let escape_heading = match (a_clear, b_clear) {
+                    (true, false) => Some(side_a_heading),
+                    (false, true) => Some(side_b_heading),
+                    (true, true) => {
+                        let a_dist = a_point.xy().distance_squared(waypoint.xy());
+                        let b_dist = b_point.xy().distance_squared(waypoint.xy());
+                        if a_dist <= b_dist {
+                            Some(side_a_heading)
+                        } else {
+                            Some(side_b_heading)
+                        }
+                    }
+                    (false, false) => None,
+                };
+                if let Some(escape_heading) = escape_heading {
+                    let escape_turn = shortest_angle_delta(boat.heading, escape_heading)
+                        .clamp(-npc.turn_rate * dt, npc.turn_rate * dt);
+                    boat.heading = normalize_angle(boat.heading + escape_turn);
+                }
+
+                // A route now crossing generated land must not trap a boat
+                // forever: skip to the next waypoint after too many stuck ticks.
+                if npc.blocked_frames > MAX_BLOCKED_FRAMES {
+                    npc.next_waypoint = (npc.next_waypoint + 1) % npc.route.len();
+                    npc.blocked_frames = 0;
+                }
             }
         }
 

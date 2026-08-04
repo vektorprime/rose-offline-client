@@ -11,7 +11,7 @@ use crate::{
         PendingDamageList, Projectile, ProjectileTarget, Vehicle,
     },
     events::{BloodEffectEvent, BloodImpactProfile},
-    resources::{BloodEffectConfig, ClientEntityList, DamageDigitsSpawner},
+    resources::{BloodEffectConfig, ClientEntityList, DamageDigitsSpawner, ProjectileIndex},
     systems::damage_effects::{emit_blood_and_wounds, normalize_or, spawn_damage_digits},
 };
 
@@ -36,6 +36,7 @@ fn hit_frame_expected(
     defender: Entity,
     query_attacker: &Query<(&Command, Option<&SkeletalAnimation>, Option<&Vehicle>)>,
     query_animation: &Query<&SkeletalAnimation>,
+    projectile_index: &ProjectileIndex,
     query_projectiles: &Query<&Projectile>,
 ) -> bool {
     let Some(attacker) = attacker else {
@@ -61,15 +62,23 @@ fn hit_frame_expected(
         }
     }
 
-    // A projectile in flight will fire the hit event on impact
-    query_projectiles
-        .iter()
-        .any(|projectile| {
-            projectile.source == attacker
-                && matches!(
-                    projectile.target,
-                    ProjectileTarget::Entity { entity } if entity == defender
-                )
+    // A projectile in flight will fire the hit event on impact. Only the attacker's
+    // own projectiles are checked (index), and each candidate is verified against
+    // the world so a stale index entry can never delay a kill.
+    projectile_index
+        .get(&attacker)
+        .is_some_and(|projectile_entities| {
+            projectile_entities.iter().any(|&projectile_entity| {
+                query_projectiles
+                    .get(projectile_entity)
+                    .is_ok_and(|projectile| {
+                        projectile.source == attacker
+                            && matches!(
+                                projectile.target,
+                                ProjectileTarget::Entity { entity } if entity == defender
+                            )
+                    })
+            })
         })
 }
 
@@ -86,6 +95,7 @@ pub fn pending_damage_system(
     dead_entities: Query<(), With<Dead>>,
     query_attacker: Query<(&Command, Option<&SkeletalAnimation>, Option<&Vehicle>)>,
     query_animation: Query<&SkeletalAnimation>,
+    projectile_index: Res<ProjectileIndex>,
     query_projectiles: Query<&Projectile>,
     query_transform: Query<&GlobalTransform>,
     time: Res<Time>,
@@ -121,6 +131,7 @@ pub fn pending_damage_system(
                     entity,
                     &query_attacker,
                     &query_animation,
+                    &projectile_index,
                     &query_projectiles,
                 );
 

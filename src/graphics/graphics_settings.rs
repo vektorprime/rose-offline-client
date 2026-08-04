@@ -450,7 +450,7 @@ impl Default for GraphicsSettings {
             // Effects
             bloom_enabled: true,
             bloom_intensity: 0.15,
-            motion_blur_enabled: false,
+            motion_blur_enabled: true, // Matches the camera spawn (MotionBlur::default(), shutter 0.5)
             motion_blur_intensity: 0.5,
             ssao_enabled: true,
             ssao_quality: SsaoQuality::default(),
@@ -460,7 +460,7 @@ impl Default for GraphicsSettings {
             tonemapping: TonemappingMode::default(),
             texture_quality: TextureQuality::default(),
             fxaa_enabled: false,
-            smaa_quality: SmaaQuality::default(),
+            smaa_quality: SmaaQuality::High, // Matches the camera spawn (Smaa::default(), High preset)
 
             // Ambient Lighting
             ambient_light_brightness: 1.5,

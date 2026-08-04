@@ -26,7 +26,6 @@ mod cooldown_system;
 mod damage_digit_render_system;
 mod damage_effects;
 mod debug_inspector_system;
-mod directional_light_system;
 mod dirt_dash_system;
 mod effect_system;
 mod effect_resolution;
@@ -148,7 +147,6 @@ pub use damage_digit_render_system::{
 };
 pub use damage_effects::{emit_blood_and_wounds, normalize_or, random_local_wound_pose, spawn_damage_digits};
 pub use debug_inspector_system::DebugInspectorPlugin;
-pub use directional_light_system::directional_light_system;
 pub use dirt_dash_system::{
     dirt_dash_particle_update_system, dirt_dash_spawn_system, DirtDashPlugin,
 };
@@ -182,7 +180,7 @@ pub use model_viewer_system::{
 };
 pub use monster_chatter_system::{add_monster_chatter_system, monster_chatter_system};
 pub use monster_separation_system::monster_separation_system;
-pub use memory_diagnostics::memory_diagnostics_system;
+pub use memory_diagnostics::{memory_diagnostics_run_condition, memory_diagnostics_system};
 pub use move_destination_effect_system::move_destination_effect_system;
 pub use move_speed_command_system::parse_move_speed_command;
 pub use move_speed_set_system::move_speed_set_system;

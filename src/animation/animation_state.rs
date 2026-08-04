@@ -111,6 +111,10 @@ impl AnimationState {
         self.animation_speed = animation_speed;
     }
 
+    pub fn animation_speed(&self) -> f32 {
+        self.animation_speed
+    }
+
     pub fn set_completed(&mut self) {
         self.completed = true;
     }
@@ -190,25 +194,49 @@ impl AnimationState {
         let animation_frame_number =
             (current_time - start_time) * (zmo_asset.fps as f64) * self.animation_speed as f64;
 
-        self.current_loop_count = animation_frame_number as usize / zmo_asset.num_frames;
-        self.completed = self.current_loop_count >= self.max_loop_count.unwrap_or(usize::MAX);
+        let current_loop_count = animation_frame_number as usize / zmo_asset.num_frames;
+        let completed = current_loop_count >= self.max_loop_count.unwrap_or(usize::MAX);
 
-        if self.completed {
-            self.current_frame_fract = 0.0;
-            self.current_frame_index = zmo_asset.num_frames - 1;
-            self.next_frame_index = self.current_frame_index;
-            self.current_loop_count = self.max_loop_count.unwrap() - 1;
-        } else {
-            self.current_frame_fract = animation_frame_number.fract() as f32;
-            self.current_frame_index = animation_frame_number as usize % zmo_asset.num_frames;
-            self.next_frame_index = if self.current_frame_index + 1 == zmo_asset.num_frames
-                && self.current_loop_count + 1 >= self.max_loop_count.unwrap_or(usize::MAX)
-            {
-                // The last frame of last loop should not blend to the first frame
-                self.current_frame_index
+        let (current_frame_fract, current_frame_index, next_frame_index, current_loop_count) =
+            if completed {
+                (
+                    0.0,
+                    zmo_asset.num_frames - 1,
+                    zmo_asset.num_frames - 1,
+                    self.max_loop_count.unwrap() - 1,
+                )
             } else {
-                (self.current_frame_index + 1) % zmo_asset.num_frames
+                let current_frame_index = animation_frame_number as usize % zmo_asset.num_frames;
+                let next_frame_index = if current_frame_index + 1 == zmo_asset.num_frames
+                    && current_loop_count + 1 >= self.max_loop_count.unwrap_or(usize::MAX)
+                {
+                    // The last frame of last loop should not blend to the first frame
+                    current_frame_index
+                } else {
+                    (current_frame_index + 1) % zmo_asset.num_frames
+                };
+                (
+                    animation_frame_number.fract() as f32,
+                    current_frame_index,
+                    next_frame_index,
+                    current_loop_count,
+                )
             };
+
+        if current_loop_count != self.current_loop_count {
+            self.current_loop_count = current_loop_count;
+        }
+        if completed != self.completed {
+            self.completed = completed;
+        }
+        if current_frame_fract != self.current_frame_fract {
+            self.current_frame_fract = current_frame_fract;
+        }
+        if current_frame_index != self.current_frame_index {
+            self.current_frame_index = current_frame_index;
+        }
+        if next_frame_index != self.next_frame_index {
+            self.next_frame_index = next_frame_index;
         }
 
         self.completed

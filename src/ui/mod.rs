@@ -77,7 +77,7 @@ pub struct UiStateWindows {
 
 use bevy::prelude::Resource;
 pub use dialog_loader::{load_dialog_sprites_system, DialogInstance, DialogLoader};
-pub use drag_and_drop_slot::{DragAndDropId, DragAndDropSlot};
+pub use drag_and_drop_slot::{DragAndDropId, DragAndDropSlot, SlotAccept};
 pub use tooltips::{
     get_item_name_color, tooltip_on_hover, ui_add_item_tooltip, ui_add_skill_tooltip,
 };
@@ -129,8 +129,8 @@ pub use ui_sailing_hud_system::ui_sailing_hud_system;
 pub use ui_selected_target_system::ui_selected_target_system;
 pub use ui_server_select_system::ui_server_select_system;
 pub use ui_settings_system::{
-    ui_settings_system, DepthOfFieldSettings, PostProcessingSettings, SkyBlendMode,
-    SkyDepthCompare, StarrySkyRenderSettings,
+    settings_window_open, ui_settings_system, DepthOfFieldSettings, PostProcessingSettings,
+    SkyBlendMode, SkyDepthCompare, StarrySkyRenderSettings,
 };
 pub use ui_skill_list_system::ui_skill_list_system;
 pub use ui_skill_tree_system::ui_skill_tree_system;

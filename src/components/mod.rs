@@ -60,8 +60,7 @@ pub use angelic_wings::{AngelicWings, WingSide};
 pub use bank::Bank;
 pub use bird::{Bird, BirdMesh, BirdSettings, BirdWingLeft, BirdWingRight};
 pub use blink_clip::{
-    sync_blink_clip_to_state, update_blink_clip_state, BlinkClip, BlinkClipPlugin, BlinkClipState,
-    BlinkUniform,
+    sync_blink_clip_to_state, BlinkClip, BlinkClipPlugin, BlinkClipState, BlinkUniform,
 };
 pub use blood_effect::{
     BloodSpatter, BloodSpatterConfig, DeathBloodHandled, GashWounds, WoundVisual,
@@ -79,7 +78,8 @@ pub use clan_membership::ClanMembership;
 pub use client_entity::{ClientEntity, ClientEntityId, ClientEntityType};
 pub use client_entity_name::ClientEntityName;
 pub use collision::{
-    ColliderEntity, ColliderParent, CollisionHeightOnly, CollisionPlayer, RemoveColliderCommand,
+    ColliderEntity, ColliderParent, CollisionHeightOnly, CollisionPlayer, GroundHeightCache,
+    RemoveColliderCommand,
     COLLISION_FILTER_CLICKABLE, COLLISION_FILTER_COLLIDABLE, COLLISION_FILTER_INSPECTABLE,
     COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_CHARACTER, COLLISION_GROUP_ITEM_DROP,
     COLLISION_GROUP_NPC, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_PLAYER,

@@ -67,6 +67,7 @@ pub fn spawn_zone(
         ref mut water_spawned_events,
         terrain_noise,
         effect_cache,
+        current_zone: _,
     } = params;
     log::info!(
         "[SPAWN ZONE] render_config.use_new_terrain: {}",
@@ -102,6 +103,14 @@ pub fn spawn_zone(
         log::info!("[MEMORY] Water material handle created");
         material
     };
+
+    // Create ONE TerrainMaterial for the whole zone; every block shares it.
+    let terrain_material = terrain_materials.add(TerrainMaterial {
+        textures: tile_textures.clone(),
+        light_direction: Vec3::new(0.5, 1.0, 0.3).normalize(),
+        light_color: Color::WHITE,
+        ambient_color: Color::srgb(0.9, 0.9, 1.0),
+    });
 
     let mut zone_loading_assets: Vec<UntypedHandle> = Vec::default();
     let zone_entity = commands
@@ -150,10 +159,12 @@ pub fn spawn_zone(
     let mut effect_object_count = 0;
     let mut sound_object_count = 0;
 
+    let mut mesh_cache: Vec<Option<Handle<Mesh>>> = Vec::new();
+
     for block_y in 0..64 {
         for block_x in 0..64 {
             if let Some(block_data) = zone_data.blocks[block_x + block_y * 64].as_ref() {
-                log::info!(
+                log::debug!(
                     "[SPAWN ZONE] Processing block {}_{}, new_terrain_mesh: {:?}",
                     block_x,
                     block_y,
@@ -173,7 +184,7 @@ pub fn spawn_zone(
                         spawn_terrain(
                             commands,
                             meshes,
-                            terrain_materials,
+                            &terrain_material,
                             &tile_textures,
                             zone_data,
                             block_data,
@@ -216,6 +227,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             object_materials.as_mut(),
+                            &mut mesh_cache,
                             specular_texture,
                             &game_data.zsc_event_object,
                             &lightmap_path,
@@ -242,6 +254,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             object_materials.as_mut(),
+                            &mut mesh_cache,
                             specular_texture,
                             &game_data.zsc_special_object,
                             &lightmap_path,
@@ -273,6 +286,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             object_materials.as_mut(),
+                            &mut mesh_cache,
                             specular_texture,
                             &zone_data.zsc_cnst,
                             &lightmap_path,
@@ -300,6 +314,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             object_materials.as_mut(),
+                            &mut mesh_cache,
                             specular_texture,
                             &zone_data.zsc_deco,
                             &lightmap_path,

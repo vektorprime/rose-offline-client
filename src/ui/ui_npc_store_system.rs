@@ -27,7 +27,7 @@ use crate::{
         ui_add_item_tooltip,
         ui_drag_and_drop_system::UiStateDragAndDrop,
         widgets::{DataBindings, Dialog, DrawTextTrait},
-        DragAndDropId, DragAndDropSlot, UiSoundEvent,
+        DragAndDropId, DragAndDropSlot, SlotAccept, UiSoundEvent,
     },
 };
 
@@ -76,13 +76,6 @@ impl Default for UiNpcStoreState {
             sell_list: Default::default(),
         }
     }
-}
-
-fn store_slot_drag_accepts(drag_source: &DragAndDropId) -> bool {
-    matches!(
-        drag_source,
-        DragAndDropId::Inventory(ItemSlot::Inventory(_, _))
-    )
 }
 
 fn ui_add_store_item_slot(
@@ -145,7 +138,7 @@ fn ui_add_store_item_slot(
                         false,
                         quantity,
                         None,
-                        store_slot_drag_accepts,
+                        SlotAccept::InventoryItem,
                         &mut ui_state_dnd.dragged_item,
                         &mut dropped_item,
                         [40.0, 40.0],
@@ -208,17 +201,6 @@ fn ui_add_store_item_slot(
             ui.colored_label(egui::Color32::YELLOW, format!("Buy Price: {}", item_price));
         });
     }
-}
-
-fn buy_slot_drag_accepts(drag_source: &DragAndDropId) -> bool {
-    matches!(drag_source, DragAndDropId::NpcStore(_, _))
-}
-
-fn sell_slot_drag_accepts(drag_source: &DragAndDropId) -> bool {
-    matches!(
-        drag_source,
-        DragAndDropId::Inventory(ItemSlot::Inventory(_, _))
-    )
 }
 
 fn ui_add_buy_item_slot(
@@ -290,7 +272,7 @@ fn ui_add_buy_item_slot(
                         false,
                         quantity,
                         None,
-                        buy_slot_drag_accepts,
+                        SlotAccept::NpcStoreBuy,
                         &mut ui_state_dnd.dragged_item,
                         &mut dropped_item,
                         [40.0, 40.0],
@@ -372,7 +354,7 @@ fn ui_add_sell_item_slot(
                         None,
                         game_data,
                         ui_resources,
-                        sell_slot_drag_accepts,
+                        SlotAccept::InventoryItem,
                         &mut ui_state_dnd.dragged_item,
                         &mut dropped_item,
                         [40.0, 40.0],

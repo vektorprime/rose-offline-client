@@ -552,7 +552,17 @@ fn get_new_target(center: Vec3, radius: f32, min_alt: f32, max_alt: f32) -> Vec3
 pub fn update_bird_movement_system(
     time: Res<Time>,
     settings: Res<BirdSettings>,
-    mut bird_query: Query<(Entity, &mut Bird, &mut Transform), With<Bird>>,
+    camera_query: Query<
+        &GlobalTransform,
+        (
+            With<Camera3d>,
+            Without<crate::render::WaterReflectionCamera>,
+        ),
+    >,
+    mut bird_query: Query<
+        (Entity, &mut Bird, &GlobalTransform, &mut Transform),
+        With<Bird>,
+    >,
     mut left_wing_query: Query<
         &mut Transform,
         (With<BirdWingLeft>, Without<Bird>, Without<BirdWingRight>),
@@ -569,7 +579,19 @@ pub fn update_bird_movement_system(
 
     let dt = time.delta_secs();
 
-    for (bird_entity, mut bird, mut transform) in bird_query.iter_mut() {
+    // Birds beyond this distance from the camera are ambient sky decor below
+    // visible scale; skip their per-frame simulation (movement, flap, wing
+    // writes) entirely. No culling when no camera exists.
+    let camera_pos = camera_query.iter().next().map(|gt| gt.translation());
+    let cull_dist_sq = 150.0 * 150.0;
+
+    for (bird_entity, mut bird, bird_global_transform, mut transform) in bird_query.iter_mut() {
+        if let Some(camera_pos) = camera_pos {
+            if bird_global_transform.translation().distance_squared(camera_pos) > cull_dist_sq {
+                continue;
+            }
+        }
+
         // Move towards target
         let current_pos = transform.translation;
         let direction = bird.target_position - current_pos;

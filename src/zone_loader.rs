@@ -246,7 +246,7 @@ use crate::{
         MESH_ATTRIBUTE_UV_1,
     },
     resources::{CurrentZone, DebugInspector, GameData, SpecularTexture},
-    vfs_asset_io::clear_vfs_file_cache,
+    vfs_asset_io::evict_zone_tagged_files,
     VfsResource,
 };
 
@@ -294,6 +294,14 @@ pub struct ZoneLoadChannelSender(
 pub struct ZoneLoadChannelReceiver(
     pub std::sync::Mutex<mpsc::Receiver<(ZoneId, Result<ZoneLoaderAsset, anyhow::Error>)>>,
 );
+
+/// The most recently requested zone id (set while processing `LoadZoneEvent`s).
+/// `zone_loaded_from_vfs_system` uses it to drop `ZoneLoadedFromVfsEvent`s whose
+/// async load finished after a newer zone request superseded them (e.g. the
+/// login screen's background zone load completing after the game zone request),
+/// so a stale load can never replace the current zone.
+#[derive(Resource, Default)]
+pub struct LastRequestedZone(pub Option<ZoneId>);
 
 /// Resource for tracking memory and asset lifecycle
 #[derive(Resource, Default)]
@@ -457,6 +465,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub water_spawned_events: MessageWriter<'w, WaterSpawnedEvent>,
     pub terrain_noise: Res<'w, crate::terrain::GlobalTerrainNoise>,
     pub effect_cache: Res<'w, EffectCache>,
+    pub current_zone: Option<Res<'w, CurrentZone>>,
 }
 
 pub struct CachedZone {

@@ -12,7 +12,7 @@ use crate::{
         tooltips::{PlayerTooltipQuery, SkillTooltipType},
         ui_add_skill_tooltip,
         widgets::{DataBindings, Dialog, DrawWidget, Skill, Widget},
-        DragAndDropId, DragAndDropSlot, UiSoundEvent, UiStateWindows,
+        DragAndDropId, DragAndDropSlot, SlotAccept, UiSoundEvent, UiStateWindows,
     },
 };
 
@@ -90,7 +90,7 @@ fn ui_add_skill_tree_slot(
                         } else {
                             Some(1.0)
                         },
-                        |_| false,
+                        SlotAccept::None,
                         &mut dragged_item,
                         &mut dropped_item,
                         [40.0, 40.0],

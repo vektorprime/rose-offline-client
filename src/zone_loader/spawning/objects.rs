@@ -5,6 +5,7 @@ pub(super) fn spawn_object(
     asset_server: &AssetServer,
     zone_loading_assets: &mut Vec<UntypedHandle>,
     object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    mesh_cache: &mut Vec<Option<Handle<Mesh>>>,
     specular_texture: &SpecularTexture,
     zsc: &ZscFile,
     lightmap_path: &Path,
@@ -37,7 +38,8 @@ pub(super) fn spawn_object(
             object_instance.scale.y,
         ));
 
-    let mut mesh_cache: Vec<Option<Handle<Mesh>>> = vec![None; zsc.meshes.len()];
+    mesh_cache.clear();
+    mesh_cache.resize(zsc.meshes.len(), None);
 
     let object_entity_commands = commands.spawn((
         EditorSelectable,

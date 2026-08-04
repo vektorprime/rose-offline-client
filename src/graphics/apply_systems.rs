@@ -4,11 +4,17 @@
 //! actual render configuration (cameras, lights, etc.).
 
 use crate::graphics::*;
-use bevy::{core_pipeline::tonemapping::Tonemapping, prelude::*, render::view::ColorGrading};
-use bevy_light::{
-    CascadeShadowConfig, DirectionalLight, DirectionalLightShadowMap, ShadowFilteringMethod,
+use crate::render::WaterReflectionCamera;
+use bevy::{
+    anti_alias::{fxaa::Fxaa, smaa::{Smaa, SmaaPreset}},
+    core_pipeline::tonemapping::Tonemapping,
+    light::{
+        CascadeShadowConfig, DirectionalLight, DirectionalLightShadowMap, ShadowFilteringMethod,
+    },
+    post_process::{bloom::Bloom, motion_blur::MotionBlur},
+    prelude::*,
+    render::view::ColorGrading,
 };
-use bevy_post_process::bloom::Bloom;
 
 /// System that applies color grading settings (brightness, contrast, saturation, gamma)
 /// to all cameras with ColorGrading components.
@@ -118,20 +124,118 @@ pub fn apply_tonemapping_system(
 }
 
 /// System that applies bloom settings to cameras.
+/// The bloom component is removed entirely when disabled, matching the
+/// insert/remove behavior of `apply_post_processing_settings` (single unified
+/// "disabled = no pass" path instead of the old intensity=0 fallback).
+/// The water reflection camera is excluded: it renders to an LDR image target
+/// and must not receive post-process components.
 pub fn apply_bloom_system(
     graphics_settings: Res<GraphicsSettings>,
-    mut cameras: Query<&mut Bloom, With<Camera>>,
+    mut cameras: Query<(Entity, Option<&mut Bloom>), (With<Camera>, Without<WaterReflectionCamera>)>,
+    mut commands: Commands,
 ) {
     // Skip if settings haven't changed
     if !graphics_settings.is_changed() {
         return;
     }
 
-    for mut bloom in cameras.iter_mut() {
-        if graphics_settings.bloom_enabled {
-            bloom.intensity = graphics_settings.bloom_intensity;
-        } else {
-            bloom.intensity = 0.0;
+    if graphics_settings.bloom_enabled {
+        for (_, bloom) in cameras.iter_mut() {
+            if let Some(mut bloom) = bloom {
+                bloom.intensity = graphics_settings.bloom_intensity;
+            }
+        }
+    } else {
+        for (entity, bloom) in cameras.iter() {
+            if bloom.is_some() {
+                commands.entity(entity).remove::<Bloom>();
+            }
+        }
+    }
+}
+
+/// System that applies motion blur settings to cameras.
+/// When disabled the shutter angle is set to 0.0, which makes the motion blur
+/// node early-out without rendering its pass (see MotionBlurNode::run).
+pub fn apply_motion_blur_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut cameras: Query<&mut MotionBlur, (With<Camera>, Without<WaterReflectionCamera>)>,
+) {
+    // Skip if settings haven't changed
+    if !graphics_settings.is_changed() {
+        return;
+    }
+
+    let shutter_angle = if graphics_settings.motion_blur_enabled {
+        graphics_settings.motion_blur_intensity
+    } else {
+        0.0
+    };
+
+    for mut motion_blur in cameras.iter_mut() {
+        motion_blur.shutter_angle = shutter_angle;
+    }
+}
+
+/// System that applies FXAA settings to cameras.
+pub fn apply_fxaa_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut cameras: Query<(Entity, Option<&Fxaa>), (With<Camera>, Without<WaterReflectionCamera>)>,
+    mut commands: Commands,
+) {
+    // Skip if settings haven't changed
+    if !graphics_settings.is_changed() {
+        return;
+    }
+
+    if graphics_settings.fxaa_enabled {
+        for (entity, fxaa) in cameras.iter() {
+            if fxaa.is_none() {
+                commands.entity(entity).insert(Fxaa::default());
+            }
+        }
+    } else {
+        for (entity, fxaa) in cameras.iter() {
+            if fxaa.is_some() {
+                commands.entity(entity).remove::<Fxaa>();
+            }
+        }
+    }
+}
+
+/// System that applies SMAA quality settings to cameras.
+/// SmaaQuality::Disabled removes the SMAA component entirely.
+pub fn apply_smaa_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut cameras: Query<
+        (Entity, Option<&mut Smaa>),
+        (With<Camera>, Without<WaterReflectionCamera>),
+    >,
+    mut commands: Commands,
+) {
+    // Skip if settings haven't changed
+    if !graphics_settings.is_changed() {
+        return;
+    }
+
+    let preset = match graphics_settings.smaa_quality {
+        SmaaQuality::Disabled => None,
+        SmaaQuality::Low => Some(SmaaPreset::Low),
+        SmaaQuality::Medium => Some(SmaaPreset::Medium),
+        SmaaQuality::High => Some(SmaaPreset::High),
+        SmaaQuality::Ultra => Some(SmaaPreset::Ultra),
+    };
+
+    for (entity, smaa) in cameras.iter_mut() {
+        match (preset, smaa) {
+            (Some(preset), Some(mut smaa)) => smaa.preset = preset,
+            (Some(preset), None) => {
+                commands.entity(entity).insert(Smaa { preset });
+            }
+            (None, Some(_)) => {
+                commands.entity(entity).remove::<Smaa>();
+            }
+            (None, None) => {}
         }
     }
 }
@@ -156,9 +260,12 @@ pub fn apply_shadow_filtering_system(
 }
 
 /// System that applies MSAA settings to cameras.
+/// The water reflection camera is excluded: it renders to an LDR image target
+/// with a pipeline laid out for `Msaa::Off`, and changing its MSAA mid-game
+/// destabilizes its render-world view state.
 pub fn apply_msaa_system(
     graphics_settings: Res<GraphicsSettings>,
-    mut cameras: Query<&mut Msaa, With<Camera>>,
+    mut cameras: Query<&mut Msaa, (With<Camera>, Without<WaterReflectionCamera>)>,
 ) {
     // Skip if settings haven't changed
     if !graphics_settings.is_changed() {

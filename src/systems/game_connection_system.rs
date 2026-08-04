@@ -22,6 +22,11 @@ enum CooldownType {
     Group(usize),
 }
 
+/// Maximum server messages processed per frame; the remainder is carried
+/// over to the next frame to smooth burst spikes (e.g. zone join). The
+/// budget is high enough that a zone-join burst drains in a single frame.
+const MAX_MESSAGES_PER_FRAME: u32 = 4096;
+
 use rose_data::{
     AbilityType, EquipmentItem, Item, ItemReference, ItemSlotBehaviour, ItemType, NpcId,
     StatusEffectType,
@@ -326,9 +331,26 @@ pub fn game_connection_system(
         return;
     };
 
+    let mut messages_processed = 0u32;
     let result: Result<(), anyhow::Error> = loop {
+        messages_processed += 1;
+        if messages_processed > MAX_MESSAGES_PER_FRAME {
+            break Ok(());
+        }
         match game_connection.server_message_rx.try_recv() {
             Ok(ServerMessage::ConnectionRequestSuccess { .. }) => {
+                // Reconnect: the previous session's entities are stale (the
+                // server resends all state), so despawn them before clearing
+                // the list to avoid duplicate players and ghost entities.
+                for entity in client_entity_list.client_entities.iter().flatten() {
+                    if client_entity_list.player_entity == Some(*entity) {
+                        continue;
+                    }
+                    commands.entity(*entity).despawn();
+                }
+                if let Some(player_entity) = client_entity_list.player_entity {
+                    commands.entity(player_entity).despawn();
+                }
                 client_entity_list.clear();
             }
             Ok(ServerMessage::ConnectionRequestError { .. }) => {
@@ -773,7 +795,7 @@ pub fn game_connection_system(
             }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     if client_entity_list.player_entity == Some(entity) {
-                        log::info!(
+                        log::debug!(
                             "[ATTACK_DIAG] MoveEntity player dest=({:.0},{:.0},{:.0}) target={:?} mode={:?}",
                             x,
                             y,
@@ -812,8 +834,8 @@ pub fn game_connection_system(
                         }
                     });
                 } else {
-                    log::warn!("[RESPAWN_MOVE_DIAG] Entity not found in client_entity_list! entity_id={:?}", entity_id);
-                    log::warn!(
+                    log::debug!("[RESPAWN_MOVE_DIAG] Entity not found in client_entity_list! entity_id={:?}", entity_id);
+                    log::debug!(
                         "[RESPAWN_MOVE_DIAG] Player entity_id={:?}, player_entity={:?}",
                         client_entity_list.player_entity_id,
                         client_entity_list.player_entity
@@ -826,7 +848,7 @@ pub fn game_connection_system(
             }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     if client_entity_list.player_entity == Some(entity) {
-                        log::info!(
+                        log::debug!(
                             "[ATTACK_DIAG] AdjustPosition player pos=({:.0},{:.0},{:.0})",
                             position.x,
                             position.y,
@@ -874,7 +896,7 @@ pub fn game_connection_system(
                 // TODO: Lerp to XYZ ?
                 if let Some(entity) = client_entity_list.get(entity_id) {
                     if client_entity_list.player_entity == Some(entity) {
-                        log::info!("[ATTACK_DIAG] StopMoveEntity player");
+                        log::debug!("[ATTACK_DIAG] StopMoveEntity player");
                     }
                     commands.entity(entity).insert(NextCommand::with_stop());
                 }

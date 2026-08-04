@@ -74,10 +74,14 @@ pub fn dirt_dash_spawn_system(
     let mut rng = rand::thread_rng();
 
     // Performance check: skip if too many particles exist
+    // Counted once per frame; particles spawned this frame are tracked locally
+    // since deferred spawns are not visible to the query until commands apply.
     let current_particle_count = particle_count.iter().count();
     if current_particle_count >= settings.max_particles {
         return;
     }
+
+    let mut spawned_particles = 0usize;
 
     for (position, command, transform, mut dirt_dash) in query.iter_mut() {
         // Check if the entity is moving
@@ -106,8 +110,8 @@ pub fn dirt_dash_spawn_system(
 
             // Spawn a burst of particles
             for _ in 0..dirt_dash.particles_per_burst {
-                // Check particle limit again
-                if particle_count.iter().count() >= settings.max_particles {
+                // Check particle limit against the frame-start count plus this frame's spawns
+                if current_particle_count + spawned_particles >= settings.max_particles {
                     break;
                 }
 
@@ -194,6 +198,7 @@ pub fn dirt_dash_spawn_system(
                     InheritedVisibility::default(),
                     ViewVisibility::default(),
                 ));
+                spawned_particles += 1;
             }
         }
     }

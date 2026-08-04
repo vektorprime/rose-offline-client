@@ -6,6 +6,10 @@ use crate::systems::OrbitCamera;
 use crate::zone_loader::ZoneLoaderAsset;
 use rose_game_common::messages::client::ClientMessage;
 
+/// Interval between hovering position reports to the server (seconds),
+/// matching the sailing system's report cadence (sailing_movement_system.rs).
+const HOVER_REPORT_INTERVAL: f32 = 0.1;
+
 /// Server-authoritative flight movement system.
 ///
 /// The character flies forward in the direction the camera is facing,
@@ -34,6 +38,7 @@ pub fn flight_movement_system(
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     mut commands: Commands,
     game_connection: Option<Res<GameConnection>>,
+    mut hover_report_accumulator: Local<f32>,
     mut query: Query<
         (Entity, &mut FlightState, &mut FacingDirection, &mut Position),
         With<PlayerCharacter>,
@@ -158,25 +163,34 @@ pub fn flight_movement_system(
                 }
             }
 
-            // No descent - player hovers in place when not thrusting
-            // Cancel any leftover ground move command so the player doesn't run
-            // or drift while hovering.
-            commands.entity(entity).insert(NextCommand::with_stop());
-
-            // Hovering in place: keep reporting our position to the server so
-            // its authoritative position stays in lockstep with the hover
-            // position and stale pre-flight move commands don't drag the
-            // server entity away (which could later trigger a
-            // teleport-rejection snap-back).
+            // No descent - player hovers in place when not thrusting.
             if flight_state.current_speed <= 0.0 {
-                if let Some(game_connection) = game_connection.as_ref() {
-                    game_connection
-                        .client_message_tx
-                        .send(ClientMessage::MoveCollision {
-                            position: position.position,
-                        })
-                        .ok();
+                // Hover maintenance at 10 Hz (matching the sailing report
+                // cadence): re-assert the Stop command so stale ground move
+                // echoes never reanimate the run/walk, and keep reporting the
+                // hover position to the server so its authoritative position
+                // stays in lockstep with the hover position and stale
+                // pre-flight move commands don't drag the server entity away
+                // (which could later trigger a teleport-rejection snap-back).
+                // The server accepts absolute positions, so per-frame
+                // reporting while idle is unnecessary.
+                *hover_report_accumulator += time.delta_secs();
+                if *hover_report_accumulator >= HOVER_REPORT_INTERVAL {
+                    *hover_report_accumulator = 0.0;
+                    commands.entity(entity).insert(NextCommand::with_stop());
+                    if let Some(game_connection) = game_connection.as_ref() {
+                        game_connection
+                            .client_message_tx
+                            .send(ClientMessage::MoveCollision {
+                                position: position.position,
+                            })
+                            .ok();
+                    }
                 }
+            } else {
+                // Still decelerating with momentum: cancel any ground move
+                // command every frame (active movement keeps instant response).
+                commands.entity(entity).insert(NextCommand::with_stop());
             }
         }
     }

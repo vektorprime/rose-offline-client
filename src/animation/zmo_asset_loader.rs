@@ -11,6 +11,11 @@ use bevy_image::Image;
 
 use rose_file_readers::{RoseFile, ZmoChannel, ZmoFile};
 
+use crate::render::{
+    EFFECT_MESH_ANIMATION_FLAG_ALPHA, EFFECT_MESH_ANIMATION_FLAG_NORMAL,
+    EFFECT_MESH_ANIMATION_FLAG_POSITION, EFFECT_MESH_ANIMATION_FLAG_UV,
+};
+
 #[derive(Default, TypePath)]
 pub struct ZmoAssetLoader;
 
@@ -42,6 +47,8 @@ pub struct ZmoAsset {
     pub interpolation_interval: f32,
     pub bones: Vec<ZmoAssetBone>,
     pub animation_texture: Option<ZmoAssetAnimationTexture>,
+    /// Precomputed material animation flags: bits 0-3 = animation type flags, bits 4-31 = num_frames
+    pub flags: u32,
 }
 
 impl ZmoAsset {
@@ -206,6 +213,7 @@ impl AssetLoader for ZmoAssetLoader {
                             / 1000.0)
                             .max(0.0001),
                         animation_texture: None,
+                        flags: (zmo.num_frames as u32) << 4,
                     };
                     Ok(asset)
                 }
@@ -365,6 +373,20 @@ impl AssetLoader for ZmoTextureAssetLoader {
                         ),
                     );
 
+                    let mut flags = (zmo.num_frames as u32) << 4;
+                    if has_position_channel {
+                        flags |= EFFECT_MESH_ANIMATION_FLAG_POSITION;
+                    }
+                    if has_normal_channel {
+                        flags |= EFFECT_MESH_ANIMATION_FLAG_NORMAL;
+                    }
+                    if has_uv1_channel {
+                        flags |= EFFECT_MESH_ANIMATION_FLAG_UV;
+                    }
+                    if has_alpha_channel {
+                        flags |= EFFECT_MESH_ANIMATION_FLAG_ALPHA;
+                    }
+
                     let asset = ZmoAsset {
                         num_frames: zmo.num_frames,
                         fps: zmo.fps,
@@ -382,6 +404,7 @@ impl AssetLoader for ZmoTextureAssetLoader {
                             has_alpha_channel,
                             has_uv1_channel,
                         }),
+                        flags,
                     };
                     Ok(asset)
                 }

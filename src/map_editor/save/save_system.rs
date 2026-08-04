@@ -13,7 +13,7 @@ use crate::components::{
 use crate::map_editor::coords::{world_to_block_coords, write_him_file, write_til_file, ZONE_CENTER_X, ZONE_CENTER_Z};
 use crate::map_editor::resources::{DeletedZoneObjects, ZoneObjectType};
 use crate::map_editor::systems::model_placement_system::EditorPlacedObject;
-use crate::resources::CurrentZone;
+use crate::resources::{AppState, CurrentZone};
 use crate::zone_loader::ZoneLoaderAsset;
 
 use super::ifo_export::{export_ifo_block, ExportStats};
@@ -144,7 +144,10 @@ impl Plugin for SavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SaveStatus>()
             .add_message::<SaveZoneEvent>()
-            .add_systems(Update, save_zone_system);
+            .add_systems(
+                Update,
+                save_zone_system.run_if(in_state(AppState::MapEditor)),
+            );
 
         log::info!("[SavePlugin] Save system initialized");
     }

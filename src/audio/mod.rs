@@ -59,6 +59,12 @@ use bevy::math::Vec3;
 use bevy::prelude::{Commands, Entity, GlobalTransform, Handle, Transform};
 use crate::components::SoundCategory;
 
+/// Distance beyond which spatial sounds are considered inaudible and are culled
+pub(crate) const AUDIBLE_CUTOFF: f32 = 100.0;
+
+/// Distance below which a culled looped spatial sound is restarted (hysteresis vs `AUDIBLE_CUTOFF`)
+pub(crate) const SPATIAL_RESUME_DISTANCE: f32 = 80.0;
+
 /// Spawns the standard spatial sound bundle:
 /// (SoundCategory, SoundGain, SpatialSound, Transform, GlobalTransform, Option<SoundRadius>)
 pub fn spawn_spatial_sound(

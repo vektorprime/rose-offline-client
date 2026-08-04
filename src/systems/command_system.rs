@@ -280,9 +280,15 @@ fn update_active_motion(
     if let Some(active_motion) = active_motion.as_mut() {
         if active_motion.motion().id() == motion.id() && !active_motion.completed() {
             // Already playing this animation
-            active_motion.set_animation_speed(animation_speed);
+            if active_motion.animation_speed() != animation_speed {
+                active_motion.set_animation_speed(animation_speed);
+            }
             return;
         }
+    }
+
+    if !motion.is_strong() {
+        return;
     }
 
     entity_commands.insert(
@@ -891,7 +897,7 @@ pub fn command_system(
                 *attack_diag_frame += 1;
                 if player_character.is_some() && *attack_diag_frame % 30 == 0
                 {
-                    log::info!(
+                    log::debug!(
                         "[ATTACK_DIAG] player={:?} target={:?} dist={:.1} range={:.1} {} cmd={:?} next={:?} player_pos={:?} target_pos={:?}",
                         entity.index(),
                         target_entity.index(),
@@ -1125,7 +1131,7 @@ pub fn command_system(
                         .unwrap_or(true);
                     if player_character.is_some() && *attack_diag_frame % 30 == 0
                     {
-                        log::info!(
+                        log::debug!(
                             "[ATTACK_DIAG] CastSkill player skill={:?} target={:?} in_range={} cast_range={:.1} cmd={:?} next={:?} player_pos={:?}",
                             skill_id,
                             target_entity.map(|e| e.index()),

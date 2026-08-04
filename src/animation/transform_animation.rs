@@ -1,13 +1,17 @@
 use bevy::{
     asset::LoadState,
     prelude::{
-        AssetServer, Assets, Component, Deref, DerefMut, Handle, Query, Res, Transform, Vec3,
+        AssetServer, Assets, Camera3d, Component, Deref, DerefMut, GlobalTransform, Handle, Query,
+        Res, Transform, Vec3, ViewVisibility, With, Without,
     },
     reflect::Reflect,
     time::Time,
 };
 
-use crate::animation::{AnimationState, ZmoAsset};
+use crate::{
+    animation::{should_animate_entity, AnimationState, ZmoAsset},
+    render::WaterReflectionCamera,
+};
 
 #[derive(Component, Reflect, Deref, DerefMut)]
 pub struct TransformAnimation(AnimationState);
@@ -23,12 +27,29 @@ impl TransformAnimation {
 }
 
 pub fn transform_animation_system(
-    mut query_animations: Query<(&mut TransformAnimation, Option<&mut Transform>)>,
+    mut query_animations: Query<(
+        &mut TransformAnimation,
+        Option<&mut Transform>,
+        Option<&ViewVisibility>,
+        Option<&GlobalTransform>,
+    )>,
+    camera_query: Query<&GlobalTransform, (With<Camera3d>, Without<WaterReflectionCamera>)>,
     motion_assets: Res<Assets<ZmoAsset>>,
     asset_server: Res<AssetServer>,
     time: Res<Time>,
 ) {
-    for (mut transform_animation, transform) in query_animations.iter_mut() {
+    let camera_position = camera_query
+        .iter()
+        .next()
+        .map(|transform| transform.translation());
+
+    for (mut transform_animation, transform, view_visibility, global_transform) in
+        query_animations.iter_mut()
+    {
+        if !should_animate_entity(view_visibility, global_transform, camera_position) {
+            continue;
+        }
+
         if transform_animation.completed() {
             continue;
         }

@@ -564,40 +564,108 @@ pub fn particle_storage_buffer_update_system(
         if let Some(existing_material_handle) = material_handle {
             // Update existing material - preserve the original texture!
             if let Some(mat) = materials.get_mut(&existing_material_handle.0) {
-                // OPTIMIZATION: Only recreate buffers if particle count changed significantly
-                // This reduces GPU memory allocation overhead for stable particle systems
-                let should_recreate_buffers = true; // For now, always update to ensure data is fresh
+                // OPTIMIZATION: Reuse the same storage buffer handles and only recreate
+                // them when the capacity is insufficient (buffer_description.size is the
+                // byte capacity set at creation). Data updates go through set_data on the
+                // stable handle, which keeps the Assets<ShaderStorageBuffer> map from
+                // churning add/remove pairs every frame. Assets::get_mut emits
+                // AssetEvent::Modified, which re-extracts + re-uploads the buffers and
+                // re-prepares the material bind group (Bevy resolves the storage-buffer
+                // bindings into wgpu buffers only when the material asset is
+                // re-prepared).
+                // Positions
+                let needed = render_data.positions.len() * std::mem::size_of::<Vec4>();
+                let grow = match storage_buffers.get_mut(&mat.positions) {
+                    Some(buffer) if buffer.buffer_description.size >= needed as u64 => {
+                        buffer.set_data(render_data.positions.clone());
+                        false
+                    }
+                    _ => true,
+                };
+                if grow {
+                    let old = std::mem::replace(
+                        &mut mat.positions,
+                        storage_buffers.add(ShaderStorageBuffer::from(
+                            render_data.positions.clone(),
+                        )),
+                    );
+                    storage_buffers.remove(&old);
+                }
 
-                if should_recreate_buffers {
-                    // Store old buffer handles to prevent memory leak
-                    let old_positions = mat.positions.clone();
-                    let old_sizes = mat.sizes.clone();
-                    let old_colors = mat.colors.clone();
-                    let old_textures = mat.textures.clone();
+                // Sizes
+                let needed = render_data.sizes.len() * std::mem::size_of::<Vec2>();
+                let grow = match storage_buffers.get_mut(&mat.sizes) {
+                    Some(buffer) if buffer.buffer_description.size >= needed as u64 => {
+                        buffer.set_data(render_data.sizes.clone());
+                        false
+                    }
+                    _ => true,
+                };
+                if grow {
+                    let old = std::mem::replace(
+                        &mut mat.sizes,
+                        storage_buffers.add(ShaderStorageBuffer::from(render_data.sizes.clone())),
+                    );
+                    storage_buffers.remove(&old);
+                }
 
-                    // Create new buffers with updated data
-                    mat.positions = storage_buffers
-                        .add(ShaderStorageBuffer::from(render_data.positions.clone()));
-                    mat.sizes =
-                        storage_buffers.add(ShaderStorageBuffer::from(render_data.sizes.clone()));
-                    mat.colors =
-                        storage_buffers.add(ShaderStorageBuffer::from(render_data.colors.clone()));
-                    mat.textures = storage_buffers
-                        .add(ShaderStorageBuffer::from(render_data.textures.clone()));
+                // Colors
+                let needed = render_data.colors.len() * std::mem::size_of::<Vec4>();
+                let grow = match storage_buffers.get_mut(&mat.colors) {
+                    Some(buffer) if buffer.buffer_description.size >= needed as u64 => {
+                        buffer.set_data(render_data.colors.clone());
+                        false
+                    }
+                    _ => true,
+                };
+                if grow {
+                    let old = std::mem::replace(
+                        &mut mat.colors,
+                        storage_buffers.add(ShaderStorageBuffer::from(render_data.colors.clone())),
+                    );
+                    storage_buffers.remove(&old);
+                }
 
-                    // Remove old buffers to prevent memory leak
-                    storage_buffers.remove(&old_positions);
-                    storage_buffers.remove(&old_sizes);
-                    storage_buffers.remove(&old_colors);
-                    storage_buffers.remove(&old_textures);
+                // Textures
+                let needed = render_data.textures.len() * std::mem::size_of::<Vec4>();
+                let grow = match storage_buffers.get_mut(&mat.textures) {
+                    Some(buffer) if buffer.buffer_description.size >= needed as u64 => {
+                        buffer.set_data(render_data.textures.clone());
+                        false
+                    }
+                    _ => true,
+                };
+                if grow {
+                    let old = std::mem::replace(
+                        &mut mat.textures,
+                        storage_buffers.add(ShaderStorageBuffer::from(render_data.textures.clone())),
+                    );
+                    storage_buffers.remove(&old);
                 }
 
                 // Update blend settings (these are cheap to update)
-                mat.blend_op = render_data.blend_op as u32;
-                mat.src_blend_factor = render_data.src_blend_factor as u32;
-                mat.dst_blend_factor = render_data.dst_blend_factor as u32;
-                mat.billboard_type = render_data.billboard_type as u32;
+                let blend_op = render_data.blend_op as u32;
+                if mat.blend_op != blend_op {
+                    mat.blend_op = blend_op;
+                }
+                let src_blend_factor = render_data.src_blend_factor as u32;
+                if mat.src_blend_factor != src_blend_factor {
+                    mat.src_blend_factor = src_blend_factor;
+                }
+                let dst_blend_factor = render_data.dst_blend_factor as u32;
+                if mat.dst_blend_factor != dst_blend_factor {
+                    mat.dst_blend_factor = dst_blend_factor;
+                }
+                let billboard_type = render_data.billboard_type as u32;
+                if mat.billboard_type != billboard_type {
+                    mat.billboard_type = billboard_type;
+                }
                 // NOTE: texture is preserved from original material (loaded in effect_loader.rs)
+
+                // No explicit "mark changed" call is needed: Assets::get_mut (called
+                // above for the material and the storage buffers) automatically emits
+                // AssetEvent::Modified, which drives re-extraction + re-upload of the
+                // modified buffers and re-preparation of the material bind group.
             }
         } else {
             // Create new material - use default white texture as fallback

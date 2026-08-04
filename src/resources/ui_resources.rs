@@ -15,7 +15,7 @@ use crate::{
     VfsResource,
 };
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub struct UiSprite {
     pub texture_id: egui::TextureId,
     pub uv: egui::Rect,
@@ -27,12 +27,16 @@ impl UiSprite {
     pub fn draw(&self, ui: &mut egui::Ui, pos: egui::Pos2) {
         let rect = egui::Rect::from_min_size(pos, egui::vec2(self.width, self.height));
         let mut mesh = egui::epaint::Mesh::with_texture(self.texture_id);
+        mesh.vertices.reserve(4);
+        mesh.indices.reserve(6);
         mesh.add_rect_with_uv(rect, self.uv, egui::Color32::WHITE);
         ui.painter().add(egui::epaint::Shape::mesh(mesh));
     }
 
     pub fn draw_stretched(&self, ui: &mut egui::Ui, rect: egui::Rect) {
         let mut mesh = egui::epaint::Mesh::with_texture(self.texture_id);
+        mesh.vertices.reserve(4);
+        mesh.indices.reserve(6);
         mesh.add_rect_with_uv(rect, self.uv, egui::Color32::WHITE);
         ui.painter().add(egui::epaint::Shape::mesh(mesh));
     }

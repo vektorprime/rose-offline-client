@@ -6,6 +6,9 @@ use crate::graphics::{GraphicsSettings, SailQuality};
 use crate::resources::WindState;
 use crate::sailing::{angle_to_wind_abs, sail_speed_factor};
 
+/// Minimum interval between full sail mesh rewrites (vertex buffer re-uploads)
+const SAIL_MESH_UPDATE_INTERVAL: f32 = 1.0 / 15.0;
+
 fn nearest_parent_boat_state(
     mut current: Entity,
     parent_query: &Query<&ChildOf>,
@@ -33,6 +36,7 @@ pub fn sail_animation_system(
     parent_query: Query<&ChildOf>,
     mut sail_query: Query<(Entity, &mut SailMesh, &Mesh3d)>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut mesh_update_accumulator: Local<f32>,
 ) {
     if matches!(
         graphics_settings.sailing.sail_deformation_quality,
@@ -42,6 +46,14 @@ pub fn sail_animation_system(
     }
 
     let t = time.elapsed_secs();
+
+    *mesh_update_accumulator += time.delta_secs();
+    let update_mesh = if *mesh_update_accumulator >= SAIL_MESH_UPDATE_INTERVAL {
+        *mesh_update_accumulator -= SAIL_MESH_UPDATE_INTERVAL;
+        true
+    } else {
+        false
+    };
 
     for (sail_entity, mut sail_data, mesh_3d) in sail_query.iter_mut() {
         if sail_data.subdivisions == 0 || sail_data.base_positions.is_empty() {
@@ -67,6 +79,10 @@ pub fn sail_animation_system(
         } else {
             SailSide::Center
         };
+
+        if !update_mesh {
+            continue;
+        }
 
         let side_sign = match sail_data.side {
             SailSide::Port => -1.0,

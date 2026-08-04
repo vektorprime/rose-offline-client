@@ -1,8 +1,8 @@
 use bevy::{
     math::{Quat, Vec3},
     prelude::{
-        Assets, Commands, Entity, GlobalTransform, MessageWriter, Query, Res, State, Time,
-        Transform, With, Without,
+        Assets, Camera3d, Commands, Entity, GlobalTransform, MessageWriter, Query, Res, State,
+        Time, Transform, With, Without,
     },
 };
 use bevy_rapier3d::geometry::ShapeCastOptions;
@@ -15,7 +15,7 @@ use rose_game_common::messages::client::ClientMessage;
 use crate::{
     components::{
         BoatState, ColliderParent, CollisionHeightOnly, CollisionPlayer, EventObject, FlightState,
-        NextCommand, Position, WarpObject, COLLISION_FILTER_COLLIDABLE,
+        GroundHeightCache, NextCommand, Position, WarpObject, COLLISION_FILTER_COLLIDABLE,
         COLLISION_FILTER_INSPECTABLE, COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_CHARACTER,
         COLLISION_GROUP_ITEM_DROP, COLLISION_GROUP_NPC, COLLISION_GROUP_PHYSICS_TOY,
         COLLISION_GROUP_PLAYER, COLLISION_GROUP_ZONE_EVENT_OBJECT,
@@ -23,6 +23,7 @@ use crate::{
         COLLISION_GROUP_ZONE_WATER,
     },
     events::QuestTriggerEvent,
+    render::{underwater_effect::UnderwaterVolumes, WaterReflectionCamera},
     resources::{AppState, CurrentZone, GameConnection},
     zone_content::boats::NpcBoat,
     zone_content::docks::Dock,
@@ -43,6 +44,43 @@ const DOCK_MARGIN_M: f32 = 3.0;
 const TERRAIN_BLOCK_MARGIN_M: f32 = 0.25;
 /// Block radius around NPC boat centers in cm (hull is ~6.7 m long x ~3.5 m wide).
 const NPC_BOAT_BLOCK_RADIUS_CM: f32 = 400.0;
+
+/// Distance from the camera (m) beyond which NPCs stop running the per-frame
+/// Rapier ground queries and reuse their last resolved ground height.
+const GROUND_QUERY_DISTANCE_M: f32 = 150.0;
+/// Horizontal movement (cm) that invalidates a cached ground height.
+const GROUND_CACHE_EPSILON_CM: f32 = 1.0;
+/// Downward ground ray reach (m) for the height-only system: zone objects
+/// never sit more than this far above the terrain, and the terrain itself is
+/// covered by the heightmap.
+const NPC_GROUND_RAY_DISTANCE_M: f32 = 20.0;
+/// Downward ground ray reach (m) for the player (was 10000.0; the terrain hit
+/// was redundant with the heightmap).
+const PLAYER_GROUND_RAY_DISTANCE_M: f32 = 50.0;
+/// Maximum number of stacked faces the ascending object-top scan climbs.
+const OBJECT_TOP_SCAN_MAX_STEPS: usize = 10;
+/// Step size (m) of the ascending object-top scan.
+const OBJECT_TOP_SCAN_STEP_M: f32 = 0.1;
+/// Radius (m) of the feet-sphere used to find zone objects under the entity.
+const GATE_BALL_RADIUS_M: f32 = 0.35;
+
+/// True when `world_position` (meters) is inside a water volume at or below
+/// its surface. Under water the ground ray can only ever return the terrain
+/// (already known from the heightmap), so both the ray and the feet-sphere
+/// queries can be skipped.
+fn point_is_submerged(world_position: Vec3, underwater_volumes: &UnderwaterVolumes) -> bool {
+    for volume in underwater_volumes.volumes.iter() {
+        let dx = (world_position.x - volume.center.x).abs();
+        let dz = (world_position.z - volume.center.z).abs();
+        if dx <= volume.half_extents.x
+            && dz <= volume.half_extents.y
+            && world_position.y <= volume.surface_y
+        {
+            return true;
+        }
+    }
+    false
+}
 
 /// Finds the top surface (in meters) of a zone object that an entity is currently
 /// inside of or touching at `feet_position` (e.g. an NPC spawned underneath castle
@@ -73,33 +111,44 @@ fn find_object_top_height(rapier_context: &RapierContext, feet_position: Vec3) -
             & !COLLISION_GROUP_ITEM_DROP,
     );
 
-    let gate_ball = Collider::ball(0.35);
-    let mut intersecting_objects = Vec::new();
+    // Collect the zone objects touching the feet sphere into a fixed-size
+    // buffer (no per-call heap allocation; a small sphere can only touch a
+    // handful of objects).
+    let gate_ball = Collider::ball(GATE_BALL_RADIUS_M);
+    let mut intersecting_objects = [Entity::PLACEHOLDER; 16];
+    let mut intersecting_count = 0;
     rapier_context.intersect_shape(
         feet_position,
         Quat::default(),
         <&dyn Shape>::from(&gate_ball),
         QueryFilter::new().groups(object_groups),
         |hit_entity| {
-            intersecting_objects.push(hit_entity);
+            if intersecting_count < intersecting_objects.len() {
+                intersecting_objects[intersecting_count] = hit_entity;
+                intersecting_count += 1;
+            }
             true
         },
     );
 
-    if intersecting_objects.is_empty() {
+    if intersecting_count == 0 {
         return None;
     }
 
-    // Cast a ray upward from just above the feet, restricted to the intersecting
-    // objects, and keep the highest hit: that is the top of the object the entity
-    // is stuck inside. Each iteration excludes the previous hit collider so the
-    // ray keeps climbing through the object's faces.
-    let up_origin = Vec3::new(feet_position.x, feet_position.y + 0.1, feet_position.z);
+    // Ascending scan: probe upward in small windows and climb past each
+    // surface found (excluding it so stacked faces are crossed one at a time).
+    // Any surface the feet sphere can touch is within one sphere radius of the
+    // feet, so the first window covers that reach and every later window is
+    // one step tall; the scan terminates as soon as a window comes up empty,
+    // which takes only a few iterations instead of 64 full-length raycasts.
+    let first_reach = GATE_BALL_RADIUS_M - OBJECT_TOP_SCAN_STEP_M;
     let mut top_height = None;
+    let mut probe_y = feet_position.y + OBJECT_TOP_SCAN_STEP_M;
+    let mut reach = first_reach;
     let mut excluded_collider = None;
 
-    for _ in 0..64 {
-        let predicate = |entity| intersecting_objects.contains(&entity);
+    for _ in 0..OBJECT_TOP_SCAN_MAX_STEPS {
+        let predicate = |entity: Entity| intersecting_objects[..intersecting_count].contains(&entity);
         let mut filter = QueryFilter::new()
             .groups(object_groups)
             .predicate(&predicate);
@@ -108,10 +157,18 @@ fn find_object_top_height(rapier_context: &RapierContext, feet_position: Vec3) -
         }
 
         if let Some((hit_entity, distance)) =
-            rapier_context.cast_ray(up_origin, Vec3::Y, 100.0, false, filter)
+            rapier_context.cast_ray(
+                Vec3::new(feet_position.x, probe_y, feet_position.z),
+                Vec3::Y,
+                reach,
+                false,
+                filter,
+            )
         {
-            let hit_height = up_origin.y + distance;
+            let hit_height = probe_y + distance;
             top_height = Some(top_height.map_or(hit_height, |height: f32| height.max(hit_height)));
+            probe_y = hit_height + OBJECT_TOP_SCAN_STEP_M;
+            reach = OBJECT_TOP_SCAN_STEP_M;
             excluded_collider = Some(hit_entity);
         } else {
             break;
@@ -123,14 +180,22 @@ fn find_object_top_height(rapier_context: &RapierContext, feet_position: Vec3) -
 
 #[allow(clippy::too_many_arguments)]
 pub fn collision_height_only_system(
+    mut commands: Commands,
     mut query_collision_entity: Query<
-        (Entity, &mut Position, &mut Transform),
+        (
+            Entity,
+            &mut Position,
+            &mut Transform,
+            Option<&mut GroundHeightCache>,
+        ),
         With<CollisionHeightOnly>,
     >,
     rapier_context: ReadRapierContext,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
+    underwater_volumes: Option<Res<UnderwaterVolumes>>,
     time: Res<Time>,
+    camera_query: Query<&GlobalTransform, (With<Camera3d>, Without<WaterReflectionCamera>)>,
 ) {
     let Ok(rapier_context) = rapier_context.single() else {
         return;
@@ -151,81 +216,149 @@ pub fn collision_height_only_system(
         return;
     };
 
-    for (entity, mut position, mut transform) in query_collision_entity.iter_mut() {
-        // Get terrain height from heightmap
-        let terrain_height: f32 =
-            current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
+    let camera_pos = camera_query.iter().next().map(|gt| gt.translation());
+    let ground_query_dist_sq = GROUND_QUERY_DISTANCE_M * GROUND_QUERY_DISTANCE_M;
 
-        // Cast ray downward to detect collision objects (bridges, platforms,
-        // castle steps, etc.). Zone objects are matched via MOVEABLE or
-        // INSPECTABLE so NOT_MOVEABLE objects (steps, buildings) are included.
-        // Entity-class colliders are excluded so an entity never stands on its
-        // own (or another entity's) collider.
-        let ray_origin = Vec3::new(
-            position.x / 100.0,
-            transform.translation.y + 1.0,
-            -position.y / 100.0,
-        );
-        let ray_direction = Vec3::new(0.0, -1.0, 0.0);
-        let max_fall_distance = 100.0; // Reduced from 10000.0 since entities now spawn at terrain height
-
-        let collision_height: Option<f32> = if let Some((_hit_entity, distance)) = rapier_context
-            .cast_ray(
-                ray_origin,
-                ray_direction,
-                max_fall_distance,
-                false,
-                QueryFilter::new().groups(CollisionGroups::new(
-                    COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_INSPECTABLE,
-                    !COLLISION_GROUP_PHYSICS_TOY
-                        & !COLLISION_GROUP_ZONE_WATER
-                        & !COLLISION_GROUP_PLAYER
-                        & !COLLISION_GROUP_NPC
-                        & !COLLISION_GROUP_CHARACTER
-                        & !COLLISION_GROUP_ITEM_DROP,
-                )),
-            ) {
-            let hit_y = (ray_origin + ray_direction * distance).y;
-            Some(hit_y)
-        } else {
-            None
-        };
-
-        // Target height is the maximum of terrain height and collision height
-        let target_y = if let Some(collision_height) = collision_height {
-            collision_height.max(terrain_height)
-        } else {
-            terrain_height
-        };
-
-        // If the entity is inside a zone object (e.g. spawned underneath castle
-        // steps), place it on top of that object instead of leaving it stuck below.
-        let feet_position = Vec3::new(
-            position.x / 100.0,
-            transform.translation.y + 0.1,
-            -position.y / 100.0,
-        );
-        let target_y = find_object_top_height(&rapier_context, feet_position)
-            .map_or(target_y, |object_top| target_y.max(object_top));
-
-        // Apply gravity-based falling
-        let fall_distance = time.delta().as_secs_f32() * 9.81;
-        let old_y = transform.translation.y;
-
-        // Update X/Z from position
-        transform.translation.x = position.x / 100.0;
-        transform.translation.z = -position.y / 100.0;
-
-        if old_y - target_y > fall_distance {
-            // Falling
-            transform.translation.y = old_y - fall_distance;
-        } else {
-            // On ground
-            transform.translation.y = target_y;
+    for (entity, mut position, mut transform, mut ground_cache) in
+        query_collision_entity.iter_mut()
+    {
+        // Update X/Z from position (only when the value actually changes, so
+        // idle entities are not marked dirty every frame)
+        let new_x = position.x / 100.0;
+        let new_z = -position.y / 100.0;
+        if transform.translation.x != new_x {
+            transform.translation.x = new_x;
+        }
+        if transform.translation.z != new_z {
+            transform.translation.z = new_z;
         }
 
-        // Update position height
-        position.z = transform.translation.y * 100.0;
+        // The two Rapier scene queries (downward ray + feet sphere) are gated
+        // on horizontal movement and on camera distance: idle or far-away NPCs
+        // reuse the last resolved ground height instead. Entities that are
+        // currently falling (e.g. after walking off a cliff) keep re-resolving
+        // so objects below them (bridges, platforms) are still caught mid-fall.
+        let world_pos = Vec3::new(new_x, transform.translation.y, new_z);
+        let in_range = camera_pos.map_or(true, |camera_pos| {
+            world_pos.distance_squared(camera_pos) < ground_query_dist_sq
+        });
+        let cache_valid = ground_cache.as_ref().map_or(false, |cache| {
+            (cache.last_x - position.x).abs() <= GROUND_CACHE_EPSILON_CM
+                && (cache.last_y - position.y).abs() <= GROUND_CACHE_EPSILON_CM
+        });
+        let fall_distance = time.delta().as_secs_f32() * 9.81;
+        let falling = ground_cache.as_ref().map_or(false, |cache| {
+            transform.translation.y - cache.cached_ground_y > fall_distance
+        });
+        let use_cached = cache_valid || (!in_range && ground_cache.is_some());
+        let resolve = !use_cached || (falling && in_range);
+
+        let target_y = if resolve {
+            // Get terrain height from heightmap
+            let terrain_height: f32 =
+                current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
+
+            // Under water the ray can only ever return the terrain, so it is
+            // skipped together with the feet-sphere.
+            let target_y = if underwater_volumes
+                .as_deref()
+                .map_or(false, |volumes| point_is_submerged(world_pos, volumes))
+            {
+                terrain_height
+            } else {
+                // Cast ray downward to detect collision objects (bridges, platforms,
+                // castle steps, etc.). Zone objects are matched via MOVEABLE or
+                // INSPECTABLE so NOT_MOVEABLE objects (steps, buildings) are included.
+                // Entity-class colliders are excluded so an entity never stands on its
+                // own (or another entity's) collider; the terrain trimesh is also
+                // excluded because the heightmap already covers the ground.
+                let ray_origin = Vec3::new(
+                    position.x / 100.0,
+                    transform.translation.y + 1.0,
+                    -position.y / 100.0,
+                );
+                let ray_direction = Vec3::new(0.0, -1.0, 0.0);
+                let max_fall_distance = NPC_GROUND_RAY_DISTANCE_M;
+
+                let collision_height: Option<f32> = if let Some((_hit_entity, distance)) =
+                    rapier_context.cast_ray(
+                        ray_origin,
+                        ray_direction,
+                        max_fall_distance,
+                        false,
+                        QueryFilter::new().groups(CollisionGroups::new(
+                            COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_INSPECTABLE,
+                            !COLLISION_GROUP_PHYSICS_TOY
+                                & !COLLISION_GROUP_ZONE_WATER
+                                & !COLLISION_GROUP_ZONE_TERRAIN
+                                & !COLLISION_GROUP_PLAYER
+                                & !COLLISION_GROUP_NPC
+                                & !COLLISION_GROUP_CHARACTER
+                                & !COLLISION_GROUP_ITEM_DROP,
+                        )),
+                    ) {
+                    let hit_y = (ray_origin + ray_direction * distance).y;
+                    Some(hit_y)
+                } else {
+                    None
+                };
+
+                // Target height is the maximum of terrain height and collision height
+                let target_y = if let Some(collision_height) = collision_height {
+                    collision_height.max(terrain_height)
+                } else {
+                    terrain_height
+                };
+
+                // If the entity is inside a zone object (e.g. spawned underneath castle
+                // steps), place it on top of that object instead of leaving it stuck below.
+                let feet_position = Vec3::new(
+                    position.x / 100.0,
+                    transform.translation.y + 0.1,
+                    -position.y / 100.0,
+                );
+                find_object_top_height(&rapier_context, feet_position)
+                    .map_or(target_y, |object_top| target_y.max(object_top))
+            };
+
+            // Remember the resolved height so the queries can be skipped again
+            if let Some(cache) = ground_cache.as_deref_mut() {
+                cache.last_x = position.x;
+                cache.last_y = position.y;
+                cache.cached_ground_y = target_y;
+            } else {
+                commands.entity(entity).insert(GroundHeightCache {
+                    last_x: position.x,
+                    last_y: position.y,
+                    cached_ground_y: target_y,
+                });
+            }
+            target_y
+        } else {
+            ground_cache
+                .as_ref()
+                .map_or(0.0, |cache| cache.cached_ground_y)
+        };
+
+        // Apply gravity-based falling
+        let old_y = transform.translation.y;
+
+        let new_y = if old_y - target_y > fall_distance {
+            // Falling
+            old_y - fall_distance
+        } else {
+            // On ground
+            target_y
+        };
+        if transform.translation.y != new_y {
+            transform.translation.y = new_y;
+        }
+
+        // Update position height (only when the value actually changes)
+        let new_position_z = transform.translation.y * 100.0;
+        if position.z != new_position_z {
+            position.z = new_position_z;
+        }
     }
 }
 
@@ -244,8 +377,15 @@ pub fn collision_player_system_join_zone(
     for (mut position, mut transform) in query_collision_entity.iter_mut() {
         // Only update X/Z translation - Y is handled by collision_player_system
         // This system just ensures the horizontal position is synced from Position component
-        transform.translation.x = position.x / 100.0;
-        transform.translation.z = -position.y / 100.0;
+        // (only when the value actually changes, so the player is not marked dirty)
+        let new_x = position.x / 100.0;
+        let new_z = -position.y / 100.0;
+        if transform.translation.x != new_x {
+            transform.translation.x = new_x;
+        }
+        if transform.translation.z != new_z {
+            transform.translation.z = new_z;
+        }
         // NOTE: Y is NOT set here - collision_player_system handles all Y positioning
         // This allows proper gravity-based falling when moving to lower terrain
     }
@@ -283,6 +423,7 @@ pub fn collision_player_system(
     query_npc_boats: Query<&Position, (With<NpcBoat>, Without<CollisionPlayer>)>,
     current_zone: Option<Res<CurrentZone>>,
     game_connection: Option<Res<GameConnection>>,
+    underwater_volumes: Option<Res<UnderwaterVolumes>>,
     rapier_context: ReadRapierContext,
     time: Res<Time>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
@@ -319,9 +460,18 @@ pub fn collision_player_system(
 
         if is_flying {
             // When flying, sync transform directly from position (including Y/height)
-            transform.translation.x = position.x / 100.0;
-            transform.translation.y = position.z / 100.0; // Use position.z for height
-            transform.translation.z = -position.y / 100.0;
+            let new_x = position.x / 100.0;
+            let new_y = position.z / 100.0; // Use position.z for height
+            let new_z = -position.y / 100.0;
+            if transform.translation.x != new_x {
+                transform.translation.x = new_x;
+            }
+            if transform.translation.y != new_y {
+                transform.translation.y = new_y;
+            }
+            if transform.translation.z != new_z {
+                transform.translation.z = new_z;
+            }
             continue; // Skip ground collision when flying
         }
 
@@ -469,10 +619,20 @@ pub fn collision_player_system(
                 }
             }
 
-            // Sync transform from server-authoritative position
-            transform.translation.x = position.x / 100.0;
-            transform.translation.y = position.z / 100.0;
-            transform.translation.z = -position.y / 100.0;
+            // Sync transform from server-authoritative position (only when the
+            // value actually changes)
+            let new_x = position.x / 100.0;
+            let new_y = position.z / 100.0;
+            let new_z = -position.y / 100.0;
+            if transform.translation.x != new_x {
+                transform.translation.x = new_x;
+            }
+            if transform.translation.y != new_y {
+                transform.translation.y = new_y;
+            }
+            if transform.translation.z != new_z {
+                transform.translation.z = new_z;
+            }
             continue;
         }
 
@@ -533,61 +693,83 @@ pub fn collision_player_system(
         // === GROUND DETECTION RAYCAST ===
         let fall_distance = time.delta().as_secs_f32() * 9.81;
 
-        let ray_origin = Vec3::new(
-            position.x / 100.0,
-            transform.translation.y + 1.35,
-            -position.y / 100.0,
-        );
-        let ray_direction = Vec3::new(0.0, -1.0, 0.0);
-        let max_fall_distance = 10000.0;
-
-        let collision_height: Option<f32> = if let Some((_hit_entity, distance)) = rapier_context
-            .cast_ray(
-                ray_origin,
-                ray_direction,
-                max_fall_distance,
-                false,
-                QueryFilter::new().groups(CollisionGroups::new(
-                    COLLISION_FILTER_MOVEABLE,
-                    !COLLISION_GROUP_PHYSICS_TOY,
-                )),
-            ) {
-            let hit_y = (ray_origin + ray_direction * distance).y;
-            Some(hit_y)
-        } else {
-            None
-        };
-
         // Get terrain height from heightmap
         let terrain_height = current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
 
-        let target_y = if let Some(collision_height) = collision_height {
-            collision_height.max(terrain_height)
-        } else {
-            terrain_height
-        };
+        // Under water the ray can only ever return the terrain, so it is
+        // skipped together with the feet-sphere.
+        let submerged = underwater_volumes
+            .as_deref()
+            .map_or(false, |volumes| point_is_submerged(transform.translation, volumes));
 
-        // If the player is inside a zone object (e.g. teleported underneath castle
-        // steps), place them on top of that object instead of leaving them stuck below.
-        let feet_position = Vec3::new(
-            position.x / 100.0,
-            transform.translation.y + 0.1,
-            -position.y / 100.0,
-        );
-        let target_y = find_object_top_height(&rapier_context, feet_position)
-            .map_or(target_y, |object_top| target_y.max(object_top));
+        let target_y = if submerged {
+            terrain_height
+        } else {
+            // The terrain trimesh is excluded from this ray (the heightmap
+            // already covers the ground); it only needs to reach zone objects
+            // (bridges, platforms), which never sit more than a short distance
+            // above the terrain.
+            let ray_origin = Vec3::new(
+                position.x / 100.0,
+                transform.translation.y + 1.35,
+                -position.y / 100.0,
+            );
+            let ray_direction = Vec3::new(0.0, -1.0, 0.0);
+            let max_fall_distance = PLAYER_GROUND_RAY_DISTANCE_M;
+
+            let collision_height: Option<f32> = if let Some((_hit_entity, distance)) =
+                rapier_context.cast_ray(
+                    ray_origin,
+                    ray_direction,
+                    max_fall_distance,
+                    false,
+                    QueryFilter::new().groups(CollisionGroups::new(
+                        COLLISION_FILTER_MOVEABLE,
+                        !COLLISION_GROUP_PHYSICS_TOY & !COLLISION_GROUP_ZONE_TERRAIN,
+                    )),
+                ) {
+                let hit_y = (ray_origin + ray_direction * distance).y;
+                Some(hit_y)
+            } else {
+                None
+            };
+
+            let target_y = if let Some(collision_height) = collision_height {
+                collision_height.max(terrain_height)
+            } else {
+                terrain_height
+            };
+
+            // If the player is inside a zone object (e.g. teleported underneath castle
+            // steps), place them on top of that object instead of leaving them stuck below.
+            let feet_position = Vec3::new(
+                position.x / 100.0,
+                transform.translation.y + 0.1,
+                -position.y / 100.0,
+            );
+            find_object_top_height(&rapier_context, feet_position)
+                .map_or(target_y, |object_top| target_y.max(object_top))
+        };
 
         // Update entity translation based on server-authoritative position
         // Z (height) is updated locally for smooth visual feedback
         let old_y = transform.translation.y;
-        transform.translation.x = position.x / 100.0;
-        transform.translation.z = -position.y / 100.0;
+        let new_x = position.x / 100.0;
+        let new_z = -position.y / 100.0;
+        if transform.translation.x != new_x {
+            transform.translation.x = new_x;
+        }
+        if transform.translation.z != new_z {
+            transform.translation.z = new_z;
+        }
 
-        if old_y - target_y > fall_distance {
-            let new_y = old_y - fall_distance;
-            transform.translation.y = new_y;
+        let new_y = if old_y - target_y > fall_distance {
+            old_y - fall_distance
         } else {
-            transform.translation.y = target_y;
+            target_y
+        };
+        if transform.translation.y != new_y {
+            transform.translation.y = new_y;
         }
 
         // Note: We do NOT update position.z here - Position is server-authoritative

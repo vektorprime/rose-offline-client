@@ -20,6 +20,7 @@ use crate::map_editor::resources::{
     DeletedZoneObjects, DuplicateSelectedEvent, EditorAction, EditorMode, MapEditorState,
     ZoneObjectType,
 };
+use crate::resources::AppState;
 use crate::systems::{FreeCamera, OrbitCamera};
 
 /// System to handle keyboard shortcuts for the map editor
@@ -330,6 +331,9 @@ pub struct KeyboardShortcutsPlugin;
 
 impl Plugin for KeyboardShortcutsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, keyboard_shortcuts_system);
+        app.add_systems(
+            Update,
+            keyboard_shortcuts_system.run_if(in_state(AppState::MapEditor)),
+        );
     }
 }
