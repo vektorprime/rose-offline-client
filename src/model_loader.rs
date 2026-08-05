@@ -299,6 +299,7 @@ impl ModelLoader {
                 None,
                 dummy_bone_offset,
                 false,
+                false,
                 &self.specular_image,
                 None,
             );
@@ -346,6 +347,7 @@ impl ModelLoader {
                     None,
                     dummy_bone_offset,
                     false,
+                    false,
                     &self.specular_image,
                     None,
                 );
@@ -364,6 +366,7 @@ impl ModelLoader {
                     Some(&skinned_mesh),
                     None,
                     dummy_bone_offset,
+                    false,
                     false,
                     &self.specular_image,
                     None,
@@ -426,6 +429,7 @@ impl ModelLoader {
             None,
             0,
             false,
+            false,
             &self.specular_image,
             None,
         );
@@ -482,6 +486,7 @@ impl ModelLoader {
                     None,
                     None,
                     0,
+                    false,
                     false,
                     &self.specular_image,
                     None,
@@ -769,6 +774,7 @@ impl ModelLoader {
             model_part.default_bone_id(dummy_bone_offset),
             dummy_bone_offset,
             matches!(model_part, CharacterModelPart::CharacterFace),
+            matches!(model_part, CharacterModelPart::Back),
             &self.specular_image,
             None,
         );
@@ -934,6 +940,7 @@ impl ModelLoader {
                         Some(&skinned_mesh),
                         None,
                         dummy_bone_offset,
+                        false,
                         false,
                         &self.specular_image,
                         Some(skinned_mesh_parent_entity),
@@ -1215,6 +1222,7 @@ fn spawn_model(
     default_bone_index: Option<usize>,
     dummy_bone_offset: usize,
     load_clip_faces: bool,
+    force_alpha_mask: bool,
     specular_image: &Handle<Image>,
     skinned_mesh_parent: Option<Entity>,
 ) -> Vec<Entity> {
@@ -1256,6 +1264,8 @@ fn spawn_model(
             if zsc_material.alpha_enabled {
                 if let Some(threshold) = zsc_material.alpha_test {
                     AlphaMode::Mask(threshold)
+                } else if force_alpha_mask {
+                    AlphaMode::Mask(0.5)
                 } else {
                     AlphaMode::Blend
                 }

@@ -27,6 +27,37 @@ When working with Bevy's StandardMaterial or custom materials, always explicitly
 
 ---
 
+## Wing/Back Items Rendered See-Through (Fixed 2026-08-04)
+
+### Problem
+Equipped wing/back items (`LIST_BACK.ZSC`) looked ghostly/transparent. Their ZSC
+materials have `alpha_enabled=1` with no `alpha_test`, which mapped to
+`AlphaMode::Blend`, so the wings rendered in the transparent pass and never occluded.
+
+### Root Cause
+Wing textures (e.g. `BACK_WING01.DDS`, DXT5) carry a proper opacity mask (wing body
+high alpha, background ~0), but Bevy's `AlphaMode::Blend` hard-disables depth write
+(`bevy_pbr/src/render/mesh.rs`), so the wings read as see-through. The old Bevy 0.14
+client (exjam/rose-offline-client `object_material.rs` `specialize()`) kept
+`depth_write_enabled = z_write_enabled` for blended materials, and the original C++
+engine also keeps z-write; stock Bevy Blend does not.
+
+### Solution
+Added a `force_alpha_mask` parameter to `spawn_model()`: when set and the material has
+`alpha_enabled` with no `alpha_test`, use `AlphaMode::Mask(0.5)` (opaque cutout with
+depth write) instead of `Blend`. Only `CharacterModelPart::Back` passes `true`; all
+other parts keep previous behavior.
+
+### Files Modified
+- `src/model_loader.rs`
+
+### Lesson Learned
+Stock Bevy `AlphaMode::Blend` disables depth write. ROSE ZSC materials with
+`alpha_enabled` and no `alpha_test` (wings) should render as masked cutouts, not
+blends, to match the original client's solid look.
+
+---
+
 ## Custom Terrain Material with Texture Arrays (Fixed 2026-02-18)
 
 ### Problem
