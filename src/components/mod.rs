@@ -33,6 +33,7 @@ mod monster_separation;
 mod name_tag_entity;
 mod night_time_effect;
 mod npc_model;
+mod occlusion;
 pub mod particle_sequence;
 mod party_info;
 mod passive_recovery_time;
@@ -111,6 +112,7 @@ pub use name_tag_entity::{
 };
 pub use night_time_effect::NightTimeEffect;
 pub use npc_model::NpcModel;
+pub use occlusion::OcclusionState;
 pub use particle_sequence::{ActiveParticle, ParticleSequence};
 pub use party_info::{PartyInfo, PartyOwner};
 pub use passive_recovery_time::PassiveRecoveryTime;

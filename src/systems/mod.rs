@@ -94,6 +94,7 @@ mod wind_system;
 mod wing_spawn_system;
 mod world_connection_system;
 mod world_time_system;
+mod world_ui_occlusion_system;
 pub mod zone_time_system;
 mod zone_viewer_system;
 
@@ -229,5 +230,6 @@ pub use wind_system::{sync_vegetation_wind_system, wind_update_system};
 pub use wing_spawn_system::{wing_spawn_system, WingSpawnPlugin};
 pub use world_connection_system::world_connection_system;
 pub use world_time_system::world_time_system;
+pub use world_ui_occlusion_system::world_ui_occlusion_system;
 pub use zone_time_system::zone_time_system;
 pub use zone_viewer_system::zone_viewer_enter_system;

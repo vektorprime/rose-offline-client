@@ -79,7 +79,7 @@ async fn load_zms_mesh(
                 PrimitiveTopology::TriangleList,
                 RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
             );
-            mesh.insert_indices(Indices::U16(zms.indices));
+            mesh.insert_indices(Indices::U32(zms.indices));
 
             if !zms.normal.is_empty() {
                 mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, zms.normal);
@@ -171,7 +171,7 @@ fn angle_between_normalized(a: Vec3, b: Vec3) -> f32 {
 /// [`SMOOTH_NORMALS_CREASE_ANGLE`] so intentional hard edges stay sharp.
 fn smooth_normals(
     positions: &[[f32; 3]],
-    indices: &[u16],
+    indices: &[u32],
     stored_normals: &[[f32; 3]],
 ) -> Vec<[f32; 3]> {
     let vertex_count = positions.len();

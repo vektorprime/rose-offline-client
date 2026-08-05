@@ -243,6 +243,7 @@ use systems::{
     wind_update_system,
     world_connection_system,
     world_time_system,
+    world_ui_occlusion_system,
     zone_time_system,
     zone_viewer_enter_system,
     BirdPlugin,
@@ -1149,6 +1150,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             update_starry_sky_system.after(update_starry_sky_night_factor),
         ),
     );
+    // Separate add_systems call: the tuple above is already at Bevy's 20-system tuple limit.
+    // Must run after name_tag_visibility_system so the line-of-sight result
+    // has the final say on name tag / chat bubble root visibility.
+    app.add_systems(
+        Update,
+        world_ui_occlusion_system.after(name_tag_visibility_system),
+    );
     // update_ui_resources uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
     app.add_systems(bevy_egui::EguiPrimaryContextPass, update_ui_resources);
 
@@ -2053,6 +2061,11 @@ fn setup_egui_fonts(mut egui_context: EguiContexts) {
         .insert(0, "Ubuntu-M".to_owned());
 
     egui_context.ctx_mut().unwrap().set_fonts(fonts);
+
+    let ctx = egui_context.ctx_mut().unwrap();
+    let mut style = (*ctx.style()).clone();
+    style.interaction.tooltip_delay = 0.05;
+    ctx.set_style(style);
 }
 
 /// Diagnostic summary system

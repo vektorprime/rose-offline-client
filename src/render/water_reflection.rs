@@ -336,21 +336,21 @@ fn sync_reflection_camera(
             let hit = |p: Vec3| {
                 frustum.intersects_sphere(&Sphere { center: Vec3A::from(p), radius: 1.0 }, false)
             };
-            log::info!(
-                "[WATER REFLECTION DBG] gt_pos={:?} fwd={:?} | near_plane={:?} p0={:?} | hits cam={} up100={} down100={} surf50={}",
-                camera_transform.translation(),
-                camera_transform.forward(),
-                frustum.half_spaces[Frustum::NEAR_PLANE_IDX].normal_d(),
-                frustum.half_spaces[0].normal_d(),
-                hit(main_transform.translation),
-                hit(main_transform.translation + Vec3::Y * 100.0),
-                hit(main_transform.translation - Vec3::Y * 100.0),
-                hit(Vec3::new(
-                    main_transform.translation.x,
-                    surface_y + 50.0,
-                    main_transform.translation.z,
-                )),
-            );
+            // log::info!(
+            //     "[WATER REFLECTION DBG] gt_pos={:?} fwd={:?} | near_plane={:?} p0={:?} | hits cam={} up100={} down100={} surf50={}",
+            //     camera_transform.translation(),
+            //     camera_transform.forward(),
+            //     frustum.half_spaces[Frustum::NEAR_PLANE_IDX].normal_d(),
+            //     frustum.half_spaces[0].normal_d(),
+            //     hit(main_transform.translation),
+            //     hit(main_transform.translation + Vec3::Y * 100.0),
+            //     hit(main_transform.translation - Vec3::Y * 100.0),
+            //     hit(Vec3::new(
+            //         main_transform.translation.x,
+            //         surface_y + 50.0,
+            //         main_transform.translation.z,
+            //     )),
+            // );
         }
 
         let visible_count = visible_entities

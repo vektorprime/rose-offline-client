@@ -127,7 +127,14 @@ impl WindSway {
 pub fn wind_sway_system(
     time: Res<Time>,
     settings: Res<WindSwaySettings>,
-    mut query: Query<(&WindSway, &mut Transform)>,
+    camera_query: Query<
+        &GlobalTransform,
+        (
+            With<Camera3d>,
+            Without<crate::render::WaterReflectionCamera>,
+        ),
+    >,
+    mut query: Query<(&WindSway, &GlobalTransform, &mut Transform)>,
 ) {
     // Early return if disabled
     if !settings.enabled {
@@ -140,9 +147,21 @@ pub fn wind_sway_system(
         log::info!("[WIND SWAY] {} entities with WindSway component", count);
     }
 
+    // Parts farther than this from the camera skip sway entirely: at that
+    // distance the amplitude is below visible scale (mirrors the fish
+    // distance-cull pattern). No culling when no camera exists.
+    let camera_pos = camera_query.iter().next().map(|gt| gt.translation());
+    let cull_dist_sq = 120.0 * 120.0;
+
     let time_seconds = time.elapsed_secs();
 
-    for (wind_sway, mut transform) in query.iter_mut() {
+    for (wind_sway, global_transform, mut transform) in query.iter_mut() {
+        if let Some(camera_pos) = camera_pos {
+            if global_transform.translation().distance_squared(camera_pos) > cull_dist_sq {
+                continue;
+            }
+        }
+
         // Get speed and amplitude from settings based on type
         let (speed, amplitude) = if wind_sway.is_grass {
             (settings.grass_speed, settings.grass_amplitude)
@@ -172,14 +191,22 @@ pub fn wind_sway_system(
         if wind_sway.is_grass {
             // Grass sways more dramatically
             let sway_z = Quat::from_axis_angle(Vec3::Z, combined_sway * 0.5);
-            transform.rotation = wind_sway.base_rotation * sway_rotation * sway_z;
+            let new_rotation = wind_sway.base_rotation * sway_rotation * sway_z;
+            // Only write when the rotation actually changed (e.g. zero wind)
+            // to avoid dirtying the transform (and its render extraction)
+            if transform.rotation != new_rotation {
+                transform.rotation = new_rotation;
+            }
         } else {
             // Tree leaves sway more gently with slight flutter
             let flutter = (time_seconds * 8.0 + wind_sway.phase_offset).sin()
                 * 0.02
                 * settings.global_intensity;
             let flutter_rot = Quat::from_axis_angle(Vec3::Y, flutter);
-            transform.rotation = wind_sway.base_rotation * sway_rotation * flutter_rot;
+            let new_rotation = wind_sway.base_rotation * sway_rotation * flutter_rot;
+            if transform.rotation != new_rotation {
+                transform.rotation = new_rotation;
+            }
         }
     }
 }

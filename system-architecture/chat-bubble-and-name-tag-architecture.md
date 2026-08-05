@@ -1,7 +1,7 @@
 # Chat Bubble and Name Tag System Architecture
 
 ## Status: RESOLVED
-**Last Updated**: 2026-08-03
+**Last Updated**: 2026-08-04
 
 ## Overview
 The chat bubble and name tag systems provide world-space UI elements that follow characters and monsters. Both systems utilize a custom rendering pipeline designed for high performance and billboard behavior, bypassing the standard `bevy_ui` for elements that need to exist within the 3D world.
@@ -101,6 +101,16 @@ Both systems use `egui` for high-quality text layout:
 - **Symptom**: Player name tags appeared at the waist.
 - **Root Cause**: The AABB calculation in `character_model_add_collider_system.rs` was only considering the Body, Hands, and Feet parts. It was missing the Head, Face, and Hair parts, which are separate entities in the player's skinned mesh.
 - **Fix**: Expanded the AABB calculation to include all head-related parts and increased the base vertical offset to `1.8` (the height is computed as `ModelHeight::new(1.8 + half_extents.y * 2.0)` in `character_model_add_collider_system.rs`).
+
+---
+
+### 4. Line-of-Sight Occlusion (`world_ui_occlusion_system`)
+Tags and bubbles are hidden when terrain or a zone object (building, wall, decoration) blocks the line of sight between the camera and the tag anchor.
+- **File:** `src/systems/world_ui_occlusion_system.rs`, registered in `Update` after `name_tag_visibility_system` (separate `add_systems` call — the main tuple is at Bevy's 20-system limit).
+- **Method:** Rapier `cast_ray` from the main camera to the tag root's `GlobalTransform` anchor. Only `COLLISION_GROUP_ZONE_OBJECT | COLLISION_GROUP_ZONE_TERRAIN` occlude; characters, NPCs, monsters, item drops and water never do. Ray membership uses `COLLISION_FILTER_INSPECTABLE`, which every terrain/object collider filter accepts.
+- **Staggering:** each tag is re-checked once every 4 frames (`entity.index_u32() % 4`); newly spawned tags (no `OcclusionState` yet) are checked immediately so they never flash through walls.
+- **State:** `OcclusionState { occluded }` component (`src/components/occlusion.rs`) on the tag/bubble root; root `Visibility` is written only on change. Hidden roots also disappear from the water reflection (extraction respects visibility).
+- **Policy:** hovered/selected targets keep their name tag visible even behind occluders; chat bubbles always occlude.
 
 ---
 

@@ -202,3 +202,27 @@ After the row/wobble/O(n²) fixes, many areas still showed fish packed together 
 - Ambient-creature counts must scale with the area they live in — a fixed count per spawn region over-packs small regions no matter how good the per-fish AI is.
 - When separating entities that come from multiple sources/regions, keying the check on the source (water plane) can silently disable separation exactly where sources overlap.
 
+---
+
+## Name Tags Randomly Flipping / Resizing / Vanishing After Water Reflections (Fixed 2026-08-04, user confirmed)
+
+### Problem
+After planar water reflections were implemented, character/NPC name tags (and chat bubbles) randomly appeared flipped, changed size relative to their background box, or disappeared entirely.
+
+### Root Cause
+`queue_world_ui_meshes` (src/render/world_ui.rs) loops over **all views** to queue world-UI quads. Before the reflection camera existed there was exactly one view, so the code got away with a single shared vertex buffer (`WorldUiMeta.vertices`) that it `clear()`ed, rebuilt, and `write_buffer()`ed **inside the per-view loop**. With two views (main camera + water reflection camera), every batch entity from earlier views kept referencing vertex ranges that the next view overwrote — the GPU buffer ended up holding only the *last* processed view's vertices. Since ECS query iteration order is nondeterministic and the reflection view has a mirrored view matrix and a half-resolution viewport, the main view randomly drew mirrored/half-scale/culled vertex data.
+
+### Solution
+Made the queueing multi-view safe:
+1. `vertices.clear()` + `reserve(rects * 6 * view_count)` moved **before** the view loop — each view appends disjoint vertex ranges.
+2. `write_buffer()` moved **after** the loop — one upload containing all views' data.
+
+No shader changes needed; each view already binds its own view-uniform offset, so it draws the vertices computed for its own viewport/matrix.
+
+### Files Modified
+- `src/render/world_ui.rs` — buffer clear/reserve/upload hoisted out of the per-view loop in `queue_world_ui_meshes`
+
+### Lesson Learned
+- Any render-phase queueing system that iterates over views and writes into a **shared** GPU buffer must accumulate across views and upload once — clearing/uploading per view silently corrupts every view except the last.
+- Single-view assumptions in custom render pipelines break the moment a second camera (reflection, shadow, picture-in-picture) is added; audit them whenever a new `Camera3d` is introduced.
+

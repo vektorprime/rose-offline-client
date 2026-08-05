@@ -551,6 +551,16 @@ pub fn queue_world_ui_meshes(
         ));
     }
 
+    // NOTE: The vertex buffer is shared by all views (main camera, water reflection camera).
+    // Clear it once before the loop and upload once after, so each view's batch entities
+    // reference disjoint, persistent vertex ranges. Clearing/uploading per view would leave
+    // only the last view's vertices in the buffer and corrupt the other views' draws.
+    world_ui_meta.vertices.clear();
+    world_ui_meta.vertices.reserve(
+        extracted_world_ui.rects.len() * 6 * views.iter().len(),
+        &render_device,
+    );
+
     for (view_entity, view, msaa) in views.iter() {
         //// log::info!("[WORLD_UI_QUEUE] Processing view entity={:?}, retained_view_entity={:?}", view_entity, view.retained_view_entity);
         let Some(transparent_phase) = transparent_render_phases.get_mut(&view.retained_view_entity)
@@ -591,11 +601,6 @@ pub fn queue_world_ui_meshes(
                 Some(other) => other,
             }
         });
-
-        world_ui_meta.vertices.clear();
-        world_ui_meta
-            .vertices
-            .reserve(extracted_world_ui.rects.len() * 6, &render_device);
 
         let mut gpu_image_missing_count = 0;
         let mut frustum_culled_count = 0;
@@ -737,11 +742,6 @@ pub fn queue_world_ui_meshes(
             });
         }
 
-        // Write vertex buffer to GPU
-        world_ui_meta
-            .vertices
-            .write_buffer(&render_device, &render_queue);
-
         // Log vertex buffer status
         //// log::info!("[WORLD_UI_QUEUE] Vertex buffer len={}, buffer exists={}",
         //    world_ui_meta.vertices.len(), world_ui_meta.vertices.buffer().is_some());
@@ -753,4 +753,9 @@ pub fn queue_world_ui_meshes(
         // log::info!("[WORLD_UI_QUEUE] extracted={}, gpu_missing={}, frustum_culled={}, screen_culled={}, queued={}",
         //    extracted_count, gpu_image_missing_count, frustum_culled_count, screen_culled_count, queued_count);
     }
+
+    // Write vertex buffer to GPU once, after all views have appended their vertices.
+    world_ui_meta
+        .vertices
+        .write_buffer(&render_device, &render_queue);
 }

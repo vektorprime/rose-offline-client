@@ -7,12 +7,13 @@ This folder contains documentation of issues encountered during development and 
 | File | Description |
 |------|-------------|
 | [skill-bar-ui.md](skill-bar-ui.md) | UI drag and drop, hotbar system issues |
+| [ui-tooltips.md](ui-tooltips.md) | Tooltip hover delay, tooltip display issues |
 | [networking.md](networking.md) | Network thread, respawn, and connection issues |
 | [rendering-camera.md](rendering-camera.md) | Depth of field, shadows, SSAO, TAA, camera setup |
 | [materials-transparency.md](materials-transparency.md) | Alpha modes, custom materials, texture arrays |
 | [lighting.md](lighting.md) | Ambient light, photometric units |
 | [terrain-physics.md](terrain-physics.md) | Terrain adherence, spawn height, bundle limits |
-| [water-system.md](water-system.md) | Water materials, fish spawning, shader migration |
+| [water-system.md](water-system.md) | Water materials, fish spawning, shader migration, multi-view world UI buffer corruption |
 | [zone-loading.md](zone-loading.md) | Asset tracking, state initialization, skybox loading |
 | [model-viewer.md](model-viewer.md) | Bundle duplicates, runtime panics |
 | [performance-memory.md](performance-memory.md) | GPU memory leaks, buffer management |
@@ -21,6 +22,9 @@ This folder contains documentation of issues encountered during development and 
 | [flying.md](flying.md) | /fly flight system, server-authoritative movement echo, collision self-intersection |
 | [login-sky-determinism.md](login-sky-determinism.md) | Random login-screen day/night sky, atmosphere toggle race |
 | [personal-store-drag-buy.md](personal-store-drag-buy.md) | Personal store drag-to-buy, stack quantity selection |
+| [ecs-system-tuples.md](ecs-system-tuples.md) | Bevy 20-system tuple limit, cryptic `add_systems` E0277 |
+| [equipment-vehicle-parts.md](equipment-vehicle-parts.md) | Cart wheels rejected by vehicle type check, slot-index heuristic vs item data |
+| [blender-io-rose.md](blender-io-rose.md) | Blender io_rose addon: alpha import, ZMS export crash, Y-flip round-trip orientation |
 
 ## Quick Navigation by Bevy Version
 
