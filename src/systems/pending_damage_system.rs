@@ -31,12 +31,15 @@ const KILL_MAX_DAMAGE_AGE: f32 = 1.5;
 /// the attacker is mid attack/cast animation (the animation hit frame will fire), or
 /// a projectile from the attacker is still in flight toward the defender (it will
 /// fire the hit event on impact). Otherwise the kill can be applied immediately.
+///
+/// PERF: projectile pairs are hoisted once per frame into `flying_projectiles`
+/// instead of scanning all projectiles per pending-damage entry (was O(D x P)).
 fn hit_frame_expected(
     attacker: Option<Entity>,
     defender: Entity,
     query_attacker: &Query<(&Command, Option<&SkeletalAnimation>, Option<&Vehicle>)>,
     query_animation: &Query<&SkeletalAnimation>,
-    query_projectiles: &Query<&Projectile>,
+    flying_projectiles: &std::collections::HashSet<(Entity, Entity)>,
 ) -> bool {
     let Some(attacker) = attacker else {
         return false;
@@ -61,16 +64,8 @@ fn hit_frame_expected(
         }
     }
 
-    // A projectile in flight will fire the hit event on impact
-    query_projectiles
-        .iter()
-        .any(|projectile| {
-            projectile.source == attacker
-                && matches!(
-                    projectile.target,
-                    ProjectileTarget::Entity { entity } if entity == defender
-                )
-        })
+    // A projectile in flight will fire the hit event on impact (O(1) set lookup).
+    flying_projectiles.contains(&(attacker, defender))
 }
 
 pub fn pending_damage_system(
@@ -95,6 +90,14 @@ pub fn pending_damage_system(
     blood_config: Res<BloodEffectConfig>,
 ) {
     let delta_time = time.delta_secs();
+
+    // Hoist projectile scan: one pass per frame instead of per entry per frame.
+    let mut flying_projectiles = std::collections::HashSet::new();
+    for projectile in query_projectiles.iter() {
+        if let ProjectileTarget::Entity { entity } = projectile.target {
+            flying_projectiles.insert((projectile.source, entity));
+        }
+    }
 
     for (
         entity,
@@ -121,7 +124,7 @@ pub fn pending_damage_system(
                     entity,
                     &query_attacker,
                     &query_animation,
-                    &query_projectiles,
+                    &flying_projectiles,
                 );
 
             if pending_damage.is_immediate

@@ -185,3 +185,30 @@ This ensures that pixels below the alpha threshold are discarded before renderin
 4. Ambient light brightness directly affects shadow contrast - balance carefully
 5. Vegetation materials need higher roughness values (0.7-0.9) for realistic appearance
 6. **ExtendedMaterial fragment shaders must call `alpha_discard()`** - when using `AlphaMode::Mask`, the extension's fragment shader replaces the base material's fragment function, so you must explicitly call `alpha_discard(pbr_input.material, pbr_input.material.base_color)` to discard transparent pixels
+
+---
+
+## Deferred Rendering Camera Requirements (Fixed 2026-09-03)
+
+### Problem
+Two GPU panics when entering the world: (1) `queue_prepass_material_meshes` `unwrap()` on `None` at Bevy `prepass/mod.rs:1097`; (2) wgpu `Render pipeline targets are incompatible with render pass` for `world_ui_pipeline` (Bgra vs Rgba8).
+
+### Root Cause
+1. With `DefaultOpaqueRendererMethod::deferred()`, every camera with `DepthPrepass` but no `DeferredPrepass` gets forward-prepass phases but no deferred phases; Bevy 0.18.1 unconditionally unwraps the deferred phase for deferred materials. Our main camera had `DepthPrepass` only.
+2. Post-effect apply systems used `With<Camera>` queries that also matched the water reflection camera. `#[require]` chains (SSAO pulls `DepthPrepass`+`NormalPrepass`, MotionBlur pulls prepass comps) silently infected it with prepass phases but no deferred phases - same panic via the reflection view.
+3. Neither camera has the `Hdr` marker, so all views are LDR with `Rgba8UnormSrgb` (`bevy_default()`) targets - but `WorldUiPipeline::specialize` hardcoded `Bgra8UnormSrgb` for non-HDR. Name tags draw on world entry -> validation error. (Error surfaces at the next encoder flush, so the backtrace misleadingly blamed the deferred-prepass task.)
+
+### Fix
+- `src/lib.rs` - added `DeferredPrepass` next to `DepthPrepass` on the main camera (the Bevy-sanctioned combo per `deferred_rendering.rs`).
+- `src/graphics/apply_systems.rs`, `src/lib.rs` post/DoF systems - all camera queries exclude `WaterReflectionCamera` (documented invariant in `apply_systems.rs` header).
+- `src/render/water_reflection.rs` - `sanitize_reflection_camera` system strips prepass/post components from the reflection camera if any ever land there (query only matches infected cameras, ~zero steady-state cost).
+- `src/render/world_ui.rs` - LDR target uses `TextureFormat::bevy_default()` instead of hardcoded Bgra (mirrors Bevy's own `prepare_view_targets`; underwater pipeline already did this).
+
+### Files Modified
+- `src/lib.rs`, `src/graphics/apply_systems.rs`, `src/render/water_reflection.rs`, `src/render/world_ui.rs`
+
+### Lesson Learned
+1. Deferred global + `DepthPrepass` REQUIRES `DeferredPrepass` on the same camera, or the prepass queue panics on the first visible deferred material.
+2. Never insert post components on auxiliary cameras with broad `With<Camera>` queries - `#[require]` chains can smuggle in prepass components. Exclude explicitly AND keep a sanitizer.
+3. Custom pipelines must derive LDR target format from `bevy_default()`, never hardcode Bgra - HDR-ness comes from the `Hdr` marker component, and a missing marker silently flips every view to LDR.
+4. wgpu validation errors surface at encoder-flush time, so the blamed closure/node can be innocent - read the pipeline-vs-pass formats to find the real mismatch.

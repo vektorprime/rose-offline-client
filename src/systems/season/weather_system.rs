@@ -51,11 +51,19 @@ pub fn weather_particle_system(
     };
     let player_pos = player_transform.translation();
 
-    // Spawn new particles
-    let current_count = query.iter().len();
-    if current_count < settings.max_particles {
+    // Spawn new particles, honoring both the slider and the hard ceiling.
+    // Re-check inside the loop so a high spawn_rate can't overshoot in one frame.
+    let effective_max = settings
+        .max_particles
+        .min(crate::resources::MAX_WEATHER_PARTICLES_HARD_CAP);
+    let mut live_count = query.iter().len();
+    if live_count < effective_max {
         let particles_this_frame = ((settings.spawn_rate * dt) as usize).max(10);
         for _ in 0..particles_this_frame {
+            if live_count >= effective_max {
+                break;
+            }
+            live_count += 1;
             let Some(spawn) = particle_spawn(
                 settings.current_season,
                 &settings,
@@ -82,6 +90,8 @@ pub fn weather_particle_system(
                 Mesh3d(spawn.mesh),
                 MeshMaterial3d(spawn.material),
                 Transform::from_translation(position).with_scale(spawn.scale),
+                // Transparent weather quads must never enter the shadow pass.
+                bevy::light::NotShadowCaster,
                 WeatherParticle {
                     age: 0.0,
                     lifetime: spawn.lifetime,

@@ -1,10 +1,11 @@
 use bevy::{
     math::{Quat, Vec3},
     prelude::{
-        Assets, Commands, Entity, GlobalTransform, MessageWriter, Query, Res, State, Time,
-        Transform, With, Without,
+        Assets, Commands, Entity, GlobalTransform, Local, MessageWriter, Query, Res, State,
+        Time, Transform, With, Without,
     },
 };
+use std::collections::HashMap;
 use bevy_rapier3d::geometry::ShapeCastOptions;
 use bevy_rapier3d::plugin::context::systemparams::{RapierContext, ReadRapierContext};
 use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter};
@@ -98,7 +99,9 @@ fn find_object_top_height(rapier_context: &RapierContext, feet_position: Vec3) -
     let mut top_height = None;
     let mut excluded_collider = None;
 
-    for _ in 0..64 {
+    // Capped 64 -> 16 iterations: 16 faces are plenty to climb to the top of any
+    // zone object; 64 was a worst-case hang when stuck inside complex geometry.
+    for _ in 0..16 {
         let predicate = |entity| intersecting_objects.contains(&entity);
         let mut filter = QueryFilter::new()
             .groups(object_groups)
@@ -121,6 +124,40 @@ fn find_object_top_height(rapier_context: &RapierContext, feet_position: Vec3) -
     top_height
 }
 
+/// Throttled wrapper around [`find_object_top_height`].
+/// The raw query does intersect_shape + up to 16 upward rays. Running it per entity
+/// per frame costs hundreds of Rapier queries in NPC-heavy zones. Entities rarely
+/// teleport inside objects, so cache per entity and only recompute when moved >0.5m
+/// or every 30 frames. Returns cached None fast-path for the common open-ground case.
+fn find_object_top_height_cached(
+    rapier_context: &RapierContext,
+    feet_position: Vec3,
+    entity: Entity,
+    cache: &mut HashMap<Entity, (Vec3, Option<f32>, u64)>,
+    frame: u64,
+) -> Option<f32> {
+    if let Some((cached_pos, cached_top, cached_frame)) = cache.get(&entity) {
+        let moved_sq = (*cached_pos - feet_position).length_squared();
+        if moved_sq < 0.25 && frame.wrapping_sub(*cached_frame) < 30 {
+            return *cached_top;
+        }
+    }
+    let top = find_object_top_height(rapier_context, feet_position);
+    cache.insert(entity, (feet_position, top, frame));
+    // Bound memory: zone transitions can orphan entries.
+    if cache.len() > 2048 {
+        cache.retain(|_, (_, _, f)| frame.wrapping_sub(*f) < 60);
+    }
+    top
+}
+
+/// Frame counter + per-entity top-height cache for [`collision_height_only_system`].
+#[derive(Default)]
+pub struct ObjectTopCache {
+    frame: u64,
+    entries: HashMap<Entity, (Vec3, Option<f32>, u64)>,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn collision_height_only_system(
     mut query_collision_entity: Query<
@@ -131,6 +168,7 @@ pub fn collision_height_only_system(
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     time: Res<Time>,
+    mut top_cache: Local<ObjectTopCache>,
 ) {
     let Ok(rapier_context) = rapier_context.single() else {
         return;
@@ -150,6 +188,13 @@ pub fn collision_height_only_system(
         log::warn!("[NPC_TERRAIN_DIAG] collision_height_only_system: Zone data not loaded yet!");
         return;
     };
+
+    // Frame advances once per system run, not per entity: the cache TTL (<30) means
+    // frames, otherwise N entities expire it N× too fast in NPC-heavy zones.
+    let cache = &mut *top_cache;
+    cache.frame = cache.frame.wrapping_add(1);
+    let frame = cache.frame;
+    let cache_entries = &mut cache.entries;
 
     for (entity, mut position, mut transform) in query_collision_entity.iter_mut() {
         // Get terrain height from heightmap
@@ -200,13 +245,21 @@ pub fn collision_height_only_system(
 
         // If the entity is inside a zone object (e.g. spawned underneath castle
         // steps), place it on top of that object instead of leaving it stuck below.
+        // Throttled + cached: raw query is intersect + up to 16 rays.
         let feet_position = Vec3::new(
             position.x / 100.0,
             transform.translation.y + 0.1,
             -position.y / 100.0,
         );
-        let target_y = find_object_top_height(&rapier_context, feet_position)
-            .map_or(target_y, |object_top| target_y.max(object_top));
+        // Single reborrow prepared before the loop; reuse frame + entries here.
+        let target_y = find_object_top_height_cached(
+            &rapier_context,
+            feet_position,
+            entity,
+            cache_entries,
+            frame,
+        )
+        .map_or(target_y, |object_top| target_y.max(object_top));
 
         // Apply gravity-based falling
         let fall_distance = time.delta().as_secs_f32() * 9.81;
@@ -301,6 +354,7 @@ pub fn collision_player_system(
     rapier_context: ReadRapierContext,
     time: Res<Time>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
+    mut top_cache: Local<ObjectTopCache>,
 ) {
     let Ok(rapier_context) = rapier_context.single() else {
         return;
@@ -318,6 +372,12 @@ pub fn collision_player_system(
             log::warn!("[TERRAIN_DIAG] collision_player_system: Zone data not loaded yet!");
             return;
         };
+
+    // Same per-frame (not per-entity) TTL as the height-only system above.
+    let cache = &mut *top_cache;
+    cache.frame = cache.frame.wrapping_add(1);
+    let frame = cache.frame;
+    let cache_entries = &mut cache.entries;
 
     let mut entity_count = 0;
     for (entity, mut position, mut transform, flight_state, mut boat_state) in
@@ -591,15 +651,20 @@ pub fn collision_player_system(
             terrain_height
         };
 
-        // If the player is inside a zone object (e.g. teleported underneath castle
-        // steps), place them on top of that object instead of leaving them stuck below.
+        // If the player is inside a zone object, place them on top (cached + throttled).
         let feet_position = Vec3::new(
             position.x / 100.0,
             transform.translation.y + 0.1,
             -position.y / 100.0,
         );
-        let target_y = find_object_top_height(&rapier_context, feet_position)
-            .map_or(target_y, |object_top| target_y.max(object_top));
+        let target_y = find_object_top_height_cached(
+            &rapier_context,
+            feet_position,
+            entity,
+            cache_entries,
+            frame,
+        )
+        .map_or(target_y, |object_top| target_y.max(object_top));
 
         // Update entity translation based on server-authoritative position
         // Z (height) is updated locally for smooth visual feedback

@@ -47,6 +47,7 @@ use bevy::{
     },
 };
 use bevy_camera::visibility::VisibilityClass;
+use bevy_image::BevyDefault as _;
 use bevy_mesh::VertexBufferLayout;
 use bytemuck::{Pod, Zeroable};
 
@@ -255,7 +256,13 @@ impl SpecializedRenderPipeline for WorldUiPipeline {
                 targets: vec![Some(ColorTargetState {
                     format: match key.contains(MeshPipelineKey::HDR) {
                         true => ViewTarget::TEXTURE_FORMAT_HDR,
-                        false => TextureFormat::Bgra8UnormSrgb,
+                        // Must mirror Bevy's own convention (prepare_view_targets):
+                        // LDR view targets use TextureFormat::bevy_default()
+                        // (Rgba8UnormSrgb), NOT Bgra8UnormSrgb. Neither camera has
+                        // the Hdr marker, so all views are LDR; hardcoding Bgra
+                        // panicked wgpu with "pipeline targets are incompatible
+                        // with render pass" as soon as name tags drew in-world.
+                        false => TextureFormat::bevy_default(),
                     },
                     blend: Some(BlendState {
                         color: BlendComponent {

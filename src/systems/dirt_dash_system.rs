@@ -73,9 +73,10 @@ pub fn dirt_dash_spawn_system(
     let delta_time = time.delta_secs();
     let mut rng = rand::thread_rng();
 
-    // Performance check: skip if too many particles exist
-    let current_particle_count = particle_count.iter().count();
-    if current_particle_count >= settings.max_particles {
+    // Performance check: skip if too many particles exist.
+    // Bounded scan (take max+1) avoids a full archetype scan when far over cap.
+    let mut live_particles = particle_count.iter().take(settings.max_particles + 1).count();
+    if live_particles >= settings.max_particles {
         return;
     }
 
@@ -104,12 +105,13 @@ pub fn dirt_dash_spawn_system(
         while dirt_dash.spawn_timer >= dirt_dash.spawn_interval {
             dirt_dash.spawn_timer -= dirt_dash.spawn_interval;
 
-            // Spawn a burst of particles
+            // Spawn a burst of particles (local counter: no re-scan per particle).
             for _ in 0..dirt_dash.particles_per_burst {
                 // Check particle limit again
-                if particle_count.iter().count() >= settings.max_particles {
+                if live_particles >= settings.max_particles {
                     break;
                 }
+                live_particles += 1;
 
                 // Calculate spawn position with random spread
                 let spread_x = rng.gen_range(-dirt_dash.spread_radius..dirt_dash.spread_radius);

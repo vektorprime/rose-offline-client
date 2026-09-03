@@ -65,6 +65,7 @@ pub use render_configuration::RenderConfiguration;
 pub use season_materials::{setup_season_materials, SeasonMaterials};
 pub use season_settings::{
     FallSettings, SeasonSettings, SpringSettings, SummerSettings, WinterSettings,
+    MAX_WEATHER_PARTICLES_HARD_CAP,
 };
 pub use selected_target::SelectedTarget;
 pub use server_configuration::ServerConfiguration;

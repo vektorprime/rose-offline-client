@@ -191,6 +191,10 @@ fn default_fish_type_distribution() -> Vec<(FishType, f32)> {
 }
 
 /// System to spawn fish when water is created
+/// Zone-global fish cap: per-plane caps (up to 150) multiply by plane count.
+/// Without this, lake zones exceed 1000 fish = 3000 entities / 2000 transparent draws.
+pub const MAX_FISH_ZONE_GLOBAL: usize = 600;
+
 pub fn spawn_fish_on_water_system(
     mut events: MessageReader<WaterSpawnedEvent>,
     mut commands: Commands,
@@ -198,10 +202,28 @@ pub fn spawn_fish_on_water_system(
     mut materials: ResMut<Assets<StandardMaterial>>,
     settings: Res<FishSettings>,
     zone_query: Query<Entity, With<crate::components::Zone>>,
+    fish_query: Query<(), With<Fish>>,
 ) {
+    // Hoisted count + pending accumulator: Commands spawns are invisible to the
+    // query until next frame, so per-event re-scans would still overshoot ~10x on
+    // multi-plane bursts. Count once, then budget each plane against count+pending.
+    let mut live_fish = fish_query.iter().take(MAX_FISH_ZONE_GLOBAL + 1).count();
+    let mut pending_fish: usize = 0;
+    let mut cap_logged = false;
     let mut event_count = 0;
     for event in events.read() {
         event_count += 1;
+        // Global cap: skip remaining planes once the zone is saturated.
+        if live_fish + pending_fish >= MAX_FISH_ZONE_GLOBAL {
+            if !cap_logged {
+                cap_logged = true;
+                log::info!(
+                    "[FISH] Zone-global cap {} reached, skipping fish for remaining waters",
+                    MAX_FISH_ZONE_GLOBAL
+                );
+            }
+            continue;
+        }
         //log::info!("[FISH DEBUG] Received WaterSpawnedEvent #{}: water_entity={:?}, zone_entity={:?}, center={:?}, extents={:?}",
         //    event_count, event.water_entity, event.zone_entity, event.water_center, event.water_half_extents);
 
@@ -215,7 +237,7 @@ pub fn spawn_fish_on_water_system(
             continue;
         }
 
-        spawn_fish_in_water(
+        pending_fish += spawn_fish_in_water(
             event.water_entity,
             event.zone_entity,
             event.water_center,
@@ -234,6 +256,7 @@ pub fn spawn_fish_on_water_system(
 
 /// Spawn fish in a water area
 #[allow(clippy::too_many_arguments)]
+/// Returns the number of fish spawned (for zone-global cap accounting).
 fn spawn_fish_in_water(
     water_entity: Entity,
     zone_entity: Entity,
@@ -243,7 +266,7 @@ fn spawn_fish_in_water(
     meshes: &mut ResMut<Assets<Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     settings: &Res<FishSettings>,
-) {
+) -> usize {
     let mut rng = rand::thread_rng();
 
     // Guard against degenerate (zero-size) water planes: an empty gen_range
@@ -255,7 +278,7 @@ fn spawn_fish_in_water(
     // tiny pond gets a few fish instead of the same crowd as a huge lake.
     // A non-positive density disables fish entirely.
     if settings.fish_per_1000_sqm <= 0.0 {
-        return;
+        return 0;
     }
     let water_area_sqm = (2.0 * ext_x) * (2.0 * ext_z);
     let fish_count = ((water_area_sqm / 1000.0) * settings.fish_per_1000_sqm) as usize;
@@ -284,7 +307,7 @@ fn spawn_fish_in_water(
     let distribution = default_fish_type_distribution();
     if distribution.is_empty() {
         log::warn!("[FISH] Fish type distribution is empty, skipping spawn");
-        return;
+        return 0;
     }
     let total_weight: f32 = distribution.iter().map(|(_, weight)| weight).sum();
 
@@ -437,7 +460,8 @@ fn spawn_fish_in_water(
                 ))
                 .id();
 
-            // Spawn body mesh as child entity
+            // Spawn body mesh as child entity. NotShadowCaster: alpha-blended
+            // fish must never touch the shadow map (cost + artifacts).
             let body_entity = commands
                 .spawn((
                     Mesh3d(body_mesh.clone()),
@@ -448,6 +472,7 @@ fn spawn_fish_in_water(
                     InheritedVisibility::default(),
                     ViewVisibility::default(),
                     bevy::camera::visibility::RenderLayers::layer(1),
+                    bevy::light::NotShadowCaster,
                 ))
                 .id();
 
@@ -462,6 +487,7 @@ fn spawn_fish_in_water(
                     InheritedVisibility::default(),
                     ViewVisibility::default(),
                     bevy::camera::visibility::RenderLayers::layer(1),
+                    bevy::light::NotShadowCaster,
                 ))
                 .id();
 
@@ -487,6 +513,7 @@ fn spawn_fish_in_water(
     }
 
     log::info!("[FISH] Spawned {} fish total", fish_count);
+    fish_count
 }
 
 /// Create a fish body mesh (elongated standard shape or round puffer shape)
@@ -677,7 +704,7 @@ fn pick_new_target(
 pub fn update_fish_movement_system(
     time: Res<Time>,
     settings: Res<FishSettings>,
-    mut query: Query<(&mut Transform, &GlobalTransform, &mut Fish)>,
+    mut query: Query<(Entity, &mut Transform, &GlobalTransform, &mut Fish)>,
     camera_query: Query<
         &GlobalTransform,
         (
@@ -694,52 +721,53 @@ pub fn update_fish_movement_system(
     let cull_enabled = settings.simulation_distance > 0.0 && camera_pos.is_some();
     let cull_dist_sq = settings.simulation_distance * settings.simulation_distance;
 
-    // Snapshot current world positions (one frame old is fine) so we can push
-    // overlapping fish apart without borrowing the query twice. World space is
-    // used so fish from different (possibly overlapping) water planes also
-    // separate, and so the camera distance check has comparable coordinates.
-    let positions: Vec<Vec3> = query
+    // Snapshot current world positions for NEAR fish only, keyed by Entity.
+    // Previously all fish were collected/sorted/separated before the 80m cull ran.
+    // Cull first so far fish cost nothing. Entity keys (not ordinals) align pushes
+    // with the integration loop: filtered ordinals do NOT match full-query ordinals.
+    let near: Vec<(Entity, Vec3)> = query
         .iter()
-        .map(|(_, global_transform, _)| global_transform.translation())
+        .filter_map(|(entity, _, global_transform, _)| {
+            let p = global_transform.translation();
+            if cull_enabled && p.distance_squared(camera_pos.unwrap()) > cull_dist_sq {
+                None
+            } else {
+                Some((entity, p))
+            }
+        })
         .collect();
 
-    // Separation: push overlapping fish closer than the separation radius
-    // apart so spawn piles and schools spread out instead of converging.
-    // Fish from different water planes are included on purpose, so stacked
-    // fish where planes overlap also get pushed apart. Indices are sorted by
-    // X so the inner scan early-outs as soon as the X delta exceeds the
-    // separation radius, keeping this cheap even with thousands of fish
-    // across many water planes.
+    // Separation: push overlapping fish apart. Indices sorted by X so the inner
+    // scan early-outs once X delta exceeds the radius (cheap with many planes).
     const SEPARATION_RADIUS: f32 = 0.9;
-    let mut order: Vec<usize> = (0..positions.len()).collect();
-    order.sort_by(|&a, &b| positions[a].x.total_cmp(&positions[b].x));
+    let mut order: Vec<usize> = (0..near.len()).collect();
+    order.sort_by(|&a, &b| near[a].1.x.total_cmp(&near[b].1.x));
 
-    let mut pushes = vec![Vec3::ZERO; positions.len()];
+    let mut pushes: std::collections::HashMap<Entity, Vec3> =
+        std::collections::HashMap::new();
     for k in 0..order.len() {
         let i = order[k];
-        let pos_i = positions[i];
+        let (entity_i, pos_i) = near[i];
         for l in (k + 1)..order.len() {
             let j = order[l];
-            let pos_j = positions[j];
+            let (entity_j, pos_j) = near[j];
             if pos_j.x - pos_i.x > SEPARATION_RADIUS {
                 break;
             }
-            let dx = pos_i.x - pos_j.x;
-            let dy = pos_i.y - pos_j.y;
-            let dz = pos_i.z - pos_j.z;
-            let dist_sq = dx * dx + dy * dy + dz * dz;
+            let delta = pos_i - pos_j;
+            let dist_sq = delta.length_squared();
             if dist_sq >= SEPARATION_RADIUS * SEPARATION_RADIUS || dist_sq <= 1e-8 {
                 continue;
             }
             let dist = dist_sq.sqrt();
             let strength = (SEPARATION_RADIUS - dist) / SEPARATION_RADIUS;
-            let push = Vec3::new(dx, dy, dz) / dist * strength;
-            pushes[i] += push;
-            pushes[j] -= push;
+            let push = delta / dist * strength;
+            *pushes.entry(entity_i).or_insert(Vec3::ZERO) += push;
+            *pushes.entry(entity_j).or_insert(Vec3::ZERO) -= push;
         }
     }
 
-    for (idx, (mut transform, global_transform, mut fish)) in query.iter_mut().enumerate() {
+    for (entity, mut transform, global_transform, mut fish) in query.iter_mut() {
         // Skip fish too far from the camera to be noticed (world positions are
         // at most one frame stale, which is fine for a culling decision)
         if cull_enabled {
@@ -808,7 +836,9 @@ pub fn update_fish_movement_system(
         // Push apart from neighbors (frame-rate independent). Pushes are
         // world-space directions applied to the local translation, which is
         // valid because zone parents are pure translations (no rotation/scale).
-        transform.translation += pushes[idx].clamp_length_max(1.0) * 2.0 * delta;
+        if let Some(push) = pushes.get(&entity) {
+            transform.translation += push.clamp_length_max(1.0) * 2.0 * delta;
+        }
 
         // Keep fish within water bounds (clamp position)
         let min_x = fish.water_center.x - fish.water_half_extents.x * settings.boundary_margin;

@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 
 pub(super) fn spawn_object(
     commands: &mut Commands,
@@ -38,6 +39,19 @@ pub(super) fn spawn_object(
         ));
 
     let mut mesh_cache: Vec<Option<Handle<Mesh>>> = vec![None; zsc.meshes.len()];
+    // In-object material dedup: identical (material, lightmap) parts share one
+    // ExtendedMaterial instead of one bind-group/pipeline-key per part instance.
+    // (Cross-object sharing still goes through the asset-server handle cache.)
+    // INVARIANT: zone statics never receive BloodOverlay (character-only), so sharing
+    // one asset across parts is safe. If zone objects ever gain overlays, the blood
+    // system must clone-on-write instead of mutating the shared asset.
+    let mut material_cache: HashMap<
+        (
+            usize,
+            Option<(String, u32, u32, u32)>,
+        ),
+        Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    > = HashMap::new();
 
     let object_entity_commands = commands.spawn((
         EditorSelectable,
@@ -50,7 +64,8 @@ pub(super) fn spawn_object(
         Visibility::Visible,
         InheritedVisibility::default(),
         ViewVisibility::default(),
-        Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+        // No Aabb on mesh-less object root: children parts carry their own bounds.
+        // Previously a ±100000 box defeated frustum + occlusion culling for the whole zone.
         bevy::camera::visibility::RenderLayers::layer(0),
         RigidBody::Fixed,
     ));
@@ -91,10 +106,13 @@ pub(super) fn spawn_object(
             continue;
         }
 
+        // Index assignment (was Vec::insert, which shifts elements and breaks
+        // reuse for all later parts). Cache is per-object; identical meshes across
+        // objects still share the asset-server handle cache underneath.
         let mesh = mesh_cache[mesh_id].clone().unwrap_or_else(|| {
             let mesh_path = zsc.meshes[mesh_id].path().to_string_lossy().into_owned();
-            let handle = asset_server.load(&mesh_path);
-            mesh_cache.insert(mesh_id, Some(handle.clone()));
+            let handle: Handle<Mesh> = asset_server.load(&mesh_path);
+            mesh_cache[mesh_id] = Some(handle.clone());
             handle
         });
         zone_loading_assets.push(UntypedHandle::from(mesh.clone()));
@@ -125,18 +143,32 @@ pub(super) fn spawn_object(
             })
             .unwrap_or((Vec2::new(0.0, 0.0), 1.0));
 
-        // NOTE: material_id was already validated at lines 2437-2443 above
-        // This second fetch is just for local use
+        // NOTE: material_id was already bounds-checked above; this fetch is for local use.
         let material_id = object_part.material_id as usize;
 
         let zsc_material = zsc.materials[material_id].clone();
         let material_path = zsc_material.path.path().to_string_lossy().into_owned();
 
-        let base_texture_handle = asset_server.load(&material_path);
+        // Dedup key includes lightmap identity (path + quantized UVs) so lit parts
+        // with different lightmaps still get distinct materials, while repeated
+        // unlit parts share one material.
+        let lightmap_key = lit_part.map(|p| {
+            (
+                p.filename.clone(),
+                lightmap_uv_offset.x.to_bits(),
+                lightmap_uv_offset.y.to_bits(),
+                lightmap_uv_scale.to_bits(),
+            )
+        });
+        let material_cache_key = (material_id, lightmap_key);
+        let material = if let Some(cached) = material_cache.get(&material_cache_key) {
+            cached.clone()
+        } else {
+            let base_texture_handle: Handle<Image> = asset_server.load(&material_path);
 
-        // Create ExtendedMaterial with RoseObjectExtension for zone lighting support
-        // This applies zone lighting ambient color to darken objects to match the original game
-        let material = object_materials.add(ExtendedMaterial {
+            // Create ExtendedMaterial with RoseObjectExtension for zone lighting support
+            // This applies zone lighting ambient color to darken objects to match the original game
+            let handle = object_materials.add(ExtendedMaterial {
                 base: StandardMaterial {
                     base_color_texture: if material_path.is_empty() || material_path == "" || material_path == "NULL" {
                         log::warn!("[SPAWN OBJECT DEBUG] Empty or NULL texture path for mesh_id {}, using fallback", mesh_id);
@@ -169,6 +201,9 @@ pub(super) fn spawn_object(
                     blood_params: bevy::math::Vec4::new(0.0, 0.0, 0.0, 0.0),
                 },
             });
+            material_cache.insert(material_cache_key, handle.clone());
+            handle
+        };
 
         let mut collision_filter = COLLISION_FILTER_INSPECTABLE;
 
@@ -232,7 +267,9 @@ pub(super) fn spawn_object(
                 Visibility::Visible,
                 InheritedVisibility::default(),
                 ViewVisibility::default(),
-                Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+                // No explicit Aabb: Bevy `calculate_bounds` auto-computes tight bounds
+                // from the Mesh3d once the async ZMS mesh loads. The previous ±100000
+                // box made every part always-visible in main, shadow and reflection passes.
                 RenderLayers::layer(0),
                 ColliderParent::new(object_entity),
                 AsyncCollider(ComputedColliderShape::TriMesh(
@@ -423,7 +460,7 @@ pub(super) fn spawn_animated_object(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            // No explicit Aabb: auto-computed from mesh once loaded (see calculate_bounds).
             RenderLayers::layer(0),
             AsyncCollider(ComputedColliderShape::TriMesh(
                 bevy_rapier3d::prelude::TriMeshFlags::empty(),
@@ -482,7 +519,7 @@ pub(super) fn spawn_effect_object(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            // No Aabb on mesh-less effect root (children self-cull via calculate_bounds).
             RenderLayers::layer(0),
         ))
         .id();
@@ -536,13 +573,13 @@ pub(super) fn spawn_sound_object(
                     ifo_object_id,
                     sound_path: sound_path_str.clone(),
                 },
-                object_transform,
-                GlobalTransform::from(object_transform),
-                Visibility::Visible,
-                InheritedVisibility::default(),
-                ViewVisibility::default(),
-                Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
-                RenderLayers::layer(0),
+            object_transform,
+            GlobalTransform::from(object_transform),
+            Visibility::Visible,
+            InheritedVisibility::default(),
+            ViewVisibility::default(),
+            // No Aabb on mesh-less effect root.
+            RenderLayers::layer(0),
             ))
             .id();
         return effect_object_entity;
@@ -562,7 +599,7 @@ pub(super) fn spawn_sound_object(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            // No Aabb on mesh-less sound object.
             RenderLayers::layer(0),
         ))
         .id();

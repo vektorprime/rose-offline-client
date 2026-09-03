@@ -69,6 +69,7 @@ impl OrbitCamera {
 pub struct CameraControlState {
     pub is_dragging: bool,
     pub saved_cursor_position: Option<Vec2>,
+    pub last_follow_position: Option<Vec3>,
 }
 
 pub fn orbit_camera_system(
@@ -207,6 +208,18 @@ pub fn orbit_camera_system(
         //        orbit_camera.follow_distance);
         //}
 
+        // Camera collision: skip when neither the target moved nor zoom/drag changed
+        // the desired distance. Previously 1x cast_shape ran every frame even static.
+        let follow_moved = control_state
+            .last_follow_position
+            .map_or(true, |last| last.distance_squared(follow_position) > 1e-6);
+        control_state.last_follow_position = Some(follow_position);
+        let camera_static = !follow_moved
+            && !control_state.is_dragging
+            && (zoom_multiplier - 1.0).abs() < f32::EPSILON;
+        if camera_static {
+            camera_collide_distance = orbit_camera.max_distance;
+        } else {
         // Camera collision
         let ray_direction = (camera_transform.translation - follow_position).normalize();
         let ball_radius = 0.5;
@@ -229,6 +242,7 @@ pub fn orbit_camera_system(
         ) {
             camera_collide_distance = distance.time_of_impact;
         }
+        } // end else (camera moved)
     }
 
     // Rotate with mouse drag

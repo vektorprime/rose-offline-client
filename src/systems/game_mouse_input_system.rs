@@ -55,6 +55,7 @@ pub fn game_mouse_input_system(
     query_collider_parent: Query<&ColliderParent>,
     mut player_command_events: MessageWriter<PlayerCommandEvent>,
     mut selected_target: ResMut<SelectedTarget>,
+    mut last_cursor: Local<Option<Vec3>>,
 ) -> Result<(), BevyError> {
     let Ok(rapier_context) = rapier_context.single() else {
         return Ok(());
@@ -64,6 +65,31 @@ pub fn game_mouse_input_system(
     if *app_state.get() != AppState::Game {
         return Ok(());
     }
+
+    // PERF: skip the 10M-distance hover raycast when the mouse is idle.
+    // The raycast ran every frame even with a static cursor. Only re-raycast when
+    // the cursor moved (>0.5px), a button was pressed/released, or hover is active
+    // and needs refresh. Static frames keep the previous hover value (no flicker).
+    let cursor_now = query_window
+        .single()
+        .ok()
+        .and_then(|(w, _)| w.cursor_position());
+    let button_active = mouse_button_input.pressed(MouseButton::Left)
+        || mouse_button_input.pressed(MouseButton::Right)
+        || mouse_button_input.just_pressed(MouseButton::Left)
+        || mouse_button_input.just_pressed(MouseButton::Right)
+        || mouse_button_input.just_released(MouseButton::Left)
+        || mouse_button_input.just_released(MouseButton::Right);
+    if let (Some(now), Some(last)) = (cursor_now, *last_cursor) {
+        let moved = (now - last.truncate()).length_squared() > 0.25;
+        if !moved && !button_active {
+            return Ok(());
+        }
+    }
+    if let Some(now) = cursor_now {
+        *last_cursor = Some(now.extend(0.0));
+    }
+
     selected_target.hover = None;
 
     let Ok((window, cursor_options)) = query_window.single() else {
@@ -105,7 +131,9 @@ pub fn game_mouse_input_system(
         if let Some((collider_entity, distance)) = rapier_context.cast_ray(
             ray.origin,
             *ray.direction,
-            10000000.0,
+            // Zone is ~10km across; 10M destroyed precision and traversed the whole
+            // broadphase. 2000m covers view_distance max (1500) + margin.
+            2000.0,
             false,
             QueryFilter::new().groups(CollisionGroups::new(
                 COLLISION_FILTER_CLICKABLE,

@@ -145,8 +145,10 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
             },
             default_light_transform(),
             CascadeShadowConfig {
-                bounds: vec![20.0, 80.0, 300.0, 1000.0], // Tighter bounds for better shadow quality at game scale
-                overlap_proportion: 0.3, // More overlap for smoother cascade transitions
+                // Medium default: 2 cascades to 100m (matches ShadowQuality::Medium).
+                // Previously 4 cascades to 1000m (Ultra) at startup with 30% overlap.
+                bounds: vec![50.0, 100.0],
+                overlap_proportion: 0.2,
                 minimum_distance: 0.1,
             },
             RenderLayers::default(),
@@ -262,7 +264,12 @@ fn update_volumetric_fog_system(
 fn sync_zone_lighting_to_bevy_lights_system(
     mut zone_lighting: ResMut<ZoneLighting>,
     mut ambient_light: ResMut<GlobalAmbientLight>,
-    mut query_directional_light: Query<(&mut DirectionalLight, &GlobalTransform)>,
+    // Sun only: with the moon spawned there are 2 directional lights, so an
+    // unfiltered single_mut() always errors and the sync body never runs.
+    mut query_directional_light: Query<
+        (&mut DirectionalLight, &GlobalTransform),
+        (With<VolumetricLight>, Without<MoonLight>),
+    >,
     graphics_settings: Option<Res<crate::graphics::GraphicsSettings>>,
 ) {
     // Determine the ambient light color to use:
@@ -346,7 +353,9 @@ fn update_sun_position_system(
     sky_settings: Res<SkySettings>,
     current_zone: Option<Res<crate::resources::CurrentZone>>,
     game_data: Res<crate::resources::GameData>,
-    mut query: Query<&mut Transform, With<DirectionalLight>>,
+    // Sun only: moon_light_follow_camera_system owns the moon transform; without
+    // this filter the sun rotation overwrote the moon every time change (order-dependent).
+    mut query: Query<&mut Transform, (With<DirectionalLight>, Without<MoonLight>)>,
 ) {
     // Determine if we should update based on mode and what changed
     let should_update = match sky_settings.mode {
@@ -516,6 +525,14 @@ pub fn update_shadows_for_time_of_day_system(
     mut moon_query: Query<&mut DirectionalLight, With<MoonLight>>,
     graphics_settings: Option<Res<GraphicsSettings>>,
 ) {
+    use bevy::ecs::change_detection::DetectChanges;
+    // Only re-evaluate when the time state actually changed. Previously this wrote
+    // shadows_enabled/illuminance every frame, invalidating the shadow-map cache and
+    // forcing cascade re-renders even for a static scene.
+    if !zone_time.is_changed() {
+        return;
+    }
+
     // Check if shadows are enabled in graphics settings
     // If shadows are disabled by quality settings, don't override
     let shadows_enabled_by_settings = graphics_settings
@@ -526,23 +543,34 @@ pub fn update_shadows_for_time_of_day_system(
         return; // Shadows disabled in settings, nothing to do
     }
 
-    // Calculate light and shadow settings based on time state
-    let (sun_shadows, sun_illuminance, moon_shadows) = match zone_time.state {
-        ZoneTimeState::Morning => (true, 15000.0, false),
-        ZoneTimeState::Day => (true, 15000.0, false),
-        ZoneTimeState::Evening => (false, 0.0, false),
-        ZoneTimeState::Night => (false, 0.0, false),
+    // Calculate light and shadow settings based on time state.
+    // Moon illuminance follows the night: day has sun 15000 + moon 0 (previously moon
+    // stayed 5000 all day, over-lighting from two directions); night has sun 0 + moon.
+    let (sun_shadows, sun_illuminance, moon_shadows, moon_illuminance) = match zone_time.state {
+        ZoneTimeState::Morning => (true, 15000.0, false, 500.0),
+        ZoneTimeState::Day => (true, 15000.0, false, 0.0),
+        ZoneTimeState::Evening => (false, 0.0, false, 800.0),
+        ZoneTimeState::Night => (false, 0.0, false, 3000.0),
     };
 
-    // Apply to sun light
+    // Write only on actual change to avoid dirtying the light every frame.
     for mut light in sun_query.iter_mut() {
-        light.shadows_enabled = sun_shadows;
-        light.illuminance = sun_illuminance;
+        if light.shadows_enabled != sun_shadows {
+            light.shadows_enabled = sun_shadows;
+        }
+        if (light.illuminance - sun_illuminance).abs() > f32::EPSILON {
+            light.illuminance = sun_illuminance;
+        }
     }
 
-    // Apply to moon light
+    // Apply to moon light (shadows stay off in all states per table; illuminance follows night).
     for mut light in moon_query.iter_mut() {
-        light.shadows_enabled = moon_shadows;
+        if light.shadows_enabled != moon_shadows {
+            light.shadows_enabled = moon_shadows;
+        }
+        if (light.illuminance - moon_illuminance).abs() > f32::EPSILON {
+            light.illuminance = moon_illuminance;
+        }
     }
 }
 

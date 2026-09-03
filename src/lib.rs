@@ -3,30 +3,26 @@
 use animation::RoseAnimationPlugin;
 use bevy::ecs::schedule::ApplyDeferred;
 use bevy::{
-    anti_alias::contrast_adaptive_sharpening::ContrastAdaptiveSharpening,
-    anti_alias::smaa::Smaa,
     asset::AssetApp,
     camera::visibility::{Visibility, VisibilitySystems},
     camera::Camera,
-    core_pipeline::prepass::DepthPrepass,
+    core_pipeline::prepass::{DeferredPrepass, DepthPrepass},
     light::{DirectionalLightShadowMap, EnvironmentMapLight, VolumetricFog},
     mesh::Mesh3d,
     pbr::{
         Atmosphere, AtmosphereSettings, DefaultOpaqueRendererMethod, ExtendedMaterial,
         MaterialPlugin, MeshMaterial3d, ScreenSpaceAmbientOcclusion,
-        ScreenSpaceAmbientOcclusionQualityLevel, ScreenSpaceReflections, StandardMaterial,
+        ScreenSpaceAmbientOcclusionQualityLevel, StandardMaterial,
     },
     post_process::{
-        auto_exposure::AutoExposure,
         bloom::Bloom,
         dof::{DepthOfField, DepthOfFieldMode},
-        motion_blur::MotionBlur,
     },
     prelude::{
         default, in_state, resource_exists, App, AppExtStates, AssetServer, Assets, Camera3d,
         ClearColorConfig, Color, Commands, Entity, IntoScheduleConfigs, Msaa, OnEnter, OnExit,
         PerspectiveProjection, PluginGroup, PostStartup, PostUpdate, PreUpdate, Projection, Quat,
-        Query, Res, ResMut, Startup, SystemSet, Transform, Update, Vec3,
+        Query, Res, ResMut, Startup, SystemSet, Transform, Update, Vec3, With, Without,
     },
     render::experimental::occlusion_culling::OcclusionCulling,
     render::view::ColorGrading,
@@ -102,10 +98,8 @@ use events::{
 };
 use model_loader::ModelLoader;
 use render::{
-    spawn_volumetric_clouds,
-    toggle_atmosphere_based_on_time,
-    update_starry_sky_night_factor,
-    update_starry_sky_system,
+    follow_sky_to_camera_system, moon_light_follow_camera_system, spawn_volumetric_clouds,
+    toggle_atmosphere_based_on_time, update_starry_sky_night_factor, update_starry_sky_system,
     AtmosphereState,
     CameraUnderwaterState,
     DamageDigitMaterialPlugin,
@@ -844,8 +838,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_plugins(terrain::TerrainEnhancementPlugin);
     log::info!("[TERRAIN] Terrain enhancement plugin initialized with procedural noise");
 
-    // High-quality shadow map resolution
-    app.insert_resource(DirectionalLightShadowMap { size: 4096 });
+    // Shadow map resolution matches Medium default (2 cascades x 2048).
+    // Previously 4096 paid 4x texels before the user ever touched settings.
+    app.insert_resource(DirectionalLightShadowMap { size: 2048 });
 
     // Deferred rendering (opaque renderer method)
     app.insert_resource(DefaultOpaqueRendererMethod::deferred());
@@ -1150,13 +1145,22 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             update_starry_sky_system.after(update_starry_sky_night_factor),
         ),
     );
-    // Separate add_systems call: the tuple above is already at Bevy's 20-system tuple limit.
+    // Separate add_systems call: the tuple above is already at Bevy's 20-system tuple limit
+    // (see pitfalls/ecs-system-tuples.md). Sky/moon follow lives here to avoid E0277.
+    app.add_systems(
+        Update,
+        (
+            follow_sky_to_camera_system,
+            moon_light_follow_camera_system,
+        ),
+    );
     // Must run after name_tag_visibility_system so the line-of-sight result
     // has the final say on name tag / chat bubble root visibility.
     app.add_systems(
         Update,
         world_ui_occlusion_system.after(name_tag_visibility_system),
     );
+
     // update_ui_resources uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
     app.add_systems(bevy_egui::EguiPrimaryContextPass, update_ui_resources);
 
@@ -1389,6 +1393,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             graphics::apply_shadow_quality_system,
             graphics::apply_tonemapping_system,
             graphics::apply_bloom_system,
+            graphics::apply_ssao_system,
+            graphics::apply_smaa_system,
+            graphics::apply_fxaa_system,
+            graphics::apply_motion_blur_system,
+            graphics::apply_dof_enabled_system,
+            graphics::apply_view_distance_system,
+            graphics::apply_texture_quality_system,
             graphics::apply_shadow_filtering_system,
             graphics::apply_msaa_system,
             graphics::apply_ambient_light_system,
@@ -1958,7 +1969,11 @@ fn load_common_game_data(
             Projection::Perspective(PerspectiveProjection {
                 fov: std::f32::consts::PI / 4.0,
                 near: 0.1,
-                far: 100000.0, // Increased to contain sky sphere (radius 50000 + camera distance)
+                // Sky sphere now follows the camera (radius 4000), so 8000 comfortably
+                // contains sky + shadow range + fog volume. Matches view_distance
+                // mapping (500m default * 16). Previously 100000 destroyed depth
+                // precision and Hi-Z efficiency.
+                far: 8000.0,
                 aspect_ratio: 16.0 / 9.0,
                 ..default()
             }),
@@ -1974,10 +1989,20 @@ fn load_common_game_data(
             Bloom::NATURAL,
             // Shadow filtering - Gaussian for high-quality soft shadows
             ShadowFilteringMethod::Gaussian,
-            // SMAA for high-quality anti-aliasing
-            Smaa::default(),
+            // NOTE: SMAA / SSR / MotionBlur / AutoExposure / CAS are NOT spawned by
+            // default. They are inserted on demand by graphics apply systems when the
+            // user enables them (SMAA/motion-blur have settings; SSR/AutoExposure/CAS
+            // stay off until a future settings toggle wires them). Previously all were
+            // stacked at startup for a ~6-pass fullscreen cost even on Low.
             // Prepasses for depth (required for some effects and GPU occlusion culling)
             DepthPrepass,
+            // DeferredPrepass is REQUIRED with DefaultOpaqueRendererMethod::deferred():
+            // without it the view gets Opaque3dPrepass phases but no Opaque3dDeferred
+            // phases, and Bevy 0.18.1 panics in queue_prepass_material_meshes
+            // (prepass/mod.rs unwrap) as soon as any opaque deferred material
+            // (e.g. --new-terrain StandardMaterial) is visible. It also lets the
+            // deferred G-buffer pass replace the duplicate forward prepass.
+            DeferredPrepass,
             // GPU Occlusion Culling - culls objects hidden behind other objects to improve performance
             OcclusionCulling,
             // Underwater state tracking for underwater rendering effect
@@ -1988,20 +2013,13 @@ fn load_common_game_data(
     commands.entity(camera_entity).insert((
         // Environment Map Light for richer PBR reflections and lighting
         // The DDS loader is configured to load this texture as a cubemap when the #cube label is used
+        // Intensity lowered 150 -> 100: 150 washed out shadows (see pitfalls/rendering-camera.md #5).
         EnvironmentMapLight {
             diffuse_map: asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS#cube"),
             specular_map: asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS#cube"),
-            intensity: 150.0,
+            intensity: 100.0,
             ..default()
         },
-        // Screen Space Reflections
-        ScreenSpaceReflections::default(),
-        // Motion Blur
-        MotionBlur::default(),
-        // Auto Exposure
-        AutoExposure::default(),
-        // Contrast Adaptive Sharpening
-        ContrastAdaptiveSharpening::default(),
         // Render layers 0 and 1: layer 0 is the world, layer 1 is water
         // (kept separate so the reflection camera can exclude water).
         bevy::camera::visibility::RenderLayers::from_layers(&[0, 1]),
@@ -2016,27 +2034,26 @@ fn load_common_game_data(
             // Bevy 0.18 built-in atmospheric scattering for realistic sky
             Atmosphere::earthlike(scattering_mediums.add(bevy::pbr::ScatteringMedium::default())),
             AtmosphereSettings::default(),
-            // Add Depth of Field effect
+            // Depth of Field: Gaussian default (cheaper than Bokeh). Bokeh + CoC 64
+            // is available via settings but not the startup cost.
             DepthOfField {
-                mode: DepthOfFieldMode::Bokeh,
+                mode: DepthOfFieldMode::Gaussian,
                 focal_distance: 10.0,   // Focus 10 meters away
                 aperture_f_stops: 3.3,  // f/3.3 aperture
                 sensor_height: 0.01866, // Super 35 format (default)
-                max_circle_of_confusion_diameter: 64.0,
+                max_circle_of_confusion_diameter: 32.0,
                 max_depth: 2000.0, // Max depth range
             },
-            // Add VolumetricFog for light shafts/god rays effect
-            // Configured for 60fps target with balanced quality
+            // VolumetricFog: 64 steps = Bevy default (was 128 = 2x raymarch cost).
             VolumetricFog {
                 ambient_intensity: 0.1,
                 jitter: 0.0,
-                step_count: 128,
+                step_count: 64,
                 ..default()
             },
-            // SSAO for contact shadows - adds darkening in crevices and where objects meet ground
-            // Requires Msaa::Off (which is the default in Bevy 0.15)
+            // SSAO Medium matches GraphicsSettings default (was Ultra at startup).
             ScreenSpaceAmbientOcclusion {
-                quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
+                quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium,
                 constant_object_thickness: 0.25, // Adjust if AO is too strong/weak
             },
         ));
@@ -2093,29 +2110,53 @@ fn print_diagnostic_summary(
     info!("=======================================");
 }
 
-/// System to apply depth of field settings from the resource to the camera
-/// This allows live adjustment of DoF parameters via the Settings UI
+/// System to apply depth of field settings from the resource to the camera.
+/// Disabling REMOVES the component so the DoF pass is skipped. Previously this only
+/// switched Bokeh->Gaussian, which still ran the full DoF pass.
 fn apply_depth_of_field_settings(
     dof_settings: Res<DepthOfFieldSettings>,
-    mut query: Query<&mut DepthOfField>,
+    // NOTE: reflection camera excluded (see graphics/apply_systems.rs invariant).
+    camera_query: Query<
+        (Entity, Option<&DepthOfField>),
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
+    mut commands: Commands,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
 
     // Only update if settings have changed
-    if dof_settings.is_changed() {
-        for mut dof in query.iter_mut() {
-            if dof_settings.enabled {
-                dof.mode = dof_settings.mode;
-                dof.focal_distance = dof_settings.focal_distance;
-                dof.aperture_f_stops = dof_settings.aperture_f_stops;
-                dof.sensor_height = dof_settings.sensor_height;
-                dof.max_circle_of_confusion_diameter =
-                    dof_settings.max_circle_of_confusion_diameter;
-                dof.max_depth = dof_settings.max_depth;
-            } else {
-                // When disabled, use Gaussian mode with minimal effect (effectively off)
-                dof.mode = DepthOfFieldMode::Gaussian;
+    if !dof_settings.is_changed() {
+        return;
+    }
+
+    for (entity, dof) in camera_query.iter() {
+        if dof_settings.enabled {
+            match dof {
+                Some(_) => {
+                    commands.entity(entity).insert(DepthOfField {
+                        mode: dof_settings.mode,
+                        focal_distance: dof_settings.focal_distance,
+                        aperture_f_stops: dof_settings.aperture_f_stops,
+                        sensor_height: dof_settings.sensor_height,
+                        max_circle_of_confusion_diameter:
+                            dof_settings.max_circle_of_confusion_diameter,
+                        max_depth: dof_settings.max_depth,
+                    });
+                }
+                None => {
+                    commands.entity(entity).insert(DepthOfField {
+                        mode: dof_settings.mode,
+                        focal_distance: dof_settings.focal_distance,
+                        aperture_f_stops: dof_settings.aperture_f_stops,
+                        sensor_height: dof_settings.sensor_height,
+                        max_circle_of_confusion_diameter:
+                            dof_settings.max_circle_of_confusion_diameter,
+                        max_depth: dof_settings.max_depth,
+                    });
+                }
             }
+        } else if dof.is_some() {
+            commands.entity(entity).remove::<DepthOfField>();
         }
     }
 }
@@ -2124,13 +2165,14 @@ fn apply_depth_of_field_settings(
 /// This allows live toggling of bloom, SSAO, volumetric fog, and color grading via the Settings UI
 fn apply_post_processing_settings(
     post_process_settings: Res<ui::PostProcessingSettings>,
+    // NOTE: reflection camera excluded (see graphics/apply_systems.rs invariant).
     mut camera_query: Query<(
         Entity,
         Option<&mut Bloom>,
         Option<&mut ScreenSpaceAmbientOcclusion>,
         Option<&mut VolumetricFog>,
         Option<&mut ColorGrading>,
-    )>,
+    ), (With<Camera>, Without<crate::render::WaterReflectionCamera>)>,
     mut commands: Commands,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
@@ -2141,11 +2183,16 @@ fn apply_post_processing_settings(
     }
 
     for (entity, bloom, ssao, volumetric_fog, _color_grading) in camera_query.iter_mut() {
-        // Handle Bloom
+        // Handle Bloom (insert/remove so the pass is skipped when off).
+        // NOTE: GraphicsSettings.bloom is the primary owner (PostUpdate wins on
+        // simultaneous ticks); this page mirrors it. Intensity is honored here.
         if post_process_settings.bloom_enabled {
             if bloom.is_none() {
                 // Add Bloom component if not present
-                commands.entity(entity).insert(Bloom::NATURAL);
+                commands.entity(entity).insert(Bloom {
+                    intensity: post_process_settings.bloom_intensity,
+                    ..Bloom::NATURAL
+                });
                 info!("[PostProcess] Bloom enabled on camera");
             }
         } else {
@@ -2156,24 +2203,35 @@ fn apply_post_processing_settings(
             }
         }
 
-        // Handle SSAO
-        if let Some(mut ssao_comp) = ssao {
-            if !post_process_settings.ssao_enabled {
-                // Set quality to lowest effectively disabling it
-                ssao_comp.quality_level = ScreenSpaceAmbientOcclusionQualityLevel::Low;
-            } else {
-                ssao_comp.quality_level = ScreenSpaceAmbientOcclusionQualityLevel::Medium;
+        // Handle SSAO: remove the component when disabled so the SSAO pass is
+        // skipped. Previously this only downgraded to Low (still full cost).
+        if post_process_settings.ssao_enabled {
+            if ssao.is_none() {
+                commands.entity(entity).insert(ScreenSpaceAmbientOcclusion {
+                    quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium,
+                    ..Default::default()
+                });
+                info!("[PostProcess] SSAO enabled on camera");
             }
+        } else if ssao.is_some() {
+            commands.entity(entity).remove::<ScreenSpaceAmbientOcclusion>();
+            info!("[PostProcess] SSAO disabled on camera");
         }
 
-        // Handle Volumetric Fog
-        if let Some(mut fog) = volumetric_fog {
-            if post_process_settings.volumetric_fog_enabled {
-                fog.step_count = 64;
-            } else {
-                // Effectively disable by setting step count to minimum
-                fog.step_count = 1;
+        // Handle Volumetric Fog: remove when disabled so raymarching is skipped.
+        // Previously step_count=1 still dispatched the volume.
+        if post_process_settings.volumetric_fog_enabled {
+            if volumetric_fog.is_none() {
+                commands.entity(entity).insert(VolumetricFog {
+                    ambient_intensity: 0.1,
+                    step_count: 64,
+                    ..Default::default()
+                });
+                info!("[PostProcess] Volumetric fog enabled on camera");
             }
+        } else if volumetric_fog.is_some() {
+            commands.entity(entity).remove::<VolumetricFog>();
+            info!("[PostProcess] Volumetric fog disabled on camera");
         }
     }
 }
@@ -2212,11 +2270,10 @@ fn spawn_starry_sky_and_moon(
     use bevy::math::primitives::Sphere;
     use bevy_light::DirectionalLight as DirectionalLightComponent;
 
-    // CRITICAL: The sky sphere must be LARGE enough to contain the entire game world.
-    // Camera is at ~5120, 100, -5120 which is ~7242 units from world origin.
-    // Using 50000 units radius ensures camera is always inside the sphere.
-    // The sphere is centered at world origin (0,0,0).
-    let sky_sphere_radius = 50000.0;
+    // Sky sphere follows the camera (see follow_sky_to_camera), so a modest radius
+    // is enough and keeps depth precision + far plane small. Previously 50000 forced
+    // far=100000. Shader uses view-relative direction, so centering on camera is correct.
+    let sky_sphere_radius = 4000.0;
 
     log::info!(
         "[STARRY SKY] Spawning sky sphere (radius {}), star_density: {}, star_brightness: {}, night_factor: {}",
@@ -2293,17 +2350,19 @@ fn spawn_starry_sky_and_moon(
 
     log::info!("[STARRY SKY] StarrySky entity spawned with id: {:?}", sky_entity);
 
-    // Spawn moon directional light (separate from sun)
-    // This provides illumination at night
+    // Spawn moon directional light (separate from sun).
+    // Night illumination; shadows stay OFF in all states per
+    // update_shadows_for_time_of_day_system (second shadow map doubles cost).
+    // Illuminance is modulated by time-of-day (0 by day, up to 3000 at night).
     let moon_entity = commands
         .spawn((
             MoonLight,
             DirectionalLightComponent {
                 illuminance: 5000.0,                 // Moonlight intensity (much dimmer than sun)
                 color: Color::srgb(0.8, 0.85, 0.95), // Slightly blue-white moonlight
-                shadows_enabled: true,
-                shadow_depth_bias: 0.0,
-                shadow_normal_bias: 0.0,
+                shadows_enabled: false,
+                shadow_depth_bias: 0.02,
+                shadow_normal_bias: 1.0,
                 affects_lightmapped_mesh_diffuse: true,
             },
             Transform::from_xyz(0.0, 100.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),

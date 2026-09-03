@@ -71,9 +71,10 @@ pub use water_reflection::{WaterReflectionCamera, WaterReflectionImage, WaterRef
 // Procedural starry sky material
 pub mod starry_sky_material;
 pub use starry_sky_material::{
-    create_starry_sky_mesh, moon_light_follow_camera_system, toggle_atmosphere_based_on_time,
-    update_starry_sky_night_factor, update_starry_sky_system, AtmosphereState, MoonLight, StarrySky,
-    StarrySkyMaterial, StarrySkyMaterialPlugin, StarrySkySettings,
+    create_starry_sky_mesh, follow_sky_to_camera_system, moon_light_follow_camera_system,
+    toggle_atmosphere_based_on_time, update_starry_sky_night_factor, update_starry_sky_system,
+    AtmosphereState, MoonLight, StarrySky, StarrySkyMaterial, StarrySkyMaterialPlugin,
+    StarrySkySettings,
 };
 
 // Procedural cloud material (2D plane-based)

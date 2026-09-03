@@ -17,13 +17,20 @@ impl Default for SeasonSettings {
         Self {
             enabled: true,
             current_season: Season::None,
-            max_particles: 2000, // Maximum particles for season weather effects
+            // Reduced 2000 -> 800: each particle is an individual transparent draw +
+            // per-frame CPU billboard. 2000 steady-state draws was a major cost; 800
+            // preserves weather feel. Higher counts remain available via settings.
+            max_particles: 800, // Maximum particles for season weather effects
             spawn_rate: 100.0,   // Particles per second
             wind_strength: 1.0,
             wind_direction: Vec2::X,
         }
     }
 }
+
+/// Hard ceiling for weather particles regardless of slider: 4000 individual
+/// transparent entities is already extreme; 20000 would be 10x worse.
+pub const MAX_WEATHER_PARTICLES_HARD_CAP: usize = 4000;
 
 /// Fall-specific settings
 #[derive(Resource, Debug, Clone, Reflect)]

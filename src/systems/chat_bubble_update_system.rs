@@ -33,8 +33,12 @@ pub fn chat_bubble_update_system(
             continue;
         }
 
-        // Calculate fade alpha
+        // Calculate fade alpha. Fully-opaque phase (first 80% of lifetime) needs
+        // no color work: previously 2x to_srgba + rebuild ran per bubble per frame.
         let fade_alpha = chat_bubble.get_fade_alpha();
+        if (fade_alpha - 1.0).abs() < f32::EPSILON {
+            continue;
+        }
 
         // Update child rects if we can get them
         if let Ok(children) = query_children.get(bubble_entity) {

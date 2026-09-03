@@ -114,12 +114,13 @@ pub fn spawn_zone(
             InheritedVisibility::default(),
             Transform::from_xyz(5200.0, 0.0, -5200.0),
             GlobalTransform::default(),
-            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            // No Aabb on mesh-less zone root: avoids forcing whole zone always-visible.
+            // Bevy `check_visibility` handles missing Aabb via `Option<&Aabb>`.
             RenderLayers::layer(0),
         ))
         .id();
     log::info!(
-        "[ZONE LOADER DEBUG] Spawned Zone entity {:?} with Visibility::Visible and large Aabb",
+        "[ZONE LOADER DEBUG] Spawned Zone entity {:?} with Visibility::Visible and no Aabb (mesh-less root)",
         zone_entity
     );
     memory_tracking.log_entity_spawned();

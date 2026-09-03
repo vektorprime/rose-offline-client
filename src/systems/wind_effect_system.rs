@@ -111,10 +111,10 @@ pub fn wind_particle_spawn_system(
     let delta_time = time.delta_secs();
     let mut rng = rand::thread_rng();
 
-    // Performance limit for particles
+    // Performance limit for particles (bounded scan + local counter, no per-spawn scan).
     const MAX_WIND_PARTICLES: usize = 200;
-    let current_particle_count = particle_count.iter().count();
-    if current_particle_count >= MAX_WIND_PARTICLES {
+    let mut live_particles = particle_count.iter().take(MAX_WIND_PARTICLES + 1).count();
+    if live_particles >= MAX_WIND_PARTICLES {
         return;
     }
 
@@ -164,10 +164,11 @@ pub fn wind_particle_spawn_system(
         let particles_to_spawn = if flight_state.is_thrusting { 3 } else { 1 };
 
         for _ in 0..particles_to_spawn {
-            // Check particle limit
-            if particle_count.iter().count() >= MAX_WIND_PARTICLES {
+            // Check particle limit (local counter, no query re-scan).
+            if live_particles >= MAX_WIND_PARTICLES {
                 break;
             }
+            live_particles += 1;
 
             // Convert Position to world coordinates (ROSE uses centimeters, Bevy uses meters)
             let player_pos = Vec3::new(

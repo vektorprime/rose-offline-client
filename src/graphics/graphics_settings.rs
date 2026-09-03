@@ -168,7 +168,10 @@ pub enum TextureQuality {
 }
 
 impl TextureQuality {
-    /// Returns the mip bias for this quality level
+    /// Returns the mip bias for this quality level.
+    /// NOTE: lod_min_clamp cannot express negative bias, so Ultra (-0.5) behaves
+    /// like High (full res) in apply_texture_quality_system; the enum keeps -0.5
+    /// for a future anisotropy bump.
     pub fn mip_bias(&self) -> f32 {
         match self {
             TextureQuality::Low => 2.0,
@@ -485,12 +488,15 @@ impl GraphicsSettings {
             shadow_filtering: GraphicsShadowFilteringMethod::Hardware2x2,
             bloom_enabled: false,
             bloom_intensity: 0.0,
+            motion_blur_enabled: false,
             motion_blur_intensity: 0.0,
             ssao_enabled: false,
             ssao_quality: SsaoQuality::Off,
+            dof_enabled: false,
             tonemapping: TonemappingMode::Reinhard,
             texture_quality: TextureQuality::Low,
             fxaa_enabled: true,
+            smaa_quality: SmaaQuality::Disabled,
             ambient_light_brightness: 1.0,
             ..Default::default()
         }

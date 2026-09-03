@@ -142,33 +142,31 @@ pub fn damage_digit_render_system(
         // The mesh was created with enough vertices for max digits (10 * 6 = 60)
         // Only the storage buffers need to be updated with actual digit data
 
-        // Update the storage buffers with new render data
+        // Update the storage buffers with new render data, in place.
+        // Previously 3x add()+remove() per digit per frame (AssetId churn +
+        // bind-group rebuilds). set_data() uploads into the existing asset.
         if let Some(material) = materials.get_mut(&material_handle.0) {
-            // Store old buffer handles to prevent memory leak
-            let old_positions = material.positions.clone();
-            let old_sizes = material.sizes.clone();
-            let old_uvs = material.uvs.clone();
-
-            // Create new storage buffers with updated data
-            let positions_buffer = storage_buffers.add(ShaderStorageBuffer::from(
-                damage_digit_render_data.positions.clone(),
-            ));
-            let sizes_buffer = storage_buffers.add(ShaderStorageBuffer::from(
-                damage_digit_render_data.sizes.clone(),
-            ));
-            let uvs_buffer = storage_buffers.add(ShaderStorageBuffer::from(
-                damage_digit_render_data.uvs.clone(),
-            ));
-
-            // Update material with new buffer handles
-            material.positions = positions_buffer;
-            material.sizes = sizes_buffer;
-            material.uvs = uvs_buffer;
-
-            // Remove old buffers to prevent memory leak
-            storage_buffers.remove(&old_positions);
-            storage_buffers.remove(&old_sizes);
-            storage_buffers.remove(&old_uvs);
+            if let Some(buf) = storage_buffers.get_mut(&material.positions) {
+                buf.set_data(damage_digit_render_data.positions.clone());
+            } else {
+                material.positions = storage_buffers.add(ShaderStorageBuffer::from(
+                    damage_digit_render_data.positions.clone(),
+                ));
+            }
+            if let Some(buf) = storage_buffers.get_mut(&material.sizes) {
+                buf.set_data(damage_digit_render_data.sizes.clone());
+            } else {
+                material.sizes = storage_buffers.add(ShaderStorageBuffer::from(
+                    damage_digit_render_data.sizes.clone(),
+                ));
+            }
+            if let Some(buf) = storage_buffers.get_mut(&material.uvs) {
+                buf.set_data(damage_digit_render_data.uvs.clone());
+            } else {
+                material.uvs = storage_buffers.add(ShaderStorageBuffer::from(
+                    damage_digit_render_data.uvs.clone(),
+                ));
+            }
         } else {
             log::warn!(
                 "[DAMAGE_DIGIT_RENDER] Could NOT find material for entity {:?} with handle {:?}",

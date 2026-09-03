@@ -81,7 +81,11 @@ impl Plugin for WaterReflectionPlugin {
             )
             .add_systems(
                 bevy::prelude::Update,
-                (manage_reflection_image, sync_reflection_textures),
+                (
+                    manage_reflection_image,
+                    sync_reflection_textures,
+                    sanitize_reflection_camera,
+                ),
             )
             .add_systems(
                 bevy::prelude::PostUpdate,
@@ -184,6 +188,46 @@ fn manage_reflection_image(
         commands
             .entity(entity)
             .insert(RenderTarget::Image(new_handle.clone().into()));
+    }
+}
+
+/// Removes post/prepass components that must never be on the reflection camera.
+///
+/// Defense-in-depth for the `graphics/apply_systems.rs` invariant: `#[require]`
+/// chains auto-add prepass components (SSAO pulls DepthPrepass+NormalPrepass,
+/// MotionBlur pulls DepthPrepass+MotionVectorPrepass). A reflection view with
+/// prepass phases but no deferred phases panics Bevy 0.18.1 in
+/// `queue_prepass_material_meshes` once a deferred material is visible to it.
+/// The query only matches infected cameras, so the steady-state cost is ~zero.
+fn sanitize_reflection_camera(
+    mut commands: Commands,
+    infected: Query<
+        Entity,
+        (
+            With<WaterReflectionCamera>,
+            bevy::ecs::query::Or<(
+                With<bevy::core_pipeline::prepass::DepthPrepass>,
+                With<bevy::core_pipeline::prepass::NormalPrepass>,
+                With<bevy::core_pipeline::prepass::MotionVectorPrepass>,
+                With<bevy::core_pipeline::prepass::DeferredPrepass>,
+                With<bevy::pbr::ScreenSpaceAmbientOcclusion>,
+                With<bevy::post_process::motion_blur::MotionBlur>,
+                With<bevy::post_process::dof::DepthOfField>,
+            )>,
+        ),
+    >,
+) {
+    for entity in infected.iter() {
+        commands
+            .entity(entity)
+            .remove::<bevy::core_pipeline::prepass::DepthPrepass>()
+            .remove::<bevy::core_pipeline::prepass::NormalPrepass>()
+            .remove::<bevy::core_pipeline::prepass::MotionVectorPrepass>()
+            .remove::<bevy::core_pipeline::prepass::DeferredPrepass>()
+            .remove::<bevy::pbr::ScreenSpaceAmbientOcclusion>()
+            .remove::<bevy::post_process::motion_blur::MotionBlur>()
+            .remove::<bevy::post_process::dof::DepthOfField>();
+        log::warn!("[WATER REFLECTION] Stripped forbidden post/prepass components from reflection camera (see apply_systems invariant)");
     }
 }
 
@@ -305,6 +349,18 @@ fn sync_reflection_camera(
 
     *frame_counter = frame_counter.wrapping_add(1);
 
+    // Fast path: when reflections are off (setting, no water, underwater, or
+    // >300m), only ensure the camera stays inactive. Previously mirror matrix +
+    // frustum recompute + per-view scans ran every frame even when inactive.
+    if !reflection_active {
+        for (_, _, _, mut camera, _, _, _, _) in reflection_cameras.iter_mut() {
+            if camera.is_active {
+                camera.is_active = false;
+            }
+        }
+        return;
+    }
+
     let mut reflection_log = None;
     for (
         entity,
@@ -321,16 +377,29 @@ fn sync_reflection_camera(
         // DEBUG TEST: temporarily disabled the oblique near clip plane to
         // determine whether the clip plane or the mirror transform breaks the
         // frustum culling.
-        *projection = Projection::Perspective(main_perspective.clone());
+        // Reflection uses a halved far plane to tighten CPU culling in the mirrored
+        // pass. (Under Bevy 0.18 infinite reverse-Z, far never enters the clip matrix,
+        // so this saves culled draws, not depth precision.)
+        // +500 margin keeps the 4000-radius sky (centered on main camera, mirrored
+        // baseline offset) fully inside the reflection frustum.
+        let mut reflection_perspective = main_perspective.clone();
+        reflection_perspective.far = (main_perspective.far * 0.5).max(2000.0) + 500.0;
+        if let Projection::Perspective(ref mut current) = *projection {
+            if (current.far - reflection_perspective.far).abs() > 1.0 {
+                *projection = Projection::Perspective(reflection_perspective.clone());
+            }
+        } else {
+            *projection = Projection::Perspective(reflection_perspective.clone());
+        }
         camera.is_active = reflection_active;
 
-        // Write the frustum directly: update_frusta only recomputes the frustum
-        // when the GlobalTransform or Projection is change-detected, and if that
-        // never fires for this camera the Frustum component keeps its degenerate
-        // default (all-zero half spaces), which culls EVERYTHING except
-        // NoFrustumCulling entities. Computing it here guarantees a valid
-        // frustum for culling.
-        *frustum = main_perspective.compute_frustum(&GlobalTransform::from(*transform));
+        // Write the frustum directly from the REFLECTION perspective (not the main
+        // one): update_frusta only recomputes on Changed<GlobalTransform|Projection>,
+        // and a stale default (all-zero half spaces) would cull everything except
+        // NoFrustumCulling entities. update_frusta overwrites this later with the
+        // same halved perspective, so this is consistent, not dead.
+        *frustum =
+            reflection_perspective.compute_frustum(&GlobalTransform::from(*transform));
 
         if *frame_counter % 150 == 0 {
             let hit = |p: Vec3| {

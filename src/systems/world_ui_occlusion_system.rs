@@ -1,3 +1,4 @@
+use bevy::ecs::world::EntityWorldMut;
 use bevy::prelude::{
     Camera3d, Commands, Entity, GlobalTransform, Local, Or, Query, Res, State, Visibility, With,
     Without,
@@ -115,7 +116,11 @@ pub fn world_ui_occlusion_system(
             };
 
             if occlusion_state.is_none_or(|state| state.occluded != occluded) {
-                commands.entity(entity).insert(OcclusionState { occluded });
+                commands.entity(entity).queue_silenced(
+                    move |mut tag_entity: EntityWorldMut| {
+                        tag_entity.insert(OcclusionState { occluded });
+                    },
+                );
             }
         }
 

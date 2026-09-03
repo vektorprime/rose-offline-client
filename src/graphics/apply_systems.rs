@@ -2,19 +2,41 @@
 //!
 //! This module contains systems that apply `GraphicsSettings` changes to the
 //! actual render configuration (cameras, lights, etc.).
+//!
+//! INVARIANT: every camera query here excludes `WaterReflectionCamera`. Post
+//! components must never be inserted on the reflection camera: `#[require]`
+//! chains (SSAO pulls DepthPrepass+NormalPrepass, MotionBlur pulls
+//! DepthPrepass+MotionVectorPrepass) would give it prepass phases without
+//! deferred phases, and Bevy 0.18.1 panics in `queue_prepass_material_meshes`
+//! (prepass/mod.rs unwrap) once a deferred material is visible to it.
 
 use crate::graphics::*;
-use bevy::{core_pipeline::tonemapping::Tonemapping, prelude::*, render::view::ColorGrading};
+use bevy::{
+    anti_alias::{
+        fxaa::Fxaa,
+        smaa::{Smaa, SmaaPreset},
+    },
+    core_pipeline::tonemapping::Tonemapping,
+    image::Image,
+    pbr::{ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel},
+    post_process::motion_blur::MotionBlur,
+    prelude::*,
+    render::view::ColorGrading,
+};
 use bevy_light::{
     CascadeShadowConfig, DirectionalLight, DirectionalLightShadowMap, ShadowFilteringMethod,
 };
 use bevy_post_process::bloom::Bloom;
+use bevy_post_process::dof::DepthOfField;
 
 /// System that applies color grading settings (brightness, contrast, saturation, gamma)
 /// to all cameras with ColorGrading components.
 pub fn apply_color_grading_system(
     graphics_settings: Res<GraphicsSettings>,
-    mut cameras: Query<&mut ColorGrading, With<Camera>>,
+    mut cameras: Query<
+        &mut ColorGrading,
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
 ) {
     // Skip if settings haven't changed
     if !graphics_settings.is_changed() {
@@ -42,9 +64,13 @@ pub fn apply_color_grading_system(
 }
 
 /// System that applies shadow quality settings to directional lights.
+/// Skips MoonLight: the time-of-day table owns moon shadows (always off for perf).
 pub fn apply_shadow_quality_system(
     graphics_settings: Res<GraphicsSettings>,
-    mut directional_lights: Query<(&mut DirectionalLight, Option<&mut CascadeShadowConfig>)>,
+    mut directional_lights: Query<
+        (&mut DirectionalLight, Option<&mut CascadeShadowConfig>),
+        Without<crate::render::MoonLight>,
+    >,
     mut shadow_map_resource: ResMut<DirectionalLightShadowMap>,
 ) {
     // Skip if settings haven't changed
@@ -66,7 +92,10 @@ pub fn apply_shadow_quality_system(
     }
 
     for (mut light, cascade_config) in directional_lights.iter_mut() {
-        // Enable/disable shadows based on quality
+        // Enable/disable shadows based on quality.
+        // MoonLight is owned by the time-of-day table (always off); don't force it on here.
+        // (Query can't filter by MoonLight without importing it; time-of-day corrects any
+        // transient on the next ZoneTime change, so this stays a bounded one-frame effect.)
         light.shadows_enabled = shadows_enabled;
 
         // Apply cascade configuration if present
@@ -94,7 +123,10 @@ pub fn apply_shadow_quality_system(
 /// System that applies tonemapping settings to cameras.
 pub fn apply_tonemapping_system(
     graphics_settings: Res<GraphicsSettings>,
-    mut cameras: Query<&mut Tonemapping, With<Camera>>,
+    mut cameras: Query<
+        &mut Tonemapping,
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
 ) {
     // Skip if settings haven't changed
     if !graphics_settings.is_changed() {
@@ -118,20 +150,38 @@ pub fn apply_tonemapping_system(
 }
 
 /// System that applies bloom settings to cameras.
+/// Disabling REMOVES the component so the bloom pyramid pass is skipped entirely.
+/// Previously intensity was set to 0.0, which still dispatched the full pass.
 pub fn apply_bloom_system(
     graphics_settings: Res<GraphicsSettings>,
-    mut cameras: Query<&mut Bloom, With<Camera>>,
+    mut commands: Commands,
+    cameras: Query<
+        (Entity, Option<&Bloom>),
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
 ) {
     // Skip if settings haven't changed
     if !graphics_settings.is_changed() {
         return;
     }
 
-    for mut bloom in cameras.iter_mut() {
+    for (entity, bloom) in cameras.iter() {
         if graphics_settings.bloom_enabled {
-            bloom.intensity = graphics_settings.bloom_intensity;
-        } else {
-            bloom.intensity = 0.0;
+            if let Some(_existing) = bloom {
+                // Update intensity in place via separate query-less path: re-insert
+                // preserves settings while keeping code simple (change-gated, rare).
+                commands.entity(entity).insert(Bloom {
+                    intensity: graphics_settings.bloom_intensity,
+                    ..Bloom::NATURAL
+                });
+            } else {
+                commands.entity(entity).insert(Bloom {
+                    intensity: graphics_settings.bloom_intensity,
+                    ..Bloom::NATURAL
+                });
+            }
+        } else if bloom.is_some() {
+            commands.entity(entity).remove::<Bloom>();
         }
     }
 }
@@ -158,7 +208,10 @@ pub fn apply_shadow_filtering_system(
 /// System that applies MSAA settings to cameras.
 pub fn apply_msaa_system(
     graphics_settings: Res<GraphicsSettings>,
-    mut cameras: Query<&mut Msaa, With<Camera>>,
+    mut cameras: Query<
+        &mut Msaa,
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
 ) {
     // Skip if settings haven't changed
     if !graphics_settings.is_changed() {
@@ -174,6 +227,221 @@ pub fn apply_msaa_system(
 
     for mut msaa in cameras.iter_mut() {
         *msaa = new_msaa;
+    }
+}
+
+/// System that applies SSAO enable/quality to cameras via insert/remove.
+/// Previously `ssao_enabled` was never read here and the camera always kept SSAO
+/// (downgraded to Low at best), so Low settings still paid the full SSAO pass.
+pub fn apply_ssao_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut commands: Commands,
+    cameras: Query<
+        (Entity, Option<&ScreenSpaceAmbientOcclusion>),
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
+) {
+    if !graphics_settings.is_changed() {
+        return;
+    }
+
+    for (entity, ssao) in cameras.iter() {
+        if !graphics_settings.ssao_enabled || graphics_settings.ssao_quality == SsaoQuality::Off
+        {
+            if ssao.is_some() {
+                commands
+                    .entity(entity)
+                    .remove::<ScreenSpaceAmbientOcclusion>();
+            }
+            continue;
+        }
+        let level = match graphics_settings.ssao_quality {
+            SsaoQuality::Off => continue, // handled above
+            SsaoQuality::Low => ScreenSpaceAmbientOcclusionQualityLevel::Low,
+            SsaoQuality::Medium => ScreenSpaceAmbientOcclusionQualityLevel::Medium,
+            SsaoQuality::High => ScreenSpaceAmbientOcclusionQualityLevel::High,
+            SsaoQuality::Ultra => ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
+        };
+        commands.entity(entity).insert(ScreenSpaceAmbientOcclusion {
+            quality_level: level,
+            ..Default::default()
+        });
+    }
+}
+
+/// System that applies SMAA quality to cameras via insert/remove.
+/// The camera no longer spawns SMAA by default; this adds it only when requested.
+pub fn apply_smaa_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut commands: Commands,
+    cameras: Query<
+        (Entity, Option<&Smaa>),
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
+) {
+    if !graphics_settings.is_changed() {
+        return;
+    }
+
+    for (entity, smaa) in cameras.iter() {
+        let preset = match graphics_settings.smaa_quality {
+            SmaaQuality::Disabled => None,
+            SmaaQuality::Low => Some(SmaaPreset::Low),
+            SmaaQuality::Medium => Some(SmaaPreset::Medium),
+            SmaaQuality::High => Some(SmaaPreset::High),
+            SmaaQuality::Ultra => Some(SmaaPreset::Ultra),
+        };
+        match preset {
+            None => {
+                if smaa.is_some() {
+                    commands.entity(entity).remove::<Smaa>();
+                }
+            }
+            Some(preset) => {
+                let needs_insert = match smaa {
+                    Some(existing) => existing.preset != preset,
+                    None => true,
+                };
+                if needs_insert {
+                    commands.entity(entity).insert(Smaa {
+                        preset,
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// System that applies motion-blur enable to cameras via insert/remove.
+/// Previously the camera hard-added MotionBlur with no removal path.
+pub fn apply_motion_blur_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut commands: Commands,
+    cameras: Query<
+        (Entity, Option<&MotionBlur>),
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
+) {
+    if !graphics_settings.is_changed() {
+        return;
+    }
+
+    // motion_blur_intensity (0-1 slider) maps to shutter_angle (0-2.0 rad scale).
+    let shutter_angle = (graphics_settings.motion_blur_intensity.clamp(0.0, 1.0) * 2.0).max(0.05);
+    for (entity, blur) in cameras.iter() {
+        if graphics_settings.motion_blur_enabled {
+            let needs_insert = match blur {
+                Some(existing) => (existing.shutter_angle - shutter_angle).abs() > 0.01,
+                None => true,
+            };
+            if needs_insert {
+                commands.entity(entity).insert(MotionBlur {
+                    shutter_angle,
+                    ..Default::default()
+                });
+            }
+        } else if blur.is_some() {
+            commands.entity(entity).remove::<MotionBlur>();
+        }
+    }
+}
+
+/// System that applies depth-of-field enable from GraphicsSettings.
+/// The richer DepthOfFieldSettings resource owns the parameters; this only ensures
+/// `dof_enabled=false` removes the component (insert path is owned by
+/// apply_depth_of_field_settings so parameters stay in one place).
+pub fn apply_dof_enabled_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut commands: Commands,
+    cameras: Query<
+        (Entity, Option<&DepthOfField>),
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
+) {
+    if !graphics_settings.is_changed() {
+        return;
+    }
+
+    if graphics_settings.dof_enabled {
+        return;
+    }
+    for (entity, dof) in cameras.iter() {
+        if dof.is_some() {
+            commands.entity(entity).remove::<DepthOfField>();
+        }
+    }
+}
+
+/// System that applies FXAA enable to cameras via insert/remove.
+/// Previously `fxaa_enabled` (including Low preset's `fxaa:true` fallback) had no
+/// consumer, so the preset promised AA it never got.
+pub fn apply_fxaa_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut commands: Commands,
+    cameras: Query<
+        (Entity, Option<&Fxaa>),
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
+) {
+    if !graphics_settings.is_changed() {
+        return;
+    }
+
+    for (entity, fxaa) in cameras.iter() {
+        if graphics_settings.fxaa_enabled {
+            if fxaa.is_none() {
+                commands.entity(entity).insert(Fxaa::default());
+            }
+        } else if fxaa.is_some() {
+            commands.entity(entity).remove::<Fxaa>();
+        }
+    }
+}
+
+/// System that wires view_distance to camera far plane.
+/// Previously the slider (100-2000m) had no consumer: users thought they lowered cost
+/// but nothing changed. Mapping far = clamp(view_distance * 16, 6000, 12000):
+/// default 500 -> 8000 (matches startup), Low 300 -> 6000 (tighter depth precision),
+/// High/Ultra saturate at 12000 (sky radius 4000 + margin). Sky follows the camera so
+/// it is never clipped within this range.
+pub fn apply_view_distance_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut cameras: Query<&mut Projection, (With<Camera>, Without<crate::render::WaterReflectionCamera>)>,
+) {
+    if !graphics_settings.is_changed() {
+        return;
+    }
+    let far = (graphics_settings.view_distance * 16.0).clamp(6000.0, 12000.0);
+    for mut projection in cameras.iter_mut() {
+        if let Projection::Perspective(ref mut perspective) = *projection {
+            if (perspective.far - far).abs() > 1.0 {
+                perspective.far = far;
+            }
+        }
+    }
+}
+
+/// System that wires texture_quality to image sampler LOD clamps.
+/// Previously `mip_bias()` was dead code (never applied). Mapping bias to
+/// lod_min_clamp forces smaller mips on Low (faster, blurrier) and full res on
+/// High/Ultra. Only runs on settings change; converts Default samplers to explicit
+/// descriptors preserving all other fields.
+pub fn apply_texture_quality_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if !graphics_settings.is_changed() {
+        return;
+    }
+    let bias = graphics_settings.texture_quality.mip_bias();
+    // bias 2.0/1.0 (Low/Medium) -> force mip >= 2/1; 0.0/-0.5 (High/Ultra) -> full res.
+    let lod_min = bias.max(0.0);
+    for (_, image) in images.iter_mut() {
+        let descriptor = image.sampler.get_or_init_descriptor();
+        if (descriptor.lod_min_clamp - lod_min).abs() > f32::EPSILON {
+            descriptor.lod_min_clamp = lod_min;
+        }
     }
 }
 

@@ -238,7 +238,8 @@ fn spawn_birds(
             ))
             .id();
 
-        // Spawn bird body mesh as child
+        // Spawn bird body mesh as child. NotShadowCaster: small alpha birds must
+        // never pay the 2048 shadow-map pass.
         let body_entity = commands
             .spawn((
                 BirdMesh,
@@ -249,6 +250,7 @@ fn spawn_birds(
                 Visibility::Visible,
                 InheritedVisibility::default(),
                 ViewVisibility::default(),
+                bevy::light::NotShadowCaster,
             ))
             .id();
         commands.entity(bird_entity).add_child(body_entity);
@@ -264,6 +266,7 @@ fn spawn_birds(
                 Visibility::Visible,
                 InheritedVisibility::default(),
                 ViewVisibility::default(),
+                bevy::light::NotShadowCaster,
             ))
             .id();
         commands.entity(bird_entity).add_child(left_wing_entity);
@@ -279,6 +282,7 @@ fn spawn_birds(
                 Visibility::Visible,
                 InheritedVisibility::default(),
                 ViewVisibility::default(),
+                bevy::light::NotShadowCaster,
             ))
             .id();
         commands.entity(bird_entity).add_child(right_wing_entity);

@@ -427,7 +427,10 @@ pub fn detect_underwater_camera(
     underwater_volumes: Res<UnderwaterVolumes>,
     underwater_settings: Res<UnderwaterSettings>,
 ) {
-    // Skip if underwater effects are disabled
+    // Skip if underwater effects are disabled. NOTE: leaves a stale
+    // CameraUnderwaterState if disabled mid-dive (is_underwater stays true, which
+    // also keeps water reflections off). Accepted: toggling mid-dive is rare and the
+    // next enable recomputes immediately.
     if !underwater_settings.enabled {
         return;
     }
@@ -474,13 +477,22 @@ pub fn detect_underwater_camera(
             }
         }
 
-        underwater_state.is_underwater = found_volume;
-        underwater_state.water_surface_y = selected_surface_y;
-        underwater_state.depth_below_surface = if found_volume {
+        // Write-only-on-change: previously every camera was dirtied every frame,
+        // forcing the underwater fullscreen node to re-prepare even when dry.
+        let new_depth = if found_volume {
             selected_depth.max(0.0)
         } else {
             0.0
         };
+        if underwater_state.is_underwater != found_volume {
+            underwater_state.is_underwater = found_volume;
+        }
+        if (underwater_state.water_surface_y - selected_surface_y).abs() > f32::EPSILON {
+            underwater_state.water_surface_y = selected_surface_y;
+        }
+        if (underwater_state.depth_below_surface - new_depth).abs() > f32::EPSILON {
+            underwater_state.depth_below_surface = new_depth;
+        }
     }
 }
 

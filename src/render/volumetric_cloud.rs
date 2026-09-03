@@ -108,21 +108,23 @@ impl Default for VolumetricCloudSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            cloud_count: 60,
+            // Reduced 60 -> 36 blobs and smaller radii: 60 huge NoFrustumCulling
+            // spheres caused extreme overdraw. Full count remains available via settings.
+            cloud_count: 36,
             cluster_size_min: 3,
-            cluster_size_max: 8,
-            cloud_radius_min: 240.0,
-            cloud_radius_max: 520.0,
+            cluster_size_max: 6,
+            cloud_radius_min: 180.0,
+            cloud_radius_max: 380.0,
             cloud_height_min: 300.0,
             cloud_height_max: 700.0,
             // Default to full-map coverage from center.
             cloud_spawn_radius: MAP_HALF_EXTENT,
             density: 0.95,
             opacity: 1.0,
-            brightness: 2.0,
+            brightness: 1.5,
             drift_speed: Vec3::new(8.0, 0.0, 5.0),
             noise_scale: 0.01,
-            noise_octaves: 4,
+            noise_octaves: 3,
             tod_response: 0.35,
         }
     }
@@ -455,7 +457,9 @@ pub fn spawn_volumetric_clouds(
                 VolumetricCloud,
                 Name::new(format!("VolumetricCloud_{}", entity_index)),
                 Visibility::Visible,
-                bevy::camera::visibility::NoFrustumCulling,
+                // Frustum culling enabled: Bevy auto-computes sphere bounds and
+                // transforms by scale. Previously NoFrustumCulling forced all 60
+                // huge transparent spheres through every frame.
             ));
 
             spawned_count += 1;
@@ -534,19 +538,47 @@ pub fn update_volumetric_cloud_material_system(
     mut materials: ResMut<Assets<VolumetricCloudMaterial>>,
     query: Query<&MeshMaterial3d<VolumetricCloudMaterial>, With<VolumetricCloud>>,
 ) {
+    use bevy::ecs::change_detection::DetectChanges;
     if !cloud_settings.enabled {
         return;
     }
+    if query.is_empty() {
+        return;
+    }
 
+    // Time animates drift, but throttle uniform churn to ~30Hz and skip writes when
+    // static settings haven't changed. Previously every frame dirtied every cloud
+    // material, rebuilding bind groups for 60 blobs.
+    static LAST_CLOUD_UPDATE_MS: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(0);
+    let now_ms = (time.elapsed_secs_f64() * 1000.0) as u64;
+    let last_ms = LAST_CLOUD_UPDATE_MS.load(std::sync::atomic::Ordering::Relaxed);
+    let settings_changed = cloud_settings.is_changed();
+    if !settings_changed && now_ms.wrapping_sub(last_ms) < 33 {
+        return;
+    }
+    LAST_CLOUD_UPDATE_MS.store(now_ms, std::sync::atomic::Ordering::Relaxed);
+
+    let now = time.elapsed_secs();
+    // Blobs normally share one material handle: update each distinct asset once
+    // instead of N times (each get_mut marks the asset changed).
+    let mut seen: Vec<Handle<VolumetricCloudMaterial>> = Vec::new();
     for material_handle in query.iter() {
+        if seen.contains(&material_handle.0) {
+            continue;
+        }
+        seen.push(material_handle.0.clone());
         if let Some(material) = materials.get_mut(&material_handle.0) {
-            material.time = time.elapsed_secs();
-            material.density = cloud_settings.density;
-            material.opacity = cloud_settings.opacity;
-            material.brightness = cloud_settings.brightness;
-            material.noise_scale = cloud_settings.noise_scale;
-            material.noise_octaves = cloud_settings.noise_octaves as f32;
-            material.drift_speed = cloud_settings.drift_speed;
+            material.time = now;
+            // Only write settings fields when the resource actually changed.
+            if settings_changed {
+                material.density = cloud_settings.density;
+                material.opacity = cloud_settings.opacity;
+                material.brightness = cloud_settings.brightness;
+                material.noise_scale = cloud_settings.noise_scale;
+                material.noise_octaves = cloud_settings.noise_octaves as f32;
+                material.drift_speed = cloud_settings.drift_speed;
+            }
         }
     }
 }
@@ -558,11 +590,20 @@ pub fn update_volumetric_cloud_lighting_system(
     mut materials: ResMut<Assets<VolumetricCloudMaterial>>,
     query: Query<&MeshMaterial3d<VolumetricCloudMaterial>, With<VolumetricCloud>>,
 ) {
+    use bevy::ecs::change_detection::DetectChanges;
     let Some(zone_time) = zone_time else {
         return;
     };
 
     if !cloud_settings.enabled || cloud_settings.tod_response <= 0.0 {
+        return;
+    }
+    // Lighting only changes when time/lighting/settings change. Previously this
+    // rewrote every cloud material every frame.
+    if !zone_time.is_changed()
+        && !zone_lighting.is_changed()
+        && !cloud_settings.is_changed()
+    {
         return;
     }
 

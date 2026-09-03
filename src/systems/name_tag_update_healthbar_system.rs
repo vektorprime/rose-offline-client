@@ -15,13 +15,26 @@ pub fn name_tag_update_healthbar_system(
             .get(parent_entity)
             .and_then(|parent| query_health.get(parent.0))
         {
+            let max_hp = ability_values.get_max_health();
+            if max_hp <= 0 {
+                continue;
+            }
             let health_percent =
-                (health_points.hp as f32 / ability_values.get_max_health() as f32).max(0.0);
+                (health_points.hp as f32 / max_hp as f32).clamp(0.0, 1.0);
 
-            rect.uv_max.x = name_tag_healthbar_fg.uv_min_x
+            // Epsilon guard: skip WorldUiRect writes (and downstream re-extract)
+            // when health hasn't visibly changed since last frame.
+            let new_uv_x = name_tag_healthbar_fg.uv_min_x
                 + health_percent
                     * (name_tag_healthbar_fg.uv_max_x - name_tag_healthbar_fg.uv_min_x);
-            rect.screen_size.x = name_tag_healthbar_fg.full_width * health_percent;
+            let new_width = name_tag_healthbar_fg.full_width * health_percent;
+            if (rect.uv_max.x - new_uv_x).abs() < 0.0005
+                && (rect.screen_size.x - new_width).abs() < 0.05
+            {
+                continue;
+            }
+            rect.uv_max.x = new_uv_x;
+            rect.screen_size.x = new_width;
         }
     }
 }

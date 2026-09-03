@@ -564,32 +564,38 @@ pub fn particle_storage_buffer_update_system(
         if let Some(existing_material_handle) = material_handle {
             // Update existing material - preserve the original texture!
             if let Some(mat) = materials.get_mut(&existing_material_handle.0) {
-                // OPTIMIZATION: Only recreate buffers if particle count changed significantly
-                // This reduces GPU memory allocation overhead for stable particle systems
-                let should_recreate_buffers = true; // For now, always update to ensure data is fresh
-
-                if should_recreate_buffers {
-                    // Store old buffer handles to prevent memory leak
-                    let old_positions = mat.positions.clone();
-                    let old_sizes = mat.sizes.clone();
-                    let old_colors = mat.colors.clone();
-                    let old_textures = mat.textures.clone();
-
-                    // Create new buffers with updated data
+                // PERF: update storage buffers in place (same Handle) instead of
+                // add()+remove() every frame. add() allocates a new AssetId + GPU
+                // buffer and swaps the material handle (new bind group); remove()
+                // frees the old one. Per particle per frame that is 4 allocs + 4
+                // frees + bind-group rebuilds. set_data() re-uploads bytes into the
+                // existing asset, which the render extractor picks up without churn.
+                // Handles are only replaced if a buffer asset went missing.
+                // (Concrete types: same Vec<Vec4>/Vec<Vec2> as the From impls below,
+                // so no extra trait bounds needed here.)
+                if let Some(buf) = storage_buffers.get_mut(&mat.positions) {
+                    buf.set_data(render_data.positions.clone());
+                } else {
                     mat.positions = storage_buffers
                         .add(ShaderStorageBuffer::from(render_data.positions.clone()));
-                    mat.sizes =
-                        storage_buffers.add(ShaderStorageBuffer::from(render_data.sizes.clone()));
-                    mat.colors =
-                        storage_buffers.add(ShaderStorageBuffer::from(render_data.colors.clone()));
+                }
+                if let Some(buf) = storage_buffers.get_mut(&mat.sizes) {
+                    buf.set_data(render_data.sizes.clone());
+                } else {
+                    mat.sizes = storage_buffers
+                        .add(ShaderStorageBuffer::from(render_data.sizes.clone()));
+                }
+                if let Some(buf) = storage_buffers.get_mut(&mat.colors) {
+                    buf.set_data(render_data.colors.clone());
+                } else {
+                    mat.colors = storage_buffers
+                        .add(ShaderStorageBuffer::from(render_data.colors.clone()));
+                }
+                if let Some(buf) = storage_buffers.get_mut(&mat.textures) {
+                    buf.set_data(render_data.textures.clone());
+                } else {
                     mat.textures = storage_buffers
                         .add(ShaderStorageBuffer::from(render_data.textures.clone()));
-
-                    // Remove old buffers to prevent memory leak
-                    storage_buffers.remove(&old_positions);
-                    storage_buffers.remove(&old_sizes);
-                    storage_buffers.remove(&old_colors);
-                    storage_buffers.remove(&old_textures);
                 }
 
                 // Update blend settings (these are cheap to update)

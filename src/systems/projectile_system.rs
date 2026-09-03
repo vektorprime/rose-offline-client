@@ -14,12 +14,12 @@ use crate::{
 pub fn projectile_system(
     mut commands: Commands,
     mut hit_events: MessageWriter<HitEvent>,
-    mut query_bullets: Query<(Entity, &mut Projectile, &Transform)>,
+    mut query_bullets: Query<(Entity, &mut Projectile, &mut Transform)>,
     query_global_transform: Query<&GlobalTransform>,
     query_skeleton: Query<(&SkinnedMesh, &DummyBoneOffset)>,
     time: Res<Time>,
 ) {
-    for (entity, mut projectile, transform) in query_bullets.iter_mut() {
+    for (entity, mut projectile, mut transform) in query_bullets.iter_mut() {
         let target_translation = match projectile.target {
             ProjectileTarget::Entity {
                 entity: target_entity,
@@ -48,13 +48,15 @@ pub fn projectile_system(
 
         let (complete, move_vec) = match projectile.move_type {
             EffectBulletMoveType::Linear => {
-                let distance = transform.translation.distance(target_translation);
-                let direction = target_translation - transform.translation;
+                let offset = target_translation - transform.translation;
+                // normalize_or_zero avoids NaN when already on target
+                // (normalize() panics/NaNs at 0). Length sqrt kept: completion needs
+                // true distance including the 0.1 arrival radius.
                 let move_distance = projectile.move_speed * time.delta_secs();
-
+                let complete = move_distance + 0.1 >= offset.length();
                 (
-                    move_distance + 0.1 >= distance,
-                    move_distance * direction.normalize(),
+                    complete,
+                    move_distance * offset.normalize_or_zero(),
                 )
             }
             EffectBulletMoveType::Parabola => {
@@ -64,8 +66,8 @@ pub fn projectile_system(
                     let travel_time = distance / move_speed;
                     let velocity_y = travel_time * 98.0 / 2.0;
 
-                    let mut move_vec =
-                        move_speed * (target_translation - transform.translation).normalize();
+                    let mut move_vec = move_speed
+                        * (target_translation - transform.translation).normalize_or_zero();
                     move_vec.y = velocity_y;
 
                     ProjectileParabola {
@@ -120,10 +122,12 @@ pub fn projectile_system(
             continue;
         }
 
-        // Update transform
-        let mut transform = *transform;
+        // Update transform in place (was commands.insert() per bullet per frame,
+        // which re-inserts Transform and forces move + Changed every tick).
         transform.translation += move_vec;
-        transform.rotation = Quat::from_rotation_arc(Vec3::X, move_vec.normalize());
-        commands.entity(entity).insert(transform);
+        let dir = move_vec.normalize_or_zero();
+        if dir != Vec3::ZERO {
+            transform.rotation = Quat::from_rotation_arc(Vec3::X, dir);
+        }
     }
 }

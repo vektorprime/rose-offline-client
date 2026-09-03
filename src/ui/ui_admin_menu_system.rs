@@ -3,7 +3,6 @@ use bevy::{
     prelude::{ButtonInput, KeyCode, Local, Res, ResMut, Resource},
 };
 use bevy_egui::{egui, EguiContexts};
-use regex::Regex;
 use rose_data::{ItemReference, ItemType, SkillId};
 use rose_data_irose::encode_item_type;
 use rose_game_common::messages::client::ClientMessage;
@@ -615,17 +614,24 @@ fn apply_name_filter<T, F>(filter_text: &str, rows: impl Iterator<Item = T>, nam
 where
     F: Fn(&T) -> &str,
 {
-    let filter_name_re = if !filter_text.is_empty() {
-        Some(
-            Regex::new(&format!("(?i){}", regex::escape(filter_text))).unwrap(),
-        )
-    } else {
+    // PERF: filter_text is regex-escaped (literal match), so case-insensitive
+    // substring is equivalent to `(?i)escaped` without compiling a Regex every
+    // frame (Regex::new + unwrap per frame = waste + panic risk).
+    let lower_filter = if filter_text.is_empty() {
         None
+    } else {
+        Some(filter_text.to_lowercase())
     };
 
     rows.filter(|row| {
         let name = name_fn(row);
-        !name.is_empty() && filter_name_re.as_ref().map_or(true, |re| re.is_match(name))
+        if name.is_empty() {
+            return false;
+        }
+        match lower_filter.as_ref() {
+            None => true,
+            Some(needle) => name.to_lowercase().contains(needle.as_str()),
+        }
     })
     .collect()
 }

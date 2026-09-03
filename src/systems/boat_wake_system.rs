@@ -91,6 +91,18 @@ pub fn boat_wake_spawn_system(
 ) {
     let camera_position = camera_query.iter().next().map(|t| t.translation());
 
+    // Single pass over all particles to count per boat. Previously every boat
+    // scanned all wake + spray particles (O(boats x particles) per frame).
+    use std::collections::HashMap;
+    let mut wake_counts: HashMap<Entity, usize> = HashMap::new();
+    for source in wake_particles.iter() {
+        *wake_counts.entry(source.boat_entity).or_insert(0) += 1;
+    }
+    let mut spray_counts: HashMap<Entity, usize> = HashMap::new();
+    for source in spray_particles.iter() {
+        *spray_counts.entry(source.boat_entity).or_insert(0) += 1;
+    }
+
     for (boat_entity, boat, boat_transform, mut wake_emitter) in boat_query.iter_mut() {
         if !boat.active {
             continue;
@@ -111,19 +123,16 @@ pub fn boat_wake_spawn_system(
         wake_emitter.spawn_timer.tick(time.delta());
         wake_emitter.spray_spawn_timer.tick(time.delta());
 
-        let current_wake_count = wake_particles
-            .iter()
-            .filter(|source| source.boat_entity == boat_entity)
-            .count();
-        let current_spray_count = spray_particles
-            .iter()
-            .filter(|source| source.boat_entity == boat_entity)
-            .count();
+        let current_wake_count = wake_counts.get(&boat_entity).copied().unwrap_or(0);
+        let current_spray_count = spray_counts.get(&boat_entity).copied().unwrap_or(0);
 
         let forward = Vec3::new(boat.heading.sin(), 0.0, -boat.heading.cos()).normalize_or_zero();
         let right = forward.cross(Vec3::Y).normalize_or_zero();
         let center = boat_transform.translation;
 
+        // Local counters: deferred spawns are invisible to queries until next frame,
+        // so gate bursts locally to avoid overshoot (was: re-scan per particle).
+        let mut wake_spawned = 0usize;
         if graphics_settings.sailing.wake_particles_enabled
             && wake_emitter.spawn_timer.just_finished()
             && current_wake_count < wake_emitter.max_particles
@@ -132,6 +141,10 @@ pub fn boat_wake_spawn_system(
             let wake_lifetime_secs = 2.0;
 
             for side in [-1.0f32, 1.0f32] {
+                if current_wake_count + wake_spawned >= wake_emitter.max_particles {
+                    break;
+                }
+                wake_spawned += 1;
                 let spawn_pos = center
                     - forward * (1.5 * BOAT_VISUAL_SCALE)
                     + right * side * (0.9 * BOAT_VISUAL_SCALE)
@@ -171,15 +184,13 @@ pub fn boat_wake_spawn_system(
         {
             let mut rng = rand::thread_rng();
             let spray_burst = rng.gen_range(3..=5);
+            let mut spray_spawned = 0usize;
             for _ in 0..spray_burst {
-                if spray_particles
-                    .iter()
-                    .filter(|source| source.boat_entity == boat_entity)
-                    .count()
-                    >= wake_emitter.max_spray_particles
-                {
+                // Precomputed count + local counter (was O(P) re-scan per particle).
+                if current_spray_count + spray_spawned >= wake_emitter.max_spray_particles {
                     break;
                 }
+                spray_spawned += 1;
 
                 let side_offset = rng.gen_range(-0.55..0.55);
                 let vertical_jitter = rng.gen_range(-0.02..0.06);

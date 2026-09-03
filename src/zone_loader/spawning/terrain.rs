@@ -187,6 +187,24 @@ pub(super) fn spawn_terrain(
         }
     }
 
+    // Compute tight local-space AABB from generated vertices BEFORE `positions`
+    // is moved into the mesh. Previously a ±100000 box forced every block through
+    // main, shadow and reflection passes.
+    let mut terrain_min = Vec3::splat(f32::MAX);
+    let mut terrain_max = Vec3::splat(f32::MIN);
+    // positions holds [x, y, z] triples matching local block space.
+    for p in positions.iter() {
+        let v = Vec3::new(p[0], p[1], p[2]);
+        terrain_min = terrain_min.min(v);
+        terrain_max = terrain_max.max(v);
+    }
+    // Fall back to the full block footprint if vertex list is unexpectedly empty.
+    if terrain_min.x > terrain_max.x {
+        terrain_min = Vec3::new(0.0, -50.0, 0.0);
+        terrain_max = Vec3::new(160.0, 50.0, 160.0);
+    }
+    let terrain_aabb = Aabb::from_min_max(terrain_min, terrain_max);
+
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
@@ -281,7 +299,7 @@ pub(super) fn spawn_terrain(
             Visibility::Visible,
             ViewVisibility::default(),
             InheritedVisibility::default(),
-            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            terrain_aabb,
             RenderLayers::layer(0),
             NotShadowCaster,
         ))

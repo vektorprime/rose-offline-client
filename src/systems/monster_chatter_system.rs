@@ -8,7 +8,10 @@ use crate::{
     resources::MonsterChatterPhrases,
 };
 
-/// System that makes monsters and NPCs occasionally say random phrases
+/// System that makes monsters and NPCs occasionally say random phrases.
+/// PERF: off-screen/distant NPCs no longer generate chat-bubble textures (each bubble
+/// rasters fonts + uploads 2 images). Chatter beyond 80m is skipped (timer reset so it
+/// doesn't burst when the player returns).
 pub fn monster_chatter_system(
     mut commands: Commands,
     time: Res<Time<Virtual>>,
@@ -19,21 +22,44 @@ pub fn monster_chatter_system(
             Option<&ClientEntityName>,
             Option<&ClientEntity>,
             Option<&ModelHeight>,
+            Option<&GlobalTransform>,
         ),
         With<Npc>,
     >,
     mut chat_bubble_events: MessageWriter<ChatBubbleEvent>,
     phrases: Res<MonsterChatterPhrases>,
+    camera_query: Query<&GlobalTransform, (With<Camera3d>, Without<crate::render::WaterReflectionCamera>)>,
+    player_query: Query<&GlobalTransform, With<crate::components::PlayerCharacter>>,
 ) {
     let delta = time.delta_secs();
     let mut events_sent = 0;
 
-    for (entity, mut chatter, name, client_entity, _model_height) in query_entities.iter_mut() {
+    // Chatter reference point: player if present, else camera. Squared 80m cull.
+    const CHATTER_CULL_DIST_SQ: f32 = 80.0 * 80.0;
+    let focus_pos = player_query
+        .single()
+        .map(|t| t.translation())
+        .or_else(|_| camera_query.single().map(|t| t.translation()))
+        .ok();
+
+    for (entity, mut chatter, name, client_entity, _model_height, transform) in
+        query_entities.iter_mut()
+    {
         // Decrease timer
         chatter.time_until_next_chat -= delta;
 
         // Check if it's time to chat
         if chatter.time_until_next_chat <= 0.0 {
+            // Distance gate before allocating strings/textures.
+            if let (Some(focus), Some(gt)) = (focus_pos, transform) {
+                if gt.translation().distance_squared(focus) > CHATTER_CULL_DIST_SQ {
+                    // Reset timer (don't accumulate debt while away).
+                    chatter.time_until_next_chat = rand::random::<f32>()
+                        * (chatter.max_interval - chatter.min_interval)
+                        + chatter.min_interval;
+                    continue;
+                }
+            }
             // Get entity type (default to Monster if no ClientEntity component)
             let entity_type = client_entity
                 .map(|ce| ce.entity_type)

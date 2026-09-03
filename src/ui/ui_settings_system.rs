@@ -162,11 +162,13 @@ impl Default for DepthOfFieldSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            mode: DepthOfFieldMode::Bokeh,
+            // Gaussian default: much cheaper than Bokeh. Bokeh + CoC 64 remains
+            // available in settings but is no longer the startup cost.
+            mode: DepthOfFieldMode::Gaussian,
             focal_distance: 10.0,
             aperture_f_stops: 3.3,
             sensor_height: 0.01866,
-            max_circle_of_confusion_diameter: 64.0,
+            max_circle_of_confusion_diameter: 32.0,
             max_depth: 2000.0,
         }
     }
@@ -872,7 +874,7 @@ fn render_seasons_page(
                 ],
             );
 
-            settings_slider(ui, "Max Particles:", &mut season_settings.max_particles, 1000..=20000, None);
+            settings_slider(ui, "Max Particles:", &mut season_settings.max_particles, 200..=4000, None);
             settings_slider(ui, "Spawn Rate:", &mut season_settings.spawn_rate, 100.0..=5000.0, Some("/s"));
             settings_slider(ui, "Wind Strength:", &mut season_settings.wind_strength, 0.0..=5.0, None);
         });

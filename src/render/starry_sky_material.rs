@@ -333,35 +333,85 @@ pub fn create_starry_sky_mesh(meshes: &mut ResMut<Assets<Mesh>>) -> Handle<Mesh>
     meshes.add(mesh)
 }
 
-/// System to update the starry sky material based on time and settings
+/// System to update the starry sky material based on time and settings.
+/// Only writes when settings changed or night visibility actually needs animation:
+/// day (night_factor ~0) skips twinkle updates entirely since the shader early-outs.
 pub fn update_starry_sky_system(
     time: Res<Time>,
     starry_sky_settings: Res<StarrySkySettings>,
     mut materials: ResMut<Assets<StarrySkyMaterial>>,
     query: Query<&MeshMaterial3d<StarrySkyMaterial>, With<StarrySky>>,
+    mut vis_query: Query<&mut Visibility, With<StarrySky>>,
 ) {
-    // Count entities with StarrySky component
-    let entity_count = query.iter().count();
-
-    if entity_count == 0 {
+    if query.is_empty() {
         return;
     }
 
-    if starry_sky_settings.is_changed() || time.delta_secs() > 0.0 {
-        for material_handle in query.iter() {
-            if let Some(material) = materials.get_mut(&material_handle.0) {
-                material.time = time.elapsed_secs();
-                material.star_density = starry_sky_settings.star_density;
-                material.star_brightness = starry_sky_settings.star_brightness;
-                material.night_factor = starry_sky_settings.night_factor;
-                material.moon_phase = starry_sky_settings.moon_phase;
-                material.moon_direction = starry_sky_settings.moon_direction;
-            }
+    // Daytime: hide the sphere entirely so it skips raster (shader also early-outs,
+    // but hidden skips vertex processing + transparent-sort cost too).
+    let should_be_visible = starry_sky_settings.night_factor >= 0.01;
+    for mut vis in vis_query.iter_mut() {
+        let is_visible = matches!(*vis, Visibility::Visible);
+        if should_be_visible != is_visible {
+            *vis = if should_be_visible {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+        }
+    }
+
+    // Daytime: stars invisible. Skip all uniform writes.
+    if starry_sky_settings.night_factor < 0.01 && !starry_sky_settings.is_changed() {
+        return;
+    }
+
+    // At night the twinkle time needs updates, but throttle to ~30Hz to halve uniform
+    // + bind-group churn. Settings changes always apply immediately.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static LAST_UPDATE_MS: AtomicU64 = AtomicU64::new(0);
+    let now_ms = (time.elapsed_secs_f64() * 1000.0) as u64;
+    let last_ms = LAST_UPDATE_MS.load(Ordering::Relaxed);
+    if !starry_sky_settings.is_changed() && now_ms.wrapping_sub(last_ms) < 33 {
+        return;
+    }
+    LAST_UPDATE_MS.store(now_ms, Ordering::Relaxed);
+
+    for material_handle in query.iter() {
+        if let Some(material) = materials.get_mut(&material_handle.0) {
+            material.time = time.elapsed_secs();
+            material.star_density = starry_sky_settings.star_density;
+            material.star_brightness = starry_sky_settings.star_brightness;
+            material.night_factor = starry_sky_settings.night_factor;
+            material.moon_phase = starry_sky_settings.moon_phase;
+            material.moon_direction = starry_sky_settings.moon_direction;
         }
     }
 }
 
-/// System to make the moon light follow the camera and point in the moon direction
+/// System to keep the sky sphere centered on the camera.
+/// Allows a small sky radius (4000) with a small camera far plane (6000-12000 via
+/// view_distance mapping) instead of radius 50000 + far 100000. The star shader is
+/// view-relative, so this is exact.
+pub fn follow_sky_to_camera_system(
+    camera_query: Query<&GlobalTransform, (With<Camera>, Without<crate::render::WaterReflectionCamera>)>,
+    mut sky_query: Query<&mut Transform, With<StarrySky>>,
+) {
+    let Ok(camera) = camera_query.single() else {
+        return;
+    };
+    let camera_pos = camera.translation();
+    for mut sky_transform in sky_query.iter_mut() {
+        // Only write when actually moved to avoid dirtying Transform every frame.
+        if sky_transform.translation.distance_squared(camera_pos) > 1.0 {
+            sky_transform.translation = camera_pos;
+        }
+    }
+}
+
+/// System to make the moon light follow the camera and point in the moon direction.
+/// Distance-guarded like follow_sky_to_camera_system: previously dirtied the moon
+/// GlobalTransform every frame.
 pub fn moon_light_follow_camera_system(
     camera_query: Query<&GlobalTransform, (With<Camera>, Without<crate::render::WaterReflectionCamera>)>,
     mut moon_query: Query<&mut Transform, With<MoonLight>>,
@@ -377,8 +427,11 @@ pub fn moon_light_follow_camera_system(
             let moon_dir = starry_sky_settings.moon_direction.normalize();
             let moon_distance = 500.0; // Distance from camera
 
-            // Position moon light relative to camera
+            // Position moon light relative to camera (skip micro-moves).
             let moon_pos = camera_pos + moon_dir * moon_distance;
+            if moon_transform.translation.distance_squared(moon_pos) < 1.0 {
+                continue;
+            }
             moon_transform.translation = moon_pos;
 
             // Make the light point toward the camera (down toward the scene)
@@ -437,15 +490,19 @@ pub fn update_starry_sky_night_factor(
 /// This is used to toggle the Atmosphere component on the camera based on time of day
 /// NOTE: Default is `enabled: true` because the camera is spawned WITH Atmosphere components.
 /// This ensures the initial state matches the actual camera state.
-#[derive(Resource, Debug)]
+/// The scattering medium handle is cached and reused across day/night toggles to avoid
+/// reallocating the medium (and regenerating LUTs) on every transition.
+#[derive(Resource, Debug, Clone)]
 pub struct AtmosphereState {
     pub enabled: bool,
+    pub cached_medium: Option<Handle<bevy::pbr::ScatteringMedium>>,
 }
 
 impl Default for AtmosphereState {
     fn default() -> Self {
         Self {
             enabled: true, // Camera is spawned WITH Atmosphere, so default is true
+            cached_medium: None,
         }
     }
 }
@@ -480,11 +537,18 @@ pub fn toggle_atmosphere_based_on_time(
         // Ensure atmosphere is enabled if it was disabled
         if !atmosphere_state.enabled {
             if let Ok(camera_entity) = camera_query.single() {
+                let medium = match atmosphere_state.cached_medium.clone() {
+                    Some(handle) => handle,
+                    None => {
+                        let handle =
+                            scattering_mediums.add(bevy::pbr::ScatteringMedium::default());
+                        atmosphere_state.cached_medium = Some(handle.clone());
+                        handle
+                    }
+                };
                 atmosphere_state.enabled = true;
                 commands.entity(camera_entity).insert((
-                    Atmosphere::earthlike(
-                        scattering_mediums.add(bevy::pbr::ScatteringMedium::default()),
-                    ),
+                    Atmosphere::earthlike(medium),
                     AtmosphereSettings::default(),
                 ));
             }
@@ -511,11 +575,19 @@ pub fn toggle_atmosphere_based_on_time(
             atmosphere_state.enabled = should_enable_atmosphere;
 
             if should_enable_atmosphere {
-                // Re-add atmosphere components
+                // Re-add atmosphere components, reusing the cached medium so LUTs are
+                // not regenerated from scratch on every day/night transition.
+                let medium = match atmosphere_state.cached_medium.clone() {
+                    Some(handle) => handle,
+                    None => {
+                        let handle =
+                            scattering_mediums.add(bevy::pbr::ScatteringMedium::default());
+                        atmosphere_state.cached_medium = Some(handle.clone());
+                        handle
+                    }
+                };
                 commands.entity(camera_entity).insert((
-                    Atmosphere::earthlike(
-                        scattering_mediums.add(bevy::pbr::ScatteringMedium::default()),
-                    ),
+                    Atmosphere::earthlike(medium),
                     AtmosphereSettings::default(),
                 ));
             } else {

@@ -226,8 +226,10 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Normalize direction for star field rendering
-    let dir = normalize(in.world_position);
+    // View-relative direction: sky sphere follows the camera, so direction must be
+    // measured from the camera, not from world origin. Previously normalize(world)
+    // required the sphere to stay centered at origin with radius 50000.
+    let dir = normalize(in.world_position - view.world_position);
     
     // ============================================================
     // DEBUG MODE 1: YELLOW - Verify shader is executing at all

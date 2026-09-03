@@ -57,6 +57,21 @@ pub(super) fn spawn_water(
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
 
+    // Tight local-space bounds for this water quad. The mesh is built in world
+    // XZ at its final height, while the entity transform is identity, so the
+    // AABB can be derived directly from the plane corners (both Y ends for slopes).
+    let water_min = Vec3::new(
+        start.x.min(end.x),
+        start.y.min(end.y) - 0.5,
+        start.z.min(end.z),
+    );
+    let water_max = Vec3::new(
+        start.x.max(end.x),
+        start.y.max(end.y) + 0.5,
+        start.z.max(end.z),
+    );
+    let water_aabb = Aabb::from_min_max(water_min, water_max);
+
     // Split spawn to avoid Bundle tuple limit (15+ components not supported)
     let water_entity = commands
         .spawn((
@@ -70,7 +85,7 @@ pub(super) fn spawn_water(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-            Aabb::from_min_max(Vec3::splat(-100000.0), Vec3::splat(100000.0)),
+            water_aabb,
             // Water lives on layer 1 so the reflection camera (layer 0) never
             // renders water into its own reflection.
             RenderLayers::layer(1),
