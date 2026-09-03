@@ -228,6 +228,10 @@ impl NextCommand {
         matches!(self.0, Some(Command::Die))
     }
 
+    pub fn is_attack(&self) -> bool {
+        matches!(self.0, Some(Command::Attack(_)))
+    }
+
     pub fn with_attack(target: Entity) -> Self {
         Self(Some(Command::Attack(CommandAttack { target })))
     }

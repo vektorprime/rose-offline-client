@@ -1403,7 +1403,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             clan_system,
             command_system,
             facing_direction_system,
-            update_position_system,
+            update_position_system.after(command_system),
             monster_separation_system.after(update_position_system),
             collision_height_only_system,
             // CRITICAL: collision_player_system_join_zone must run BEFORE collision_player_system
@@ -1411,7 +1411,12 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             // - collision_player_system uses short raycast for continuous terrain following
             // Using Added<CollisionPlayer> filter ensures join_zone only runs once on spawn
             collision_player_system_join_zone.before(collision_player_system),
-            collision_player_system,
+            // Deterministic order: command -> move -> collide. Without this the
+            // tuple runs unordered and a wall-collision Stop can race (and win
+            // over) an attack chase set by command_system in the same tick.
+            collision_player_system
+                .after(command_system)
+                .after(update_position_system),
             cooldown_system,
             client_entity_event_system,
             // Global wind simulation and vegetation synchronization

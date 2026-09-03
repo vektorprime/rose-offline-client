@@ -10,7 +10,7 @@ use rose_data::{
 };
 use rose_file_readers::VfsPathBuf;
 use rose_game_common::{
-    components::{AbilityValues, CharacterGender, Equipment, MoveMode, MoveSpeed, Npc},
+    components::{AbilityValues, CharacterGender, Equipment, HealthPoints, MoveMode, MoveSpeed, Npc},
     messages::client::ClientMessage,
 };
 
@@ -400,7 +400,7 @@ pub fn command_system(
     mut query_animation: Query<Option<&mut SkeletalAnimation>>,
     query_vehicle_model: Query<&VehicleModel>,
     query_move_target: Query<(&Position, &ClientEntity)>,
-    query_attack_target: Query<(Entity, &Position, Option<&Dead>)>,
+    query_attack_target: Query<(Entity, &Position, Option<&Dead>, Option<&HealthPoints>)>,
     query_npc: Query<&Npc>,
     query_personal_store: Query<&PersonalStore>,
     query_flight_state: Query<&FlightState>,
@@ -869,18 +869,19 @@ pub fn command_system(
             &mut Command::Attack(CommandAttack {
                 target: target_entity,
             }) => {
-                let target = if let Ok((target_entity, target_position, target_dead)) =
+                let target = if let Ok((target_entity, target_position, target_dead, target_hp)) =
                     query_attack_target.get(target_entity)
                 {
-                    (target_entity, target_position, target_dead)
+                    (target_entity, target_position, target_dead, target_hp)
                 } else {
                     // Invalid target, stop attacking
                     *next_command = NextCommand::with_stop();
                     continue;
                 };
 
-                if target.2.is_some() {
-                    // Target is dead, stop attacking
+                if target.2.is_some() || target.3.map_or(false, |hp| hp.hp <= 0) {
+                    // Target is dead (Dead marker or server-authoritative HP depleted,
+                    // which arrives before the Dead marker via pending damage), stop attacking
                     *next_command = NextCommand::with_stop();
                     continue;
                 }
@@ -914,16 +915,17 @@ pub fn command_system(
                         get_attack_animation(&mut rng, character_model, npc_model, vehicle);
                     let attack_animation_speed = get_attack_animation_speed(ability_values);
 
-                    // Target in range, start attack
+                    // Target in range, start attack. Never drop the Attack intent here:
+                    // a missing animation handle means data is incomplete, but the
+                    // server is still authoritative for damage, so keep command +
+                    // next as Attack (facing the target) instead of clearing next
+                    // which would decay into Stop next frame and stall combat.
+                    facing_direction.set_desired_vector(target.1.position - position.position);
+                    *command = Command::with_attack(target_entity);
+
                     if (vehicle.is_none() && attack_animation.is_some())
                         || (vehicle.is_some() && vehicle_attack_animation.is_some())
                     {
-                        // Update rotation to ensure facing enemy
-                        facing_direction.set_desired_vector(target.1.position - position.position);
-
-                        // Update command state
-                        *command = Command::with_attack(target_entity);
-
                         // Start attack animation
                         if let Some(motion) = attack_animation {
                             update_active_motion(
@@ -944,32 +946,45 @@ pub fn command_system(
                                 false,
                             )
                         }
-                    } else {
-                        // No attack animation, stop attack
-                        *next_command = NextCommand::default();
+                    } else if *attack_diag_frame % 300 == 0 {
+                        log::warn!(
+                            "[ATTACK] No attack animation for entity {:?} (vehicle: {}), keeping attack intent",
+                            entity,
+                            vehicle.is_some(),
+                        );
                     }
                 } else {
-                    // Not in range, move towards target
+                    // Not in range, move towards target. Always update the chase
+                    // destination (even when no move animation exists, position
+                    // still advances via update_position_system), promote to Run
+                    // speed, and keep next as Attack so arrival converts to attack.
+                    let direction_to_target = target.1.position.xy() - position.position.xy();
+                    let move_destination = if direction_to_target.length_squared() > 0.0 {
+                        let offset = direction_to_target.normalize() * attack_range;
+                        Vec3::new(
+                            target.1.position.x - offset.x,
+                            target.1.position.y - offset.y,
+                            target.1.position.z,
+                        )
+                    } else {
+                        target.1.position
+                    };
+
+                    if *move_mode != MoveMode::Run {
+                        commands.entity(entity).insert((
+                            MoveMode::Run,
+                            MoveSpeed::new(ability_values.get_move_speed(&MoveMode::Run)),
+                        ));
+                    }
+
+                    *command = Command::with_move(
+                        move_destination,
+                        Some(target_entity),
+                        Some(MoveMode::Run),
+                    );
+
                     if get_move_animation(move_mode, character_model, npc_model, vehicle).is_some()
                     {
-                        let direction_to_target = target.1.position.xy() - position.position.xy();
-                        let move_destination = if direction_to_target.length_squared() > 0.0 {
-                            let offset = direction_to_target.normalize() * attack_range;
-                            Vec3::new(
-                                target.1.position.x - offset.x,
-                                target.1.position.y - offset.y,
-                                target.1.position.z,
-                            )
-                        } else {
-                            target.1.position
-                        };
-
-                        *command = Command::with_move(
-                            move_destination,
-                            Some(target_entity),
-                            Some(MoveMode::Run),
-                        );
-
                         update_move_motion(
                             &mut commands,
                             active_motion_entity,
@@ -983,9 +998,11 @@ pub fn command_system(
                             vehicle_active_motion_entity,
                             &mut vehicle_active_motion,
                         );
-                    } else {
-                        // No move animation, stop attack
-                        *next_command = NextCommand::default();
+                    } else if *attack_diag_frame % 300 == 0 {
+                        log::warn!(
+                            "[ATTACK] No move animation for chasing entity {:?}, still chasing",
+                            entity,
+                        );
                     }
                 }
             }
@@ -1094,10 +1111,14 @@ pub fn command_system(
                 if let Some(skill_data) = game_data.skills.get_skill(skill_id) {
                     let (target_position, target_entity) = match skill_target {
                         Some(CommandCastSkillTarget::Entity(target_entity)) => {
-                            let target = if let Ok((target_entity, target_position, target_dead)) =
-                                query_attack_target.get(target_entity)
+                            let target = if let Ok((
+                                target_entity,
+                                target_position,
+                                _target_dead,
+                                _target_hp,
+                            )) = query_attack_target.get(target_entity)
                             {
-                                (target_entity, target_position, target_dead)
+                                (target_entity, target_position)
                             } else {
                                 // Invalid target, stop casting skill
                                 *next_command = NextCommand::with_stop();

@@ -873,10 +873,33 @@ pub fn game_connection_system(
             }) => {
                 // TODO: Lerp to XYZ ?
                 if let Some(entity) = client_entity_list.get(entity_id) {
-                    if client_entity_list.player_entity == Some(entity) {
+                    let is_player = client_entity_list.player_entity == Some(entity);
+                    if is_player {
                         log::info!("[ATTACK_DIAG] StopMoveEntity player");
                     }
-                    commands.entity(entity).insert(NextCommand::with_stop());
+                    // If the server stops us while we still intend to attack, the
+                    // attack was rejected (dead / wrong zone / invalid target).
+                    // Surface it instead of silently standing still.
+                    commands.queue(move |world: &mut World| {
+                        let was_attacking = world
+                            .get::<NextCommand>(entity)
+                            .map_or(false, |next| next.is_attack())
+                            || world
+                                .get::<Command>(entity)
+                                .map_or(false, |cmd| matches!(cmd, Command::Attack(_)));
+                        if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+                            entity_mut.insert(NextCommand::with_stop());
+                        }
+                        if was_attacking {
+                            log::info!(
+                                "[ATTACK] Server stopped attack for {:?}, target likely invalid/dead",
+                                entity
+                            );
+                            let _ = world
+                                .resource_mut::<Messages<ChatboxEvent>>()
+                                .write(ChatboxEvent::System("Invalid target".to_string()));
+                        }
+                    });
                 }
             }
             Ok(ServerMessage::AttackEntity {
@@ -892,6 +915,12 @@ pub fn game_connection_system(
                         commands
                             .entity(entity)
                             .insert(NextCommand::with_attack(target_entity));
+                    } else {
+                        log::warn!(
+                            "[ATTACK] AttackEntity target {:?} unknown for attacker {:?}, ignoring",
+                            target_entity_id,
+                            entity_id,
+                        );
                     }
                 }
             }

@@ -10,7 +10,9 @@ use rose_data::{
     SkillTargetFilter, SkillType, VehiclePartIndex,
 };
 use rose_game_common::{
-    components::{CharacterInfo, Hotbar, HotbarSlot, Inventory, ItemDrop, SkillList, Team},
+    components::{
+        CharacterInfo, HealthPoints, Hotbar, HotbarSlot, Inventory, ItemDrop, SkillList, Team,
+    },
     messages::client::ClientMessage,
 };
 
@@ -129,7 +131,12 @@ pub fn player_command_system(
     >,
     query_client_entity: Query<&ClientEntity>,
     query_dropped_items: Query<(&ClientEntity, &Position), With<ItemDrop>>,
-    query_team: Query<(&ClientEntity, &Team)>,
+    query_team: Query<(
+        &ClientEntity,
+        &Team,
+        Option<&HealthPoints>,
+        Option<&Command>,
+    )>,
     query_skill_target: Query<(
         Entity,
         Option<&CharacterInfo>,
@@ -255,13 +262,22 @@ pub fn player_command_system(
                             }
                             Some(SkillBasicCommand::Attack) => {
                                 if let Some(selected_target_entity) = selected_target.selected {
-                                    if let Ok((target_client_entity, target_team)) =
+                                    if let Ok((target_client_entity, target_team, target_hp, target_command)) =
                                         query_team.get(selected_target_entity)
                                     {
                                         if target_team.id != Team::DEFAULT_NPC_TEAM_ID
                                             && target_team.id != player_team.id
                                         {
-                                            if let Some(game_connection) = game_connection.as_ref()
+                                            // Don't send doomed attacks at corpses: the server
+                                            // rejects hp<=0 targets and answers Stop, which
+                                            // looks like "clicking does nothing".
+                                            let target_dead = target_command.map_or(false, |c| c.is_die())
+                                                || target_hp.map_or(false, |hp| hp.hp <= 0);
+                                            if target_dead {
+                                                chatbox_events.write(ChatboxEvent::System(
+                                                    "Invalid target".to_string(),
+                                                ));
+                                            } else if let Some(game_connection) = game_connection.as_ref()
                                             {
                                                 game_connection
                                                     .client_message_tx
@@ -289,7 +305,7 @@ pub fn player_command_system(
                             }
                             Some(SkillBasicCommand::PartyInvite) => {
                                 if let Some(selected_target_entity) = selected_target.selected {
-                                    if let Ok((target_client_entity, target_team)) =
+                                    if let Ok((target_client_entity, target_team, ..)) =
                                         query_team.get(selected_target_entity)
                                     {
                                         if target_team.id == player_team.id {
@@ -724,11 +740,18 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::Attack(entity) => {
-                if let Ok((target_client_entity, target_team)) = query_team.get(entity) {
+                if let Ok((target_client_entity, target_team, target_hp, target_command)) =
+                    query_team.get(entity)
+                {
                     if target_team.id != Team::DEFAULT_NPC_TEAM_ID
                         && target_team.id != player_team.id
                     {
-                        if let Some(game_connection) = game_connection.as_ref() {
+                        let target_dead = target_command.map_or(false, |c| c.is_die())
+                            || target_hp.map_or(false, |hp| hp.hp <= 0);
+                        if target_dead {
+                            chatbox_events
+                                .write(ChatboxEvent::System("Invalid target".to_string()));
+                        } else if let Some(game_connection) = game_connection.as_ref() {
                             game_connection
                                 .client_message_tx
                                 .send(ClientMessage::Attack {

@@ -14,12 +14,12 @@ use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
     components::{
-        BoatState, ColliderParent, CollisionHeightOnly, CollisionPlayer, EventObject, FlightState,
-        NextCommand, Position, WarpObject, COLLISION_FILTER_COLLIDABLE,
+        BoatState, ColliderParent, CollisionHeightOnly, CollisionPlayer, Command, EventObject,
+        FlightState, NextCommand, Position, WarpObject, COLLISION_FILTER_COLLIDABLE,
         COLLISION_FILTER_INSPECTABLE, COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_CHARACTER,
         COLLISION_GROUP_ITEM_DROP, COLLISION_GROUP_NPC, COLLISION_GROUP_PHYSICS_TOY,
         COLLISION_GROUP_PLAYER, COLLISION_GROUP_ZONE_EVENT_OBJECT,
-        COLLISION_GROUP_ZONE_TERRAIN, COLLISION_GROUP_ZONE_WARP_OBJECT,
+        COLLISION_GROUP_ZONE_WARP_OBJECT, COLLISION_GROUP_ZONE_TERRAIN,
         COLLISION_GROUP_ZONE_WATER,
     },
     events::QuestTriggerEvent,
@@ -251,6 +251,20 @@ pub fn collision_player_system_join_zone(
     }
 }
 
+/// Returns true when the entity is mid-attack or chasing an attack target.
+/// Wall-collision must not overwrite that intent with Stop: the attack chase
+/// recomputes its destination every frame in command_system, while a forced
+/// Stop would decay the chase and leave the player standing next to the
+/// monster without ever attacking.
+fn has_attack_intent(
+    query_attack_intent: &Query<(&Command, &NextCommand)>,
+    entity: Entity,
+) -> bool {
+    query_attack_intent.get(entity).map_or(false, |(command, next)| {
+        next.is_attack() || matches!(command, Command::Attack(_))
+    })
+}
+
 /// Server-authoritative player collision system.
 ///
 /// This system handles client-side collision detection for smooth local gameplay,
@@ -281,6 +295,7 @@ pub fn collision_player_system(
     query_collider_parent: Query<&ColliderParent>,
     query_docks: Query<&GlobalTransform, With<Dock>>,
     query_npc_boats: Query<&Position, (With<NpcBoat>, Without<CollisionPlayer>)>,
+    query_attack_intent: Query<(&Command, &NextCommand)>,
     current_zone: Option<Res<CurrentZone>>,
     game_connection: Option<Res<GameConnection>>,
     rapier_context: ReadRapierContext,
@@ -379,8 +394,13 @@ pub fn collision_player_system(
                         position.z, // Preserve Z for sailing
                     );
 
-                    // Stop movement intent
-                    commands.entity(entity).insert(NextCommand::with_stop());
+                    // Stop movement intent, unless chasing/attacking: clobbering
+                    // NextCommand::Attack here strands the player next to the
+                    // monster with no attack. Keep the attack intent and let the
+                    // chase recompute around the obstacle next frame.
+                    if !has_attack_intent(&query_attack_intent, entity) {
+                        commands.entity(entity).insert(NextCommand::with_stop());
+                    }
 
                     // Send collision position to server for validation
                     if let Some(game_connection) = game_connection.as_ref() {
@@ -457,7 +477,9 @@ pub fn collision_player_system(
                     boat.speed = 0.0;
                 }
 
-                commands.entity(entity).insert(NextCommand::with_stop());
+                if !has_attack_intent(&query_attack_intent, entity) {
+                    commands.entity(entity).insert(NextCommand::with_stop());
+                }
 
                 if let Some(game_connection) = game_connection.as_ref() {
                     game_connection
@@ -515,8 +537,10 @@ pub fn collision_player_system(
                     collision_translation.y * 100.0,
                 );
 
-                // Stop movement intent
-                commands.entity(entity).insert(NextCommand::with_stop());
+                // Stop movement intent, unless chasing/attacking (see above).
+                if !has_attack_intent(&query_attack_intent, entity) {
+                    commands.entity(entity).insert(NextCommand::with_stop());
+                }
 
                 // Send collision position to server for validation
                 if let Some(game_connection) = game_connection.as_ref() {
