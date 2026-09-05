@@ -196,7 +196,6 @@ use systems::{
     model_viewer_exit_system,
     model_viewer_system,
     monster_chatter_system,
-    monster_separation_system,
     move_destination_effect_system,
     move_speed_set_system,
     memory_diagnostics_system,
@@ -1415,7 +1414,11 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             command_system,
             facing_direction_system,
             update_position_system.after(command_system),
-            monster_separation_system.after(update_position_system),
+            // monster_separation_system DISABLED: it displaced monsters client-side
+            // only (the server has no separation), desyncing combat positions with
+            // no reconciliation path. Result: player swung at ghosts (no damage,
+            // idle monster) or chased forever on open ground. Stacked monsters may
+            // visually overlap again; correctness wins over looks.
             collision_height_only_system,
             // CRITICAL: collision_player_system_join_zone must run BEFORE collision_player_system
             // - join_zone uses a long raycast (Y=100000) to find initial ground height on spawn

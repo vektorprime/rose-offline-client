@@ -2,19 +2,21 @@
 
 This document describes the high-quality graphics and lighting improvements implemented for the Bevy 0.18.1 client.
 
+> Single source of truth note: Bevy light-type reference lives in [Lighting.md](Lighting.md); sun-movement detail in [SUN_DOCUMENTATION.md](SUN_DOCUMENTATION.md); night sky in [sky_stars_architecture.md](sky_stars_architecture.md). Values below match current code (`src/lib.rs`, `src/render/zone_lighting.rs`, `src/graphics/`).
+
 ## 1. High-Resolution Shadows
 The shadow mapping system has been significantly upgraded to provide sharp, detailed shadows across the game world.
 
-- **Shadow Map Resolution**: Increased to **4096** (from default) in `src/lib.rs`.
-- **Cascaded Shadow Maps (CSM)**: Fine-tuned the cascade bounds in `src/render/zone_lighting.rs` to `[20.0, 80.0, 300.0, 1000.0]`. This ensures maximum resolution for objects near the player while maintaining coverage for distant terrain.
-- **Shadow Filtering**: Uses `ShadowFilteringMethod::Gaussian` for stable, high-quality soft edges.
+- **Shadow Map Resolution**: Default **2048** (`src/lib.rs:842`, Medium default). 4096 applies only at `ShadowQuality::Ultra` (`src/graphics/graphics_settings.rs:104`, applied by `apply_shadow_quality_system` in `src/graphics/apply_systems.rs:68-121`).
+- **Cascaded Shadow Maps (CSM)**: Default bounds in `src/render/zone_lighting.rs:147-153` are `[50.0, 100.0]` with `overlap_proportion: 0.2` (Medium default). `apply_shadow_quality_system` recomputes bounds/count from `cascade_count()`/`max_distance()` per quality (Off/Low/Medium/High/Ultra = 0/1/2/3/4 cascades).
+- **Shadow Filtering**: Uses `ShadowFilteringMethod::Gaussian` for stable, high-quality soft edges (`src/lib.rs:1994`).
 
 ## 2. Advanced Lighting & Reflections
 Modern PBR features have been integrated to increase visual richness and material depth.
 
-- **Environment Map Light**: Added an `EnvironmentMapLight` to the main camera. This uses a custom-loaded Cubemap (derived from `SPECULAR_SPHEREMAP.DDS`) to provide realistic reflections and irradiance to all PBR materials.
-- **Ultra SSAO**: Screen Space Ambient Occlusion has been set to **Ultra** quality, providing deep contact shadows in crevices and where objects meet the ground.
-- **Bloom**: Re-enabled the natural bloom effect to enhance HDR highlights and light-emitting materials.
+- **Environment Map Light**: Added an `EnvironmentMapLight` to the main camera (`src/lib.rs:2020-2024`, `diffuse_map`/`specular_map` from `ETC/SPECULAR_SPHEREMAP.DDS#cube`, `intensity: 100.0`) to provide realistic reflections and irradiance to all PBR materials.
+- **SSAO**: Screen Space Ambient Occlusion defaults to **Medium** (`src/lib.rs:2058-2061`); Ultra is only via `SsaoQuality::Ultra` (`src/graphics/apply_systems.rs:263`).
+- **Bloom**: The natural bloom effect (`Bloom::NATURAL`, `src/lib.rs:1992`) enhances HDR highlights and light-emitting materials.
 
 ## 3. Synchronized Time-of-Day System
 The lighting system has been fully synchronized to ensure all world elements, including custom shaders, react consistently to the day/night cycle.
@@ -24,7 +26,7 @@ The lighting system has been fully synchronized to ensure all world elements, in
     - `DirectionalLight` illuminance: **15,000 lux** (balanced for PBR).
     - `GlobalAmbientLight` brightness: **80.0 lux** base (Bevy's default), multiplied by the user's `ambient_light_brightness` graphics setting (default 1.5, giving 120.0 lux).
 
-## 3. Dynamic Terrain Lighting & Sun Synchronization
+## 4. Dynamic Terrain Lighting & Sun Synchronization
 The terrain rendering system has been overhauled to ensure it remains perfectly in sync with the game's dynamic sun and time-of-day cycle.
 
 ### The Synchronization Pipeline
@@ -40,12 +42,12 @@ Previously, the terrain used a hardcoded light direction and static colors, caus
 - **Day/Night Transitions**: As the sun sets, the terrain naturally transitions from bright daylight to warm evening tones and finally to cool, dark night-time lighting.
 - **Atmospheric Integration**: By using the same ambient color as the rest of the scene, the terrain feels like a natural part of the environment rather than a separate layer.
 
-## 4. Atmospheric Effects
-- **High-Quality Volumetric Fog**: Increased the step count to **128** for much smoother light shafts (god rays) with minimal sampling artifacts.
+## 5. Atmospheric Effects
+- **Volumetric Fog**: `VolumetricFog{step_count: 64}` on the main camera (`src/lib.rs:2051-2055`; comment notes 128 was 2x cost). Fog volume itself lives in `src/render/zone_lighting.rs:191-198`.
 - **Atmospheric Scattering**: Integrated Bevy 0.18's built-in atmospheric scattering for realistic sky rendering during the day.
 - **Procedural Starry Sky**: A custom material that renders a dense star field and moon with phases, automatically toggled based on the night factor.
 
-## 5. Post-Processing
-- **Tonemapping**: Uses `TonyMcMapface` for a high-quality filmic look that preserves detail in both highlights and shadows.
-- **Anti-Aliasing**: Uses **SMAA** for high-quality edge smoothing (FXAA and MSAA alternatives are available in the graphics settings).
-- **Motion Blur**: Enabled for smoother visual transitions during fast movement.
+## 6. Post-Processing
+- **Tonemapping**: Uses `TonyMcMapface` (`src/lib.rs:1990`) for a high-quality filmic look that preserves detail in both highlights and shadows.
+- **Anti-Aliasing**: MSAA is `Off` by default (`src/lib.rs:1967`); SMAA is opt-in via `apply_smaa_system` (Disabled/Low/Medium/High/Ultra). TAA/SSR are not implemented.
+- **Motion Blur**: Opt-in only via `apply_motion_blur_system`; not spawned by default (`src/lib.rs:1995-1999`).

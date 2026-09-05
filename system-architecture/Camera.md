@@ -5,8 +5,8 @@ The camera system in `rose-offline-client` manages 3D perspective, user interact
 
 ## 2. Camera3d Configuration
 Cameras are configured using Bevy's `Camera3d` bundle.
-- **PerspectiveProjection**: Controls field of view (FOV), aspect ratio, and near/far clipping planes.
-- **MSAA & Clear Color**: Multi-Sampling Anti-Aliasing and background clear colors are configured during camera setup to ensure visual fidelity and consistent background rendering.
+- **PerspectiveProjection**: Controls field of view (FOV), aspect ratio, and near/far clipping planes (`src/lib.rs:1972-1982`: fov PI/4, near 0.1, far 8000.0).
+- **MSAA & Clear Color**: The main camera spawns with `Msaa::Off` (`src/lib.rs:1967`; MSAA X1/X2/X4/X8 is opt-in via `apply_msaa_system` in `src/graphics/apply_systems.rs:208-231`) and `clear_color: Custom(srgb(0.0, 0.0, 0.02))` near-black for star visibility (`src/lib.rs:1969`). The water-reflection camera uses `Msaa::Off` + `Custom(BLACK)` (`src/render/water_reflection.rs:151-156).
 
 ## 3. Visibility System
 Visibility is managed through three primary components plus Bevy's internal systems, ensuring efficient rendering and correct hierarchy propagation:
@@ -16,11 +16,14 @@ Visibility is managed through three primary components plus Bevy's internal syst
 - **`VisibilitySystems`**: Bevy internal systems that update these components based on hierarchy and frustum culling.
 
 ## 4. Exposure Control
-Exposure is managed via Bevy's `AutoExposure` component (`bevy::post_process::auto_exposure::AutoExposure`), which controls how the camera reacts to light intensity.
-- **Auto-exposure**: Integrated via post-processing to dynamically adjust brightness in different lighting environments (e.g., transitioning from dark caves to bright sunlight). The main game camera is spawned with `AutoExposure::default()`.
+No `AutoExposure` component exists anywhere in `src/` — brightness is controlled by tonemapping, bloom, environment lighting, and atmosphere instead (`src/lib.rs:1990-1999` explicitly leaves SMAA/SSR/MotionBlur/AutoExposure/CAS off by default).
+- **Tonemapping**: `TonyMcMapface` on the main camera (`src/lib.rs:1990`).
+- **Bloom**: `Bloom::NATURAL` (`src/lib.rs:1992`).
+- **EnvironmentMapLight**: `intensity: 100.0` from `SPECULAR_SPHEREMAP.DDS#cube` (`src/lib.rs:2020-2024`).
+- **Atmosphere**: `Atmosphere::earthlike` on the camera, removed at night so stars show (`src/lib.rs:2036-2039`, `toggle_atmosphere_based_on_time`).
 
 ## 5. Camera Control Systems
-The project implements two distinct control modes:
+The project implements three control modes:
 
 ### Free Camera
 Used for debugging, map editing, and free exploration in the viewer modes (zone viewer, model viewer, login screen).
@@ -33,6 +36,10 @@ Used as the main third-person gameplay camera, following a target entity (e.g., 
 - **Controls**: Right-click + Drag to rotate, Mouse Wheel to zoom.
 - **Implementation**: `src/systems/orbit_camera_system.rs`
 - **Logic**: Uses a `CameraRig` with `YawPitch` and `Position` drivers for smooth movement and collision detection via `bevy_rapier3d`.
+
+### Sail Camera
+Boat-follow camera used while sailing.
+- **Implementation**: `src/systems/sail_camera_system.rs`
 
 ## 6. Underwater Camera Effects
 When a camera enters a water volume, specialized post-processing effects are applied.
@@ -85,7 +92,7 @@ pub fn detect_underwater_camera(
 ## 8. Troubleshooting
 - **Camera not updating**: Check if `egui` is consuming input. Use `egui_ctx.ctx_mut().unwrap().wants_pointer_input()` to gate camera controls.
 - **Visibility Flickering**: Ensure `InheritedVisibility` is correctly propagating. Check for conflicting systems modifying `Visibility` or `Transform` in the same frame.
-- **Exposure Issues**: If the screen is too bright/dark, verify the `AutoExposure` component values and ensure the auto-exposure system is running in the correct schedule.
+- **Exposure Issues**: If the screen is too bright/dark, check `Tonemapping`, `Bloom`, `EnvironmentMapLight{intensity}`, and whether `Atmosphere` is present (it is removed at night). There is no `AutoExposure` component in this client.
 
 ## 9. Source File References
 ### Bevy Source
@@ -93,6 +100,6 @@ pub fn detect_underwater_camera(
 - Camera Core: `bevy_camera/src/`
 
 ### Project Source
-- Camera Systems: `src/systems/camera_system.rs` (if exists), `src/systems/orbit_camera_system.rs`, `src/systems/free_camera_system.rs`
+- Camera Systems: `src/systems/orbit_camera_system.rs`, `src/systems/free_camera_system.rs`, `src/systems/sail_camera_system.rs`
+- Camera Animation: `src/animation/camera_animation.rs` (cinematic ZMO camera); login camera: `src/resources/login_camera_animation.rs`
 - Underwater: `src/render/underwater_effect.rs`
-- Components: `src/components/camera.rs` (if exists)

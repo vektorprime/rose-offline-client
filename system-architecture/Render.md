@@ -70,14 +70,24 @@ Terrain and water are **not** `StandardMaterial` extensions — they use standal
 
 ## Post-Processing Effects
 
-The rendering pipeline includes a comprehensive suite of post-processing effects applied after the main opaque and transparent passes:
-- **Bloom**: Simulates light bleeding from bright sources.
-- **Depth of Field (DoF)**: Provides cinematic focus effects.
-- **Motion Blur**: Smoothes high-speed movement.
-- **Auto Exposure**: Adjusts brightness based on scene luminance.
-- **SMAA**: Subpixel Morphological Anti-Aliasing for smoother edges.
-- **SSAO**: Screen Space Ambient Occlusion for enhanced depth perception.
-- **SSR**: Screen Space Reflections for realistic surface reflections.
+The main camera spawns with a fixed default set (`src/lib.rs:1990-2008`); everything else is opt-in via `src/graphics/apply_systems.rs`. No TAA, SSR, or AutoExposure component is spawned anywhere in `src/` (`src/lib.rs:1995-1999`).
+
+Default-on at startup:
+- **Bloom** (`Bloom::NATURAL`): light bleeding from bright sources.
+- **Depth of Field (DoF)** (`DepthOfField` Gaussian): cinematic focus effects.
+- **Tonemapping** (`TonyMcMapface`): filmic HDR mapping.
+- **SSAO** (`ScreenSpaceAmbientOcclusion`, Medium default): contact depth. Ultra is only `SsaoQuality::Ultra`.
+- **Shadow filtering** (`ShadowFilteringMethod::Gaussian`).
+- **Prepasses**: `DepthPrepass` + `DeferredPrepass` (the latter is required for deferred; without it Bevy 0.18.1 panics in `queue_prepass_material_meshes`), plus `OcclusionCulling`.
+
+Opt-in via graphics settings (NOT on by default):
+- **SMAA** (`apply_smaa_system`): Disabled/Low/Medium/High/Ultra.
+- **Motion Blur** (`apply_motion_blur_system`): inserted/removed on demand; stripped from the water-reflection view.
+
+Not implemented:
+- **SSR**: no implementation; explicitly left off.
+- **Auto Exposure**: no `AutoExposure` component in `src/`.
+- **TAA**: no `TemporalAntiAliasing` component in `src/` (only mentioned in the `Msaa::Off` compatibility comment).
 
 ## Code Examples
 

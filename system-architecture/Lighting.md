@@ -140,8 +140,9 @@ pub struct DirectionalLightShadowMap {
     pub size: usize,  // Must be power of two, default: 2048
 }
 
-// Usage
-app.insert_resource(DirectionalLightShadowMap { size: 4096 });
+// This client: default 2048 in src/lib.rs:842 (Medium); 4096 only at
+// ShadowQuality::Ultra (src/graphics/graphics_settings.rs:104)
+app.insert_resource(DirectionalLightShadowMap { size: 2048 });
 ```
 
 ### CascadeShadowConfig
@@ -157,10 +158,11 @@ pub struct CascadeShadowConfig {
     pub minimum_distance: f32,   // Minimum camera distance
 }
 
-// Rose Offline Client configuration
+// Rose Offline Client configuration (Medium default;
+// see zone_lighting.md for the per-quality table)
 CascadeShadowConfig {
-    bounds: vec![20.0, 80.0, 300.0, 1000.0],
-    overlap_proportion: 0.3,
+    bounds: vec![50.0, 100.0],
+    overlap_proportion: 0.2,
     minimum_distance: 0.1,
 }
 ```

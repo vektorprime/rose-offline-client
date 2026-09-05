@@ -98,10 +98,20 @@ Run rose-offline-client from your installed official client directory (the folde
 - `--data-idx=<path/to/data.idx>` Path to irose 129en data.idx
 - `--data-aruavfs-idx=<path/to/data.idx>` Path to aruarose data.idx
 - `--data-titanvfs-idx=<path/to/data.idx>` Path to titanrose data.idx
+- `--data-iroseph-idx=<path/to/data.idx>` Path to iroseph data.idx
+- `--data-path=<path/to/dir>` Local directory override (wins over VFS)
 - `--ip` Server IP for login server (defaults to 127.0.0.1)
 - `--port` Server port for login server (defaults to 29000)
 - `--model-viewer` Start the client in model viewer mode
-- `--zone=<N>` Start the client in zone viewer mode in the given zone
+- `--zone-viewer` Start the client in zone viewer mode (use with `--zone=<N>`)
+- `--zone=<N>` Zone id for `--zone-viewer` / `--map-editor` (defaults to 1)
+- `--map-editor` Start the client in map editor mode
+- `--disable-vsync` Use Immediate present mode instead of Fifo
+- `--disable-sound` Disable sound output
+- `--passthrough-terrain-textures` Render terrain textures without modification
+- `--new-terrain` Enable new terrain rendering system (`--new-terrain` requires `DeferredPrepass`; see `src/lib.rs:2001-2008`)
+- `--config=<path>` Load config file (defaults apply otherwise)
+- `--data-version/--network-version/--ui-version` Only `irose` is supported
 
 ## Auto login arguments:
 - `--auto-login` Automatic login.

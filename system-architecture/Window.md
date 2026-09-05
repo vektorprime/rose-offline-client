@@ -51,7 +51,7 @@ pub struct WindowPlugin {
 
 **rose-offline-client Configuration**
 
-The project configures `WindowPlugin` in `src/lib.rs:771-791`:
+The project configures `WindowPlugin` in `src/lib.rs:765-785` (resolution source `src/lib.rs:725-730`, default `1920x1080` in `src/lib.rs:510-512`, `GraphicsModeConfig` enum in `src/lib.rs:490-494`):
 
 ```rust
 .set(bevy::window::WindowPlugin {
@@ -181,7 +181,7 @@ window.mode = WindowMode::Fullscreen(
 
 **rose-offline-client Usage**
 
-The project uses `GraphicsModeConfig` in `src/lib.rs:494-501`:
+The project uses `GraphicsModeConfig` in `src/lib.rs:490-494`:
 
 ```rust
 #[derive(Deserialize)]
@@ -678,7 +678,7 @@ The cursor assets are loaded from the game binary, but they are **not yet applie
 ## Code Examples
 
 ### Basic Window Configuration
-Refer to `src/lib.rs:771-791` for the actual project implementation.
+Refer to `src/lib.rs:765-785` for the actual project implementation.
 
 ```rust
 use bevy::prelude::*;
@@ -874,6 +874,6 @@ To prevent the window from becoming too small, use `WindowResizeConstraints` to 
 
 | Component | Path |
 |-----------|------|
-| Window Setup | `src/lib.rs:771-791` |
-| Graphics Config | `src/lib.rs:494-501` |
+| Window Setup | `src/lib.rs:765-785` |
+| Graphics Config | `src/lib.rs:490-494` |
 | UI Cursors | `src/resources/ui_resources.rs` |

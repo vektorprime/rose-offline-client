@@ -162,12 +162,12 @@ This synchronization is critical for:
 
 ## Shadow Mapping
 
-The directional light uses **Cascaded Shadow Maps (CSM)** with 4 cascades:
+The directional light uses CSM with per-quality cascade counts (Off/Low/Medium/High/Ultra = 0/1/2/3/4 cascades; see [zone_lighting.md](zone_lighting.md) and `src/graphics/graphics_settings.rs`). The Medium default is:
 
 ```rust
 CascadeShadowConfig {
-    bounds: vec![20.0, 80.0, 300.0, 1000.0],  // Cascade distances
-    overlap_proportion: 0.3,   // Smooth transition between cascades
+    bounds: vec![50.0, 100.0],
+    overlap_proportion: 0.2,
     minimum_distance: 0.1,
 }
 ```
@@ -183,7 +183,7 @@ pub fn directional_light_system(
 )
 ```
 
-Note: the cascade shadow maps themselves are built automatically by Bevy's built-in CSM systems. The matrices constructed in this system are currently discarded (the code comments note that manual cascade management is no longer supported since Bevy 0.13).
+Note: the cascade shadow maps themselves are built automatically by Bevy's built-in CSM systems. The matrices constructed in this system are currently discarded (the code comments note that manual cascade management is no longer supported since Bevy 0.13) — treat this system as dead-code reference, not active shadow architecture.
 
 ---
 

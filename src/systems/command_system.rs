@@ -958,9 +958,16 @@ pub fn command_system(
                     // destination (even when no move animation exists, position
                     // still advances via update_position_system), promote to Run
                     // speed, and keep next as Attack so arrival converts to attack.
+                    // Stop CHASE_MARGIN_CM inside attack range (not exactly on the
+                    // boundary): with no position reconciliation, stopping on the
+                    // exact edge leaves client/server on opposite sides of the
+                    // range check over mere centimeters of integration drift,
+                    // swinging at ghosts with no damage.
+                    const CHASE_MARGIN_CM: f32 = 100.0;
                     let direction_to_target = target.1.position.xy() - position.position.xy();
                     let move_destination = if direction_to_target.length_squared() > 0.0 {
-                        let offset = direction_to_target.normalize() * attack_range;
+                        let offset_distance = (attack_range - CHASE_MARGIN_CM).max(0.0);
+                        let offset = direction_to_target.normalize() * offset_distance;
                         Vec3::new(
                             target.1.position.x - offset.x,
                             target.1.position.y - offset.y,
@@ -970,11 +977,13 @@ pub fn command_system(
                         target.1.position
                     };
 
-                    if *move_mode != MoveMode::Run {
-                        commands.entity(entity).insert((
-                            MoveMode::Run,
-                            MoveSpeed::new(ability_values.get_move_speed(&MoveMode::Run)),
-                        ));
+                    let chase_move_mode = MoveMode::Run;
+                    let chase_move_speed =
+                        MoveSpeed::new(ability_values.get_move_speed(&chase_move_mode));
+                    if *move_mode != chase_move_mode {
+                        commands
+                            .entity(entity)
+                            .insert((chase_move_mode, chase_move_speed));
                     }
 
                     *command = Command::with_move(
@@ -983,17 +992,23 @@ pub fn command_system(
                         Some(MoveMode::Run),
                     );
 
-                    if get_move_animation(move_mode, character_model, npc_model, vehicle).is_some()
+                    if get_move_animation(
+                        &chase_move_mode,
+                        character_model,
+                        npc_model,
+                        vehicle,
+                    )
+                    .is_some()
                     {
                         update_move_motion(
                             &mut commands,
                             active_motion_entity,
                             &mut active_motion,
-                            move_mode,
+                            &chase_move_mode,
                             character_model,
                             npc_model,
                             vehicle,
-                            move_speed,
+                            &chase_move_speed,
                             vehicle_model,
                             vehicle_active_motion_entity,
                             &mut vehicle_active_motion,

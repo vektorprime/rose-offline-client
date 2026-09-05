@@ -899,7 +899,7 @@ fn process_children(
 
 ## Schedule Structure
 
-The project uses Bevy's built-in schedules with custom system sets:
+The project uses Bevy's built-in schedules with custom system sets. The full ordering lives in `src/lib.rs` — the snippet below is abbreviated; see `GameStages`, `GameSystemSets`, `UiSystemSets`, `ModelSystemSets`, `EffectSystemSets`, `UiSystemOrdering` (`src/lib.rs:655-709`).
 
 ```rust
 // src/lib.rs
@@ -915,14 +915,26 @@ app.add_systems(
     ),
 );
 
-// Update: Main game logic
+// Update: Main game logic (abbreviated — ~100 systems in src/systems/,
+// ordered by ModelSystemSets / EffectSystemSets / GameSystemSets / UiSystemSets)
 app.add_systems(Update, command_system.run_if(in_state(AppState::Game)));
 app.add_systems(Update, collision_player_system.run_if(in_state(AppState::Game)));
 
-// PostUpdate: Cleanup and deferred operations
+// Zone loading chain (Update): zone_loader_system
+//   -> zone_loaded_from_vfs_system -> game_zone_change_system
+//   (see zone-pipeline.md; src/lib.rs:1227-1253)
+
+// PostUpdate: deferred ops, animation-before-propagate, physics sync,
+// cleanup and debug render
 app.add_systems(PostUpdate, character_model_blink_system);
 app.add_systems(PostUpdate, network_thread_system);
 ```
+
+Related ordering constraints (all in `src/lib.rs`):
+- Animation systems run in `PostUpdate` before `TransformSystems::Propagate`.
+- `(GameStages::AfterUpdate,).before(PhysicsSet::SyncBackend)` (`:1734`) and `(ZoneChange, ZoneChangeFlush, AfterUpdate).before(PhysicsSet::SyncBackend)` (`:1740-1742`).
+- `GameStages::AfterUpdate.before(TransformSystems::Propagate)` (`:1756`).
+- Bevy 0.18 supports at most ~20 systems per tuple — `world_ui_occlusion_system` is registered in a separate `add_systems` call for this reason.
 
 ### ApplyDeferred
 
