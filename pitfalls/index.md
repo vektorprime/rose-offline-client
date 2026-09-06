@@ -25,6 +25,7 @@ This folder contains documentation of issues encountered during development and 
 | [ecs-system-tuples.md](ecs-system-tuples.md) | Bevy 20-system tuple limit, cryptic `add_systems` E0277 |
 | [equipment-vehicle-parts.md](equipment-vehicle-parts.md) | Cart wheels rejected by vehicle type check, slot-index heuristic vs item data |
 | [blender-io-rose.md](blender-io-rose.md) | Blender io_rose addon: alpha import, ZMS export crash, Y-flip round-trip orientation |
+| [damage-digits-camera3d.md](damage-digits-camera3d.md) | Damage digits: Text2d never renders under Camera3d, Mesh3d+StandardMaterial replacement |
 
 ## Quick Navigation by Bevy Version
 

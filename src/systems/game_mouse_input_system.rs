@@ -54,6 +54,7 @@ pub fn game_mouse_input_system(
     query_player: Query<PlayerQuery, With<PlayerCharacter>>,
     query_collider_parent: Query<&ColliderParent>,
     mut player_command_events: MessageWriter<PlayerCommandEvent>,
+    mut move_destination_events: MessageWriter<MoveDestinationEffectEvent>,
     mut selected_target: ResMut<SelectedTarget>,
     mut last_cursor: Local<Option<Vec3>>,
 ) -> Result<(), BevyError> {
@@ -187,6 +188,11 @@ pub fn game_mouse_input_system(
                             )),
                             None,
                         ));
+                        // Restored: nobody sent this, so neither the ROSE click
+                        // ring (effect 296) nor the Hanabi ring pilot ever fired.
+                        move_destination_events.write(MoveDestinationEffectEvent::Show {
+                            position: hit_position,
+                        });
                     }
                 } else if hit_item_drop.is_some() {
                     selected_target.hover = Some(hit_entity);
@@ -199,6 +205,9 @@ pub fn game_mouse_input_system(
                                 hit_entity_position.clone(),
                                 Some(hit_entity),
                             ));
+                            move_destination_events.write(MoveDestinationEffectEvent::Show {
+                                position: hit_position,
+                            });
                         }
                     }
                 } else if let Some(hit_team) = hit_team {
@@ -219,6 +228,10 @@ pub fn game_mouse_input_system(
                                             hit_entity_position.clone(),
                                             Some(hit_entity),
                                         ));
+                                        move_destination_events
+                                            .write(MoveDestinationEffectEvent::Show {
+                                                position: hit_position,
+                                            });
                                     }
                                 }
                             } else {

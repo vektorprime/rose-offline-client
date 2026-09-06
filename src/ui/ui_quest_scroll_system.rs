@@ -55,31 +55,43 @@ pub fn ui_quest_scroll_system(
     mut dialog_assets: ResMut<Assets<Dialog>>,
     ui_resources: Res<UiResources>,
 ) {
-    let mut dialog = if let Some(dialog) = dialog_assets.get_mut(&ui_resources.dialog_message_box) {
-        dialog
-    } else {
-        return;
-    };
-
-    let image_top_height = if let Some(Widget::Image(image)) = dialog.get_widget(IID_IMAGE_TOP) {
-        image.height
-    } else {
-        26.0
-    };
-
-    let image_middle_height =
-        if let Some(Widget::Image(image)) = dialog.get_widget(IID_IMAGE_MIDDLE) {
-            image.height
+    // Scope the borrow: AssetMut has a Drop impl (emits Modified on change),
+    // so the borrow must end before dialog_assets is borrowed again below.
+    let (image_top_height, image_middle_height, image_bottom_height, dialog_width) = {
+        let dialog = if let Some(dialog) = dialog_assets.get_mut(&ui_resources.dialog_message_box)
+        {
+            dialog
         } else {
-            22.0
+            return;
         };
 
-    let image_bottom_height =
-        if let Some(Widget::Image(image)) = dialog.get_widget(IID_IMAGE_BOTTOM) {
+        let image_top_height = if let Some(Widget::Image(image)) = dialog.get_widget(IID_IMAGE_TOP)
+        {
             image.height
         } else {
-            59.0
+            26.0
         };
+
+        let image_middle_height =
+            if let Some(Widget::Image(image)) = dialog.get_widget(IID_IMAGE_MIDDLE) {
+                image.height
+            } else {
+                22.0
+            };
+
+        let image_bottom_height =
+            if let Some(Widget::Image(image)) = dialog.get_widget(IID_IMAGE_BOTTOM) {
+                image.height
+            } else {
+                59.0
+            };
+        (
+            image_top_height,
+            image_middle_height,
+            image_bottom_height,
+            dialog.width,
+        )
+    };
 
     // Handle incoming quest scroll events
     for event in quest_scroll_events.read() {
@@ -108,7 +120,7 @@ pub fn ui_quest_scroll_system(
                 font_id: egui::FontId::proportional(14.0),
                 ..Default::default()
             };
-            desc_job.wrap.max_width = dialog.width - 16.0;
+            desc_job.wrap.max_width = dialog_width - 16.0;
             desc_job.append(
                 "Quest Scroll - Accept this quest?",
                 0.0,
@@ -150,7 +162,7 @@ pub fn ui_quest_scroll_system(
 
     // Render and handle the active dialog
     if let Some(active_dialog) = ui_state.active.as_mut() {
-        let dialog = if let Some(dialog) = get_dialog(&mut dialog_assets, &ui_resources) {
+        let mut dialog = if let Some(dialog) = get_dialog(&mut dialog_assets, &ui_resources) {
             dialog
         } else {
             return;
@@ -306,6 +318,6 @@ pub fn ui_quest_scroll_system(
 fn get_dialog<'a>(
     dialog_assets: &'a mut ResMut<Assets<Dialog>>,
     ui_resources: &Res<UiResources>,
-) -> Option<&'a mut Dialog> {
+) -> Option<bevy::asset::AssetMut<'a, Dialog>> {
     dialog_assets.get_mut(&ui_resources.dialog_message_box)
 }

@@ -8,27 +8,24 @@
 use bevy::{
     asset::{load_internal_asset, weak_handle, Handle},
     core_pipeline::{
-        core_3d::graph::{Core3d, Node3d},
-        FullscreenShader,
+        Core3d, Core3dSystems, FullscreenShader,
+        tonemapping::tonemapping,
     },
-    ecs::query::QueryItem,
     prelude::*,
     render::{
+        camera::ExtractedCamera,
         extract_component::{ExtractComponent, ExtractComponentPlugin},
         extract_resource::{ExtractResource, ExtractResourcePlugin},
-        render_graph::{
-            NodeRunError, RenderGraphContext, RenderGraphExt as _, ViewNode, ViewNodeRunner,
-        },
         render_resource::{
             binding_types::{sampler, texture_2d, uniform_buffer},
             BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
             CachedRenderPipelineId, ColorTargetState, ColorWrites, DynamicUniformBuffer,
-            FilterMode, FragmentState, Operations, PipelineCache, RenderPassColorAttachment,
+            FilterMode, FragmentState, MipmapFilterMode, Operations, PipelineCache, RenderPassColorAttachment,
             RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerBindingType,
             SamplerDescriptor, ShaderStages, ShaderType, SpecializedRenderPipeline,
             SpecializedRenderPipelines, TextureFormat, TextureSampleType,
         },
-        renderer::{RenderContext, RenderDevice, RenderQueue},
+        renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
         view::{ExtractedView, ViewTarget},
         Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
     },
@@ -209,85 +206,73 @@ pub struct UnderwaterEffectUniformBuffers {
 pub struct UnderwaterEffectUniformOffset(u32);
 
 // =============================================================================
-// Render Node
+// Render pass system (Bevy 0.19: render graph nodes are plain systems)
 // =============================================================================
 
-/// The render node that runs the underwater effect
-#[derive(Default)]
-pub struct UnderwaterEffectNode;
+/// Fullscreen underwater effect pass, ordered after tonemapping in PostProcess.
+pub fn underwater_effect(
+    view: ViewQuery<(
+        &ExtractedCamera,
+        &ViewTarget,
+        &UnderwaterEffectPipelineId,
+        &CameraUnderwaterState,
+        &UnderwaterEffectUniformOffset,
+    )>,
+    pipeline_cache: Res<PipelineCache>,
+    underwater_pipeline: Res<UnderwaterEffectPipeline>,
+    underwater_uniform_buffers: Res<UnderwaterEffectUniformBuffers>,
+    mut ctx: RenderContext,
+) {
+    let (_camera, view_target, pipeline_id, _underwater_state, uniform_offset) =
+        view.into_inner();
 
-impl ViewNode for UnderwaterEffectNode {
-    type ViewQuery = (
-        &'static ViewTarget,
-        &'static UnderwaterEffectPipelineId,
-        &'static CameraUnderwaterState,
-        &'static UnderwaterEffectUniformOffset,
-    );
+    // Get the pipeline
+    let Some(pipeline) = pipeline_cache.get_render_pipeline(**pipeline_id) else {
+        return;
+    };
 
-    fn run<'w>(
-        &self,
-        _graph: &mut RenderGraphContext,
-        render_context: &mut RenderContext<'w>,
-        (view_target, pipeline_id, _underwater_state, uniform_offset): QueryItem<
-            'w,
-            '_,
-            Self::ViewQuery,
-        >,
-        world: &'w World,
-    ) -> Result<(), NodeRunError> {
-        let pipeline_cache = world.resource::<PipelineCache>();
-        let underwater_pipeline = world.resource::<UnderwaterEffectPipeline>();
-        let underwater_uniform_buffers = world.resource::<UnderwaterEffectUniformBuffers>();
+    // Get the uniform buffer binding
+    let Some(uniform_buffer_binding) = underwater_uniform_buffers.buffer.binding() else {
+        return;
+    };
 
-        // Get the pipeline
-        let Some(pipeline) = pipeline_cache.get_render_pipeline(**pipeline_id) else {
-            return Ok(());
-        };
+    // Use post_process_write for full-screen pass
+    let post_process = view_target.post_process_write();
 
-        // Get the uniform buffer binding
-        let Some(uniform_buffer_binding) = underwater_uniform_buffers.buffer.binding() else {
-            return Ok(());
-        };
-
-        // Use post_process_write for full-screen pass
-        let post_process = view_target.post_process_write();
-
-        let pass_descriptor = RenderPassDescriptor {
-            label: Some("underwater_effect pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: post_process.destination,
-                resolve_target: None,
-                ops: Operations::default(),
-                depth_slice: None,
-            })],
+    let pass_descriptor = RenderPassDescriptor {
+        label: Some("underwater_effect pass"),
+        color_attachments: &[Some(RenderPassColorAttachment {
+            view: post_process.destination,
+            resolve_target: None,
+            ops: Operations::default(),
+            depth_slice: None,
+        })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         };
 
-        // Create bind group with source texture, sampler, and uniforms
-        let bind_group_layout =
-            pipeline_cache.get_bind_group_layout(&underwater_pipeline.bind_group_layout);
-        let bind_group = render_context.render_device().create_bind_group(
-            "underwater_effect bind group",
-            &bind_group_layout,
-            &BindGroupEntries::sequential((
-                post_process.source,
-                &underwater_pipeline.source_sampler,
-                uniform_buffer_binding,
-            )),
-        );
+    // Create bind group with source texture, sampler, and uniforms
+    let bind_group_layout =
+        pipeline_cache.get_bind_group_layout(&underwater_pipeline.bind_group_layout);
+    let bind_group = ctx.render_device().create_bind_group(
+        "underwater_effect bind group",
+        &bind_group_layout,
+        &BindGroupEntries::sequential((
+            post_process.source,
+            &underwater_pipeline.source_sampler,
+            uniform_buffer_binding,
+        )),
+    );
 
-        let mut render_pass = render_context
-            .command_encoder()
-            .begin_render_pass(&pass_descriptor);
+    let mut render_pass = ctx
+        .command_encoder()
+        .begin_render_pass(&pass_descriptor);
 
-        render_pass.set_pipeline(pipeline);
-        render_pass.set_bind_group(0, &bind_group, &[**uniform_offset]);
-        render_pass.draw(0..3, 0..1);
-
-        Ok(())
-    }
+    render_pass.set_pipeline(pipeline);
+    render_pass.set_bind_group(0, &bind_group, &[**uniform_offset]);
+    render_pass.draw(0..3, 0..1);
 }
 
 // =============================================================================
@@ -338,9 +323,11 @@ impl Plugin for UnderwaterEffectPlugin {
                 )
                     .in_set(RenderSystems::Prepare),
             )
-            .add_render_graph_node::<ViewNodeRunner<UnderwaterEffectNode>>(
+            .add_systems(
                 Core3d,
-                Node3d::PostProcessing, // Run after main post-processing
+                underwater_effect
+                    .in_set(Core3dSystems::PostProcess)
+                    .after(tonemapping),
             );
     }
 
@@ -375,7 +362,7 @@ impl FromWorld for UnderwaterEffectPipeline {
 
         // Create sampler
         let source_sampler = render_device.create_sampler(&SamplerDescriptor {
-            mipmap_filter: FilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Linear,
             min_filter: FilterMode::Linear,
             mag_filter: FilterMode::Linear,
             ..default()
@@ -410,7 +397,8 @@ impl SpecializedRenderPipeline for UnderwaterEffectPipeline {
             primitive: default(),
             depth_stencil: None,
             multisample: default(),
-            push_constant_ranges: vec![],
+            // No push constants / immediates used.
+            immediate_size: 0,
             zero_initialize_workgroup_memory: false,
         }
     }
@@ -553,11 +541,9 @@ pub fn prepare_underwater_effect_pipelines(
             &pipeline_cache,
             &underwater_pipeline,
             UnderwaterEffectPipelineKey {
-                texture_format: if view.hdr {
-                    ViewTarget::TEXTURE_FORMAT_HDR
-                } else {
-                    TextureFormat::bevy_default()
-                },
+                // Bevy 0.19: source the format from the view instead of the
+                // deprecated ViewTarget::TEXTURE_FORMAT_HDR / TextureFormat::bevy_default().
+                texture_format: view.target_format,
             },
         );
 

@@ -1,5 +1,5 @@
 use bevy::pbr::MeshMaterial3d;
-use bevy::{prelude::*, render::alpha::AlphaMode};
+use bevy::{material::AlphaMode, prelude::*};
 use rand::Rng;
 
 use crate::components::{BoatState, BowSprayParticle, WakeEmitter, WakeParticle, WakeSource};

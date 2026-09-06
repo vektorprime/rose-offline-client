@@ -130,7 +130,7 @@ impl Plugin for OddioPlugin {
             .unwrap();
         stream.play().unwrap();
 
-        app.insert_non_send_resource(stream)
+        app.insert_non_send(stream)
             .insert_resource(OddioContext {
                 mixer: root_mixer_handle,
                 spatial: scene_handle,

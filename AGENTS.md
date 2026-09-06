@@ -75,11 +75,11 @@ Check these folders first:
 
 ### Step 3 - Validate behavior from source
 
-IF YOU ARE UNSURE ABOUT THE BEVY 0.18 DOCUMENTATION:
+IF YOU ARE UNSURE ABOUT THE BEVY 0.19 DOCUMENTATION:
 
 For each relevant feature:
 
-- Search the Bevy 0.18.1 source code for the related implementation - `C:\Users\%USERNAME%\RustroverProjects\bevy-collection\bevy-0.18.1`
+- Search the Bevy 0.19.1 source code for the related implementation - cargo registry (`%USERPROFILE%\.cargo\registry\src\*\bevy_internal-0.19.1`, `bevy_render-0.19.1`, etc.)
 - Read the relevant `.rs` files
 - Confirm actual behavior from source code
 - Do NOT assume behavior without checking source
@@ -93,19 +93,20 @@ For each relevant feature:
 `Cargo.toml` uses **absolute-path dependencies**. `cargo build` fails if these are missing or moved:
 
 - `C:/Users/%USERNAME%/RustroverProjects/rose-offline/` — `rose-data`, `rose-data-irose`, `rose-file-readers`, `rose-game-common`, `rose-game-irose`, `rose-network-common`, `rose-network-irose`
-- `../bevy_procedural_grass` (i.e. `C:/Users/%USERNAME%/RustroverProjects/bevy_procedural_grass`)
+- ~~`../bevy_procedural_grass`~~ — REMOVED in the Bevy 0.19 upgrade (was already disabled; do not re-add)
 
-### Source Code for Bevy 0.18.1
+### Source Code for Bevy 0.19.1
 
-`C:\Users\%USERNAME%\RustroverProjects\bevy-collection\bevy-0.18.1`
+Cargo registry: `%USERPROFILE%\.cargo\registry\src\*\bevy_internal-0.19.1` (facade + all `bevy_*-0.19.1` crates).
+Historical snapshot: `C:\Users\%USERNAME%\RustroverProjects\bevy-collection\bevy-0.18.1` (pre-upgrade, do not use for current behavior).
 
-### Source Code for WGPU v27
+### Source Code for WGPU v29
 
-`C:\Users\%USERNAME%\RustroverProjects\bevy-collection\wgpu-27`
+Transitive via Bevy 0.19 (cargo registry `wgpu-29.*`). On-disk snapshot `C:\Users\%USERNAME%\RustroverProjects\bevy-collection\wgpu-27` is pre-upgrade history.
 
-### Source Code for Bevy_EGUI 0.39.1
+### Source Code for Bevy_EGUI 0.40
 
-`C:\Users\%USERNAME%\RustroverProjects\bevy-collection\bevy_egui-0.39.1`
+Cargo registry `bevy_egui-0.40.*` (uses `egui 0.34`). On-disk snapshot `C:\Users\%USERNAME%\RustroverProjects\bevy-collection\bevy_egui-0.39.1` is pre-upgrade history.
 
 ### Game Server Source Code
 
@@ -145,7 +146,7 @@ If progress stalls, uncertainty remains, or the issue is not understood well eno
 
 - Single crate; entrypoint `src/main.rs` (clap CLI) dispatches to `src/lib.rs` functions `run_game`, `run_model_viewer`, `run_zone_viewer`, `run_map_editor`. Mode is selected by CLI flags: `--model-viewer`, `--zone-viewer` / `--zone=<N>`, `--map-editor`.
 - The client loads game data from `data.idx` in the current directory, or via `--data-idx=<path>` / `--data-path=<path>`. It cannot start without game data. Only the `irose` data version exists (`--data-version irose`, likewise for network/UI versions).
-- Actual engine version is **Bevy 0.18.1**.
+- Actual engine version is **Bevy 0.19.1** (upgraded from 0.18.1; see `bevy-0.19-upgrade-plan.md`).
 - The user launches the client (you must not run it). Every session writes structured logs to `logs/<session-timestamp>/` relative to the working directory (`structured.jsonl`, `session.json`).
 - `simplification/` — research and cleanup reports for the dead-code removal pass (historical, do not re-apply).
 

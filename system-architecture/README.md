@@ -1,12 +1,12 @@
 # System Architecture Documentation
 
 ## Project Overview
-`rose-offline-client` is a high-performance offline client built using the **Bevy 0.18.1** game engine. This documentation provides a deep dive into the architectural patterns, module responsibilities, and technical implementations within the project.
+`rose-offline-client` is a high-performance offline client built using the **Bevy 0.19.1** game engine. This documentation provides a deep dive into the architectural patterns, module responsibilities, and technical implementations within the project.
 
 ## Documentation Index
 Explore the specific subsystems of the client using the links below.
 
-### Engine foundations (Bevy 0.18.1 patterns used by this client)
+### Engine foundations (Bevy 0.19.1 patterns used by this client)
 
 * [Animation.md](Animation.md) - Skeletal and procedural animation systems.
 * [Assets.md](Assets.md) - Asset loading, management, and lifecycle.
@@ -53,8 +53,8 @@ The system follows a highly modular, data-driven approach powered by Bevy's ECS.
 5. **Output**: The final frame (game view + egui + world-space UI) is presented through the windowing system.
 
 ## Key Technical Details
-* **Bevy Version**: `0.18.1`
-* **Bevy Source Location**: `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\`
+* **Bevy Version**: `0.19.1`
+* **Bevy Source Location**: cargo registry (`bevy_internal-0.19.1`, `bevy_render-0.19.1`, …); historical snapshot at `C:\Users\vicha\RustroverProjects\bevy-collection\bevy-0.18.1\crates\`
 
 ## Quick Reference Guide
 * **State Management**: Uses Bevy's built-in `State<T>` for managing high-level application flows (e.g., Menu, Playing, Paused).

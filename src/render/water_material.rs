@@ -14,9 +14,9 @@ use bevy::{
     math::{Vec3, Vec4},
     pbr::{Material, MaterialPipeline, MaterialPipelineKey},
     prelude::{App, Plugin},
+    material::AlphaMode,
     reflect::TypePath,
     render::{
-        alpha::AlphaMode,
         render_asset::RenderAssets,
         render_resource::*,
         renderer::RenderDevice,
@@ -152,7 +152,7 @@ impl Material for WaterMaterial {
             .depth_stencil
             .as_mut()
             .unwrap()
-            .depth_write_enabled = false;
+            .depth_write_enabled = Some(false);
 
         // Set up vertex buffer layout
         let vertex_layout = layout.0.get_layout(&[
@@ -306,7 +306,7 @@ impl AsBindGroup for WaterMaterial {
             address_mode_v: AddressMode::ClampToEdge,
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
-            mipmap_filter: FilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Linear,
             ..Default::default()
         });
 

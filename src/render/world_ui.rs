@@ -5,7 +5,7 @@ use std::{cmp::Ordering, ops::Range};
 use bevy::{
     asset::{load_internal_asset, weak_handle, AssetId, Handle},
     color::ColorToComponents,
-    core_pipeline::core_3d::Transparent3d,
+    core_pipeline::core_3d::{Transparent3d, TransparentSortingInfo3d},
     ecs::{
         query::ROQueryItem,
         system::{
@@ -14,7 +14,6 @@ use bevy::{
         },
     },
     math::Mat4,
-    pbr::MeshPipelineKey,
     prelude::{
         App, Assets, Color, Commands, Component, Entity, FromWorld, GlobalTransform, Image,
         InheritedVisibility, IntoScheduleConfigs, Msaa, Plugin, Query, Res, ResMut, Resource,
@@ -40,7 +39,7 @@ use bevy::{
         renderer::{RenderDevice, RenderQueue},
         texture::GpuImage,
         view::{
-            prepare_view_uniforms, ExtractedView, ViewTarget, ViewUniform, ViewUniformOffset,
+            prepare_view_uniforms, ExtractedView, ViewUniform, ViewUniformOffset,
             ViewUniforms,
         },
         Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
@@ -209,8 +208,17 @@ pub struct WorldUiPipeline {
     material_layout: BindGroupLayoutDescriptor,
 }
 
+/// Pipeline key for the world-UI overlay pass (Bevy 0.19 removed the
+/// `HDR` bit from `MeshPipelineKey`; the target format now comes straight
+/// from `ExtractedView::target_format`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WorldUiPipelineKey {
+    pub msaa_samples: u32,
+    pub texture_format: TextureFormat,
+}
+
 impl SpecializedRenderPipeline for WorldUiPipeline {
-    type Key = MeshPipelineKey;
+    type Key = WorldUiPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
         RenderPipelineDescriptor {
@@ -254,16 +262,11 @@ impl SpecializedRenderPipeline for WorldUiPipeline {
                 shader_defs: vec![],
                 entry_point: Some(std::borrow::Cow::Borrowed("fragment")),
                 targets: vec![Some(ColorTargetState {
-                    format: match key.contains(MeshPipelineKey::HDR) {
-                        true => ViewTarget::TEXTURE_FORMAT_HDR,
-                        // Must mirror Bevy's own convention (prepare_view_targets):
-                        // LDR view targets use TextureFormat::bevy_default()
-                        // (Rgba8UnormSrgb), NOT Bgra8UnormSrgb. Neither camera has
-                        // the Hdr marker, so all views are LDR; hardcoding Bgra
-                        // panicked wgpu with "pipeline targets are incompatible
-                        // with render pass" as soon as name tags drew in-world.
-                        false => TextureFormat::bevy_default(),
-                    },
+                    // Format is plumbed through the specialization key from
+                    // ExtractedView::target_format (HDR views get the HDR
+                    // format, LDR views the LDR default) so the pipeline
+                    // always matches the view's render target.
+                    format: key.texture_format,
                     blend: Some(BlendState {
                         color: BlendComponent {
                             src_factor: BlendFactor::SrcAlpha,
@@ -291,10 +294,10 @@ impl SpecializedRenderPipeline for WorldUiPipeline {
             },
             depth_stencil: Some(DepthStencilState {
                 format: TextureFormat::Depth32Float,
-                depth_write_enabled: false,
+                depth_write_enabled: Some(false),
                 // World UI quads are screen-space overlays anchored to world positions.
                 // They should render on top once queued, regardless of scene depth.
-                depth_compare: CompareFunction::Always,
+                depth_compare: Some(CompareFunction::Always),
                 stencil: StencilState {
                     front: StencilFaceState::IGNORE,
                     back: StencilFaceState::IGNORE,
@@ -308,12 +311,13 @@ impl SpecializedRenderPipeline for WorldUiPipeline {
                 },
             }),
             multisample: MultisampleState {
-                count: key.msaa_samples(),
+                count: key.msaa_samples,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
             label: Some("world_ui_pipeline".into()),
-            push_constant_ranges: Vec::default(),
+            // No push constants / immediates used.
+            immediate_size: 0,
             zero_initialize_workgroup_memory: false,
         }
     }
@@ -577,8 +581,10 @@ pub fn queue_world_ui_meshes(
         };
 
         let msaa_samples = msaa.map(|m| m.samples()).unwrap_or(1);
-        let view_key =
-            MeshPipelineKey::from_msaa_samples(msaa_samples) | MeshPipelineKey::from_hdr(view.hdr);
+        let view_key = WorldUiPipelineKey {
+            msaa_samples,
+            texture_format: view.target_format,
+        };
 
         // DIAGNOSTIC: Log pipeline cache access before specialization
         // log_pipeline_cache_access(
@@ -730,19 +736,26 @@ pub fn queue_world_ui_meshes(
                     )
                 });
 
-            // Use a large POSITIVE distance to render ON TOP of everything
-            // Transparent3d sorts back-to-front (ascending by distance)
-            // "Values increase towards the camera" - so larger distance = closer = rendered last = on top
+            // Use a large POSITIVE depth bias to render ON TOP of everything.
+            // Bevy 0.19 recomputes `distance` every frame from `sorting_info`
+            // (change-list sorting), so the bias must live here — a raw
+            // `distance` value would be overwritten by recalculate_sort_keys.
+            // Transparent3d sorts back-to-front ascending, so a huge bias
+            // renders last = on top.
             let base_distance = inverse_view_row_2.dot(rect.world_position.extend(1.0));
             // Add a large offset to ensure UI renders on top of all other transparent objects
             let ui_distance = base_distance + 999999.0;
             //// log::info!("[WORLD_UI_QUEUE] Adding phase item: entity={:?}, base_distance={}, ui_distance={}",
             //    visible_entity, base_distance, ui_distance);
-            transparent_phase.items.push(Transparent3d {
+            transparent_phase.add_transient(Transparent3d {
                 entity: (visible_entity, visible_entity.into()),
                 draw_function: draw_alpha_mask,
                 pipeline,
                 distance: ui_distance,
+                sorting_info: TransparentSortingInfo3d::Sorted {
+                    mesh_center: rect.world_position,
+                    depth_bias: 999999.0,
+                },
                 batch_range: 0..1,
                 extra_index: PhaseItemExtraIndex::None,
                 indexed: false,

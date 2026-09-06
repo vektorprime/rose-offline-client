@@ -1,6 +1,6 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
-use bevy::render::alpha::AlphaMode;
+use bevy::material::AlphaMode;
 use bevy_mesh::{Indices, PrimitiveTopology};
 use rose_game_common::components::MoveMode;
 use rose_game_common::messages::client::ClientMessage;

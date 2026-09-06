@@ -7,12 +7,12 @@ use bevy::{
     camera::visibility::{Visibility, VisibilitySystems},
     camera::Camera,
     core_pipeline::prepass::{DeferredPrepass, DepthPrepass},
-    light::{DirectionalLightShadowMap, EnvironmentMapLight, VolumetricFog},
+    light::{Atmosphere, DirectionalLightShadowMap, EnvironmentMapLight, VolumetricFog},
     mesh::Mesh3d,
     pbr::{
-        Atmosphere, AtmosphereSettings, DefaultOpaqueRendererMethod, ExtendedMaterial,
-        MaterialPlugin, MeshMaterial3d, ScreenSpaceAmbientOcclusion,
-        ScreenSpaceAmbientOcclusionQualityLevel, StandardMaterial,
+        AtmosphereSettings, DefaultOpaqueRendererMethod, ExtendedMaterial, MaterialPlugin,
+        MeshMaterial3d, ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel,
+        StandardMaterial,
     },
     post_process::{
         bloom::Bloom,
@@ -24,7 +24,7 @@ use bevy::{
         PerspectiveProjection, PluginGroup, PostStartup, PostUpdate, PreUpdate, Projection, Quat,
         Query, Res, ResMut, Startup, SystemSet, Transform, Update, Vec3, With, Without,
     },
-    render::experimental::occlusion_culling::OcclusionCulling,
+    render::occlusion_culling::OcclusionCulling,
     render::view::ColorGrading,
     render::settings::{Backends, RenderCreation, WgpuFeatures, WgpuSettings},
     transform::{components::GlobalTransform, TransformSystems},
@@ -66,7 +66,6 @@ pub mod map_editor;
 pub mod model_loader;
 pub mod protocol;
 pub mod render;
-pub use render::DamageDigitMaterial;
 pub mod blood_effect_plugin;
 pub mod dds_image_loader;
 pub mod resources;
@@ -102,7 +101,6 @@ use render::{
     toggle_atmosphere_based_on_time, update_starry_sky_night_factor, update_starry_sky_system,
     AtmosphereState,
     CameraUnderwaterState,
-    DamageDigitMaterialPlugin,
     ExtensionMaterialPlugin,
     MoonLight,
     ParticleMaterialPlugin,
@@ -165,9 +163,9 @@ use systems::{
     command_system,
     conversation_dialog_system,
     cooldown_system,
-    create_damage_digit_material_system,
     create_default_particle_texture,
-    damage_digit_render_system,
+    damage_number_animate_system,
+    damage_number_billboard_system,
     directional_light_system,
     effect_system,
     ensure_boat_state_system,
@@ -747,7 +745,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_plugins((
             bevy::prelude::DefaultPlugins
                 .set(bevy::render::RenderPlugin {
-                    render_creation: RenderCreation::Automatic(WgpuSettings {
+                    render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
                         backends: Some(Backends::all()),
                         // Keep problematic bindless features disabled for stability,
                         // but allow texture binding arrays needed by TerrainMaterial.
@@ -758,7 +756,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                                 ,
                         ),
                         ..Default::default()
-                    }),
+                    })),
                     synchronous_pipeline_compilation: false,
                     debug_flags: Default::default(),
                 })
@@ -886,7 +884,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_plugins((
             RoseAnimationPlugin,
             // CRITICAL: Add these to fix the panic and enable rendering
-            DamageDigitMaterialPlugin, // ← Fixes the immediate panic
             ParticleMaterialPlugin,
             // ExtendedMaterial plugins for object, terrain, water, and effect mesh
             // Use custom RoseObjectMaterialPlugin which includes zone lighting support
@@ -1116,8 +1113,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                 .after(ui_debug_effect_list_system),
             visible_status_effects_system,
             move_destination_effect_system,
-            create_damage_digit_material_system.before(damage_digit_render_system),
-            damage_digit_render_system,
+            damage_number_billboard_system,
+            damage_number_animate_system,
             name_tag_update_healthbar_system,
             name_tag_visibility_system,
             name_tag_update_color_system,
@@ -1930,7 +1927,8 @@ fn load_common_game_data(
     game_data: Res<GameData>,
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut scattering_mediums: ResMut<Assets<bevy::pbr::ScatteringMedium>>,
+    mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
+    mut scattering_mediums: ResMut<Assets<bevy::light::atmosphere::ScatteringMedium>>,
 ) {
 
 
@@ -1983,7 +1981,6 @@ fn load_common_game_data(
             Transform::from_translation(Vec3::new(5200.0, 30.0, -5180.0))
                 .looking_at(Vec3::new(5200.0, 10.0, -5230.0), Vec3::Y),
             GlobalTransform::default(),
-            bevy::ui::IsDefaultUiCamera,
             // Primary Egui Context - required for bevy_egui 0.32+
             PrimaryEguiContext,
             // Add Tonemapping - REQUIRED for HDR to work properly with depth of field
@@ -2033,9 +2030,14 @@ fn load_common_game_data(
     const DEBUG_DISABLE_ATMOSPHERE: bool = false;
 
     if !DEBUG_DISABLE_ATMOSPHERE {
+        // Bevy 0.19: Atmosphere is a standalone entity (nearest one wins for
+        // rendering); the camera only carries AtmosphereSettings to enable it
+        // for its view. The day/night toggle system spawns/despawns the entity.
+        commands.spawn(Atmosphere::earth(
+            scattering_mediums.add(bevy::light::atmosphere::ScatteringMedium::default()),
+        ));
         commands.entity(camera_entity).insert((
-            // Bevy 0.18 built-in atmospheric scattering for realistic sky
-            Atmosphere::earthlike(scattering_mediums.add(bevy::pbr::ScatteringMedium::default())),
+            // Bevy 0.19 built-in atmospheric scattering for realistic sky
             AtmosphereSettings::default(),
             // Depth of Field: Gaussian default (cheaper than Bokeh). Bokeh + CoC 64
             // is available via settings but not the startup cost.
@@ -2066,7 +2068,11 @@ fn load_common_game_data(
         camera_entity
     );
 
-    commands.insert_resource(DamageDigitsSpawner::load(&asset_server, &mut meshes));
+    commands.insert_resource(DamageDigitsSpawner::load(
+        &asset_server,
+        &mut meshes,
+        &mut standard_materials,
+    ));
 }
 
 /// Setup egui fonts - runs after camera with PrimaryEguiContext is spawned
@@ -2363,7 +2369,9 @@ fn spawn_starry_sky_and_moon(
             DirectionalLightComponent {
                 illuminance: 5000.0,                 // Moonlight intensity (much dimmer than sun)
                 color: Color::srgb(0.8, 0.85, 0.95), // Slightly blue-white moonlight
-                shadows_enabled: false,
+                shadow_maps_enabled: false,
+                // No contact shadows for the moon (second shadow map doubles cost).
+                contact_shadows_enabled: false,
                 shadow_depth_bias: 0.02,
                 shadow_normal_bias: 1.0,
                 affects_lightmapped_mesh_diffuse: true,

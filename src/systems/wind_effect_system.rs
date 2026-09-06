@@ -1,7 +1,7 @@
 use bevy::{
     pbr::{MeshMaterial3d, StandardMaterial},
     prelude::*,
-    render::alpha::AlphaMode,
+    material::AlphaMode,
 };
 use rand::Rng;
 

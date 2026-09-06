@@ -67,7 +67,7 @@ impl DrawWidget for Editbox {
         } else {
             egui::TextEdit::singleline(buffer)
         }
-        .frame(false)
+        .frame(egui::Frame::NONE)
         .margin(egui::vec2(0.0, 0.0))
         .password(self.password != 0)
         .text_color(egui::Color32::WHITE);

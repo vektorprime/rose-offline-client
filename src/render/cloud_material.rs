@@ -16,7 +16,8 @@ use bevy::{
     pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin},
     prelude::*,
     reflect::TypePath,
-    render::{alpha::AlphaMode, render_resource::*, renderer::RenderDevice},
+    material::AlphaMode,
+    render::{render_resource::*, renderer::RenderDevice},
 };
 use bevy_mesh::{Mesh, MeshVertexBufferLayoutRef};
 use bevy_shader::{Shader, ShaderRef};
@@ -387,8 +388,8 @@ impl Material for CloudMaterial {
         // Depth settings - render clouds where no opaque objects block
         // Use GreaterEqual for reversed-Z (Bevy 0.14+) so clouds render in front of distant objects (sky)
         if let Some(depth_stencil) = descriptor.depth_stencil.as_mut() {
-            depth_stencil.depth_write_enabled = false;
-            depth_stencil.depth_compare = CompareFunction::GreaterEqual;
+            depth_stencil.depth_write_enabled = Some(false);
+            depth_stencil.depth_compare = Some(CompareFunction::GreaterEqual);
             log::info!("[CLOUD SPECIALIZE] Depth writes DISABLED, depth_compare = GreaterEqual");
         }
 
@@ -439,7 +440,7 @@ pub fn update_cloud_material_system(
 
     let mut updated_count = 0;
     for (material_handle, view_visibility, inherited_visibility, entity) in query.iter() {
-        if let Some(material) = materials.get_mut(&material_handle.0) {
+        if let Some(mut material) = materials.get_mut(&material_handle.0) {
             // Update time
             material.time = time.elapsed_secs();
 
@@ -522,7 +523,7 @@ pub fn update_cloud_lighting_system(
 
     let mut updated_count = 0;
     for material_handle in query.iter() {
-        if let Some(material) = materials.get_mut(&material_handle.0) {
+        if let Some(mut material) = materials.get_mut(&material_handle.0) {
             material.sun_direction = sun_direction;
             material.sun_color = sun_color * cloud_settings.tod_response;
             material.ambient_color = ambient_color;

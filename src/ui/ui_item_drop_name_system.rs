@@ -112,6 +112,7 @@ pub fn ui_item_drop_name_system(
             round_to_pixels: Some(false),
             blur_width: 0.0,
             brush: None,
+            angle: 0.0,
         });
         tooltip_painter.add(egui::epaint::TextShape {
             pos: visible_name.pos,

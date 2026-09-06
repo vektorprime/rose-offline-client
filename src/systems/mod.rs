@@ -23,8 +23,8 @@ mod collision_system;
 mod command_system;
 mod conversation_dialog_system;
 mod cooldown_system;
-mod damage_digit_render_system;
 mod damage_effects;
+mod damage_number_system;
 mod debug_inspector_system;
 mod directional_light_system;
 mod dirt_dash_system;
@@ -144,9 +144,7 @@ pub use collision_system::{
 pub use command_system::command_system;
 pub use conversation_dialog_system::conversation_dialog_system;
 pub use cooldown_system::cooldown_system;
-pub use damage_digit_render_system::{
-    create_damage_digit_material_system, damage_digit_render_system,
-};
+pub use damage_number_system::{damage_number_animate_system, damage_number_billboard_system};
 pub use damage_effects::{emit_blood_and_wounds, normalize_or, random_local_wound_pose, spawn_damage_digits};
 pub use debug_inspector_system::DebugInspectorPlugin;
 pub use directional_light_system::directional_light_system;

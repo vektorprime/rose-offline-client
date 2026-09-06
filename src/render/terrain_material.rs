@@ -16,9 +16,9 @@ use bevy::{
         App, Color, ColorToComponents, DetectChanges, LinearRgba, Mesh, Plugin, Res, ResMut, Vec3,
         Vec4,
     },
+    material::AlphaMode,
     reflect::TypePath,
     render::{
-        alpha::AlphaMode,
         render_asset::RenderAssets,
         render_resource::*,
         renderer::RenderDevice,
@@ -66,10 +66,10 @@ impl Plugin for TerrainMaterialPlugin {
 /// The terrain lighting intensity is adjusted based on the time of day:
 /// | Time State | Intensity Multiplier | Time Period  |
 /// |------------|---------------------|--------------|
-/// | Morning    | 2.0                 | 6:00-12:00   |
-/// | Day        | 2.5                 | 12:00-17:00  |
-/// | Evening    | 2.0                 | 17:00-19:00  |
-/// | Night      | 1.0                 | 19:00-6:00   |
+/// | Morning    | 2.0                 | 5:00-11:00   |
+/// | Day        | 2.5                 | 11:00-17:00  |
+/// | Evening    | 2.0                 | 17:00-20:00  |
+/// | Night      | 1.0                 | 20:00-5:00   |
 pub fn update_terrain_lighting_system(
     zone_lighting: Res<ZoneLighting>,
     graphics_settings: Res<GraphicsSettings>,
@@ -87,10 +87,10 @@ pub fn update_terrain_lighting_system(
     // Apply time-of-day multiplier to terrain lighting intensity
     // This creates more realistic lighting transitions throughout the day
     let time_multiplier = match zone_time.state {
-        crate::resources::ZoneTimeState::Morning => 2.0, // 6:00-12:00: Moderate morning light
-        crate::resources::ZoneTimeState::Day => 2.5,     // 12:00-17:00: Bright daylight
-        crate::resources::ZoneTimeState::Evening => 2.0, // 17:00-19:00: Dimming evening light
-        crate::resources::ZoneTimeState::Night => 1.0,   // 19:00-6:00: Dim night light
+        crate::resources::ZoneTimeState::Morning => 2.0, // 5:00-11:00: Moderate morning light
+        crate::resources::ZoneTimeState::Day => 2.5,     // 11:00-17:00: Bright daylight
+        crate::resources::ZoneTimeState::Evening => 2.0, // 17:00-20:00: Dimming evening light
+        crate::resources::ZoneTimeState::Night => 1.0,   // 20:00-5:00: Dim night light
     };
 
     // Combine base intensity with time multiplier
@@ -260,7 +260,7 @@ impl AsBindGroup for TerrainMaterial {
             address_mode_v: AddressMode::ClampToEdge,
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
-            mipmap_filter: FilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Linear,
             ..Default::default()
         });
 

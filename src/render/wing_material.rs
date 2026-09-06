@@ -27,7 +27,7 @@ pub fn create_wing_material(
 ) -> Handle<StandardMaterial> {
     materials.add(StandardMaterial {
         base_color: Color::srgba(0.95, 0.95, 1.0, 0.85),
-        alpha_mode: bevy::render::alpha::AlphaMode::Blend,
+        alpha_mode: bevy::material::AlphaMode::Blend,
         unlit: false,
         cull_mode: None, // Double-sided
         perceptual_roughness: 0.3,

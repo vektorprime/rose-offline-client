@@ -4,8 +4,11 @@
 //! including meshes, materials, collision, and child parts.
 
 use bevy::{
-    camera::visibility::RenderLayers, light::NotShadowCaster, pbr::ExtendedMaterial, prelude::*,
-    render::alpha::AlphaMode,
+    camera::visibility::RenderLayers,
+    light::NotShadowCaster,
+    material::AlphaMode,
+    pbr::ExtendedMaterial,
+    prelude::*,
 };
 use bevy_rapier3d::prelude::{
     AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, Group, RigidBody,

@@ -49,7 +49,7 @@ pub use character_list::CharacterList;
 pub use character_select_state::CharacterSelectState;
 pub use client_entity_list::ClientEntityList;
 pub use current_zone::CurrentZone;
-pub use damage_digits_spawner::{DamageDigitsSpawner, PendingDamageDigitMaterial};
+pub use damage_digits_spawner::DamageDigitsSpawner;
 pub use debug_inspector::DebugInspector;
 pub use debug_render::{DebugRenderConfig, RenderExtractionDiagnostics};
 pub use flight_settings::FlightSettings;

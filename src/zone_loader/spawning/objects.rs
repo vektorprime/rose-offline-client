@@ -485,7 +485,7 @@ pub(super) fn spawn_effect_object(
     effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
     particle_materials: &mut Assets<ParticleMaterial>,
     meshes: &mut Assets<bevy::prelude::Mesh>,
-    storage_buffers: &mut Assets<bevy::render::storage::ShaderStorageBuffer>,
+    storage_buffers: &mut Assets<bevy::render::storage::ShaderBuffer>,
     effect_object: &IfoEffectObject,
     ifo_object_id: usize,
     effect_cache: &EffectCache,

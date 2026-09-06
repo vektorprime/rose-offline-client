@@ -3,7 +3,8 @@ use bevy::{
     image::Image,
     pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin},
     prelude::*,
-    render::{alpha::AlphaMode, render_resource::*, storage::ShaderStorageBuffer},
+    material::AlphaMode,
+    render::{render_resource::*, storage::ShaderBuffer},
 };
 use bevy_mesh::{MeshVertexBufferLayoutRef, VertexBufferLayout};
 use bevy_shader::{Shader, ShaderRef};
@@ -17,13 +18,13 @@ pub const PARTICLE_SHADER_HANDLE: Handle<Shader> =
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
 pub struct ParticleMaterial {
     #[storage(0, read_only)]
-    pub positions: Handle<ShaderStorageBuffer>,
+    pub positions: Handle<ShaderBuffer>,
     #[storage(1, read_only)]
-    pub sizes: Handle<ShaderStorageBuffer>,
+    pub sizes: Handle<ShaderBuffer>,
     #[storage(2, read_only)]
-    pub colors: Handle<ShaderStorageBuffer>,
+    pub colors: Handle<ShaderBuffer>,
     #[storage(3, read_only)]
-    pub textures: Handle<ShaderStorageBuffer>,
+    pub textures: Handle<ShaderBuffer>,
 
     #[texture(4)]
     #[sampler(5)]
@@ -151,7 +152,7 @@ impl Plugin for ParticleMaterialPlugin {
 #[cfg(debug_assertions)]
 fn validate_particle_materials(
     materials: Res<Assets<ParticleMaterial>>,
-    storage_buffers: Res<Assets<ShaderStorageBuffer>>,
+    storage_buffers: Res<Assets<ShaderBuffer>>,
     images: Res<Assets<Image>>,
     mut warned_materials: Local<std::collections::HashSet<AssetId<ParticleMaterial>>>,
 ) {
@@ -167,7 +168,7 @@ fn validate_particle_materials(
         if storage_buffers.get(&material.positions).is_none() {
             error!("⚠ [ParticleMaterial {:?}] Positions buffer not loaded!", id);
             error!(
-                "   Create with: storage_buffers.add(ShaderStorageBuffer::from(positions_data))"
+                "   Create with: storage_buffers.add(ShaderBuffer::from(positions_data))"
             );
             has_error = true;
         }

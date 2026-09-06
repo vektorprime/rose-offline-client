@@ -44,7 +44,7 @@ Previously, the terrain used a hardcoded light direction and static colors, caus
 
 ## 5. Atmospheric Effects
 - **Volumetric Fog**: `VolumetricFog{step_count: 64}` on the main camera (`src/lib.rs:2051-2055`; comment notes 128 was 2x cost). Fog volume itself lives in `src/render/zone_lighting.rs:191-198`.
-- **Atmospheric Scattering**: Integrated Bevy 0.18's built-in atmospheric scattering for realistic sky rendering during the day.
+- **Atmospheric Scattering**: Integrated Bevy's built-in atmospheric scattering for realistic sky rendering during the day (0.19: standalone `bevy_light::Atmosphere` entity + `AtmosphereSettings` on the camera, toggled by `toggle_atmosphere_based_on_time`).
 - **Procedural Starry Sky**: A custom material that renders a dense star field and moon with phases, automatically toggled based on the night factor.
 
 ## 6. Post-Processing

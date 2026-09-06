@@ -19,8 +19,8 @@ use crate::{
     components::{
         CharacterModel, ClientEntity, ClientEntityType, Command, CommandAttack, CommandCastSkill,
         CommandCastSkillState, CommandCastSkillTarget, CommandEmote, CommandMove, CommandSit, Dead,
-        FacingDirection, FlightState, NextCommand, NpcModel, PersonalStore, PlayerCharacter,
-        Position, Vehicle, VehicleModel,
+        FacingDirection, FlightState, NextCommand, NpcModel, PendingDamageList, PersonalStore,
+        PlayerCharacter, Position, Vehicle, VehicleModel,
     },
     events::{ClientEntityEvent, ConversationDialogEvent, PersonalStoreEvent},
     resources::{GameConnection, GameData},
@@ -400,7 +400,13 @@ pub fn command_system(
     mut query_animation: Query<Option<&mut SkeletalAnimation>>,
     query_vehicle_model: Query<&VehicleModel>,
     query_move_target: Query<(&Position, &ClientEntity)>,
-    query_attack_target: Query<(Entity, &Position, Option<&Dead>, Option<&HealthPoints>)>,
+    query_attack_target: Query<(
+        Entity,
+        &Position,
+        Option<&Dead>,
+        Option<&HealthPoints>,
+        Option<&PendingDamageList>,
+    )>,
     query_npc: Query<&Npc>,
     query_personal_store: Query<&PersonalStore>,
     query_flight_state: Query<&FlightState>,
@@ -869,19 +875,33 @@ pub fn command_system(
             &mut Command::Attack(CommandAttack {
                 target: target_entity,
             }) => {
-                let target = if let Ok((target_entity, target_position, target_dead, target_hp)) =
+                let Ok((target_entity, target_position, target_dead, target_hp, target_pending)) =
                     query_attack_target.get(target_entity)
-                {
-                    (target_entity, target_position, target_dead, target_hp)
-                } else {
+                else {
                     // Invalid target, stop attacking
                     *next_command = NextCommand::with_stop();
                     continue;
                 };
+                let target = (
+                    target_entity,
+                    target_position,
+                    target_dead,
+                    target_hp,
+                    target_pending,
+                );
 
-                if target.2.is_some() || target.3.map_or(false, |hp| hp.hp <= 0) {
-                    // Target is dead (Dead marker or server-authoritative HP depleted,
-                    // which arrives before the Dead marker via pending damage), stop attacking
+                // Dead marker means the entity is truly gone (monsters despawn on Die).
+                // HP<=0 without Dead means the server HP update arrived before the Dead
+                // marker via pending damage. Do NOT abort the killing blow in that case:
+                // if the kill is pending from THIS attacker, play one grace swing so the
+                // hit frame can consume it. Aborting here is what caused close-range
+                // 1-shot kills to show no attack animation at all.
+                let hp_depleted = target.3.map_or(false, |hp| hp.hp <= 0);
+                let kill_pending_from_us = target.4.map_or(false, |list| {
+                    list.iter()
+                        .any(|p| p.attacker == Some(entity) && p.is_kill)
+                });
+                if target.2.is_some() || (hp_depleted && !kill_pending_from_us) {
                     *next_command = NextCommand::with_stop();
                     continue;
                 }
@@ -889,15 +909,26 @@ pub fn command_system(
                 let distance = position.position.xy().distance(target.1.xy());
 
                 let attack_range = ability_values.get_attack_range() as f32;
+                // Chase destination stops this far inside the boundary (see below).
+                const CHASE_MARGIN_CM: f32 = 100.0;
+                let swing_range = (attack_range - CHASE_MARGIN_CM).max(0.0);
+                // Server-confirmed damage waiting for a hit frame means the server
+                // already considers us in range - swing immediately even in the
+                // boundary band.
+                let has_pending_from_us = target.4.map_or(false, |list| {
+                    list.iter().any(|p| p.attacker == Some(entity))
+                });
                 *attack_diag_frame += 1;
                 if player_character.is_some() && *attack_diag_frame % 30 == 0
                 {
                     log::info!(
-                        "[ATTACK_DIAG] player={:?} target={:?} dist={:.1} range={:.1} {} cmd={:?} next={:?} player_pos={:?} target_pos={:?}",
+                        "[ATTACK_DIAG] player={:?} target={:?} dist={:.1} range={:.1} swing={:.1} pending={} {} cmd={:?} next={:?} player_pos={:?} target_pos={:?}",
                         entity.index(),
                         target_entity.index(),
                         distance,
                         attack_range,
+                        swing_range,
+                        has_pending_from_us,
                         if distance <= attack_range { "ATTACK" } else { "chase" },
                         command,
                         next_command,
@@ -905,10 +936,17 @@ pub fn command_system(
                         target.1.position,
                     );
                 }
-                // Use inclusive comparison so we attack at the exact same boundary the
-                // server uses (distance <= attack_range), preventing a desync where the
-                // server executes the attack but the client converts it into a move.
-                if distance <= attack_range {
+                // Two-tier swing check (inclusive, matching the server boundary):
+                // - deep inside (distance <= swing_range): always swing;
+                // - boundary band (swing_range < distance <= attack_range): only swing
+                //   if the server already queued damage for us (pending exists).
+                //   Otherwise keep chasing deeper instead of ghost-swinging at a target
+                //   the server still considers out of range (stale monster pos + no
+                //   position reconciliation). This is what caused far-away attacks to
+                //   play the animation with no damage until the monster moved.
+                let in_swing_range = distance <= attack_range
+                    && (has_pending_from_us || distance <= swing_range);
+                if in_swing_range {
                     let vehicle_attack_animation =
                         get_vehicle_attack_animation(&mut rng, vehicle_model);
                     let attack_animation =
@@ -962,8 +1000,8 @@ pub fn command_system(
                     // boundary): with no position reconciliation, stopping on the
                     // exact edge leaves client/server on opposite sides of the
                     // range check over mere centimeters of integration drift,
-                    // swinging at ghosts with no damage.
-                    const CHASE_MARGIN_CM: f32 = 100.0;
+                    // swinging at ghosts with no damage. (CHASE_MARGIN_CM and
+                    // swing_range are defined above; destination matches them.)
                     let direction_to_target = target.1.position.xy() - position.position.xy();
                     let move_destination = if direction_to_target.length_squared() > 0.0 {
                         let offset_distance = (attack_range - CHASE_MARGIN_CM).max(0.0);
@@ -1131,6 +1169,7 @@ pub fn command_system(
                                 target_position,
                                 _target_dead,
                                 _target_hp,
+                                _target_pending,
                             )) = query_attack_target.get(target_entity)
                             {
                                 (target_entity, target_position)

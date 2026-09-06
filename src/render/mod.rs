@@ -27,6 +27,8 @@ pub mod particle_render_data;
 pub use particle_render_data::*;
 
 pub mod zone_lighting;
+pub use zone_lighting::DaylightSettings;
+pub use zone_lighting::SkyFillLight;
 pub use zone_lighting::SkyMode;
 pub use zone_lighting::SkySettings;
 pub use zone_lighting::VolumetricFogVolume;
@@ -35,12 +37,6 @@ pub use zone_lighting::ZoneLightingPlugin;
 
 pub mod trail_effect;
 pub use trail_effect::TrailEffect;
-
-pub mod damage_digit_material;
-pub use damage_digit_material::*;
-
-pub mod damage_digit_render_data;
-pub use damage_digit_render_data::*;
 
 // Angelic wing material with glow effects
 pub mod wing_material;

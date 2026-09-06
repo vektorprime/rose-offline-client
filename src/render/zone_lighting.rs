@@ -30,6 +30,61 @@ use bevy::{
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct VolumetricFogVolume;
 
+/// Marker component for the sky-bounce fill light (no shadows).
+/// This is a low-intensity directional light from a fixed high angle that
+/// lifts the shadow side of characters so faces/bodies stay readable when
+/// backlit by the sun. Intensity is scaled by daylight (0 at night).
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct SkyFillLight;
+
+/// Daylight window (game hours) shared by the sun path, shadow gating and
+/// ambient scaling. 05:00-20:00 gives ~15h of usable light with solar noon
+/// at 12.5h; night is 20:00-05:00 (9h).
+pub const SUNRISE_HOUR: f32 = 5.0;
+pub const SUNSET_HOUR: f32 = 20.0;
+pub const SOLAR_NOON_HOUR: f32 = 12.5;
+/// Peak solar elevation above the horizon at noon (degrees). The old Euler
+/// path peaked at ~29 deg (NdotL ~0.48 on flat ground), which is why mornings
+/// looked dim until nearly noon. 68 deg gives NdotL ~0.93 at midday with a
+/// broad bright plateau from ~08:00-17:00.
+pub const SUN_MAX_ELEVATION_DEG: f32 = 68.0;
+/// Peak sun illuminance (lux) applied when the sun is well above the horizon.
+/// Raised from 15000: with the old low sun path the effective ground-level
+/// light was only ~7200 lux even at its peak.
+pub const SUN_MAX_ILLUMINANCE: f32 = 25000.0;
+/// Peak sky-fill illuminance (lux) at midday. ~25% of the sun gives a ~4:1
+/// key-to-fill ratio: shadows stay visible but faces are readable.
+pub const FILL_MAX_ILLUMINANCE: f32 = 6000.0;
+
+/// Runtime-tunable daylight parameters (Settings > Sky). Defaults match the
+/// constants above so out-of-the-box visuals are unchanged.
+#[derive(Resource, Reflect, Clone, Debug)]
+#[reflect(Resource)]
+pub struct DaylightSettings {
+    /// Sunrise hour (game hours, 0-24). Default 5.0.
+    pub sunrise_hour: f32,
+    /// Sunset hour (game hours, 0-24). Must stay above sunrise. Default 20.0.
+    pub sunset_hour: f32,
+    /// Peak solar elevation at noon (degrees). Default 68.0.
+    pub max_elevation_deg: f32,
+    /// Peak sun illuminance in lux. Default 25000.0.
+    pub sun_illuminance: f32,
+    /// Peak sky-fill illuminance in lux. Default 6000.0.
+    pub fill_illuminance: f32,
+}
+
+impl Default for DaylightSettings {
+    fn default() -> Self {
+        Self {
+            sunrise_hour: SUNRISE_HOUR,
+            sunset_hour: SUNSET_HOUR,
+            max_elevation_deg: SUN_MAX_ELEVATION_DEG,
+            sun_illuminance: SUN_MAX_ILLUMINANCE,
+            fill_illuminance: FILL_MAX_ILLUMINANCE,
+        }
+    }
+}
+
 /// Mode for controlling how the time of day is determined.
 #[derive(Reflect, Clone, Copy, PartialEq, Debug, Default)]
 pub enum SkyMode {
@@ -93,8 +148,10 @@ impl Plugin for ZoneLightingPlugin {
         app.register_type::<ZoneLighting>()
             .register_type::<SkySettings>()
             .register_type::<SkyMode>()
+            .register_type::<DaylightSettings>()
             .init_resource::<ZoneLighting>()
-            .init_resource::<SkySettings>();
+            .init_resource::<SkySettings>()
+            .init_resource::<DaylightSettings>();
 
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             // bevy::log::info!("[ZONE LIGHTING] Initializing render app systems");
@@ -114,10 +171,12 @@ impl Plugin for ZoneLightingPlugin {
                 update_volumetric_fog_system,
                 update_sun_position_system,
                 apply_sky_settings_to_zone_time,
-                sync_zone_lighting_to_bevy_lights_system,
+                // Sync + shadows read the fresh sun transform, so they run after it.
+                sync_zone_lighting_to_bevy_lights_system.after(update_sun_position_system),
                 update_shadows_for_time_of_day_system
                     .after(crate::systems::zone_time_system)
-                    .after(crate::graphics::apply_shadow_quality_system),
+                    .after(crate::graphics::apply_shadow_quality_system)
+                    .after(update_sun_position_system),
             ),
         );
         // bevy::log::info!("[ZONE LIGHTING] ZoneLightingPlugin build complete");
@@ -135,12 +194,12 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
     // bevy::log::info!("[ZONE LIGHTING] Spawning directional and ambient lights");
 
     // Bevy 0.14: Use individual components instead of DirectionalLightBundle
-    // IMPORTANT: shadows_enabled MUST be true for VolumetricLight to work
+    // IMPORTANT: shadow_maps_enabled MUST be true for VolumetricLight to work
     let light_entity = commands
         .spawn((
             DirectionalLight {
-                illuminance: 15000.0, // Reduced for balanced PBR lighting (was 50000.0 too bright)
-                shadows_enabled: true, // REQUIRED for volumetric lighting
+                illuminance: SUN_MAX_ILLUMINANCE,
+                shadow_maps_enabled: true, // REQUIRED for volumetric lighting
                 ..Default::default()
             },
             default_light_transform(),
@@ -156,7 +215,24 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
         ))
         .id();
 
-    // bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=15000.0, shadows_enabled=true, VolumetricLight component added", light_entity);
+    // Sky-bounce fill light: fixed high-angle, no shadows, cool sky tint.
+    // Lifts the sun's shadow side (character faces/bodies when backlit).
+    // Intensity is driven per-frame by daylight; see update_sun_position_system.
+    commands.spawn((
+        DirectionalLight {
+            color: Color::srgb(0.75, 0.82, 1.0),
+            illuminance: FILL_MAX_ILLUMINANCE,
+            shadow_maps_enabled: false,
+            ..Default::default()
+        },
+        // Fixed fill direction: high from the north-ish side so it almost always
+        // disagrees with the sun azimuth and fills shadowed faces.
+        Transform::IDENTITY.looking_at(Vec3::new(0.35, -0.75, -0.55), Vec3::Y),
+        RenderLayers::default(),
+        SkyFillLight,
+    ));
+
+    // bevy::log::info!("[ZONE LIGHTING] Directional light spawned: entity={:?}, illuminance=15000.0, shadow_maps_enabled=true, VolumetricLight component added", light_entity);
 
     // Bevy 0.18: AmbientLight is now a component. GlobalAmbientLight is the resource form.
     // Using Bevy default values: Color::WHITE, brightness: 80.0
@@ -275,7 +351,21 @@ fn sync_zone_lighting_to_bevy_lights_system(
     // Determine the ambient light color to use:
     // 1. Start with zone lighting's map_ambient_color as the base
     // 2. If GraphicsSettings exists, multiply by the user's ambient color and brightness
+    // 3. Scale brightness by daylight so the sun's shadow side stays readable at
+    //    midday without washing out the night (night ~1x, full day ~3x).
     let map_ambient = zone_lighting.map_ambient_color;
+
+    // Daylight factor from the live sun transform (self-consistent with the
+    // sun path): -forward.y is the sun-height sine (1 = overhead, <=0 = set).
+    // Falls back to 1.0 if the sun query below fails.
+    let mut daylight_factor = 1.0;
+    if let Ok((_, transform)) = query_directional_light.single() {
+        let sun_height: f32 = -transform.forward().y;
+        daylight_factor = (sun_height / 0.35).clamp(0.0, 1.0);
+    }
+    // Smoothstep for a gentle ramp instead of a hard switch.
+    let daylight_smooth = daylight_factor * daylight_factor * (3.0 - 2.0 * daylight_factor);
+    let daylight_boost = 1.0 + 2.0 * daylight_smooth;
 
     let (final_color, final_brightness) = if let Some(settings) = graphics_settings {
         // Get the user's ambient color preference as linear RGB
@@ -286,8 +376,9 @@ fn sync_zone_lighting_to_bevy_lights_system(
         let blended_g = map_ambient.y * user_color.green;
         let blended_b = map_ambient.z * user_color.blue;
 
-        // Apply user's brightness multiplier (base 80.0 is Bevy's default)
-        let brightness = 80.0 * settings.ambient_light_brightness;
+        // Apply user's brightness multiplier (base 80.0 is Bevy's default),
+        // scaled up during the day so backlit faces stay visible.
+        let brightness = 80.0 * settings.ambient_light_brightness * daylight_boost;
 
         (
             Color::from(LinearRgba::new(blended_r, blended_g, blended_b, 1.0)),
@@ -302,7 +393,7 @@ fn sync_zone_lighting_to_bevy_lights_system(
                 map_ambient.z,
                 1.0,
             )),
-            80.0,
+            80.0 * daylight_boost,
         )
     };
 
@@ -336,31 +427,83 @@ fn sync_zone_lighting_to_bevy_lights_system(
     }
 }
 
+/// Solar elevation model shared by the sun path, shadow gating and fill.
+/// Returns the sun direction (scene -> sun, normalized) and the elevation
+/// sine (NdotL on flat ground: 1.0 = overhead, 0.0 = horizon, <0 = below).
+pub fn sun_direction_for_hour(time_hours: f32, daylight: &DaylightSettings) -> (Vec3, f32) {
+    let t = time_hours.rem_euclid(24.0);
+    let sunrise = daylight.sunrise_hour.clamp(0.0, 24.0);
+    let sunset = daylight.sunset_hour.clamp(0.0, 24.0).max(sunrise + 1.0);
+    let day_length = (sunset - sunrise).max(1.0);
+    let night_length = (24.0 - day_length).max(1.0);
+    let max_elev = daylight.max_elevation_deg.clamp(5.0, 89.0);
+
+    let (elevation_deg, azimuth_t) = if t >= sunrise && t < sunset {
+        // Day: 0 at sunrise -> 1 at noon -> 0 at sunset. The pow broadens the
+        // high-sun plateau so ~08:00-17:00 stays bright instead of spiking.
+        let progress = (t - sunrise) / day_length;
+        let elevation = (progress * std::f32::consts::PI).sin().powf(0.6) * max_elev;
+        (elevation, progress)
+    } else {
+        // Night: sun swings below the horizon (west -> east return path).
+        let night_t = if t >= sunset {
+            t - sunset
+        } else {
+            (24.0 - sunset) + t
+        };
+        let progress = (night_t / night_length).clamp(0.0, 1.0);
+        let elevation = -(progress * std::f32::consts::PI).sin() * 30.0;
+        (elevation, 1.0 - progress)
+    };
+
+    let elev_rad = elevation_deg.to_radians();
+    // East (-X) at sunrise -> West (+X) at sunset, with a slight south (+Z)
+    // bias so faces get modelled light rather than flat top-down noon.
+    let x = -(1.0 - azimuth_t * 2.0) * elev_rad.cos();
+    let sun_dir = Vec3::new(x, elev_rad.sin(), 0.35 * elev_rad.cos() + 0.15).normalize();
+    (sun_dir, elev_rad.sin())
+}
+
 /// System that updates the directional light rotation based on SkySettings and ZoneTime.
 /// This creates a dynamic day/night cycle where the sun position changes with time.
-/// The sun rotates around the scene based on the time of day (0-24 hours).
 ///
 /// When SkySettings.mode is Automatic, the sun follows the game's ZoneTime.
 /// When SkySettings.mode is Manual, the sun position is controlled by SkySettings.manual_time.
 ///
-/// Sun path:
-/// - Sunrise (~6:00): Sun at horizon in the East
-/// - Noon (~12:00): Sun directly overhead
-/// - Sunset (~18:00): Sun at horizon in the West
-/// - Night (~21:00-5:00): Sun below horizon
+/// Sun path (see SUNRISE_HOUR/SUNSET_HOUR):
+/// - Sunrise (~5:00): Sun at horizon in the East
+/// - Solar noon (~12:30): Sun at ~68 deg elevation (broad 08:00-17:00 plateau)
+/// - Sunset (~20:00): Sun at horizon in the West
+/// - Night (20:00-05:00): Sun below horizon
 fn update_sun_position_system(
     zone_time: Res<crate::resources::ZoneTime>,
     sky_settings: Res<SkySettings>,
+    daylight: Res<DaylightSettings>,
     current_zone: Option<Res<crate::resources::CurrentZone>>,
     game_data: Res<crate::resources::GameData>,
     // Sun only: moon_light_follow_camera_system owns the moon transform; without
     // this filter the sun rotation overwrote the moon every time change (order-dependent).
-    mut query: Query<&mut Transform, (With<DirectionalLight>, Without<MoonLight>)>,
+    // The sky fill light has its own fixed direction and must not be touched here.
+    mut sun_query: Query<
+        &mut Transform,
+        (
+            With<DirectionalLight>,
+            Without<MoonLight>,
+            Without<SkyFillLight>,
+        ),
+    >,
+    mut fill_query: Query<
+        &mut DirectionalLight,
+        (With<SkyFillLight>, Without<MoonLight>),
+    >,
 ) {
-    // Determine if we should update based on mode and what changed
+    // Determine if we should update based on mode and what changed.
+    // Daylight slider moves must refresh the sun even when the clock hasn't ticked.
     let should_update = match sky_settings.mode {
-        SkyMode::Automatic => zone_time.is_changed() || sky_settings.is_changed(),
-        SkyMode::Manual => sky_settings.is_changed(),
+        SkyMode::Automatic => {
+            zone_time.is_changed() || sky_settings.is_changed() || daylight.is_changed()
+        }
+        SkyMode::Manual => sky_settings.is_changed() || daylight.is_changed(),
     };
 
     if !should_update {
@@ -398,56 +541,30 @@ fn update_sun_position_system(
         }
     };
 
-    for mut transform in query.iter_mut() {
-        // Normalize time to 0-24 hours range
-        let normalized_time = time_hours % 24.0;
-
-        // Shift time to achieve desired sun cycle:
-        // - 6:00: sunrise (sun at horizon, rising)
-        // - 12:00-17:00: sun high in the sky
-        // - After 17:00: sunset (sun goes below horizon)
-        //
-        // The shift of +19 hours (equivalent to -5) maps:
-        // - 6:00 → shifted 1:00 → day_fract ≈ 0.04 (sun rising)
-        // - 12:00 → shifted 7:00 → day_fract ≈ 0.29 (sun climbing)
-        // - 17:00 → shifted 12:00 → day_fract = 0.5 (sun at highest/noon position)
-        // - 18:00 → shifted 13:00 → day_fract ≈ 0.54 (sun starting to descend)
-        // - 23:00 → shifted 18:00 → day_fract = 0.75 (sun setting)
-        //
-        // This extends daylight by ~6 hours: sun visible from 6:00 through 17:00+
-        let shifted_time = (normalized_time + 19.0) % 24.0;
-
-        // Convert time to a fraction of the day (0.0 to 1.0)
-        let day_fract = (shifted_time / 24.0).clamp(0.0, 1.0);
-
-        // Earth's axial tilt - this creates the arc path of the sun
-        // Higher values make the sun rise higher at noon
-        let earth_tilt_rad = std::f32::consts::PI / 3.0; // 60 degrees
-
-        // Create rotation that moves the sun in an arc from east to west
-        // Using ZYX euler angles:
-        // - Z (earth_tilt_rad): Tilts the rotation axis to create the arc path
-        // - Y (0.0): No Y rotation needed
-        // - X (-day_fract * TAU): Rotates the sun around the tilted axis over the day
-        //
-        // With the +19 hour shift:
-        // At 6:00 (day_fract ≈ 0.04): sun rising at horizon
-        // At 12:00 (day_fract ≈ 0.29): sun climbing in sky
-        // At 17:00 (day_fract = 0.5): sun at highest point (noon position)
-        // At 23:00 (day_fract = 0.75): sun setting at horizon
-        //
-        // This keeps sun visible from 6:00 through 17:00+ (extended daylight)
-        let new_rotation = Quat::from_euler(
-            EulerRot::ZYX,
-            earth_tilt_rad,
-            0.0,
-            -day_fract * std::f32::consts::TAU,
-        );
+    let (sun_dir, elevation_sin) = sun_direction_for_hour(time_hours, &daylight);
+    // Light shines along forward (-Z): aim forward at -sun_dir so the sun sits
+    // at +sun_dir. looking_at handles the near-vertical noon case gracefully.
+    let new_rotation = Transform::IDENTITY
+        .looking_at(-sun_dir, Vec3::Y)
+        .rotation;
+    for mut transform in sun_query.iter_mut() {
         // Only write when the rotation actually changed (it only moves when the
         // tick-based time advances), so the shadow-casting directional light is
         // not dirtied every frame.
         if transform.rotation != new_rotation {
             transform.rotation = new_rotation;
+        }
+    }
+
+    // Sky fill follows daylight: full at midday, off when the sun is down.
+    // smoothstep(0, 0.35) reaches full well before noon so faces read clearly
+    // through the whole bright plateau, and fades out across dusk.
+    let daylight_t = (elevation_sin / 0.35).clamp(0.0, 1.0);
+    let fill_peak = daylight.fill_illuminance.max(0.0);
+    let fill_illuminance = fill_peak * daylight_t * daylight_t * (3.0 - 2.0 * daylight_t);
+    for mut fill in fill_query.iter_mut() {
+        if (fill.illuminance - fill_illuminance).abs() > 1.0 {
+            fill.illuminance = fill_illuminance;
         }
     }
 }
@@ -508,55 +625,69 @@ fn apply_sky_settings_to_zone_time(
     }
 }
 
-/// System that adjusts shadow settings based on time of day.
-/// During evening and night, sun shadows are disabled since the starry sky
-/// provides ambient lighting from all directions.
+/// System that adjusts shadow settings based on the live sun elevation.
+/// The sun stays on (with shadows) whenever it is above the horizon, so light
+/// lasts through Evening until ~20:00 instead of cutting out at 17:00.
+/// Illuminance ramps smoothly with elevation: soft dawn/dusk, full midday.
 ///
-/// Shadow State by Time:
-/// | Time State | Sun Shadows | Moon Shadows |
-/// |------------|-------------|--------------|
-/// | Morning    | Enabled     | Disabled     |
-/// | Day        | Enabled     | Disabled     |
-/// | Evening    | Disabled    | Disabled     |
-/// | Night      | Disabled    | Disabled     |
+/// Shadow State by Time (moon shadows stay off in all states for perf):
+/// | Time State    | Sun Shadows            | Moon Shadows |
+/// |---------------|------------------------|--------------|
+/// | Morning/Day   | Enabled (sun is up)    | Disabled     |
+/// | Evening (sun) | Enabled while up       | Disabled     |
+/// | Evening/Night | Disabled (sun is down) | Disabled     |
 pub fn update_shadows_for_time_of_day_system(
     zone_time: Res<ZoneTime>,
-    mut sun_query: Query<&mut DirectionalLight, (With<VolumetricLight>, Without<MoonLight>)>,
+    daylight: Res<DaylightSettings>,
+    mut sun_query: Query<
+        (&mut DirectionalLight, &GlobalTransform),
+        (With<VolumetricLight>, Without<MoonLight>, Without<SkyFillLight>),
+    >,
     mut moon_query: Query<&mut DirectionalLight, With<MoonLight>>,
     graphics_settings: Option<Res<GraphicsSettings>>,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
-    // Only re-evaluate when the time state actually changed. Previously this wrote
-    // shadows_enabled/illuminance every frame, invalidating the shadow-map cache and
-    // forcing cascade re-renders even for a static scene.
-    if !zone_time.is_changed() {
+    // Only re-evaluate when the time state actually changed (or a daylight slider
+    // moved). Previously this wrote shadow_maps_enabled/illuminance every frame,
+    // invalidating the shadow-map cache and forcing cascade re-renders even for
+    // a static scene.
+    if !zone_time.is_changed() && !daylight.is_changed() {
         return;
     }
 
     // Check if shadows are enabled in graphics settings
     // If shadows are disabled by quality settings, don't override
-    let shadows_enabled_by_settings = graphics_settings
+    let shadow_maps_enabled_by_settings = graphics_settings
         .map(|g| g.shadow_quality != ShadowQuality::Off)
         .unwrap_or(true);
 
-    if !shadows_enabled_by_settings {
+    if !shadow_maps_enabled_by_settings {
         return; // Shadows disabled in settings, nothing to do
     }
 
-    // Calculate light and shadow settings based on time state.
-    // Moon illuminance follows the night: day has sun 15000 + moon 0 (previously moon
-    // stayed 5000 all day, over-lighting from two directions); night has sun 0 + moon.
-    let (sun_shadows, sun_illuminance, moon_shadows, moon_illuminance) = match zone_time.state {
-        ZoneTimeState::Morning => (true, 15000.0, false, 500.0),
-        ZoneTimeState::Day => (true, 15000.0, false, 0.0),
-        ZoneTimeState::Evening => (false, 0.0, false, 800.0),
-        ZoneTimeState::Night => (false, 0.0, false, 3000.0),
+    // Moon illuminance still follows the named state (it is a state proxy for
+    // "how dark is the sky"), while the sun follows its live elevation so the
+    // Evening dusk keeps sunlight until the disk actually sets.
+    let (moon_shadows, moon_illuminance) = match zone_time.state {
+        ZoneTimeState::Morning => (false, 500.0),
+        ZoneTimeState::Day => (false, 0.0),
+        ZoneTimeState::Evening => (false, 800.0),
+        ZoneTimeState::Night => (false, 3000.0),
     };
 
     // Write only on actual change to avoid dirtying the light every frame.
-    for mut light in sun_query.iter_mut() {
-        if light.shadows_enabled != sun_shadows {
-            light.shadows_enabled = sun_shadows;
+    for (mut light, transform) in sun_query.iter_mut() {
+        // Sun height sine from the live transform (set by
+        // update_sun_position_system, which runs before us in Update order).
+        let sun_height: f32 = -transform.forward().y;
+        let sun_up = sun_height > 0.02;
+        // Smooth dawn/dusk ramp: 0 at the horizon, full once ~14 deg up.
+        let ramp = (sun_height / 0.25).clamp(0.0, 1.0);
+        let smooth = ramp * ramp * (3.0 - 2.0 * ramp);
+        let sun_illuminance = daylight.sun_illuminance.max(0.0) * smooth;
+        let sun_shadows = sun_up;
+        if light.shadow_maps_enabled != sun_shadows {
+            light.shadow_maps_enabled = sun_shadows;
         }
         if (light.illuminance - sun_illuminance).abs() > f32::EPSILON {
             light.illuminance = sun_illuminance;
@@ -565,8 +696,8 @@ pub fn update_shadows_for_time_of_day_system(
 
     // Apply to moon light (shadows stay off in all states per table; illuminance follows night).
     for mut light in moon_query.iter_mut() {
-        if light.shadows_enabled != moon_shadows {
-            light.shadows_enabled = moon_shadows;
+        if light.shadow_maps_enabled != moon_shadows {
+            light.shadow_maps_enabled = moon_shadows;
         }
         if (light.illuminance - moon_illuminance).abs() > f32::EPSILON {
             light.illuminance = moon_illuminance;

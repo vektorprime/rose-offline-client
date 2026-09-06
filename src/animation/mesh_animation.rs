@@ -85,7 +85,7 @@ pub fn mesh_animation_system(
                         || uniform.current_next_frame != current_next_frame
                         || uniform.next_weight != next_weight
                     {
-                        if let Some(material) = effect_mesh_materials.get_mut(&material_handle) {
+                        if let Some(mut material) = effect_mesh_materials.get_mut(&material_handle) {
                             update_effect_mesh_animation_material(
                                 &mut material.extension.animation_state,
                                 zmo_asset,

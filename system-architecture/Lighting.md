@@ -35,14 +35,15 @@ This document covers all lighting-related features in the Rose Offline Client, i
 
 ### Bevy Version Notes
 
-This documentation is for **Bevy 0.18.1**. Key changes from earlier versions:
+This documentation is for **Bevy 0.19.1** (upgraded from 0.18.1; see `bevy-0.19-upgrade-plan.md`). Key changes from earlier versions:
 
-| Feature | Bevy 0.14 | Bevy 0.18 |
-|---------|-----------|-----------|
-| Shadow field | `shadows_enabled` | `shadows_enabled` (unchanged in 0.18; `shadow_maps_enabled` is a newer-Bevy rename) |
-| Ambient light | Resource only | Component + Resource |
-| Light bundles | `DirectionalLightBundle` | Individual components |
-| Fog volume | Bevy 0.15+ | Enhanced in 0.18 |
+| Feature | Bevy 0.14 | Bevy 0.18 | Bevy 0.19 |
+|---------|-----------|-----------|-----------|
+| Shadow field | `shadows_enabled` | `shadows_enabled` | **`shadow_maps_enabled`** (renamed; contact shadows split out) |
+| Ambient light | Resource only | Component + Resource | Component + Resource |
+| Light bundles | `DirectionalLightBundle` | Individual components | Individual components |
+| Fog volume | Bevy 0.15+ | Enhanced in 0.18 | Enhanced in 0.18 |
+| Atmosphere | Camera component (`bevy_pbr`) | Camera component (`bevy_pbr`) | **Standalone entity (`bevy_light::Atmosphere`); camera keeps `AtmosphereSettings`** |
 
 ---
 
@@ -58,7 +59,7 @@ The `DirectionalLight` component represents light sources infinitely far away, s
 pub struct DirectionalLight {
     pub color: Color,
     pub illuminance: f32,           // Lux (lumens per square meter)
-    pub shadows_enabled: bool,      // 0.18.1 field name (shadow_maps_enabled is a newer-Bevy rename)
+    pub shadow_maps_enabled: bool,  // 0.19.1 field name (`shadows_enabled` in 0.18.1 and earlier)
     pub contact_shadows_enabled: bool,
     #[cfg(feature = "experimental_pbr_pcss")]
     pub soft_shadow_size: Option<f32>,
@@ -68,7 +69,7 @@ pub struct DirectionalLight {
 }
 ```
 
-**Migration Note:** In Bevy 0.18.1 the field is still named `shadows_enabled`. The rename to `shadow_maps_enabled` only happens in newer Bevy versions.
+**Migration Note:** In Bevy 0.18.1 the field was still named `shadows_enabled`. Since the 0.19 upgrade it is `shadow_maps_enabled` (plus the separate `contact_shadows_enabled` flag).
 
 ### Illuminance Values (Lux)
 

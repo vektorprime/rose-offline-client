@@ -7,7 +7,7 @@ use bevy::{
         AssetServer, Assets, Changed, Commands, Entity, GlobalTransform, Handle, Mesh, Mesh3d,
         Query, Res, ResMut, Transform, With, Without,
     },
-    render::alpha::AlphaMode,
+    material::AlphaMode,
 };
 use bevy_camera::primitives::Aabb;
 use bevy_rapier3d::prelude::{Collider, CollisionGroups};

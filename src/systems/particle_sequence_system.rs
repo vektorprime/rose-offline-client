@@ -8,10 +8,10 @@ use bevy::{
         Commands, Component, Entity, GlobalTransform, Mesh3d, MeshMaterial3d, Query, Res, ResMut,
         Resource, Time, Transform,
     },
+    material::AlphaMode,
     render::{
-        alpha::AlphaMode,
         render_resource::{Extent3d, TextureDimension, TextureFormat},
-        storage::ShaderStorageBuffer,
+        storage::ShaderBuffer,
     },
 };
 use bevy_image::{Image, ImageSampler};
@@ -518,7 +518,7 @@ pub fn particle_storage_buffer_update_system(
         Option<&MeshMaterial3d<ParticleMaterial>>,
     )>,
     mut materials: ResMut<Assets<ParticleMaterial>>,
-    mut storage_buffers: ResMut<Assets<ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
     mut meshes: ResMut<Assets<Mesh>>,
     default_texture: Res<DefaultParticleTexture>,
 ) {
@@ -563,7 +563,7 @@ pub fn particle_storage_buffer_update_system(
         // Update or create mesh + material components
         if let Some(existing_material_handle) = material_handle {
             // Update existing material - preserve the original texture!
-            if let Some(mat) = materials.get_mut(&existing_material_handle.0) {
+            if let Some(mut mat) = materials.get_mut(&existing_material_handle.0) {
                 // PERF: update storage buffers in place (same Handle) instead of
                 // add()+remove() every frame. add() allocates a new AssetId + GPU
                 // buffer and swaps the material handle (new bind group); remove()
@@ -573,29 +573,49 @@ pub fn particle_storage_buffer_update_system(
                 // Handles are only replaced if a buffer asset went missing.
                 // (Concrete types: same Vec<Vec4>/Vec<Vec2> as the From impls below,
                 // so no extra trait bounds needed here.)
-                if let Some(buf) = storage_buffers.get_mut(&mat.positions) {
-                    buf.set_data(render_data.positions.clone());
-                } else {
+                // AssetMut has a Drop impl, so each get_mut borrow is scoped to
+                // end before the fallback add() re-borrows storage_buffers.
+                let positions_updated =
+                    if let Some(mut buf) = storage_buffers.get_mut(&mat.positions) {
+                        buf.set_data(render_data.positions.clone());
+                        true
+                    } else {
+                        false
+                    };
+                if !positions_updated {
                     mat.positions = storage_buffers
-                        .add(ShaderStorageBuffer::from(render_data.positions.clone()));
+                        .add(ShaderBuffer::from(render_data.positions.clone()));
                 }
-                if let Some(buf) = storage_buffers.get_mut(&mat.sizes) {
+                let sizes_updated = if let Some(mut buf) = storage_buffers.get_mut(&mat.sizes) {
                     buf.set_data(render_data.sizes.clone());
+                    true
                 } else {
+                    false
+                };
+                if !sizes_updated {
                     mat.sizes = storage_buffers
-                        .add(ShaderStorageBuffer::from(render_data.sizes.clone()));
+                        .add(ShaderBuffer::from(render_data.sizes.clone()));
                 }
-                if let Some(buf) = storage_buffers.get_mut(&mat.colors) {
+                let colors_updated = if let Some(mut buf) = storage_buffers.get_mut(&mat.colors) {
                     buf.set_data(render_data.colors.clone());
+                    true
                 } else {
+                    false
+                };
+                if !colors_updated {
                     mat.colors = storage_buffers
-                        .add(ShaderStorageBuffer::from(render_data.colors.clone()));
+                        .add(ShaderBuffer::from(render_data.colors.clone()));
                 }
-                if let Some(buf) = storage_buffers.get_mut(&mat.textures) {
-                    buf.set_data(render_data.textures.clone());
-                } else {
+                let textures_updated =
+                    if let Some(mut buf) = storage_buffers.get_mut(&mat.textures) {
+                        buf.set_data(render_data.textures.clone());
+                        true
+                    } else {
+                        false
+                    };
+                if !textures_updated {
                     mat.textures = storage_buffers
-                        .add(ShaderStorageBuffer::from(render_data.textures.clone()));
+                        .add(ShaderBuffer::from(render_data.textures.clone()));
                 }
 
                 // Update blend settings (these are cheap to update)
@@ -612,11 +632,11 @@ pub fn particle_storage_buffer_update_system(
 
             let material = ParticleMaterial {
                 positions: storage_buffers
-                    .add(ShaderStorageBuffer::from(render_data.positions.clone())),
-                sizes: storage_buffers.add(ShaderStorageBuffer::from(render_data.sizes.clone())),
-                colors: storage_buffers.add(ShaderStorageBuffer::from(render_data.colors.clone())),
+                    .add(ShaderBuffer::from(render_data.positions.clone())),
+                sizes: storage_buffers.add(ShaderBuffer::from(render_data.sizes.clone())),
+                colors: storage_buffers.add(ShaderBuffer::from(render_data.colors.clone())),
                 textures: storage_buffers
-                    .add(ShaderStorageBuffer::from(render_data.textures.clone())),
+                    .add(ShaderBuffer::from(render_data.textures.clone())),
                 texture,
                 blend_op: render_data.blend_op as u32,
                 src_blend_factor: render_data.src_blend_factor as u32,

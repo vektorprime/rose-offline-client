@@ -11,7 +11,10 @@ use crate::{
         BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory, WindSwaySettings,
     },
     graphics::GraphicsSettings,
-    render::{SkyMode, SkySettings, StarrySkySettings, VolumetricCloudSettings, ZoneLighting},
+    render::{
+        DaylightSettings, SkyMode, SkySettings, StarrySkySettings, VolumetricCloudSettings,
+        ZoneLighting,
+    },
     resources::{
         BloodEffectConfig, SeasonSettings, SoundSettings, SummerSettings, WaterSettings, ZoneTime,
         ZoneTimeState,
@@ -184,6 +187,7 @@ pub struct SettingsSystemParams<'w, 's> {
     pub blood_effect_config: ResMut<'w, BloodEffectConfig>,
     pub query_sounds: Query<'w, 's, (&'static SoundCategory, &'static mut SoundGain)>,
     pub sky_settings: ResMut<'w, SkySettings>,
+    pub daylight_settings: ResMut<'w, DaylightSettings>,
     pub starry_sky_settings: ResMut<'w, StarrySkySettings>,
     pub volumetric_cloud_settings: ResMut<'w, VolumetricCloudSettings>,
     pub starry_sky_render_settings: ResMut<'w, StarrySkyRenderSettings>,
@@ -261,6 +265,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
         mut blood_effect_config,
         mut query_sounds,
         mut sky_settings,
+        mut daylight_settings,
         mut starry_sky_settings,
         mut volumetric_cloud_settings,
         mut starry_sky_render_settings,
@@ -345,7 +350,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                     render_blood_page(ui, &mut blood_effect_config);
                 }
                 SettingsPage::Sky => {
-                    render_sky_page(ui, &mut sky_settings);
+                    render_sky_page(ui, &mut sky_settings, &mut daylight_settings);
                 }
                 SettingsPage::Stars => {
                     render_stars_page(ui, &mut starry_sky_settings);
@@ -484,7 +489,11 @@ fn render_blood_page(ui: &mut egui::Ui, blood_effect_config: &mut BloodEffectCon
     ui.label("LOD distances reduce blood complexity for distant combat.");
 }
 
-fn render_sky_page(ui: &mut egui::Ui, sky_settings: &mut SkySettings) {
+fn render_sky_page(
+    ui: &mut egui::Ui,
+    sky_settings: &mut SkySettings,
+    daylight: &mut DaylightSettings,
+) {
     egui::Grid::new("sky_settings")
         .num_columns(2)
         .show(ui, |ui| {
@@ -517,10 +526,48 @@ fn render_sky_page(ui: &mut egui::Ui, sky_settings: &mut SkySettings) {
         });
 
     ui.separator();
+    ui.label("Daylight tuning:");
+    egui::Grid::new("daylight_settings")
+        .num_columns(2)
+        .show(ui, |ui| {
+            settings_slider(ui, "Sunrise:", &mut daylight.sunrise_hour, 0.0..=12.0, Some("h"));
+            settings_slider(ui, "Sunset:", &mut daylight.sunset_hour, 12.0..=24.0, Some("h"));
+            settings_slider(
+                ui,
+                "Noon sun height:",
+                &mut daylight.max_elevation_deg,
+                20.0..=90.0,
+                Some("deg"),
+            );
+            settings_slider(
+                ui,
+                "Sun brightness:",
+                &mut daylight.sun_illuminance,
+                5000.0..=60000.0,
+                Some("lux"),
+            );
+            settings_slider(
+                ui,
+                "Shadow fill:",
+                &mut daylight.fill_illuminance,
+                0.0..=15000.0,
+                Some("lux"),
+            );
+            ui.label("");
+            if ui.button("Reset daylight defaults").clicked() {
+                *daylight = DaylightSettings::default();
+            }
+            ui.end_row();
+        });
+
+    ui.separator();
     if sky_settings.mode == SkyMode::Automatic {
         ui.label("Tip: Time follows game time automatically. Switch to Manual mode to control time yourself.");
     } else {
-        ui.label("Tip: Drag the time slider to change time of day. 6 = sunrise, 12 = noon, 18 = sunset, 0 = midnight.");
+        ui.label(format!(
+            "Tip: Drag the time slider to change time of day. {:.0} = sunrise, 12 = noon, {:.0} = sunset, 0 = midnight.",
+            daylight.sunrise_hour, daylight.sunset_hour
+        ));
     }
 }
 

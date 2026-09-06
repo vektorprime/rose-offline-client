@@ -8,7 +8,8 @@ use bevy::{
         AssetServer, Assets, Color, Commands, Entity, GlobalTransform, Handle, Image,
         InheritedVisibility, Mesh, Mesh3d, Resource, Transform, ViewVisibility, Visibility,
     },
-    render::{alpha::AlphaMode, render_resource::Face, storage::ShaderStorageBuffer},
+    material::AlphaMode,
+    render::{render_resource::Face, storage::ShaderBuffer},
 };
 use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 
@@ -245,7 +246,7 @@ impl ModelLoader {
         particle_materials: &mut Assets<ParticleMaterial>,
         effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
         meshes: &mut Assets<Mesh>,
-        storage_buffers: &mut Assets<ShaderStorageBuffer>,
+        storage_buffers: &mut Assets<ShaderBuffer>,
         model_entity: Entity,
         npc_id: NpcId,
     ) -> Option<(NpcModel, SkinnedMesh, DummyBoneOffset)> {
@@ -890,7 +891,7 @@ impl ModelLoader {
         particle_materials: &mut Assets<ParticleMaterial>,
         effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
         meshes: &mut Assets<Mesh>,
-        storage_buffers: &mut Assets<ShaderStorageBuffer>,
+        storage_buffers: &mut Assets<ShaderBuffer>,
         vehicle_model_entity: Entity,
         skinned_mesh_parent_entity: Entity,
         driver_model_entity: Entity,

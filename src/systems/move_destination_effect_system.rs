@@ -2,13 +2,14 @@ use bevy::{
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
         AssetServer, Assets, Commands, Entity, GlobalTransform, InheritedVisibility, Local, Mesh,
-        MessageReader, Res, ResMut, Transform, ViewVisibility, Visibility,
+        MessageReader, Query, Res, ResMut, Transform, Vec3, ViewVisibility, Visibility, With,
     },
-    render::alpha::AlphaMode,
+    material::AlphaMode,
 };
 use rose_data::EffectFileId;
 
 use crate::{
+    components::{PlayerCharacter, Position},
     effect_loader::{spawn_effect, EffectCache},
     events::MoveDestinationEffectEvent,
     render::{ParticleMaterial, RoseEffectExtension},
@@ -18,6 +19,7 @@ use crate::{
 #[derive(Default)]
 pub struct MoveDestinationEffectSystemState {
     pub last_effect_entity: Option<Entity>,
+    pub last_position: Option<Vec3>,
 }
 
 pub fn move_destination_effect_system(
@@ -32,8 +34,9 @@ pub fn move_destination_effect_system(
         Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
     >,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
-    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderBuffer>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    player_query: Query<&Position, With<PlayerCharacter>>,
 ) {
     for event in events.read() {
         match event {
@@ -41,6 +44,7 @@ pub fn move_destination_effect_system(
                 if let Some(last_effect_entity) = state.last_effect_entity.take() {
                     commands.entity(last_effect_entity).despawn();
                 }
+                state.last_position = Some(*position);
 
                 if let Some(effect_file_path) = game_data
                     .effect_database
@@ -49,11 +53,13 @@ pub fn move_destination_effect_system(
                 {
                     let effect_entity = commands
                         .spawn((
-                            Transform::from_translation(*position),
+                            // Scaled to ~half: the effect-296 cone reads oversized
+                            // at full scale next to the Hanabi ring pilot.
+                            Transform::from_translation(*position)
+                                .with_scale(Vec3::splat(0.5)),
                             GlobalTransform::default(),
                             Visibility::default(),
                             InheritedVisibility::default(),
-                            Visibility::default(),
                             ViewVisibility::default(),
                         ))
                         .id();
@@ -79,7 +85,22 @@ pub fn move_destination_effect_system(
                 if let Some(last_effect_entity) = state.last_effect_entity.take() {
                     commands.entity(last_effect_entity).despawn();
                 }
+                state.last_position = None;
             }
+        }
+    }
+
+    // Dismiss the marker on arrival: Position is centimetres in
+    // (x, -z, y) order, Show positions are metres in (x, y, z).
+    if let (Some(entity), Some(dest)) = (state.last_effect_entity, state.last_position) {
+        let arrived = player_query.iter().next().is_some_and(|p| {
+            let player_m = Vec3::new(p.position.x, p.position.z, -p.position.y) / 100.0;
+            player_m.distance(dest) < 2.0
+        });
+        if arrived {
+            commands.entity(entity).despawn();
+            state.last_effect_entity = None;
+            state.last_position = None;
         }
     }
 }

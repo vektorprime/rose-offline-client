@@ -123,6 +123,7 @@ fn generate_text_galley(
         font_id: egui::FontSelection::Default.resolve(&style),
         color: egui::Color32::WHITE,
         background: egui::Color32::TRANSPARENT,
+        coords: Default::default(),
         italics: false,
         underline: egui::Stroke::NONE,
         strikethrough: egui::Stroke::NONE,
@@ -259,7 +260,9 @@ pub fn ui_minimap_system(
         return;
     };
     let camera_forward_2d = camera_transform.forward().xz().normalize_or_zero();
-    let camera_angle = -camera_forward_2d.angle_between(Vec2::Y);
+    // glam 0.32 removed unsigned `angle_between`; `.abs()` on the signed
+    // `angle_to` preserves the previous unsigned-angle behavior.
+    let camera_angle = -camera_forward_2d.angle_to(Vec2::Y).abs();
 
     // If zone has changed, reload the minimap image
     let pixels_per_point = egui_context.ctx_mut().unwrap().pixels_per_point();

@@ -131,7 +131,7 @@ pub fn blood_overlay_generate_system(
             };
 
             for (mat_entity, mat_handle) in &material_entities {
-                if let Some(material) = materials.get_mut(mat_handle) {
+                if let Some(mut material) = materials.get_mut(mat_handle) {
                     if let Some(overlay_handle) = existing.textures.get(mat_entity) {
                         material.extension.blood_overlay_texture = Some(overlay_handle.clone());
                         material.extension.blood_params =
@@ -174,16 +174,21 @@ pub fn blood_overlay_generate_system(
                 continue;
             }
 
-            // Reuse existing texture image when possible
+            // Reuse existing texture image when possible.
+            // The get_mut borrow is scoped to a bool so the fallback path
+            // can re-borrow images (AssetMut has a Drop impl, which extends
+            // the borrow across the if/else otherwise).
             let overlay_handle =
                 if let Some(existing_handle) = per_material_textures.get(mat_entity) {
-                    if let Some(image) = images.get_mut(existing_handle) {
-                        if image.data.is_some() {
-                            paint_overlay_texture(image, &material_stains, &atlas);
-                            existing_handle.clone()
-                        } else {
-                            generate_overlay_texture(&mut images, &material_stains, &atlas)
-                        }
+                    let has_data = if let Some(image) = images.get_mut(existing_handle) {
+                        image.data.is_some()
+                    } else {
+                        false
+                    };
+                    if has_data {
+                        let image = images.get_mut(existing_handle).unwrap().into_inner();
+                        paint_overlay_texture(image, &material_stains, &atlas);
+                        existing_handle.clone()
                     } else {
                         generate_overlay_texture(&mut images, &material_stains, &atlas)
                     }
@@ -202,7 +207,7 @@ pub fn blood_overlay_generate_system(
 
         // Bind overlay textures to extension fields on each material
         for (mat_entity, mat_handle) in &material_entities {
-            if let Some(material) = materials.get_mut(mat_handle) {
+            if let Some(mut material) = materials.get_mut(mat_handle) {
                 if let Some(overlay_handle) = per_material_textures.get(mat_entity) {
                     material.extension.blood_overlay_texture = Some(overlay_handle.clone());
                     material.extension.blood_params =

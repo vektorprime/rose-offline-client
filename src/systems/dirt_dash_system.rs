@@ -2,7 +2,7 @@ use bevy::{
     math::Vec3Swizzles,
     pbr::{MeshMaterial3d, StandardMaterial},
     prelude::*,
-    render::alpha::AlphaMode,
+    material::AlphaMode,
 };
 use rand::Rng;
 

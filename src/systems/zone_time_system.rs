@@ -104,6 +104,7 @@ pub fn zone_time_system(
     game_data: Res<GameData>,
     world_time: Res<WorldTime>,
     app_state: Res<State<AppState>>,
+    daylight: Res<crate::render::zone_lighting::DaylightSettings>,
     mut zone_time: ResMut<ZoneTime>,
     mut query_night_effects: Query<Entity, With<NightTimeEffect>>,
     mut query_visibility: Query<&mut Visibility>,
@@ -228,35 +229,36 @@ pub fn zone_time_system(
     // Use safe_day_cycle to prevent division by zero
     let day_time_hours = (day_time as f32 / safe_day_cycle as f32) * 24.0;
 
-    // Determine time state based on FIXED hour thresholds
-    // This ensures consistent behavior regardless of zone data values
-    //
-    // Time periods (in game hours):
-    // - Morning: 6:00-12:00 (dawn to noon)
-    // - Day: 12:00-17:00 (full daylight with sun)
-    // - Evening: 17:00-19:00 (dusk transition / light haze)
-    // - Night: 19:00-6:00 (full night)
+    // Determine time state from the DaylightSettings sunrise/sunset window.
+    // Day bounds (11:00 / 17:00) are fixed midday anchors; morning stretches
+    // sunrise->11 and evening stretches 17->sunset so the Sky sliders for
+    // sunrise/sunset move both the sun disk and these states together.
     //
     // The zone data values are used for tick calculations but NOT for state determination
     // to ensure consistent day/night cycle across all zones.
 
-    let is_morning = day_time_hours >= 6.0 && day_time_hours < 12.0;
-    let is_day = day_time_hours >= 12.0 && day_time_hours < 17.0;
-    let is_evening = day_time_hours >= 17.0 && day_time_hours < 19.0; // 2-hour evening transition (dusk)
-    let is_night = day_time_hours >= 19.0 || day_time_hours < 6.0;
+    let sunrise = daylight.sunrise_hour.clamp(0.0, 24.0);
+    let sunset = daylight.sunset_hour.clamp(0.0, 24.0).max(sunrise + 1.0);
+    // Day plateau anchors (fixed): full sun between these hours when inside the window.
+    const DAY_START_HOUR: f32 = 11.0;
+    const DAY_END_HOUR: f32 = 17.0;
+
+    let is_morning = day_time_hours >= sunrise && day_time_hours < DAY_START_HOUR;
+    let is_day = day_time_hours >= DAY_START_HOUR && day_time_hours < DAY_END_HOUR;
+    let is_evening = day_time_hours >= DAY_END_HOUR && day_time_hours < sunset;
+    let is_night = day_time_hours >= sunset || day_time_hours < sunrise;
 
     if is_night {
-        // Night: 19:00-6:00 (11 hours total, wraps around midnight)
-        // State length in hours: 11 hours
-        const NIGHT_LENGTH_HOURS: f32 = 11.0;
+        // Night: sunset->sunrise (wraps around midnight)
+        let night_length_hours = (24.0 - sunset + sunrise).max(0.5);
 
         // Calculate state_ticks in hours
-        let state_ticks_hours = if day_time_hours >= 19.0 {
-            // We're in the first part of night (19:00 to 24:00)
-            day_time_hours - 19.0
+        let state_ticks_hours = if day_time_hours >= sunset {
+            // We're in the first part of night (sunset to 24:00)
+            day_time_hours - sunset
         } else {
-            // We're in the second part of night (0:00 to 6:00)
-            (24.0 - 19.0) + day_time_hours
+            // We're in the second part of night (0:00 to sunrise)
+            (24.0 - sunset) + day_time_hours
         };
 
         if zone_time.state != ZoneTimeState::Night {
@@ -267,7 +269,7 @@ pub fn zone_time_system(
         }
         write_f32_if_changed(
             &mut zone_time.state_percent_complete,
-            (state_ticks_hours + partial_tick / 24.0) / NIGHT_LENGTH_HOURS,
+            (state_ticks_hours + partial_tick / 24.0) / night_length_hours,
             1e-3,
         );
 
@@ -303,12 +305,11 @@ pub fn zone_time_system(
             write_f32_if_changed(&mut zone_lighting.fog_density, NIGHT_FOG_DENSITY, 1e-4);
         }
     } else if is_evening {
-        // Evening: 17:00-19:00 (2 hours total) - dusk transition
-        // State length in hours: 2 hours
-        const EVENING_LENGTH_HOURS: f32 = 2.0;
+        // Evening: DAY_END_HOUR->sunset dusk transition, sun up until sunset.
+        let evening_length_hours = (sunset - DAY_END_HOUR).max(0.5);
 
-        // Calculate state_ticks in hours (17:00 is the start)
-        let state_ticks_hours = day_time_hours - 17.0;
+        // Calculate state_ticks in hours (DAY_END_HOUR is the start)
+        let state_ticks_hours = day_time_hours - DAY_END_HOUR;
 
         if zone_time.state != ZoneTimeState::Evening {
             for entity in query_night_effects.iter_mut() {
@@ -318,7 +319,7 @@ pub fn zone_time_system(
         }
         write_f32_if_changed(
             &mut zone_time.state_percent_complete,
-            (state_ticks_hours + partial_tick / 24.0) / EVENING_LENGTH_HOURS,
+            (state_ticks_hours + partial_tick / 24.0) / evening_length_hours,
             1e-3,
         );
 
@@ -450,12 +451,11 @@ pub fn zone_time_system(
             }
         }
     } else if is_day {
-        // Day: 12:00-17:00 (5 hours total)
-        // State length in hours: 5 hours
-        const DAY_LENGTH_HOURS: f32 = 5.0;
+        // Day: DAY_START_HOUR-DAY_END_HOUR (full sun high in the sky)
+        let day_length_hours = (DAY_END_HOUR - DAY_START_HOUR).max(0.5);
 
-        // Calculate state_ticks in hours (12:00 is the start)
-        let state_ticks_hours = day_time_hours - 12.0;
+        // Calculate state_ticks in hours (DAY_START_HOUR is the start)
+        let state_ticks_hours = day_time_hours - DAY_START_HOUR;
 
         if zone_time.state != ZoneTimeState::Day {
             for entity in query_night_effects.iter_mut() {
@@ -465,7 +465,7 @@ pub fn zone_time_system(
         }
         write_f32_if_changed(
             &mut zone_time.state_percent_complete,
-            (state_ticks_hours + partial_tick / 24.0) / DAY_LENGTH_HOURS,
+            (state_ticks_hours + partial_tick / 24.0) / day_length_hours,
             1e-3,
         );
 
@@ -497,12 +497,11 @@ pub fn zone_time_system(
             write_f32_if_changed(&mut zone_lighting.fog_density, DAY_FOG_DENSITY, 1e-4);
         }
     } else if is_morning {
-        // Morning: 6:00-12:00 (6 hours total)
-        // State length in hours: 6 hours
-        const MORNING_LENGTH_HOURS: f32 = 6.0;
+        // Morning: sunrise->DAY_START_HOUR (sunrise ramp to bright plateau)
+        let morning_length_hours = (DAY_START_HOUR - sunrise).max(0.5);
 
-        // Calculate state_ticks in hours (6:00 is the start)
-        let state_ticks_hours = day_time_hours - 6.0;
+        // Calculate state_ticks in hours (sunrise is the start)
+        let state_ticks_hours = day_time_hours - sunrise;
 
         if zone_time.state != ZoneTimeState::Morning {
             for entity in query_night_effects.iter_mut() {
@@ -512,7 +511,7 @@ pub fn zone_time_system(
         }
         write_f32_if_changed(
             &mut zone_time.state_percent_complete,
-            (state_ticks_hours + partial_tick / 24.0) / MORNING_LENGTH_HOURS,
+            (state_ticks_hours + partial_tick / 24.0) / morning_length_hours,
             1e-3,
         );
 

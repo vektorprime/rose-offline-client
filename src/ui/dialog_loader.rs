@@ -98,7 +98,7 @@ pub fn load_dialog_sprites_system(
 
     if ui_resources.loaded_required_textures {
         for handle in load_state.pending_dialogs.drain(..) {
-            if let Some(dialog) = assets.get_mut(handle) {
+            if let Some(mut dialog) = assets.get_mut(handle) {
                 dialog.widgets.load_widget(&ui_resources);
                 dialog.loaded = true;
             }

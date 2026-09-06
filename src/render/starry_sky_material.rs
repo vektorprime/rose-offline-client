@@ -17,7 +17,8 @@ use bevy::{
     pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin},
     prelude::*,
     reflect::TypePath,
-    render::{alpha::AlphaMode, render_resource::*, renderer::RenderDevice},
+    material::AlphaMode,
+    render::{render_resource::*, renderer::RenderDevice},
 };
 use bevy_mesh::{Mesh, MeshVertexBufferLayoutRef};
 use bevy_shader::{Shader, ShaderRef};
@@ -268,9 +269,9 @@ impl Material for StarrySkyMaterial {
         // GreaterEqual means "render where sky depth >= depth buffer" (closer to camera)
         // With reverse-z depth buffer, this prevents sky from bleeding through geometry
         if let Some(depth_stencil) = descriptor.depth_stencil.as_mut() {
-            depth_stencil.depth_write_enabled = false;
+            depth_stencil.depth_write_enabled = Some(false);
             // Only render sky where no opaque objects are in front
-            depth_stencil.depth_compare = CompareFunction::GreaterEqual;
+            depth_stencil.depth_compare = Some(CompareFunction::GreaterEqual);
         }
 
         Ok(())
@@ -378,7 +379,7 @@ pub fn update_starry_sky_system(
     LAST_UPDATE_MS.store(now_ms, Ordering::Relaxed);
 
     for material_handle in query.iter() {
-        if let Some(material) = materials.get_mut(&material_handle.0) {
+        if let Some(mut material) = materials.get_mut(&material_handle.0) {
             material.time = time.elapsed_secs();
             material.star_density = starry_sky_settings.star_density;
             material.star_brightness = starry_sky_settings.star_brightness;
@@ -486,16 +487,16 @@ pub fn update_starry_sky_night_factor(
     }
 }
 
-/// Resource to track whether the atmosphere should be enabled
-/// This is used to toggle the Atmosphere component on the camera based on time of day
-/// NOTE: Default is `enabled: true` because the camera is spawned WITH Atmosphere components.
-/// This ensures the initial state matches the actual camera state.
-/// The scattering medium handle is cached and reused across day/night toggles to avoid
-/// reallocating the medium (and regenerating LUTs) on every transition.
+/// Resource to track whether the atmosphere should be enabled.
+/// In Bevy 0.19 the `Atmosphere` is a standalone entity (nearest one wins);
+/// this system spawns/despawns that entity based on time of day while the
+/// camera keeps `AtmosphereSettings` permanently.
+/// NOTE: Default is `enabled: true` because an atmosphere entity is spawned
+/// alongside the camera at startup. This ensures the initial state matches.
 #[derive(Resource, Debug, Clone)]
 pub struct AtmosphereState {
     pub enabled: bool,
-    pub cached_medium: Option<Handle<bevy::pbr::ScatteringMedium>>,
+    pub cached_medium: Option<Handle<bevy::light::atmosphere::ScatteringMedium>>,
 }
 
 impl Default for AtmosphereState {
@@ -507,10 +508,12 @@ impl Default for AtmosphereState {
     }
 }
 
-/// System to toggle the Atmosphere component based on time of day
+/// System to toggle the Atmosphere entity based on time of day
 ///
-/// During Night time, the Atmosphere is removed to allow stars to be visible.
-/// During Day/Evening/Morning, the Atmosphere is re-added for realistic sky rendering.
+/// During Night time, the Atmosphere entity is despawned to allow stars to be visible.
+/// During Day/Evening/Morning, it is (re-)spawned for realistic sky rendering.
+/// The medium handle is cached and reused across toggles to avoid reallocating
+/// the medium (and regenerating LUTs) on every transition.
 ///
 /// This system must run after zone_time_system to get the current time state.
 pub fn toggle_atmosphere_based_on_time(
@@ -523,34 +526,40 @@ pub fn toggle_atmosphere_based_on_time(
             Without<crate::render::WaterReflectionCamera>,
         ),
     >,
+    atmosphere_query: Query<Entity, With<bevy::light::Atmosphere>>,
     mut commands: Commands,
-    mut scattering_mediums: ResMut<Assets<bevy::pbr::ScatteringMedium>>,
+    mut scattering_mediums: ResMut<Assets<bevy::light::atmosphere::ScatteringMedium>>,
 ) {
     use crate::resources::ZoneTimeState;
-    use bevy::pbr::{Atmosphere, AtmosphereSettings};
+    use bevy::light::Atmosphere;
+
+    fn get_or_create_medium(
+        atmosphere_state: &mut AtmosphereState,
+        scattering_mediums: &mut Assets<bevy::light::atmosphere::ScatteringMedium>,
+    ) -> Handle<bevy::light::atmosphere::ScatteringMedium> {
+        match atmosphere_state.cached_medium.clone() {
+            Some(handle) => handle,
+            None => {
+                let handle =
+                    scattering_mediums.add(bevy::light::atmosphere::ScatteringMedium::default());
+                atmosphere_state.cached_medium = Some(handle.clone());
+                handle
+            }
+        }
+    }
 
     // Check if ZoneTime resource exists
     let Some(zone_time) = zone_time else {
         // ZoneTime doesn't exist yet - keep atmosphere ENABLED (default daytime sky)
-        // This happens during loading screen before zone is fully loaded
-
-        // Ensure atmosphere is enabled if it was disabled
+        // This happens during loading screen before zone is fully loaded.
+        // Ensure the entity exists if it was disabled.
         if !atmosphere_state.enabled {
-            if let Ok(camera_entity) = camera_query.single() {
-                let medium = match atmosphere_state.cached_medium.clone() {
-                    Some(handle) => handle,
-                    None => {
-                        let handle =
-                            scattering_mediums.add(bevy::pbr::ScatteringMedium::default());
-                        atmosphere_state.cached_medium = Some(handle.clone());
-                        handle
-                    }
-                };
+            if camera_query.single().is_ok() {
+                let medium = get_or_create_medium(&mut atmosphere_state, &mut scattering_mediums);
+                if atmosphere_query.is_empty() {
+                    commands.spawn(Atmosphere::earth(medium));
+                }
                 atmosphere_state.enabled = true;
-                commands.entity(camera_entity).insert((
-                    Atmosphere::earthlike(medium),
-                    AtmosphereSettings::default(),
-                ));
             }
         }
         return;
@@ -566,36 +575,27 @@ pub fn toggle_atmosphere_based_on_time(
 
     // Only make changes if state has changed
     if atmosphere_state.enabled != should_enable_atmosphere {
-        // Find the camera entity and toggle atmosphere components.
+        // Find the camera entity and toggle the atmosphere entity.
         // IMPORTANT: the state flag is only updated AFTER the camera query
         // succeeds. If the query fails (e.g. no camera spawned yet), the flag
         // is left unchanged so this system retries next frame instead of
-        // permanently desyncing the flag from the actual camera components.
-        if let Ok(camera_entity) = camera_query.single() {
+        // permanently desyncing the flag from the actual world state.
+        if camera_query.single().is_ok() {
             atmosphere_state.enabled = should_enable_atmosphere;
 
             if should_enable_atmosphere {
-                // Re-add atmosphere components, reusing the cached medium so LUTs are
+                // Re-spawn the atmosphere entity, reusing the cached medium so LUTs are
                 // not regenerated from scratch on every day/night transition.
-                let medium = match atmosphere_state.cached_medium.clone() {
-                    Some(handle) => handle,
-                    None => {
-                        let handle =
-                            scattering_mediums.add(bevy::pbr::ScatteringMedium::default());
-                        atmosphere_state.cached_medium = Some(handle.clone());
-                        handle
-                    }
-                };
-                commands.entity(camera_entity).insert((
-                    Atmosphere::earthlike(medium),
-                    AtmosphereSettings::default(),
-                ));
+                if atmosphere_query.is_empty() {
+                    let medium =
+                        get_or_create_medium(&mut atmosphere_state, &mut scattering_mediums);
+                    commands.spawn(Atmosphere::earth(medium));
+                }
             } else {
-                // Remove atmosphere components to show stars
-                commands.entity(camera_entity).remove::<Atmosphere>();
-                commands
-                    .entity(camera_entity)
-                    .remove::<AtmosphereSettings>();
+                // Despawn atmosphere entities to show stars
+                for entity in &atmosphere_query {
+                    commands.entity(entity).despawn();
+                }
             }
         }
     }

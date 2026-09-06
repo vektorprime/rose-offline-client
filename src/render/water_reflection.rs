@@ -248,7 +248,7 @@ fn sync_reflection_textures(
         }
     }
     for id in registry.ids.iter() {
-        if let Some(material) = materials.get_mut(*id) {
+        if let Some(mut material) = materials.get_mut(*id) {
             if material.reflection_texture != reflection_image.handle {
                 material.reflection_texture = reflection_image.handle.clone();
                 log::info!(
@@ -474,7 +474,7 @@ fn sync_reflection_camera(
             }
         }
         for id in material_registry.ids.iter() {
-            if let Some(material) = water_materials.get_mut(*id) {
+            if let Some(mut material) = water_materials.get_mut(*id) {
                 if material.reflection_status != status {
                     material.reflection_status = status;
                 }

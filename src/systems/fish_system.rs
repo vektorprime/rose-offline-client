@@ -12,7 +12,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::math::Vec3;
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
 use bevy::prelude::*;
-use bevy::render::alpha::AlphaMode;
+use bevy::material::AlphaMode;
 use bevy::render::render_resource::Face;
 use bevy_mesh::{Indices, Mesh, PrimitiveTopology};
 use rand::Rng;

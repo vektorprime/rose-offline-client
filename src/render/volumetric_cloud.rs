@@ -12,7 +12,8 @@ use bevy::{
     pbr::{Material, MaterialPipeline, MaterialPipelineKey, MaterialPlugin},
     prelude::*,
     reflect::TypePath,
-    render::{alpha::AlphaMode, render_resource::*, renderer::RenderDevice},
+    material::AlphaMode,
+    render::{render_resource::*, renderer::RenderDevice},
 };
 use bevy_mesh::{Mesh, MeshVertexBufferLayoutRef};
 use bevy_shader::{Shader, ShaderRef};
@@ -310,9 +311,9 @@ impl Material for VolumetricCloudMaterial {
         descriptor.primitive.cull_mode = None;
 
         if let Some(depth_stencil) = descriptor.depth_stencil.as_mut() {
-            depth_stencil.depth_write_enabled = true;
+            depth_stencil.depth_write_enabled = Some(true);
             // Bevy 0.18 uses reverse-Z in 3D, so depth compare must be GreaterEqual.
-            depth_stencil.depth_compare = CompareFunction::GreaterEqual;
+            depth_stencil.depth_compare = Some(CompareFunction::GreaterEqual);
         }
 
         Ok(())
@@ -568,7 +569,7 @@ pub fn update_volumetric_cloud_material_system(
             continue;
         }
         seen.push(material_handle.0.clone());
-        if let Some(material) = materials.get_mut(&material_handle.0) {
+        if let Some(mut material) = materials.get_mut(&material_handle.0) {
             material.time = now;
             // Only write settings fields when the resource actually changed.
             if settings_changed {
@@ -611,7 +612,7 @@ pub fn update_volumetric_cloud_lighting_system(
         crate::render::zone_lighting::calculate_cloud_lighting(&zone_time, &zone_lighting);
 
     for material_handle in query.iter() {
-        if let Some(material) = materials.get_mut(&material_handle.0) {
+        if let Some(mut material) = materials.get_mut(&material_handle.0) {
             material.sun_direction = sun_direction;
             material.sun_color = sun_color * cloud_settings.tod_response;
             material.ambient_color = ambient_color;

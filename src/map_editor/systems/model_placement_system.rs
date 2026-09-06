@@ -15,7 +15,7 @@ use bevy::{
         Plugin, Quat, Query, Res, ResMut, StandardMaterial, Transform, Update, Vec3,
         ViewVisibility, Visibility, With, Without,
     },
-    render::alpha::AlphaMode,
+    material::AlphaMode,
     window::{PrimaryWindow, Window},
 };
 use bevy_egui::EguiContexts;
@@ -575,7 +575,7 @@ pub fn model_preview_system(
             let mesh = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
             let material = materials.add(StandardMaterial {
                 base_color: Color::srgba(0.0, 1.0, 0.0, 0.5),
-                alpha_mode: bevy::render::alpha::AlphaMode::Blend,
+                alpha_mode: bevy::material::AlphaMode::Blend,
                 unlit: true,
                 ..Default::default()
             });

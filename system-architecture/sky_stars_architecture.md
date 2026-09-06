@@ -1,7 +1,8 @@
 # Starry Sky & Atmosphere Architecture
 
-**Date:** February 28, 2026
-**Bevy Version:** 0.18.1
+**Date:** February 28, 2026 (updated for Bevy 0.19: Atmosphere is now a standalone
+`bevy_light::Atmosphere` entity, not a camera component — see `bevy-0.19-upgrade-plan.md`)
+**Bevy Version:** 0.19.1
 **Project:** ROSE Offline Client
 
 **Status:** ✅ **FULLY FUNCTIONAL** - Stars render correctly at night with real-time UI controls

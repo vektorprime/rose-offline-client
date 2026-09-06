@@ -2,7 +2,7 @@ use bevy::{
     math::Vec3,
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{AssetServer, Assets, Changed, Commands, Entity, Query, Res, ResMut, Transform},
-    render::alpha::AlphaMode,
+    material::AlphaMode,
 };
 use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 
@@ -41,7 +41,7 @@ pub fn npc_model_update_system(
     mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
     mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
-    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderBuffer>>,
     game_data: Res<GameData>,
 ) {
     for (

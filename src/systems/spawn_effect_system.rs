@@ -43,7 +43,7 @@ pub fn spawn_effect_system(
         Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
     >,
     mut particle_materials: ResMut<Assets<ParticleMaterial>>,
-    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderBuffer>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     for event in events.read() {

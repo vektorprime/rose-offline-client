@@ -288,7 +288,7 @@ pub fn blood_spatter_spawn_system(
 
                 if let Some(reuse_entity) = runtime.spatter_pool.pop() {
                     if let Ok((_, _, material_handle)) = query_spatters.get(reuse_entity) {
-                        if let Some(existing_material) = decal_materials.get_mut(&material_handle.0)
+                        if let Some(mut existing_material) = decal_materials.get_mut(&material_handle.0)
                         {
                             *existing_material = material;
                         }
@@ -424,7 +424,7 @@ pub fn blood_spatter_fade_system(
             spatter.alpha,
         );
 
-        if let Some(material) = decal_materials.get_mut(&material_handle.0) {
+        if let Some(mut material) = decal_materials.get_mut(&material_handle.0) {
             material.base.base_color = color;
         }
     }

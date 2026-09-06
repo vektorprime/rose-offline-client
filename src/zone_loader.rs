@@ -210,7 +210,7 @@ use bevy::{
         UntypedHandle, Visibility, With,
     },
     reflect::TypePath,
-    render::alpha::AlphaMode,
+    material::AlphaMode,
     tasks::AsyncComputeTaskPool,
 };
 use bevy_rapier3d::prelude::{
@@ -450,7 +450,7 @@ pub struct SpawnZoneParams<'w, 's> {
     pub object_materials:
         ResMut<'w, Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     pub particle_materials: ResMut<'w, Assets<ParticleMaterial>>,
-    pub storage_buffers: ResMut<'w, Assets<bevy::render::storage::ShaderStorageBuffer>>,
+    pub storage_buffers: ResMut<'w, Assets<bevy::render::storage::ShaderBuffer>>,
     pub zone_loader_assets: ResMut<'w, Assets<ZoneLoaderAsset>>,
     pub render_config: Res<'w, crate::resources::RenderConfiguration>,
     pub memory_tracking: ResMut<'w, MemoryTrackingResource>,

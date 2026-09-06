@@ -348,7 +348,7 @@ pub fn update_ui_resources(
                 if size.x > 0.0 && size.y > 0.0 {
                     texture.size = Some(size);
                     if needs_premultiply {
-                        premultiply_image_alpha(image);
+                        premultiply_image_alpha(image.into_inner());
                         texture.premultiplied_alpha = true;
                     }
                 } else {
@@ -398,7 +398,7 @@ pub fn update_ui_resources(
 
     let mut load_skill_tree = |skill_tree: &Handle<Dialog>| {
         let load_state = asset_server.get_load_state(skill_tree);
-        if let Some(skill_tree) = dialog_assets.get_mut(skill_tree) {
+        if let Some(mut skill_tree) = dialog_assets.get_mut(skill_tree) {
             for widget in skill_tree.widgets.iter_mut() {
                 if let Widget::Skill(skill_widget) = widget {
                     if let Some(texture) = skill_widget.ui_texture.as_mut() {
@@ -406,7 +406,7 @@ pub fn update_ui_resources(
                         if let Some(image) = images.get_mut(&texture.handle) {
                             texture.size = Some(image.size().as_vec2());
                             if !texture.premultiplied_alpha {
-                                premultiply_image_alpha(image);
+                                premultiply_image_alpha(image.into_inner());
                                 texture.premultiplied_alpha = true;
                             }
                         } else if matches!(texture_load_state, Some(LoadState::Failed(_))) {

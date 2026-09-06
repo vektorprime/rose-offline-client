@@ -9,10 +9,10 @@ use bevy::{
         AssetServer, Assets, Commands, Entity, GlobalTransform, Mesh3d, Resource, Transform,
         Visibility,
     },
+    material::AlphaMode,
     render::{
-        alpha::AlphaMode,
         render_resource::{BlendFactor, BlendOperation},
-        storage::ShaderStorageBuffer,
+        storage::ShaderBuffer,
     },
 };
 use bevy_camera::visibility::{InheritedVisibility, ViewVisibility};
@@ -96,7 +96,7 @@ pub fn spawn_effect(
     asset_server: &AssetServer,
     particle_materials: &mut Assets<ParticleMaterial>,
     effect_mesh_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseEffectExtension>>,
-    storage_buffers: &mut Assets<ShaderStorageBuffer>,
+    storage_buffers: &mut Assets<ShaderBuffer>,
     meshes: &mut Assets<bevy::prelude::Mesh>,
     effect_path: VfsPath,
     manual_despawn: bool,
@@ -409,7 +409,7 @@ fn spawn_particle(
     asset_server: &AssetServer,
     particle_materials: &mut Assets<ParticleMaterial>,
     meshes: &mut Assets<bevy::prelude::Mesh>,
-    storage_buffers: &mut Assets<ShaderStorageBuffer>,
+    storage_buffers: &mut Assets<ShaderBuffer>,
     eft_particle: &EftParticle,
 ) -> Option<Entity> {
     let ptl_file = vfs
@@ -478,11 +478,11 @@ fn spawn_particle(
                         vec![bevy::math::Vec4::ZERO; num_particles];
 
                     let positions_buffer =
-                        storage_buffers.add(ShaderStorageBuffer::from(positions_data));
-                    let sizes_buffer = storage_buffers.add(ShaderStorageBuffer::from(sizes_data));
-                    let colors_buffer = storage_buffers.add(ShaderStorageBuffer::from(colors_data));
+                        storage_buffers.add(ShaderBuffer::from(positions_data));
+                    let sizes_buffer = storage_buffers.add(ShaderBuffer::from(sizes_data));
+                    let colors_buffer = storage_buffers.add(ShaderBuffer::from(colors_data));
                     let textures_buffer =
-                        storage_buffers.add(ShaderStorageBuffer::from(textures_data));
+                        storage_buffers.add(ShaderBuffer::from(textures_data));
 
                     let particle_material = particle_materials.add(ParticleMaterial {
                         texture: particle_texture_handle,

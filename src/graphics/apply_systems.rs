@@ -65,11 +65,15 @@ pub fn apply_color_grading_system(
 
 /// System that applies shadow quality settings to directional lights.
 /// Skips MoonLight: the time-of-day table owns moon shadows (always off for perf).
+/// Skips SkyFillLight: the sky-bounce fill never casts shadows by design.
 pub fn apply_shadow_quality_system(
     graphics_settings: Res<GraphicsSettings>,
     mut directional_lights: Query<
         (&mut DirectionalLight, Option<&mut CascadeShadowConfig>),
-        Without<crate::render::MoonLight>,
+        (
+            Without<crate::render::MoonLight>,
+            Without<crate::render::zone_lighting::SkyFillLight>,
+        ),
     >,
     mut shadow_map_resource: ResMut<DirectionalLightShadowMap>,
 ) {
@@ -81,13 +85,13 @@ pub fn apply_shadow_quality_system(
     let quality = &graphics_settings.shadow_quality;
 
     // Enable/disable shadows based on quality
-    let shadows_enabled = *quality != ShadowQuality::Off;
+    let shadow_maps_enabled = *quality != ShadowQuality::Off;
 
     // Only update shadow map resolution when shadows are enabled.
     // wgpu requires non-zero texture dimensions, so we keep the previous/valid size
-    // when shadows are disabled. The shadows_enabled flag on lights controls
+    // when shadows are disabled. The shadow_maps_enabled flag on lights controls
     // whether shadows are actually rendered.
-    if shadows_enabled {
+    if shadow_maps_enabled {
         shadow_map_resource.size = quality.shadow_map_size();
     }
 
@@ -96,7 +100,7 @@ pub fn apply_shadow_quality_system(
         // MoonLight is owned by the time-of-day table (always off); don't force it on here.
         // (Query can't filter by MoonLight without importing it; time-of-day corrects any
         // transient on the next ZoneTime change, so this stays a bounded one-frame effect.)
-        light.shadows_enabled = shadows_enabled;
+        light.shadow_maps_enabled = shadow_maps_enabled;
 
         // Apply cascade configuration if present
         if let Some(mut config) = cascade_config {
@@ -447,19 +451,39 @@ pub fn apply_texture_quality_system(
 
 /// System that applies ambient lighting settings to the global AmbientLight resource.
 /// The brightness is multiplied by a base value of 80.0 (Bevy's default ambient brightness).
+///
+/// NOTE: `sync_zone_lighting_to_bevy_lights_system` (Update) is the authority for
+/// the ambient color/brightness each frame: it blends the zone's
+/// `map_ambient_color` with the user's color and scales brightness by daylight
+/// so backlit faces stay readable at noon. This system (PostUpdate) only seeds
+/// the same blend when settings change so there is no one-frame flash of flat
+/// white ambient and no ping-pong between the two writers.
 pub fn apply_ambient_light_system(
     graphics_settings: Res<GraphicsSettings>,
     mut ambient_light: ResMut<GlobalAmbientLight>,
+    zone_lighting: Option<Res<crate::render::ZoneLighting>>,
 ) {
     // Skip if settings haven't changed
     if !graphics_settings.is_changed() {
         return;
     }
 
-    // Apply ambient light color
-    ambient_light.color = graphics_settings.ambient_light_color;
+    let user_color = graphics_settings.ambient_light_color.to_linear();
+    if let Some(zone_lighting) = zone_lighting {
+        let map = zone_lighting.map_ambient_color;
+        ambient_light.color = Color::from(LinearRgba::new(
+            map.x * user_color.red,
+            map.y * user_color.green,
+            map.z * user_color.blue,
+            1.0,
+        ));
+    } else {
+        // No zone loaded yet (menus): fall back to the plain user color.
+        ambient_light.color = graphics_settings.ambient_light_color;
+    }
 
     // Apply ambient light brightness
-    // Base brightness is 80.0 (Bevy's default), multiplier ranges from 0.0 to 2.0
+    // Base brightness is 80.0 (Bevy's default), multiplier ranges from 0.0 to 2.0.
+    // Daylight scaling itself is applied by the sync system in Update.
     ambient_light.brightness = 80.0 * graphics_settings.ambient_light_brightness;
 }

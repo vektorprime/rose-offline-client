@@ -84,7 +84,13 @@ pub fn hit_event_system(
                 }
             }
 
-            if has_damage || !event.ignore_miss {
+            // Only render digits / apply death when server-confirmed pending damage
+            // was consumed. An optimistic client swing with an empty pending list
+            // (server still considers us out of range) must stay silent instead of
+            // flashing a misleading 0: the real DamageEntity is still in flight and
+            // will be consumed by the next hit frame. Real misses still show because
+            // the server sends a 0-amount pending entry (has_damage stays true).
+            if has_damage {
                 spawn_damage_digits(
                     &mut commands,
                     &damage_digits_spawner,

@@ -4,7 +4,7 @@ use bevy::{
         AssetServer, Assets, Changed, Commands, Entity, GlobalTransform, InheritedVisibility,
         Query, Res, ResMut, Transform, ViewVisibility, Visibility, World,
     },
-    render::alpha::AlphaMode,
+    material::AlphaMode,
 };
 use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 
@@ -41,7 +41,7 @@ pub fn vehicle_model_system(
     >,
     mut skinned_mesh_inverse_bindposes_assets: ResMut<Assets<SkinnedMeshInverseBindposes>>,
     mut meshes: ResMut<Assets<bevy::prelude::Mesh>>,
-    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
+    mut storage_buffers: ResMut<Assets<bevy::render::storage::ShaderBuffer>>,
 ) {
     // Vehicle entity, where entity becomes a child of it.
     for (entity, equipment, move_mode, skinned_mesh, vehicle) in query.iter_mut() {

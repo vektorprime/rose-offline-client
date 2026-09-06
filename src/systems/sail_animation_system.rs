@@ -78,7 +78,7 @@ pub fn sail_animation_system(
         let billow_depth = 0.6;
         let luff_depth = 0.3;
 
-        let Some(mesh) = meshes.get_mut(&mesh_3d.0) else {
+        let Some(mut mesh) = meshes.get_mut(&mesh_3d.0) else {
             continue;
         };
 

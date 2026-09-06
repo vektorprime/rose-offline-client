@@ -15,15 +15,15 @@ use bevy::{
     },
     pbr::ExtendedMaterial,
     prelude::*,
-    render::storage::ShaderStorageBuffer,
+    render::storage::ShaderBuffer,
 };
 
 use crate::{
     animation::ZmoAsset,
     audio::AudioSource,
-    components::{Bird, ChatBubbleEntity, ClientEntity, Fish, NameTag, Zone, ZoneObject},
+    components::{Bird, ChatBubbleEntity, ClientEntity, DamageNumber, Fish, NameTag, Zone, ZoneObject},
     events::{ChatBubbleEvent, ZoneEvent},
-    render::{DamageDigitMaterial, ParticleMaterial, RoseObjectExtension},
+    render::{ParticleMaterial, RoseObjectExtension},
     vfs_asset_io::vfs_file_cache_stats,
     zone_loader::ZoneLoaderAsset,
 };
@@ -50,11 +50,10 @@ pub struct MemoryDiagEvents<'w> {
 pub struct MemoryDiagAssets<'w> {
     meshes: Res<'w, Assets<Mesh>>,
     images: Res<'w, Assets<Image>>,
-    storage_buffers: Res<'w, Assets<ShaderStorageBuffer>>,
+    storage_buffers: Res<'w, Assets<ShaderBuffer>>,
     object_materials: Res<'w, Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     standard_materials: Res<'w, Assets<StandardMaterial>>,
     particle_materials: Res<'w, Assets<ParticleMaterial>>,
-    damage_digit_materials: Res<'w, Assets<DamageDigitMaterial>>,
     zmo_assets: Res<'w, Assets<ZmoAsset>>,
     audio_sources: Res<'w, Assets<AudioSource>>,
     zone_loader_assets: Res<'w, Assets<ZoneLoaderAsset>>,
@@ -70,6 +69,7 @@ pub struct MemoryDiagQueries<'w, 's> {
     fish_query: Query<'w, 's, (), With<Fish>>,
     name_tag_query: Query<'w, 's, (), With<NameTag>>,
     chat_bubble_query: Query<'w, 's, (), With<ChatBubbleEntity>>,
+    damage_number_query: Query<'w, 's, (), With<DamageNumber>>,
 }
 
 #[derive(Default)]
@@ -109,7 +109,7 @@ pub fn memory_diagnostics_system(
         "[MEMORY DIAG] elapsed={:.0}s fps={:.0} alive_entities={} allocated_slots={} \
          zones=[{}] birds={} client_entities={} zone_objects={} fish={} name_tags={} chat_bubbles={} \
          meshes={} images={} shader_storage_buffers={} object_materials={} standard_materials={} \
-         particle_materials={} damage_digit_materials={} zmo_assets={} audio_sources={} \
+         particle_materials={} damage_numbers={} zmo_assets={} audio_sources={} \
          zone_assets={} zone_events_pending={} chat_bubble_events_pending={} \
          vfs_cache_files={} vfs_cache_mb={:.1}",
         meta.time.elapsed_secs(),
@@ -129,7 +129,7 @@ pub fn memory_diagnostics_system(
         assets.object_materials.len(),
         assets.standard_materials.len(),
         assets.particle_materials.len(),
-        assets.damage_digit_materials.len(),
+        queries.damage_number_query.iter().count(),
         assets.zmo_assets.len(),
         assets.audio_sources.len(),
         assets.zone_loader_assets.len(),

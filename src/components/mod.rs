@@ -92,7 +92,7 @@ pub use command::{
     CommandEmote, CommandMove, CommandSit, NextCommand,
 };
 pub use cooldowns::{ConsumableCooldownGroup, Cooldowns};
-pub use damage_digits::DamageDigits;
+pub use damage_digits::DamageNumber;
 pub use dead::Dead;
 pub use dirt_dash_effect::{DirtDashEffect, DirtDashParticle, DirtDashSettings};
 pub use dummy_bone_offset::DummyBoneOffset;
