@@ -144,7 +144,29 @@ Rust toolchain: installed `1.93.1` < MSRV `1.95.0` → **must `rustup update sta
 - [ ] **Phase 4 — closeout**: remove dead code found on the way, user confirms fixed → add
   `pitfalls/` note per AGENTS.md §9
 
-## 4. Risks
+## 5. Post-upgrade: night blue-flash regression (fixed)
+
+Symptom (new in 0.19, night only): fullscreen light-blue flashing while stationary;
+opening the Graphics settings tab stopped it instantly.
+
+Root causes found via temporary change-logging (`[GFX-DIAG]`, since removed):
+1. **Sun shadow-flag fight**: `apply_shadow_quality_system` forced
+   `sun.shadow_maps_enabled=true` on every graphics-settings change while the
+   time-of-day table forced `false` at night on every world tick (~1Hz on/off
+   flap + full pipeline re-specialization storm = visible flashing).
+   Fix: single ownership — the time-of-day table computes
+   `quality_switch AND sun_up`; the apply system only resizes the shadow map
+   (`src/render/zone_lighting.rs`, `src/graphics/apply_systems.rs`).
+2. **Stale cinematic frustum**: login/character-select `CameraAnimation::once`
+   overwrote projection (far=1300 observed) and never restored it.
+   Fix: `game_state_enter_system` restores fov/near/far from settings
+   (`src/systems/game_system.rs`).
+3. Incidental: removed `bevy_procedural_grass` dep, `IsDefaultUiCamera` (no
+   bevy_ui usage), toolchain 1.93 -> 1.98 (MSRV 1.95).
+- [ ] **Phase 3 — verify (USER)**: night session with no flashing; confirm sky,
+  water, shadows all stable
+
+## 6. Risks
 - ~~rapier double-jump (0.33→0.35) may have joint/character-controller API churn~~ —
   no rapier errors encountered; 0.35 compiled clean against our usage.
 - **SERVER FALLOUT (known, out of scope)**: `rose-offline/Cargo.toml` workspace `bevy`

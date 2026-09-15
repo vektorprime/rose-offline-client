@@ -99,10 +99,13 @@ pub struct PostProcessingSettings {
 impl Default for PostProcessingSettings {
     fn default() -> Self {
         Self {
-            bloom_enabled: true,
+            // NOTE: bloom/SSAO/DoF default OFF (mirrors GraphicsSettings).
+            // They are inserted on demand when the user enables them, which
+            // also skips their fullscreen passes entirely at startup.
+            bloom_enabled: false,
             bloom_intensity: 0.5,
-            ssao_enabled: true,
-            dof_enabled: true,
+            ssao_enabled: false,
+            dof_enabled: false,
             volumetric_fog_enabled: true,
             color_grading_enabled: false,
         }
@@ -164,7 +167,9 @@ pub struct DepthOfFieldSettings {
 impl Default for DepthOfFieldSettings {
     fn default() -> Self {
         Self {
-            enabled: true,
+            // NOTE: DoF defaults OFF (see GraphicsSettings). Inserted on
+            // demand by apply_depth_of_field_settings when enabled.
+            enabled: false,
             // Gaussian default: much cheaper than Bokeh. Bokeh + CoC 64 remains
             // available in settings but is no longer the startup cost.
             mode: DepthOfFieldMode::Gaussian,

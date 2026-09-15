@@ -228,6 +228,7 @@ use systems::{
     system_func_event_system,
     update_position_system,
     use_item_event_system,
+    update_time_of_day_grading_system,
     vehicle_model_system,
     vehicle_sound_system,
     visible_status_effects_system,
@@ -239,8 +240,7 @@ use systems::{
     zone_viewer_enter_system,
     BirdPlugin,
     CharacterSelectInputState,
-    // DISABLED: color_grading_time_of_day_system conflicts with Bevy 0.16 Atmosphere
-    // color_grading_time_of_day_system,
+    TimeOfDayGrading,
     DebugInspectorPlugin,
     DirtDashPlugin,
     FishPlugin,
@@ -1122,16 +1122,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             system_func_event_system,
             load_dialog_sprites_system,
             zone_time_system,
-            // Toggle atmosphere based on time of day (disable at night for stars)
+            // Keep the atmosphere entity permanently spawned (night despawn
+            // leaves stale render-world bind groups in Bevy 0.19.1 -> flashes)
             // Must run after zone_time_system to get current time state
             toggle_atmosphere_based_on_time.after(zone_time_system),
             // Update starry sky night_factor from zone time state
             // Must run after zone_time_system and before update_starry_sky_system
             update_starry_sky_night_factor.after(zone_time_system),
-            // DISABLED: color_grading_time_of_day_system conflicts with Bevy 0.16 Atmosphere
-            // This system was applying time-based color grading (temperature/saturation changes)
-            // which conflicts with the new atmospheric scattering system.
-            // color_grading_time_of_day_system,
             directional_light_system,
             // Update terrain lighting based on zone lighting and time of day
             // Must run after zone_time_system to get current time state for intensity adjustment
@@ -1148,6 +1145,10 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         (
             follow_sky_to_camera_system,
             moon_light_follow_camera_system,
+            // Time-of-day screen tint (compute here; apply_color_grading_system
+            // in PostUpdate is the sole ColorGrading writer). Must run after
+            // zone_time_system to use the current state.
+            update_time_of_day_grading_system.after(zone_time_system),
         ),
     );
     // Must run after name_tag_visibility_system so the line-of-sight result
@@ -1361,6 +1362,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<WindState>()
         .init_resource::<MonsterChatterPhrases>()
         .init_resource::<AtmosphereState>()
+        .init_resource::<TimeOfDayGrading>()
         .init_resource::<graphics::GraphicsSettings>();
 
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
@@ -1983,10 +1985,20 @@ fn load_common_game_data(
             GlobalTransform::default(),
             // Primary Egui Context - required for bevy_egui 0.32+
             PrimaryEguiContext,
-            // Add Tonemapping - REQUIRED for HDR to work properly with depth of field
-            bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
-            // Add Bloom - enhances the depth of field effect visibility
-            Bloom::NATURAL,
+            // Tonemapping DISABLED by default (TonemappingMode::default() = None)
+            // as part of the night blue-flash investigation; re-enable via the
+            // Graphics tab if desired.
+            bevy::core_pipeline::tonemapping::Tonemapping::None,
+            // ColorGrading target for the graphics apply systems (user
+            // brightness/contrast/saturation/gamma) and the time-of-day tint
+            // (temperature/saturation-multiplier/shadow lift, composed by
+            // apply_color_grading_system as sole writer). Must exist or both
+            // paths are silent no-ops (removed in c782f70 "lighting").
+            ColorGrading::default(),
+            // NOTE: Bloom / SSAO / DOF are NOT spawned by default (all default
+            // off in GraphicsSettings). The graphics apply systems insert them
+            // on demand when the user enables them. Spawning them here anyway
+            // caused startup-vs-settings mismatch.
             // Shadow filtering - Gaussian for high-quality soft shadows
             ShadowFilteringMethod::Gaussian,
             // NOTE: SMAA / SSR / MotionBlur / AutoExposure / CAS are NOT spawned by
@@ -2032,34 +2044,22 @@ fn load_common_game_data(
     if !DEBUG_DISABLE_ATMOSPHERE {
         // Bevy 0.19: Atmosphere is a standalone entity (nearest one wins for
         // rendering); the camera only carries AtmosphereSettings to enable it
-        // for its view. The day/night toggle system spawns/despawns the entity.
+        // for its view. toggle_atmosphere_based_on_time keeps it spawned at
+        // all times (despawning at night triggers Bevy 0.19.1 bug #24808).
         commands.spawn(Atmosphere::earth(
             scattering_mediums.add(bevy::light::atmosphere::ScatteringMedium::default()),
         ));
         commands.entity(camera_entity).insert((
             // Bevy 0.19 built-in atmospheric scattering for realistic sky
             AtmosphereSettings::default(),
-            // Depth of Field: Gaussian default (cheaper than Bokeh). Bokeh + CoC 64
-            // is available via settings but not the startup cost.
-            DepthOfField {
-                mode: DepthOfFieldMode::Gaussian,
-                focal_distance: 10.0,   // Focus 10 meters away
-                aperture_f_stops: 3.3,  // f/3.3 aperture
-                sensor_height: 0.01866, // Super 35 format (default)
-                max_circle_of_confusion_diameter: 32.0,
-                max_depth: 2000.0, // Max depth range
-            },
+            // NOTE: DepthOfField / SSAO intentionally not spawned (both default
+            // off). Inserted on demand by graphics apply systems when enabled.
             // VolumetricFog: 64 steps = Bevy default (was 128 = 2x raymarch cost).
             VolumetricFog {
                 ambient_intensity: 0.1,
                 jitter: 0.0,
                 step_count: 64,
                 ..default()
-            },
-            // SSAO Medium matches GraphicsSettings default (was Ultra at startup).
-            ScreenSpaceAmbientOcclusion {
-                quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium,
-                constant_object_thickness: 0.25, // Adjust if AO is too strong/weak
             },
         ));
     }

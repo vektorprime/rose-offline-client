@@ -20,7 +20,7 @@ No `AutoExposure` component exists anywhere in `src/` — brightness is controll
 - **Tonemapping**: `TonyMcMapface` on the main camera (`src/lib.rs:1990`).
 - **Bloom**: `Bloom::NATURAL` (`src/lib.rs:1992`).
 - **EnvironmentMapLight**: `intensity: 100.0` from `SPECULAR_SPHEREMAP.DDS#cube` (`src/lib.rs:2020-2024`).
-- **Atmosphere**: `Atmosphere::earthlike` on the camera, removed at night so stars show (`src/lib.rs:2036-2039`, `toggle_atmosphere_based_on_time`).
+- **Atmosphere**: camera carries `AtmosphereSettings`; the standalone `Atmosphere` entity is kept spawned at all times (`toggle_atmosphere_based_on_time` — despawning it at night triggered Bevy 0.19.1 bug #24808, see `pitfalls/atmosphere-flash.md`).
 
 ## 5. Camera Control Systems
 The project implements three control modes:
@@ -92,7 +92,7 @@ pub fn detect_underwater_camera(
 ## 8. Troubleshooting
 - **Camera not updating**: Check if `egui` is consuming input. Use `egui_ctx.ctx_mut().unwrap().wants_pointer_input()` to gate camera controls.
 - **Visibility Flickering**: Ensure `InheritedVisibility` is correctly propagating. Check for conflicting systems modifying `Visibility` or `Transform` in the same frame.
-- **Exposure Issues**: If the screen is too bright/dark, check `Tonemapping`, `Bloom`, `EnvironmentMapLight{intensity}`, and whether `Atmosphere` is present (it is removed at night). There is no `AutoExposure` component in this client.
+- **Exposure Issues**: If the screen is too bright/dark, check `Tonemapping`, `Bloom`, `EnvironmentMapLight{intensity}`, and the `Atmosphere` entity (always present; must never be despawned at runtime on 0.19.1). There is no `AutoExposure` component in this client.
 
 ## 9. Source File References
 ### Bevy Source

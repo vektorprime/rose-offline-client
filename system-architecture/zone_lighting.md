@@ -24,7 +24,7 @@ The lighting system has been fully synchronized to ensure all world elements, in
 - **Light Synchronization**: A new system `sync_zone_lighting_to_bevy_lights_system` in `src/render/zone_lighting.rs` bridges the `ZoneLighting` resource with Bevy's built-in `GlobalAmbientLight` resource and `DirectionalLight` component.
 - **Balanced Intensities**:
     - `DirectionalLight` illuminance: **15,000 lux** (balanced for PBR).
-    - `GlobalAmbientLight` brightness: **80.0 lux** base (Bevy's default), multiplied by the user's `ambient_light_brightness` graphics setting (default 1.5, giving 120.0 lux).
+    - `GlobalAmbientLight` brightness: **80.0 lux** base (Bevy's default), multiplied by the user's `ambient_light_brightness` graphics setting (default 1.0, giving 80.0 lux). Kept constant so day/night variation comes from sun + fill, preserving shadow contrast.
 
 ## 4. Dynamic Terrain Lighting & Sun Synchronization
 The terrain rendering system has been overhauled to ensure it remains perfectly in sync with the game's dynamic sun and time-of-day cycle.
@@ -44,7 +44,7 @@ Previously, the terrain used a hardcoded light direction and static colors, caus
 
 ## 5. Atmospheric Effects
 - **Volumetric Fog**: `VolumetricFog{step_count: 64}` on the main camera (`src/lib.rs:2051-2055`; comment notes 128 was 2x cost). Fog volume itself lives in `src/render/zone_lighting.rs:191-198`.
-- **Atmospheric Scattering**: Integrated Bevy's built-in atmospheric scattering for realistic sky rendering during the day (0.19: standalone `bevy_light::Atmosphere` entity + `AtmosphereSettings` on the camera, toggled by `toggle_atmosphere_based_on_time`).
+- **Atmospheric Scattering**: Integrated Bevy's built-in atmospheric scattering for realistic sky rendering (0.19: standalone `bevy_light::Atmosphere` entity + `AtmosphereSettings` on the camera; `toggle_atmosphere_based_on_time` keeps the entity permanently spawned — despawning triggers Bevy 0.19.1 bug #24808, see `pitfalls/atmosphere-flash.md`).
 - **Procedural Starry Sky**: A custom material that renders a dense star field and moon with phases, automatically toggled based on the night factor.
 
 ## 6. Post-Processing

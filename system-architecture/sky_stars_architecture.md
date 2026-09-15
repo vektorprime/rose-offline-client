@@ -39,7 +39,7 @@ The starry sky implementation provides a procedurally generated star field that:
 |---------|--------|-------------|
 | Procedural Stars | ✅ | Grid-based generation with 4 density layers |
 | Day/Night Cycle | ✅ | Automatic (game time) or Manual (UI slider) |
-| Atmosphere Toggle | ✅ | Enabled day / Disabled night |
+| Atmosphere Entity | ✅ | Always spawned (never despawned; see pitfalls/atmosphere-flash.md) |
 | Moon Rendering | ✅ | Phases, direction, and lighting |
 | Real-time UI | ✅ | Settings menu for all parameters |
 | Twinkling Animation | ✅ | Time-based per-star animation |
@@ -319,7 +319,7 @@ EarlyPrepasses
     ↓
 MainOpaquePass (solid objects)
     ↓
-Atmosphere `render_sky` pass (fullscreen triangle, additive-style blend) ← REMOVED at night
+Atmosphere `render_sky` pass (fullscreen triangle, additive-style blend) ← always active (see Atmosphere Entity section)
     ↓
 MainTransparentPass (transparent objects)
     ↓
@@ -364,33 +364,30 @@ fn specialize(...) {
 - **No depth write**: Sky should always render behind everything
 - **GreaterEqual compare**: With Bevy's reverse-z depth buffer this prevents the sky from bleeding through opaque geometry
 
-### Atmosphere Toggle
+### Atmosphere Entity (always on)
 
 **System:** `toggle_atmosphere_based_on_time()` (in `starry_sky_material.rs`)
 
+Since the 0.19.1 flash fix this system **never despawns** the atmosphere; it
+only ensures the standalone `Atmosphere` entity exists (self-healing
+re-spawn, cached `ScatteringMedium` handle):
+
 ```rust
-match zone_time.state {
-    ZoneTimeState::Night => {
-        // Remove atmosphere components
-        commands.entity(camera).remove::<Atmosphere>();
-        commands.entity(camera).remove::<AtmosphereSettings>();
-    }
-    _ => {
-        // Add atmosphere components
-        commands.entity(camera).insert((
-            Atmosphere::earthlike(
-                scattering_mediums.add(ScatteringMedium::default()),
-            ),
-            AtmosphereSettings::default(),
-        ));
-    }
+if atmosphere_query.is_empty() {
+    let medium = get_or_create_medium(...);
+    commands.spawn(Atmosphere::earth(medium));
 }
 ```
 
-**Why toggle instead of fade?**
-- Bevy atmosphere is a **fullscreen post-process effect**, not a traditional skybox
-- It uses **additive blending** which would wash out stars even at low opacity
-- Removing the component is cleaner and more performant
+**Why no longer toggled off at night?**
+- Bevy 0.19.1 bug (#24808, fixed upstream only after 0.19.1): with no
+  `Atmosphere` entity present, `extract_atmosphere` leaves stale
+  `AtmosphereBindGroups` on the view and `render_sky` keeps drawing with a
+  recycled depth texture + last daytime LUT, causing random cyan
+  full-screen flashes. See `pitfalls/atmosphere-flash.md`.
+- Stars stay visible anyway: the starry dome renders in `Transparent3d`
+  (after the atmosphere pass) and the night sky LUT is dark (no `SunDisk`
+  component, sun illuminance 0 at night).
 
 ---
 
@@ -449,9 +446,14 @@ app.add_systems(Update, (
     
     // 6. Sun position (depends on SkySettings or ZoneTime)
     update_sun_position_system,
-    
-    // DISABLED: color_grading_time_of_day_system (commented out in lib.rs -
-    // it conflicted with the atmosphere scattering system)
+
+    // 7. Time-of-day screen tint: computes TimeOfDayGrading from ZoneTime
+    // (temperature / saturation-multiplier / shadow lift). The PostUpdate
+    // apply_color_grading_system is the sole ColorGrading writer and composes
+    // it with the user's GraphicsSettings (replaces the removed
+    // color_grading_time_of_day_system, which wrote the component directly
+    // and fought the settings path).
+    update_time_of_day_grading_system.after(zone_time_system),
 ));
 ```
 
@@ -620,7 +622,7 @@ In `src/render/shaders/starry_sky.wgsl`, set `DEBUG_MODE`:
 
 **Checklist:**
 1. ✅ Is it night time? Check the Zone Time debug window (Debug → Time) or `[ZONE_TIME]` logs; Night = 19:00-6:00
-2. ✅ Is atmosphere removed? At night the `Atmosphere` component is removed from the camera (`toggle_atmosphere_based_on_time`)
+2. ✅ Is the atmosphere night sky dark? The `Atmosphere` entity is always present now; the sky LUT is dark at night only because sun illuminance is 0 and no light carries `SunDisk` (see `pitfalls/atmosphere-flash.md`)
 3. ✅ Is night_factor = 1.0? Check the read-only Night Factor display in the Stars tab (or inspect `StarrySkySettings.night_factor`)
 4. ✅ Is star_density > 0? Check the Star Density slider in the Stars tab
 5. ✅ Is shader compiling? Watch for shader compile errors in the log at startup
@@ -744,7 +746,7 @@ The starry sky system is a **fully integrated, production-ready feature** that:
 **For future engineers:**
 - Star density is the primary tuning parameter (code default is 1.0)
 - Time system uses `ZoneTime.debug_overwrite_time` for manual control
-- Atmosphere must be removed (not faded) for stars to be visible
+- Atmosphere entity must stay spawned at all times (removing it triggers Bevy 0.19.1 #24808 full-screen flashes)
 - All settings are exposed in the in-game Settings menu
 
 ---

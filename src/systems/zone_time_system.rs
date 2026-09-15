@@ -1,5 +1,5 @@
 use bevy::{
-    ecs::prelude::{Res, ResMut},
+    ecs::{change_detection::DetectChanges, prelude::{Res, ResMut, Resource}},
     math::{Vec3, Vec4Swizzles},
     prelude::{Children, Entity, Query, State, Visibility, With},
 };
@@ -654,4 +654,122 @@ pub fn zone_time_system(
     if zone_time.time != day_time {
         zone_time.time = day_time;
     }
+}
+
+// Time-of-day color tint consumed by `apply_color_grading_system`
+// (`src/graphics/apply_systems.rs`), which is the SOLE writer of the camera
+// `ColorGrading` component: it multiplies the user's saturation setting by
+// `saturation_mult` and copies `temperature` / `shadow_lift` verbatim.
+// Splitting compute (here, Update) from write (there, PostUpdate) avoids the
+// two-writer ping-pong that disabled the original
+// `color_grading_time_of_day_system` (see lib.rs history).
+#[derive(Resource, Clone, Debug)]
+pub struct TimeOfDayGrading {
+    /// Warm (positive) / cool (negative) white-balance shift.
+    pub temperature: f32,
+    /// Multiplier composed with the user's saturation setting.
+    pub saturation_mult: f32,
+    /// Shadow lift: higher at night to avoid crushed blacks.
+    pub shadow_lift: f32,
+}
+
+impl Default for TimeOfDayGrading {
+    fn default() -> Self {
+        Self {
+            temperature: COLOR_GRADING_DAY_TEMPERATURE,
+            saturation_mult: COLOR_GRADING_DAY_SATURATION,
+            shadow_lift: 0.02,
+        }
+    }
+}
+
+// Color grading temperature values for time-of-day
+// Positive = warmer (redder), Negative = cooler (bluer)
+// Values significantly reduced for subtle effect
+const COLOR_GRADING_MORNING_TEMPERATURE: f32 = 0.03; // Subtle warm sunrise tones
+const COLOR_GRADING_DAY_TEMPERATURE: f32 = 0.0; // Neutral daylight
+const COLOR_GRADING_EVENING_TEMPERATURE: f32 = 0.04; // Subtle warm sunset tones
+const COLOR_GRADING_NIGHT_TEMPERATURE: f32 = -0.02; // Subtle cool moonlight
+
+// Saturation multipliers for time-of-day (composed with user setting)
+const COLOR_GRADING_MORNING_SATURATION: f32 = 1.02; // Subtle vibrant morning colors
+const COLOR_GRADING_DAY_SATURATION: f32 = 1.0; // Neutral daytime
+const COLOR_GRADING_EVENING_SATURATION: f32 = 1.03; // Subtle rich sunset colors
+const COLOR_GRADING_NIGHT_SATURATION: f32 = 0.98; // Subtle muted night colors
+
+/// Computes the time-of-day color tint from `ZoneTime` state.
+///
+/// Runs in Update after `zone_time_system`. Only writes when a value actually
+/// changed (epsilon-guarded, like the rest of this file) so downstream
+/// `is_changed()` gates stay meaningful.
+pub fn update_time_of_day_grading_system(
+    zone_time: Res<ZoneTime>,
+    mut grading: ResMut<TimeOfDayGrading>,
+) {
+    // ZoneTime only changes on tick advance (see write discipline above), so
+    // the tint target is static between ticks. Resource init counts as
+    // changed, which seeds the first frame.
+    if !zone_time.is_changed() {
+        return;
+    }
+
+    let t = zone_time.state_percent_complete.clamp(0.0, 1.0);
+    let (temperature, saturation_mult) = match zone_time.state {
+        ZoneTimeState::Morning => {
+            if t < 0.5 {
+                // Night -> morning
+                let lerp_t = t * 2.0;
+                (
+                    COLOR_GRADING_NIGHT_TEMPERATURE
+                        .lerp(COLOR_GRADING_MORNING_TEMPERATURE, lerp_t),
+                    COLOR_GRADING_NIGHT_SATURATION
+                        .lerp(COLOR_GRADING_MORNING_SATURATION, lerp_t),
+                )
+            } else {
+                // Morning -> day
+                let lerp_t = (t - 0.5) * 2.0;
+                (
+                    COLOR_GRADING_MORNING_TEMPERATURE.lerp(COLOR_GRADING_DAY_TEMPERATURE, lerp_t),
+                    COLOR_GRADING_MORNING_SATURATION.lerp(COLOR_GRADING_DAY_SATURATION, lerp_t),
+                )
+            }
+        }
+        ZoneTimeState::Day => (
+            COLOR_GRADING_DAY_TEMPERATURE,
+            COLOR_GRADING_DAY_SATURATION,
+        ),
+        ZoneTimeState::Evening => {
+            if t < 0.5 {
+                // Day -> evening
+                let lerp_t = t * 2.0;
+                (
+                    COLOR_GRADING_DAY_TEMPERATURE.lerp(COLOR_GRADING_EVENING_TEMPERATURE, lerp_t),
+                    COLOR_GRADING_DAY_SATURATION.lerp(COLOR_GRADING_EVENING_SATURATION, lerp_t),
+                )
+            } else {
+                // Evening -> night
+                let lerp_t = (t - 0.5) * 2.0;
+                (
+                    COLOR_GRADING_EVENING_TEMPERATURE.lerp(COLOR_GRADING_NIGHT_TEMPERATURE, lerp_t),
+                    COLOR_GRADING_EVENING_SATURATION.lerp(COLOR_GRADING_NIGHT_SATURATION, lerp_t),
+                )
+            }
+        }
+        ZoneTimeState::Night => (
+            COLOR_GRADING_NIGHT_TEMPERATURE,
+            COLOR_GRADING_NIGHT_SATURATION,
+        ),
+    };
+
+    // At night, lift shadows slightly to prevent crushed blacks;
+    // during day, keep shadows more contrasty.
+    let shadow_lift = match zone_time.state {
+        ZoneTimeState::Night => 0.05,
+        ZoneTimeState::Morning | ZoneTimeState::Evening => 0.02.lerp(0.05, t),
+        ZoneTimeState::Day => 0.02,
+    };
+
+    write_f32_if_changed(&mut grading.temperature, temperature, 1e-4);
+    write_f32_if_changed(&mut grading.saturation_mult, saturation_mult, 1e-4);
+    write_f32_if_changed(&mut grading.shadow_lift, shadow_lift, 1e-4);
 }

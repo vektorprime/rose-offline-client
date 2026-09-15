@@ -650,7 +650,13 @@ transform.rotation = Quat::from_euler(
 
 ### Atmosphere Toggle System
 
-Disables atmosphere at night to show stars:
+> **WARNING (Bevy 0.19.1, 2026-09):** this night-despawn design is no longer
+> used. Despawning the Atmosphere entity at night triggers upstream bug
+> #24808 (stale render-world atmosphere bind groups -> random full-screen
+> cyan flashes); we now keep the entity permanently spawned. See
+> `pitfalls/atmosphere-flash.md`.
+
+Historical (0.18.x) behavior - disabled atmosphere at night to show stars:
 
 ```rust
 let should_enable_atmosphere = match zone_time.state {
@@ -929,7 +935,7 @@ DirectionalLight {
 
 **Solutions:**
 
-1. **Remove Atmosphere component at night**
+1. **Remove Atmosphere component at night** *(0.18.x only — do NOT do this on 0.19.1, see `pitfalls/atmosphere-flash.md`)*
    ```rust
    // src/render/starry_sky_material.rs:523
    commands.entity(camera_entity).remove::<Atmosphere>();
@@ -1041,7 +1047,7 @@ DirectionalLight {
    });
    ```
 
-3. **Disable atmosphere at night**
+3. **Disable atmosphere at night** *(0.18.x only — do NOT do this on 0.19.1, see `pitfalls/atmosphere-flash.md`)*
    ```rust
    // Show stars instead of atmosphere during night
    if zone_time.state == ZoneTimeState::Night {

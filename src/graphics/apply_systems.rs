@@ -31,35 +31,65 @@ use bevy_post_process::dof::DepthOfField;
 
 /// System that applies color grading settings (brightness, contrast, saturation, gamma)
 /// to all cameras with ColorGrading components.
+///
+/// SOLE WRITER of the camera `ColorGrading`: the time-of-day tint is composed
+/// here (user saturation x time-of-day multiplier, plus time-of-day
+/// temperature and shadow lift from `TimeOfDayGrading`) instead of a second
+/// system writing the same component, which would ping-pong (same lesson as
+/// the sun shadow-flag fight; see bevy-0.19-upgrade-plan.md).
 pub fn apply_color_grading_system(
     graphics_settings: Res<GraphicsSettings>,
+    tod_grading: Res<crate::systems::TimeOfDayGrading>,
     mut cameras: Query<
         &mut ColorGrading,
         (With<Camera>, Without<crate::render::WaterReflectionCamera>),
     >,
 ) {
-    // Skip if settings haven't changed
-    if !graphics_settings.is_changed() {
+    // Skip if neither input changed
+    if !graphics_settings.is_changed() && !tod_grading.is_changed() {
         return;
     }
 
     for mut color_grading in cameras.iter_mut() {
-        // Apply brightness through exposure
-        // Map 0.0-2.0 to -2 to +2 EV stops (1.0 = neutral)
-        color_grading.global.exposure = (graphics_settings.brightness - 1.0) * 2.0;
+        // GATED (was unconditional): every field write marks the view changed.
+        let exposure = (graphics_settings.brightness - 1.0) * 2.0;
+        if color_grading.global.exposure != exposure {
+            color_grading.global.exposure = exposure;
+        }
 
-        // Apply contrast to all sections
-        color_grading.shadows.contrast = graphics_settings.contrast;
-        color_grading.midtones.contrast = graphics_settings.contrast;
-        color_grading.highlights.contrast = graphics_settings.contrast;
+        // Apply contrast to all sections (gated: see above).
+        if color_grading.shadows.contrast != graphics_settings.contrast {
+            color_grading.shadows.contrast = graphics_settings.contrast;
+            color_grading.midtones.contrast = graphics_settings.contrast;
+            color_grading.highlights.contrast = graphics_settings.contrast;
+        }
 
-        // Apply saturation through post_saturation
-        color_grading.global.post_saturation = graphics_settings.saturation;
+        // Apply saturation: user setting composed with the time-of-day
+        // multiplier (warm/cool tint path owns this field jointly, so it is
+        // composed here in the sole writer rather than a second system).
+        let saturation = graphics_settings.saturation * tod_grading.saturation_mult;
+        if color_grading.global.post_saturation != saturation {
+            color_grading.global.post_saturation = saturation;
+        }
 
-        // Apply gamma to all sections
-        color_grading.shadows.gamma = graphics_settings.gamma;
-        color_grading.midtones.gamma = graphics_settings.gamma;
-        color_grading.highlights.gamma = graphics_settings.gamma;
+        // Apply time-of-day white-balance shift (this system never otherwise
+        // touches temperature, so no ownership conflict).
+        if color_grading.global.temperature != tod_grading.temperature {
+            color_grading.global.temperature = tod_grading.temperature;
+        }
+
+        // Apply gamma to all sections (gated).
+        if color_grading.shadows.gamma != graphics_settings.gamma {
+            color_grading.shadows.gamma = graphics_settings.gamma;
+            color_grading.midtones.gamma = graphics_settings.gamma;
+            color_grading.highlights.gamma = graphics_settings.gamma;
+        }
+
+        // Apply time-of-day shadow lift (higher at night to avoid crushed
+        // blacks). Owned by the tint path; nothing else writes lift.
+        if color_grading.shadows.lift != tod_grading.shadow_lift {
+            color_grading.shadows.lift = tod_grading.shadow_lift;
+        }
     }
 }
 
@@ -91,18 +121,26 @@ pub fn apply_shadow_quality_system(
     // wgpu requires non-zero texture dimensions, so we keep the previous/valid size
     // when shadows are disabled. The shadow_maps_enabled flag on lights controls
     // whether shadows are actually rendered.
+    // Guarded: writing `size` marks the resource changed and Bevy reallocates
+    // ALL shadow maps, so an unconditional write here stalled every frame
+    // while the Graphics tab was open (massive hitch, idle CPU/GPU).
     if shadow_maps_enabled {
-        shadow_map_resource.size = quality.shadow_map_size();
+        let size = quality.shadow_map_size();
+        if shadow_map_resource.size != size {
+            shadow_map_resource.size = size;
+        }
     }
 
-    for (mut light, cascade_config) in directional_lights.iter_mut() {
-        // Enable/disable shadows based on quality.
-        // MoonLight is owned by the time-of-day table (always off); don't force it on here.
-        // (Query can't filter by MoonLight without importing it; time-of-day corrects any
-        // transient on the next ZoneTime change, so this stays a bounded one-frame effect.)
-        light.shadow_maps_enabled = shadow_maps_enabled;
+    // NOTE: this system intentionally does NOT write
+    // `light.shadow_maps_enabled`. The per-light on/off flag is owned by
+    // the time-of-day table (`sync_...` in zone_lighting.rs), which ANDs
+    // the quality switch with sun elevation. Writing it here fought with
+    // that system (1Hz on/off flap + pipeline re-specialization storm =
+    // fullscreen flashing). See bevy-0.19-upgrade-plan.md.
+    for (_light, cascade_config) in directional_lights.iter_mut() {
 
-        // Apply cascade configuration if present
+        // Calculate bounds for cascades (gated: rebuilding the vec + writing
+        // marks the light changed and re-specializes shadow pipelines).
         if let Some(mut config) = cascade_config {
             let cascade_count = quality.cascade_count();
             if cascade_count > 0 {
@@ -116,9 +154,15 @@ pub fn apply_shadow_quality_system(
                     .map(|i| first_bound * (i + 1) as f32)
                     .collect();
 
-                config.bounds = bounds;
-                config.overlap_proportion = 0.2;
-                config.minimum_distance = 0.1;
+                if config.bounds != bounds {
+                    config.bounds = bounds;
+                }
+                if config.overlap_proportion != 0.2 {
+                    config.overlap_proportion = 0.2;
+                }
+                if config.minimum_distance != 0.1 {
+                    config.minimum_distance = 0.1;
+                }
             }
         }
     }
@@ -138,7 +182,9 @@ pub fn apply_tonemapping_system(
     }
 
     for mut tonemapping in cameras.iter_mut() {
-        *tonemapping = match graphics_settings.tonemapping {
+        // GATED (was unconditional): writing marks the view changed and forces
+        // post-chain re-specialization every frame the tab is open.
+        let new = match graphics_settings.tonemapping {
             TonemappingMode::None => Tonemapping::None,
             TonemappingMode::Reinhard => Tonemapping::Reinhard,
             TonemappingMode::ReinhardLuminance => Tonemapping::ReinhardLuminance,
@@ -150,6 +196,9 @@ pub fn apply_tonemapping_system(
             TonemappingMode::TonyMcMapface => Tonemapping::TonyMcMapface,
             TonemappingMode::BlenderFilmic => Tonemapping::BlenderFilmic,
         };
+        if *tonemapping != new {
+            *tonemapping = new;
+        }
     }
 }
 
@@ -171,14 +220,12 @@ pub fn apply_bloom_system(
 
     for (entity, bloom) in cameras.iter() {
         if graphics_settings.bloom_enabled {
-            if let Some(_existing) = bloom {
-                // Update intensity in place via separate query-less path: re-insert
-                // preserves settings while keeping code simple (change-gated, rare).
-                commands.entity(entity).insert(Bloom {
-                    intensity: graphics_settings.bloom_intensity,
-                    ..Bloom::NATURAL
-                });
-            } else {
+            // TEMP-BISECT (blue-flash hunt): skip re-insert when identical so
+            // the per-frame churn while the Graphics tab is open stops. If the
+            // flashing returns / tab speeds up, the churn was masking/costing.
+            let same = matches!(bloom, Some(existing)
+                if (existing.intensity - graphics_settings.bloom_intensity).abs() <= 1e-4);
+            if !same {
                 commands.entity(entity).insert(Bloom {
                     intensity: graphics_settings.bloom_intensity,
                     ..Bloom::NATURAL
@@ -201,11 +248,15 @@ pub fn apply_shadow_filtering_system(
     }
 
     for mut filtering in lights.iter_mut() {
-        *filtering = match graphics_settings.shadow_filtering {
+        // GATED (was unconditional).
+        let new = match graphics_settings.shadow_filtering {
             GraphicsShadowFilteringMethod::Hardware2x2 => ShadowFilteringMethod::Hardware2x2,
             GraphicsShadowFilteringMethod::Gaussian => ShadowFilteringMethod::Gaussian,
             GraphicsShadowFilteringMethod::Temporal => ShadowFilteringMethod::Temporal,
         };
+        if *filtering != new {
+            *filtering = new;
+        }
     }
 }
 
@@ -230,7 +281,11 @@ pub fn apply_msaa_system(
     };
 
     for mut msaa in cameras.iter_mut() {
-        *msaa = new_msaa;
+        // GATED (was unconditional): same reason as tonemapping (Msaa sits in
+        // nearly every pipeline key + sizes the view targets).
+        if *msaa != new_msaa {
+            *msaa = new_msaa;
+        }
     }
 }
 
@@ -266,10 +321,15 @@ pub fn apply_ssao_system(
             SsaoQuality::High => ScreenSpaceAmbientOcclusionQualityLevel::High,
             SsaoQuality::Ultra => ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
         };
-        commands.entity(entity).insert(ScreenSpaceAmbientOcclusion {
-            quality_level: level,
-            ..Default::default()
-        });
+        // TEMP-BISECT (blue-flash hunt): skip re-insert when identical.
+        // See apply_bloom_system.
+        let same = matches!(ssao, Some(existing) if existing.quality_level == level);
+        if !same {
+            commands.entity(entity).insert(ScreenSpaceAmbientOcclusion {
+                quality_level: level,
+                ..Default::default()
+            });
+        }
     }
 }
 
@@ -454,8 +514,9 @@ pub fn apply_texture_quality_system(
 ///
 /// NOTE: `sync_zone_lighting_to_bevy_lights_system` (Update) is the authority for
 /// the ambient color/brightness each frame: it blends the zone's
-/// `map_ambient_color` with the user's color and scales brightness by daylight
-/// so backlit faces stay readable at noon. This system (PostUpdate) only seeds
+/// `map_ambient_color` with the user's color at a constant Bevy-default base
+/// (80.0 lux). Day/night variation comes from the sun + sky-fill lights so
+/// shadows keep contrast. This system (PostUpdate) only seeds
 /// the same blend when settings change so there is no one-frame flash of flat
 /// white ambient and no ping-pong between the two writers.
 pub fn apply_ambient_light_system(
@@ -471,12 +532,17 @@ pub fn apply_ambient_light_system(
     let user_color = graphics_settings.ambient_light_color.to_linear();
     if let Some(zone_lighting) = zone_lighting {
         let map = zone_lighting.map_ambient_color;
-        ambient_light.color = Color::from(LinearRgba::new(
+        let color = Color::from(LinearRgba::new(
             map.x * user_color.red,
             map.y * user_color.green,
             map.z * user_color.blue,
             1.0,
         ));
+        // Guarded: same reason as brightness below (avoid dirtying the
+        // resource every frame the settings UI is open).
+        if ambient_light.color != color {
+            ambient_light.color = color;
+        }
     } else {
         // No zone loaded yet (menus): fall back to the plain user color.
         ambient_light.color = graphics_settings.ambient_light_color;
@@ -484,6 +550,12 @@ pub fn apply_ambient_light_system(
 
     // Apply ambient light brightness
     // Base brightness is 80.0 (Bevy's default), multiplier ranges from 0.0 to 2.0.
-    // Daylight scaling itself is applied by the sync system in Update.
-    ambient_light.brightness = 80.0 * graphics_settings.ambient_light_brightness;
+    // Kept constant: day/night variation comes from sun + fill, not ambient.
+    // Guarded: an unconditional write marks GlobalAmbientLight changed every
+    // frame (forcing ambient re-evaluation across the render graph) whenever
+    // settings are touched, e.g. while the Graphics tab is open.
+    let brightness = 80.0 * graphics_settings.ambient_light_brightness;
+    if ambient_light.brightness != brightness {
+        ambient_light.brightness = brightness;
+    }
 }

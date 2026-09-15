@@ -351,21 +351,10 @@ fn sync_zone_lighting_to_bevy_lights_system(
     // Determine the ambient light color to use:
     // 1. Start with zone lighting's map_ambient_color as the base
     // 2. If GraphicsSettings exists, multiply by the user's ambient color and brightness
-    // 3. Scale brightness by daylight so the sun's shadow side stays readable at
-    //    midday without washing out the night (night ~1x, full day ~3x).
+    // Ambient stays constant (Bevy default 80.0 lux base): day/night variation
+    // comes from the sun + sky-fill lights, so shadows keep contrast instead
+    // of being washed out by a boosted ambient term.
     let map_ambient = zone_lighting.map_ambient_color;
-
-    // Daylight factor from the live sun transform (self-consistent with the
-    // sun path): -forward.y is the sun-height sine (1 = overhead, <=0 = set).
-    // Falls back to 1.0 if the sun query below fails.
-    let mut daylight_factor = 1.0;
-    if let Ok((_, transform)) = query_directional_light.single() {
-        let sun_height: f32 = -transform.forward().y;
-        daylight_factor = (sun_height / 0.35).clamp(0.0, 1.0);
-    }
-    // Smoothstep for a gentle ramp instead of a hard switch.
-    let daylight_smooth = daylight_factor * daylight_factor * (3.0 - 2.0 * daylight_factor);
-    let daylight_boost = 1.0 + 2.0 * daylight_smooth;
 
     let (final_color, final_brightness) = if let Some(settings) = graphics_settings {
         // Get the user's ambient color preference as linear RGB
@@ -376,9 +365,8 @@ fn sync_zone_lighting_to_bevy_lights_system(
         let blended_g = map_ambient.y * user_color.green;
         let blended_b = map_ambient.z * user_color.blue;
 
-        // Apply user's brightness multiplier (base 80.0 is Bevy's default),
-        // scaled up during the day so backlit faces stay visible.
-        let brightness = 80.0 * settings.ambient_light_brightness * daylight_boost;
+        // Apply user's brightness multiplier (base 80.0 is Bevy's default).
+        let brightness = 80.0 * settings.ambient_light_brightness;
 
         (
             Color::from(LinearRgba::new(blended_r, blended_g, blended_b, 1.0)),
@@ -393,7 +381,7 @@ fn sync_zone_lighting_to_bevy_lights_system(
                 map_ambient.z,
                 1.0,
             )),
-            80.0 * daylight_boost,
+            80.0,
         )
     };
 
@@ -655,15 +643,15 @@ pub fn update_shadows_for_time_of_day_system(
         return;
     }
 
-    // Check if shadows are enabled in graphics settings
-    // If shadows are disabled by quality settings, don't override
+    // Check if shadows are enabled in graphics settings.
+    // This system SOLELY owns the per-light shadow flags: the final value is
+    // (quality switch) AND (sun elevation). The graphics apply system only
+    // resizes the shadow map; writing flags there fought with this table
+    // (1Hz on/off flap + pipeline re-specialization storm = fullscreen
+    // flashing at night). See bevy-0.19-upgrade-plan.md.
     let shadow_maps_enabled_by_settings = graphics_settings
         .map(|g| g.shadow_quality != ShadowQuality::Off)
         .unwrap_or(true);
-
-    if !shadow_maps_enabled_by_settings {
-        return; // Shadows disabled in settings, nothing to do
-    }
 
     // Moon illuminance still follows the named state (it is a state proxy for
     // "how dark is the sky"), while the sun follows its live elevation so the
@@ -685,7 +673,8 @@ pub fn update_shadows_for_time_of_day_system(
         let ramp = (sun_height / 0.25).clamp(0.0, 1.0);
         let smooth = ramp * ramp * (3.0 - 2.0 * ramp);
         let sun_illuminance = daylight.sun_illuminance.max(0.0) * smooth;
-        let sun_shadows = sun_up;
+        // Sun shadows only when the quality switch allows AND the sun is up.
+        let sun_shadows = shadow_maps_enabled_by_settings && sun_up;
         if light.shadow_maps_enabled != sun_shadows {
             light.shadow_maps_enabled = sun_shadows;
         }

@@ -487,10 +487,11 @@ pub fn update_starry_sky_night_factor(
     }
 }
 
-/// Resource to track whether the atmosphere should be enabled.
+/// Resource to track whether the atmosphere entity is present.
 /// In Bevy 0.19 the `Atmosphere` is a standalone entity (nearest one wins);
-/// this system spawns/despawns that entity based on time of day while the
-/// camera keeps `AtmosphereSettings` permanently.
+/// this system keeps that entity permanently spawned while the camera keeps
+/// `AtmosphereSettings` (it no longer despawns at night - see
+/// `toggle_atmosphere_based_on_time`).
 /// NOTE: Default is `enabled: true` because an atmosphere entity is spawned
 /// alongside the camera at startup. This ensures the initial state matches.
 #[derive(Resource, Debug, Clone)]
@@ -508,16 +509,27 @@ impl Default for AtmosphereState {
     }
 }
 
-/// System to toggle the Atmosphere entity based on time of day
+/// System that keeps the `Atmosphere` entity spawned at all times.
 ///
-/// During Night time, the Atmosphere entity is despawned to allow stars to be visible.
-/// During Day/Evening/Morning, it is (re-)spawned for realistic sky rendering.
-/// The medium handle is cached and reused across toggles to avoid reallocating
-/// the medium (and regenerating LUTs) on every transition.
+/// This used to despawn the entity at night so the stars could be seen.
+/// Bevy 0.19.1 cannot survive that: when no `Atmosphere` entity exists,
+/// `extract_atmosphere` removes only `ExtractedAtmosphere` and
+/// `GpuAtmosphereSettings` from the view and leaves a stale
+/// `AtmosphereBindGroups` + `DynamicUniformIndex<GpuAtmosphereSettings>`
+/// behind (upstream bug #24808, fixed by PR #24884 after the 0.19.1
+/// release). `render_sky` (a no-depth-attachment fullscreen pass that runs
+/// between the opaque and transparent 3D passes) then keeps drawing with
+/// that stale bind group, whose depth texture gets recycled by the
+/// renderer, and randomly splashes the last daytime sky-view LUT over the
+/// whole view as a milky cyan veil (the "flash" bug). Keeping the entity
+/// alive forces the bind groups to be rebuilt from live data every frame,
+/// so the stale state can never form.
+///
+/// At night the extracted sun/moon directional lights are dim enough that
+/// the sky-view LUT stays dark and the stars remain visible.
 ///
 /// This system must run after zone_time_system to get the current time state.
 pub fn toggle_atmosphere_based_on_time(
-    zone_time: Option<Res<crate::resources::ZoneTime>>,
     mut atmosphere_state: ResMut<AtmosphereState>,
     camera_query: Query<
         Entity,
@@ -530,7 +542,6 @@ pub fn toggle_atmosphere_based_on_time(
     mut commands: Commands,
     mut scattering_mediums: ResMut<Assets<bevy::light::atmosphere::ScatteringMedium>>,
 ) {
-    use crate::resources::ZoneTimeState;
     use bevy::light::Atmosphere;
 
     fn get_or_create_medium(
@@ -548,55 +559,18 @@ pub fn toggle_atmosphere_based_on_time(
         }
     }
 
-    // Check if ZoneTime resource exists
-    let Some(zone_time) = zone_time else {
-        // ZoneTime doesn't exist yet - keep atmosphere ENABLED (default daytime sky)
-        // This happens during loading screen before zone is fully loaded.
-        // Ensure the entity exists if it was disabled.
-        if !atmosphere_state.enabled {
-            if camera_query.single().is_ok() {
-                let medium = get_or_create_medium(&mut atmosphere_state, &mut scattering_mediums);
-                if atmosphere_query.is_empty() {
-                    commands.spawn(Atmosphere::earth(medium));
-                }
-                atmosphere_state.enabled = true;
-            }
-        }
+    // Retry until a main camera exists so we never spawn the atmosphere
+    // before the camera that renders it.
+    if camera_query.single().is_err() {
+        atmosphere_state.enabled = false;
         return;
-    };
-
-    // Determine if atmosphere should be enabled based on time state
-    let should_enable_atmosphere = match zone_time.state {
-        ZoneTimeState::Night => false, // Disable atmosphere at night to show stars
-        ZoneTimeState::Evening => true, // Enable atmosphere during evening transition
-        ZoneTimeState::Morning => true, // Enable atmosphere during morning transition
-        ZoneTimeState::Day => true,    // Enable atmosphere during day
-    };
-
-    // Only make changes if state has changed
-    if atmosphere_state.enabled != should_enable_atmosphere {
-        // Find the camera entity and toggle the atmosphere entity.
-        // IMPORTANT: the state flag is only updated AFTER the camera query
-        // succeeds. If the query fails (e.g. no camera spawned yet), the flag
-        // is left unchanged so this system retries next frame instead of
-        // permanently desyncing the flag from the actual world state.
-        if camera_query.single().is_ok() {
-            atmosphere_state.enabled = should_enable_atmosphere;
-
-            if should_enable_atmosphere {
-                // Re-spawn the atmosphere entity, reusing the cached medium so LUTs are
-                // not regenerated from scratch on every day/night transition.
-                if atmosphere_query.is_empty() {
-                    let medium =
-                        get_or_create_medium(&mut atmosphere_state, &mut scattering_mediums);
-                    commands.spawn(Atmosphere::earth(medium));
-                }
-            } else {
-                // Despawn atmosphere entities to show stars
-                for entity in &atmosphere_query {
-                    commands.entity(entity).despawn();
-                }
-            }
-        }
     }
+
+    // Self-healing: (re-)spawn the atmosphere entity whenever it is missing,
+    // reusing the cached medium so the LUTs are not regenerated from scratch.
+    if atmosphere_query.is_empty() {
+        let medium = get_or_create_medium(&mut atmosphere_state, &mut scattering_mediums);
+        commands.spawn(Atmosphere::earth(medium));
+    }
+    atmosphere_state.enabled = true;
 }

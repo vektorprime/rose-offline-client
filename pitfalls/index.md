@@ -26,6 +26,7 @@ This folder contains documentation of issues encountered during development and 
 | [equipment-vehicle-parts.md](equipment-vehicle-parts.md) | Cart wheels rejected by vehicle type check, slot-index heuristic vs item data |
 | [blender-io-rose.md](blender-io-rose.md) | Blender io_rose addon: alpha import, ZMS export crash, Y-flip round-trip orientation |
 | [damage-digits-camera3d.md](damage-digits-camera3d.md) | Damage digits: Text2d never renders under Camera3d, Mesh3d+StandardMaterial replacement |
+| [atmosphere-flash.md](atmosphere-flash.md) | Cyan full-screen flashes from despawning the Atmosphere entity at night |
 
 ## Quick Navigation by Bevy Version
 
@@ -40,6 +41,9 @@ This folder contains documentation of issues encountered during development and 
 ### Bevy 0.16 Changes
 - [AsBindGroupError::CreateBindGroupDirectly required for custom materials](water-system.md)
 - [insert_state() vs init_state() for initial state values](zone-loading.md)
+
+### Bevy 0.19 Changes
+- [Do not despawn Atmosphere entities at runtime](atmosphere-flash.md) - stale render-world bind groups make `render_sky` splash a cyan veil over random frames
 
 ## Common Patterns to Watch For
 

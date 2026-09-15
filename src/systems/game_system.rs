@@ -1,6 +1,8 @@
 use bevy::{
     math::Vec3,
-    prelude::{Camera3d, Commands, Entity, MessageReader, Query, Res, ResMut, With, Without},
+    prelude::{
+        Camera3d, Commands, Entity, MessageReader, Projection, Query, Res, ResMut, With, Without,
+    },
 };
 use rose_game_common::messages::client::ClientMessage;
 
@@ -8,6 +10,7 @@ use crate::{
     animation::CameraAnimation,
     components::PlayerCharacter,
     events::ZoneEvent,
+    graphics::GraphicsSettings,
     resources::{CurrentZone, GameConnection, WaterSettings},
     systems::{FreeCamera, OrbitCamera},
 };
@@ -35,6 +38,11 @@ pub fn game_state_enter_system(
         (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
     >,
     query_player: Query<Entity, With<PlayerCharacter>>,
+    graphics_settings: Option<Res<GraphicsSettings>>,
+    mut query_projection: Query<
+        &mut Projection,
+        (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
+    >,
 ) {
     // Reset camera
     let player_entity = match query_player.single() {
@@ -52,6 +60,24 @@ pub fn game_state_enter_system(
                 Vec3::new(0.0, 1.7, 0.0),
                 15.0,
             ));
+    }
+
+    // Login/character-select cinematics (CameraAnimation::once) overwrite the
+    // projection (fov/near/far, e.g. far=1300) and never restore it. Without
+    // this reset the game camera keeps the cinematic frustum (clipped sky,
+    // wrong depth precision) until something re-applies graphics settings.
+    // Same mapping as apply_view_distance_system; spawn defaults otherwise.
+    let view_distance = graphics_settings
+        .as_ref()
+        .map(|g| g.view_distance)
+        .unwrap_or(500.0);
+    let far = (view_distance * 16.0).clamp(6000.0, 12000.0);
+    for mut projection in query_projection.iter_mut() {
+        if let Projection::Perspective(ref mut perspective) = *projection {
+            perspective.fov = std::f32::consts::PI / 4.0;
+            perspective.near = 0.1;
+            perspective.far = far;
+        }
     }
 }
 

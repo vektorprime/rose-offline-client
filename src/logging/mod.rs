@@ -72,7 +72,7 @@ impl SessionInfo {
             hostname,
             command_line,
             mode: mode.to_string(),
-            bevy_version: "0.18.1".to_string(),
+            bevy_version: "0.19.1".to_string(),
             rust_version: rustc_version_runtime::version().to_string(),
             os: std::env::consts::OS.to_string(),
             config,
@@ -178,12 +178,14 @@ pub fn init_session_logging(
         .with_filter(env_filter.clone());
 
     if config.console_output {
-        // Console layer with standard formatting
+        // Console layer: WARN and above only. Routine INFO chatter (asset
+        // loads, zone progress, Bevy/wgpu info) stays in the file layer so
+        // the console shows warnings/errors plus our explicit diagnostics.
         let console_layer = fmt::layer()
             .with_target(true)
             .with_thread_ids(false)
             .with_ansi(true)
-            .with_filter(env_filter);
+            .with_filter(tracing_subscriber::filter::LevelFilter::WARN);
 
         tracing_subscriber::registry()
             .with(json_layer)
@@ -214,7 +216,7 @@ mod tests {
         let info = SessionInfo::new("Test", None);
         assert!(info.session_id.contains('-')); // Date format has dashes
         assert_eq!(info.mode, "Test");
-        assert_eq!(info.bevy_version, "0.18.1");
+        assert_eq!(info.bevy_version, "0.19.1");
     }
 
     #[test]

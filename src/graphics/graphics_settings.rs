@@ -197,6 +197,7 @@ impl TextureQuality {
 #[reflect(Debug, Clone, PartialEq)]
 pub enum TonemappingMode {
     /// No tonemapping
+    #[default]
     None,
     /// Reinhard simple
     Reinhard,
@@ -208,8 +209,7 @@ pub enum TonemappingMode {
     AgX,
     /// Somewhat boring display transform
     SomewhatBoringDisplayTransform,
-    /// TonyMcMapface (default, neutral)
-    #[default]
+    /// TonyMcMapface (neutral)
     TonyMcMapface,
     /// Blender filmic
     BlenderFilmic,
@@ -450,14 +450,14 @@ impl Default for GraphicsSettings {
             saturation: 1.0,
             gamma: 1.0,
 
-            // Effects
-            bloom_enabled: true,
+            // Effects (default OFF for perf; enable via Graphics tab)
+            bloom_enabled: false,
             bloom_intensity: 0.15,
             motion_blur_enabled: false,
             motion_blur_intensity: 0.5,
-            ssao_enabled: true,
+            ssao_enabled: false,
             ssao_quality: SsaoQuality::default(),
-            dof_enabled: true,
+            dof_enabled: false,
 
             // Advanced
             tonemapping: TonemappingMode::default(),
@@ -466,7 +466,7 @@ impl Default for GraphicsSettings {
             smaa_quality: SmaaQuality::default(),
 
             // Ambient Lighting
-            ambient_light_brightness: 1.5,
+            ambient_light_brightness: 1.0,
             ambient_light_color: Color::WHITE,
 
             // Terrain Lighting

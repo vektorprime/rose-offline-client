@@ -229,5 +229,5 @@ pub use wing_spawn_system::{wing_spawn_system, WingSpawnPlugin};
 pub use world_connection_system::world_connection_system;
 pub use world_time_system::world_time_system;
 pub use world_ui_occlusion_system::world_ui_occlusion_system;
-pub use zone_time_system::zone_time_system;
+pub use zone_time_system::{update_time_of_day_grading_system, zone_time_system, TimeOfDayGrading};
 pub use zone_viewer_system::zone_viewer_enter_system;
