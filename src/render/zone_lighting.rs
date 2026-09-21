@@ -48,13 +48,13 @@ pub const SOLAR_NOON_HOUR: f32 = 12.5;
 /// looked dim until nearly noon. 68 deg gives NdotL ~0.93 at midday with a
 /// broad bright plateau from ~08:00-17:00.
 pub const SUN_MAX_ELEVATION_DEG: f32 = 68.0;
-/// Peak sun illuminance (lux) applied when the sun is well above the horizon.
-/// Raised from 15000: with the old low sun path the effective ground-level
-/// light was only ~7200 lux even at its peak.
-pub const SUN_MAX_ILLUMINANCE: f32 = 25000.0;
-/// Peak sky-fill illuminance (lux) at midday. ~25% of the sun gives a ~4:1
-/// key-to-fill ratio: shadows stay visible but faces are readable.
-pub const FILL_MAX_ILLUMINANCE: f32 = 6000.0;
+/// Peak sun illuminance (lux) applied when the sun is well above the horizon,
+/// and the default shown in Settings > Sky "Sun brightness".
+pub const SUN_MAX_ILLUMINANCE: f32 = 5000.0;
+/// Peak sky-fill illuminance (lux) at midday, and the default shown in
+/// Settings > Sky "Shadow fill". 40% of the sun gives a ~2.5:1 key-to-fill
+/// ratio: shadows stay visible but faces are readable.
+pub const FILL_MAX_ILLUMINANCE: f32 = 2000.0;
 
 /// Runtime-tunable daylight parameters (Settings > Sky). Defaults match the
 /// constants above so out-of-the-box visuals are unchanged.
@@ -67,9 +67,9 @@ pub struct DaylightSettings {
     pub sunset_hour: f32,
     /// Peak solar elevation at noon (degrees). Default 68.0.
     pub max_elevation_deg: f32,
-    /// Peak sun illuminance in lux. Default 25000.0.
+    /// Peak sun illuminance in lux. Default 5000.0.
     pub sun_illuminance: f32,
-    /// Peak sky-fill illuminance in lux. Default 6000.0.
+    /// Peak sky-fill illuminance in lux. Default 2000.0.
     pub fill_illuminance: f32,
 }
 
