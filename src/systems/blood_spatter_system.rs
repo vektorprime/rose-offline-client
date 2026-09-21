@@ -315,6 +315,9 @@ pub fn blood_spatter_spawn_system(
                         commands.spawn((
                             Name::new(format!("BloodSpatter_{}", i)),
                             ForwardDecal,
+                            // Layer 1: reflection camera (layer 0) has no DepthPrepass,
+                            // which forward decals require -> shader compile error.
+                            bevy::camera::visibility::RenderLayers::layer(1),
                             MeshMaterial3d(decal_materials.add(material)),
                             BloodSpatter {
                                 lifetime: config.spatter_lifetime,
@@ -333,6 +336,9 @@ pub fn blood_spatter_spawn_system(
                     commands.spawn((
                         Name::new(format!("BloodSpatter_{}", i)),
                         ForwardDecal,
+                        // Layer 1: reflection camera (layer 0) has no DepthPrepass,
+                        // which forward decals require -> shader compile error.
+                        bevy::camera::visibility::RenderLayers::layer(1),
                         MeshMaterial3d(decal_materials.add(material)),
                         BloodSpatter {
                             lifetime: config.spatter_lifetime,
