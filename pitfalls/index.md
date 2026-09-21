@@ -13,6 +13,7 @@ This folder contains documentation of issues encountered during development and 
 | [materials-transparency.md](materials-transparency.md) | Alpha modes, custom materials, texture arrays |
 | [lighting.md](lighting.md) | Ambient light, photometric units |
 | [terrain-physics.md](terrain-physics.md) | Terrain adherence, spawn height, bundle limits |
+| [new-terrain.md](new-terrain.md) | `--new-terrain` PBR terrain: dark patches from world-space normal-map bake, tangent-space channel order |
 | [water-system.md](water-system.md) | Water materials, fish spawning, shader migration, multi-view world UI buffer corruption |
 | [zone-loading.md](zone-loading.md) | Asset tracking, state initialization, skybox loading |
 | [model-viewer.md](model-viewer.md) | Bundle duplicates, runtime panics |
