@@ -15,7 +15,9 @@ impl Plugin for SeasonPlugin {
             .init_resource::<crate::resources::SpringSettings>()
             .init_resource::<crate::resources::SummerSettings>()
             .init_resource::<crate::resources::WinterSettings>()
-            .add_systems(PreUpdate, crate::resources::setup_season_materials)
+            // Once: the materials/meshes are constants. Running this every frame
+            // (was PreUpdate) re-created 21 materials + 6 meshes per frame.
+            .add_systems(Startup, crate::resources::setup_season_materials)
             .add_systems(
                 Update,
                 (

@@ -137,11 +137,6 @@ impl Plugin for ParticleMaterialPlugin {
                 Update,
                 validate_particle_materials.run_if(resource_exists::<Assets<ParticleMaterial>>),
             );
-            app.add_systems(
-                Update,
-                log_particle_material_bind_groups
-                    .run_if(resource_exists::<Assets<ParticleMaterial>>),
-            );
         }
 
         info!("✓ [ParticleMaterial] Plugin initialized successfully");
@@ -205,32 +200,10 @@ fn validate_particle_materials(
         }
     }
 
-    // Clear the warned materials set periodically to prevent unbounded growth
-    // Do this every 1000 frames or so
+    // Bound the set by dropping materials that no longer exist. (Clearing it
+    // whenever it held > 100 ids re-validated every live material every frame
+    // once more than 100 particle materials were alive.)
     if warned_materials.len() > 100 {
-        warned_materials.clear();
-    }
-}
-
-/// DIAGNOSTIC: System to log bind group creation details for ParticleMaterial
-/// This runs each frame to catch when new materials are added
-#[cfg(debug_assertions)]
-fn log_particle_material_bind_groups(
-    materials: Res<Assets<ParticleMaterial>>,
-    mut logged_materials: Local<std::collections::HashSet<AssetId<ParticleMaterial>>>,
-) {
-    for (id, _material) in materials.iter() {
-        // Only log once per material
-        if logged_materials.contains(&id) {
-            continue;
-        }
-
-        logged_materials.insert(id);
-    }
-
-    // Clear the logged materials set periodically to prevent unbounded growth
-    // Do this every 1000 frames or so
-    if logged_materials.len() > 100 {
-        logged_materials.clear();
+        warned_materials.retain(|id| materials.contains(*id));
     }
 }

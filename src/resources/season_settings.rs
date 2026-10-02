@@ -2,7 +2,7 @@ use crate::components::Season;
 use bevy::prelude::*;
 
 /// Global season settings
-#[derive(Resource, Debug, Clone, Reflect)]
+#[derive(Resource, Debug, Clone, PartialEq, Reflect)]
 pub struct SeasonSettings {
     pub enabled: bool,
     pub current_season: Season,
@@ -113,7 +113,7 @@ impl Default for WinterSettings {
 }
 
 /// Summer-specific settings
-#[derive(Resource, Debug, Clone, Reflect)]
+#[derive(Resource, Debug, Clone, PartialEq, Reflect)]
 pub struct SummerSettings {
     /// Maximum number of flowers to spawn
     pub max_flowers: usize,

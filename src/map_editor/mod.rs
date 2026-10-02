@@ -61,6 +61,7 @@ pub use resources::{
 pub use save::{SavePlugin, SaveStatus, SaveZoneEvent};
 
 use crate::animation::CameraAnimation;
+use crate::resources::AppState;
 use crate::systems::{FreeCamera, OrbitCamera};
 use bevy::prelude::*;
 use systems::duplicate_system::DuplicateSystemPlugin;
@@ -105,18 +106,42 @@ impl Plugin for MapEditorPlugin {
             // Phase 2.6: Save functionality
             .add_plugins(save::SavePlugin);
 
-        // Phase 2.5: Load available models on startup (after GameData is loaded)
-        app.add_systems(Update, load_models_system::load_available_models_system);
+        // Phase 2.5: Load available models on startup (after GameData is loaded).
+        // Only the editor reads AvailableModels; it is built on the first editor frame.
+        app.add_systems(
+            Update,
+            load_models_system::load_available_models_system.run_if(map_editor_active),
+        );
 
         // Update models when a zone is loaded (fixes empty CNST/DECO tabs)
         app.add_systems(
             Update,
-            load_models_system::update_models_on_zone_load_system,
+            load_models_system::update_models_on_zone_load_system.run_if(map_editor_active),
         );
 
         // Log plugin initialization
         log::info!("[MapEditorPlugin] Map editor plugin initialized with property editing, model management, and save support");
     }
+}
+
+/// Run condition for editor systems that do nothing while `MapEditorState::enabled`
+/// is false, or only maintain data that just the editor reads. `enabled` is only true
+/// in `AppState::MapEditor` (set by the OnEnter/OnExit systems below), and that state
+/// is only ever the initial one: nothing transitions into it later.
+pub(crate) fn map_editor_active(app_state: Option<Res<State<AppState>>>) -> bool {
+    app_state.is_some_and(|app_state| *app_state.get() == AppState::MapEditor)
+}
+
+/// `map_editor_active`, plus one more run after leaving the editor, for systems
+/// that clean up on their first run with the editor disabled.
+pub(crate) fn map_editor_active_or_just_left(
+    app_state: Option<Res<State<AppState>>>,
+    mut was_active: Local<bool>,
+) -> bool {
+    let active = map_editor_active(app_state);
+    let run = active || *was_active;
+    *was_active = active;
+    run
 }
 
 /// System to initialize the map editor when entering MapEditor state

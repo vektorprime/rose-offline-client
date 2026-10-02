@@ -63,11 +63,11 @@ impl Plugin for ExtensionMaterialPlugin {
             Shader::from_wgsl
         );
 
-        // Register RoseEffectExtension shader
+        // Register RoseEffectExtension shader (morph animation in every vertex stage)
         load_internal_asset!(
             app,
             ROSE_EFFECT_EXTENSION_SHADER_HANDLE,
-            "shaders/rose_effect_extension.wgsl",
+            "shaders/rose_effect_mesh.wgsl",
             Shader::from_wgsl
         );
 

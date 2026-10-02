@@ -697,6 +697,19 @@ fn pick_new_target(
     )
 }
 
+/// Scratch buffers for [`update_fish_movement_system`], kept across frames so
+/// the per-frame snapshot / sort / separation pass does not allocate.
+#[derive(Default)]
+pub struct FishMovementScratch {
+    /// Near (not culled) fish with their world position, in query order.
+    near: Vec<(Entity, Vec3)>,
+    /// Indices into `near`, sorted by world X.
+    order: Vec<usize>,
+    /// Accumulated separation push per `near` index; `None` = no neighbor in
+    /// range (no push is applied at all, exactly like a missing map entry).
+    pushes: Vec<Option<Vec3>>,
+}
+
 /// System to update fish movement and swimming behavior
 ///
 /// Fish farther than [`FishSettings::simulation_distance`] from the camera
@@ -712,6 +725,7 @@ pub fn update_fish_movement_system(
             Without<crate::render::WaterReflectionCamera>,
         ),
     >,
+    mut scratch: Local<FishMovementScratch>,
 ) {
     let mut rng = rand::thread_rng();
     let delta = time.delta_secs();
@@ -721,36 +735,47 @@ pub fn update_fish_movement_system(
     let cull_enabled = settings.simulation_distance > 0.0 && camera_pos.is_some();
     let cull_dist_sq = settings.simulation_distance * settings.simulation_distance;
 
-    // Snapshot current world positions for NEAR fish only, keyed by Entity.
-    // Previously all fish were collected/sorted/separated before the 80m cull ran.
-    // Cull first so far fish cost nothing. Entity keys (not ordinals) align pushes
-    // with the integration loop: filtered ordinals do NOT match full-query ordinals.
-    let near: Vec<(Entity, Vec3)> = query
-        .iter()
-        .filter_map(|(entity, _, global_transform, _)| {
-            let p = global_transform.translation();
-            if cull_enabled && p.distance_squared(camera_pos.unwrap()) > cull_dist_sq {
-                None
-            } else {
-                Some((entity, p))
-            }
-        })
-        .collect();
+    let FishMovementScratch {
+        near,
+        order,
+        pushes,
+    } = &mut *scratch;
+
+    // Snapshot current world positions for NEAR fish only, in query order.
+    // Cull first so far fish cost nothing. The integration loop below walks this
+    // list, so it simulates exactly these fish in exactly this order.
+    near.clear();
+    near.extend(
+        query
+            .iter()
+            .filter_map(|(entity, _, global_transform, _)| {
+                let p = global_transform.translation();
+                if cull_enabled && p.distance_squared(camera_pos.unwrap()) > cull_dist_sq {
+                    None
+                } else {
+                    Some((entity, p))
+                }
+            }),
+    );
 
     // Separation: push overlapping fish apart. Indices sorted by X so the inner
     // scan early-outs once X delta exceeds the radius (cheap with many planes).
+    // Ties on X are broken by index: that is the exact order a stable sort of
+    // 0..n produces, and the unique key lets the unstable sort skip allocating.
     const SEPARATION_RADIUS: f32 = 0.9;
-    let mut order: Vec<usize> = (0..near.len()).collect();
-    order.sort_by(|&a, &b| near[a].1.x.total_cmp(&near[b].1.x));
+    order.clear();
+    order.extend(0..near.len());
+    order.sort_unstable_by(|&a, &b| near[a].1.x.total_cmp(&near[b].1.x).then(a.cmp(&b)));
 
-    let mut pushes: std::collections::HashMap<Entity, Vec3> =
-        std::collections::HashMap::new();
+    // Same accumulation order per fish as the old per-entity map entries.
+    pushes.clear();
+    pushes.resize(near.len(), None);
     for k in 0..order.len() {
         let i = order[k];
-        let (entity_i, pos_i) = near[i];
+        let pos_i = near[i].1;
         for l in (k + 1)..order.len() {
             let j = order[l];
-            let (entity_j, pos_j) = near[j];
+            let pos_j = near[j].1;
             if pos_j.x - pos_i.x > SEPARATION_RADIUS {
                 break;
             }
@@ -762,20 +787,15 @@ pub fn update_fish_movement_system(
             let dist = dist_sq.sqrt();
             let strength = (SEPARATION_RADIUS - dist) / SEPARATION_RADIUS;
             let push = delta / dist * strength;
-            *pushes.entry(entity_i).or_insert(Vec3::ZERO) += push;
-            *pushes.entry(entity_j).or_insert(Vec3::ZERO) -= push;
+            *pushes[i].get_or_insert(Vec3::ZERO) += push;
+            *pushes[j].get_or_insert(Vec3::ZERO) -= push;
         }
     }
 
-    for (entity, mut transform, global_transform, mut fish) in query.iter_mut() {
-        // Skip fish too far from the camera to be noticed (world positions are
-        // at most one frame stale, which is fine for a culling decision)
-        if cull_enabled {
-            let fish_pos = global_transform.translation();
-            if fish_pos.distance_squared(camera_pos.unwrap()) > cull_dist_sq {
-                continue;
-            }
-        }
+    for (index, &(entity, _)) in near.iter().enumerate() {
+        let Ok((_, mut transform, _, mut fish)) = query.get_mut(entity) else {
+            continue;
+        };
 
         // Update wobble time for swimming animation - each fish has unique wobble speed
         fish.wobble_time += delta * fish.speed * (2.5 + rng.gen_range(0.0..1.0));
@@ -836,7 +856,7 @@ pub fn update_fish_movement_system(
         // Push apart from neighbors (frame-rate independent). Pushes are
         // world-space directions applied to the local translation, which is
         // valid because zone parents are pure translations (no rotation/scale).
-        if let Some(push) = pushes.get(&entity) {
+        if let Some(push) = pushes[index] {
             transform.translation += push.clamp_length_max(1.0) * 2.0 * delta;
         }
 

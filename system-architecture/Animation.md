@@ -379,6 +379,8 @@ pub struct SkeletalAnimation(AnimationState);
 
 #### System Implementation
 
+`skeletal_animation_system` runs in three passes (the listing below shows the per-entity logic): (1) a serial pass advances each animation and writes its frame events in query order, collecting one job per skinned entity; (2) keyframe sampling (`sample_translation`/`sample_rotation`), which only reads the motion asset, fills a reused sample buffer, in parallel on the `ComputeTaskPool` once there are at least 256 joints in total; (3) a serial pass writes the joint transforms (with the lerp/slerp blend) in the original entity and joint order, so joints shared between skeletons behave as with a single loop.
+
 ```rust
 pub fn skeletal_animation_system(
     mut query_animations: Query<(Entity, &mut SkeletalAnimation, Option<&SkinnedMesh>)>,
@@ -462,13 +464,15 @@ pub struct MeshAnimation(AnimationState);
 
 #### System Implementation
 
+`mesh_animation_system` animates every `MeshAnimation` entity: effect meshes and animated zone objects (it used to filter on `With<EffectMesh>`, so zone objects never animated). The morph itself (position, normal, UV from the animation texture) runs in `rose_effect_mesh.wgsl` in the forward, prepass and deferred vertex stages, so depth, shadows and the G-buffer follow the animation.
+
 ```rust
 pub fn mesh_animation_system(
     mut query: Query<(
         &mut MeshAnimation,
         Entity,
         Option<&MeshMaterial3d<ExtendedMaterial<..., RoseEffectExtension>>>
-    ), With<EffectMesh>>,
+    )>,
     mut effect_mesh_materials: ResMut<Assets<...>>,
     motion_assets: Res<Assets<ZmoAsset>>,
     asset_server: Res<AssetServer>,

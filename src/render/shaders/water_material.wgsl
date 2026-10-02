@@ -222,9 +222,10 @@ fn wave_height(position: vec2<f32>, time: f32) -> f32 {
 
 // Calculate the normal vector from wave height using finite differences
 // This gives us the surface slope which affects lighting
-fn calculate_wave_normal(position: vec2<f32>, time: f32) -> vec3<f32> {
+// `h` must be wave_height(position, time); the caller computes it once and
+// also reuses it for foam.
+fn calculate_wave_normal(position: vec2<f32>, time: f32, h: f32) -> vec3<f32> {
     let eps = 0.1; // Small offset for gradient calculation
-    let h = wave_height(position, time);
     let hx = wave_height(position + vec2<f32>(eps, 0.0), time);
     let hz = wave_height(position + vec2<f32>(0.0, eps), time);
     
@@ -443,7 +444,13 @@ fn fbm(p: vec2<f32>, time: f32) -> f32 {
 fn calculate_foam(wave_height_val: f32, time: f32, uv: vec2<f32>, world_pos_xz: vec2<f32>, foam_threshold: f32) -> f32 {
     // Calculate foam factor based on wave height using smoothstep for soft edges
     let foam_factor = smoothstep(foam_threshold, foam_threshold + 0.3, wave_height_val);
-    
+
+    // The result is foam_factor times finite factors, then clamped to [0, 1],
+    // so it is exactly 0.0 when foam_factor is 0: skip the noise work.
+    if (foam_factor <= 0.0) {
+        return 0.0;
+    }
+
     // Use world position for foam patterns so they stay in place
     // Scale for appropriate pattern size
     let world_noise_scale = 0.08;
@@ -492,7 +499,14 @@ fn calculate_edge_splash(world_pos: vec3<f32>, time: f32, uv: vec2<f32>) -> f32 
     // Create splash effect that decreases with distance from shore
     let splash_range = 3.0;
     let edge_factor = smoothstep(splash_range, 0.0, dist_to_shore);
-    
+
+    // Every term of the splash is multiplied by edge_factor (and finite
+    // factors), then clamped to [0, 1], so it is exactly 0.0 when
+    // edge_factor is 0: skip the noise work.
+    if (edge_factor <= 0.0) {
+        return 0.0;
+    }
+
     // Use organic foam noise for irregular splash patterns
     let splash_pattern = organic_foam_noise(world_pos.xz * 0.1, time);
     
@@ -668,8 +682,11 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     // Use world position XZ for wave calculation (water is on XZ plane)
     let wave_pos = in.world_position.xz * 0.5; // Scale down for larger waves
     
+    // Wave height at this position (shared by the wave normal and foam)
+    let current_wave_height = wave_height(wave_pos, wave_time);
+
     // Calculate procedural wave normal
-    let wave_normal = calculate_wave_normal(wave_pos, wave_time);
+    let wave_normal = calculate_wave_normal(wave_pos, wave_time, current_wave_height);
     
     // Get base normal from mesh and normalize
     var base_normal = normalize(in.world_normal);
@@ -781,9 +798,8 @@ fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @
     let sss_contribution = calculate_sss(view_dir, light_dir, N, sss_intensity_value());
     
     // === PHASE 3: FOAM EFFECTS (IMPROVED) ===
-    // Calculate wave height for foam (reuse wave position)
-    let current_wave_height = wave_height(wave_pos, wave_time);
-    
+    // Wave height for foam: current_wave_height (computed above with the wave normal)
+
     // Calculate foam factor using improved Voronoi-based noise
     // Pass world position XZ for stable, natural foam patterns
     let foam_factor = calculate_foam(current_wave_height, wave_time, in.uv0, in.world_position.xz, foam_threshold_value());

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::{cmp::Ordering, ops::Range};
 
@@ -16,8 +16,8 @@ use bevy::{
     math::Mat4,
     prelude::{
         App, Assets, Color, Commands, Component, Entity, FromWorld, GlobalTransform, Image,
-        InheritedVisibility, IntoScheduleConfigs, Msaa, Plugin, Query, Res, ResMut, Resource,
-        Shader, Vec2, Vec3, ViewVisibility, World,
+        InheritedVisibility, IntoScheduleConfigs, Local, Msaa, Plugin, Query, Res, ResMut,
+        Resource, Shader, Vec2, Vec3, ViewVisibility, World,
     },
     render::{
         render_asset::RenderAssets,
@@ -34,7 +34,7 @@ use bevy::{
             PrimitiveTopology, RawBufferVec, RenderPipelineDescriptor, SamplerBindingType,
             ShaderStages, ShaderType, SpecializedRenderPipeline, SpecializedRenderPipelines,
             StencilFaceState, StencilState, TextureFormat, TextureSampleType, TextureViewDimension,
-            VertexAttribute, VertexFormat, VertexState, VertexStepMode,
+            TextureViewId, VertexAttribute, VertexFormat, VertexState, VertexStepMode,
         },
         renderer::{RenderDevice, RenderQueue},
         texture::GpuImage,
@@ -507,9 +507,15 @@ pub struct WorldUiBatch {
     pub vertex_range: Range<u32>,
 }
 
+/// Per-image bind groups for the rects drawn this frame. Entries for images not
+/// drawn this frame are dropped (every chat bubble / name tag image used to keep
+/// its bind group, and with it its GPU texture, alive for the whole session), and
+/// an entry is rebuilt when its image's GPU texture view changes (re-uploaded at a
+/// new size), so it never samples a stale texture.
 #[derive(Default, Resource)]
 pub struct ImageBindGroups {
     pub values: HashMap<AssetId<Image>, BindGroup>,
+    view_ids: HashMap<AssetId<Image>, TextureViewId>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -528,10 +534,12 @@ pub fn queue_world_ui_meshes(
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
     view_uniforms: Res<ViewUniforms>,
+    mut drawn_images: Local<HashSet<AssetId<Image>>>,
 ) {
     if view_uniforms.uniforms.buffer().is_none() {
         return;
     }
+    drawn_images.clear();
 
     // DIAGNOSTIC: Log pipeline cache access before using it
     // log_pipeline_cache_access(
@@ -714,27 +722,32 @@ pub fn queue_world_ui_meshes(
             //     item_start..item_end
             // );
 
-            image_bind_groups
-                .values
-                .entry(rect.image_handle_id)
-                .or_insert_with(|| {
-                    let material_layout =
-                        pipeline_cache.get_bind_group_layout(&world_ui_pipeline.material_layout);
-                    render_device.create_bind_group(
-                        "world_ui_bind_group",
-                        &material_layout,
-                        &[
-                            BindGroupEntry {
-                                binding: 0,
-                                resource: BindingResource::TextureView(&gpu_image.texture_view),
-                            },
-                            BindGroupEntry {
-                                binding: 1,
-                                resource: BindingResource::Sampler(&gpu_image.sampler),
-                            },
-                        ],
-                    )
-                });
+            drawn_images.insert(rect.image_handle_id);
+            let texture_view_id = gpu_image.texture_view.id();
+            if image_bind_groups.view_ids.get(&rect.image_handle_id) != Some(&texture_view_id) {
+                let material_layout =
+                    pipeline_cache.get_bind_group_layout(&world_ui_pipeline.material_layout);
+                let bind_group = render_device.create_bind_group(
+                    "world_ui_bind_group",
+                    &material_layout,
+                    &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&gpu_image.texture_view),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: BindingResource::Sampler(&gpu_image.sampler),
+                        },
+                    ],
+                );
+                image_bind_groups
+                    .values
+                    .insert(rect.image_handle_id, bind_group);
+                image_bind_groups
+                    .view_ids
+                    .insert(rect.image_handle_id, texture_view_id);
+            }
 
             // Use a large POSITIVE depth bias to render ON TOP of everything.
             // Bevy 0.19 recomputes `distance` every frame from `sorting_info`
@@ -778,4 +791,9 @@ pub fn queue_world_ui_meshes(
     world_ui_meta
         .vertices
         .write_buffer(&render_device, &render_queue);
+
+    // Keep bind groups only for images drawn this frame (see ImageBindGroups).
+    let ImageBindGroups { values, view_ids } = &mut *image_bind_groups;
+    values.retain(|image_id, _| drawn_images.contains(image_id));
+    view_ids.retain(|image_id, _| drawn_images.contains(image_id));
 }

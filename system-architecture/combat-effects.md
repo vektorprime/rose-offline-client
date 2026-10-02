@@ -9,7 +9,7 @@ Hit resolution → damage → visuals. Ordered by `EffectSystemSets` in `src/lib
 - `src/systems/pending_damage_system.rs:71` and `pending_skill_effect_system.rs`: delayed damage/skill application; also route through `damage_effects.rs` for blood.
 - `src/systems/projectile_system.rs:14` / `spawn_projectile_system.rs:13`: projectile flight and spawning.
 - `src/systems/damage_digit_render_system.rs:64` + `src/render/damage_digit_material.rs`: GPU 3D combat numbers (procedural `@builtin(vertex_index)` geometry, storage buffers).
-- Particles for ROSE `.eft` files use `src/render/particle_material.rs` + `src/effect_loader.rs` (`EffectCache`); weather particles are a separate CPU-billboard path (see [weather-season-system.md](weather-season-system.md)).
+- Particles for ROSE `.eft` files use `src/render/particle_material.rs` + `src/effect_loader.rs` (`EffectCache`, which also caches parsed PTL files and one placeholder mesh per vertex count). The particle vertex shader indexes particles with `vertex_index - mesh[instance_index].first_vertex_index` (the vertex index includes the mesh's offset in Bevy's shared vertex slab). Storage buffers are uploaded padded to the sequence capacity (constant size, written in place; the material is only touched when a blend/billboard value changes); an emptied sequence uploads zeros once so dead particles disappear; particle entities carry `NoFrustumCulling` + `NotShadowCaster` (their placeholder mesh has a zero-size AABB at the emitter origin); weather particles are a separate CPU-billboard path (see [weather-season-system.md](weather-season-system.md)).
 
 ## Blood hooks
 

@@ -729,6 +729,20 @@ impl Plugin for PropertyUpdatePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PendingPropertyChanges>()
             .add_message::<PropertyChangeEvent>()
-            .add_systems(Update, (property_update_system, apply_undo_system).chain());
+            .add_systems(
+                Update,
+                (
+                    // Only acts on messages, which only the editor UI writes.
+                    property_update_system.run_if(on_message::<PropertyChangeEvent>),
+                    apply_undo_system.run_if(editor_history_exists),
+                )
+                    .chain(),
+            );
     }
+}
+
+/// Undo/redo shortcuts only act on recorded history, which only editor systems record.
+/// Not tied to the editor state: history left after leaving the editor stays usable.
+fn editor_history_exists(map_editor_state: Res<MapEditorState>) -> bool {
+    map_editor_state.can_undo() || map_editor_state.can_redo()
 }

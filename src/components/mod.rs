@@ -60,10 +60,7 @@ mod zone_object;
 pub use angelic_wings::{AngelicWings, WingSide};
 pub use bank::Bank;
 pub use bird::{Bird, BirdMesh, BirdSettings, BirdWingLeft, BirdWingRight};
-pub use blink_clip::{
-    sync_blink_clip_to_state, update_blink_clip_state, BlinkClip, BlinkClipPlugin, BlinkClipState,
-    BlinkUniform,
-};
+pub use blink_clip::BlinkClipMeshes;
 pub use blood_effect::{
     BloodSpatter, BloodSpatterConfig, DeathBloodHandled, GashWounds, WoundVisual,
 };

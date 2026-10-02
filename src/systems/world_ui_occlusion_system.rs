@@ -90,43 +90,61 @@ pub fn world_ui_occlusion_system(
     for (entity, global_transform, name_tag, chat_bubble, occlusion_state, mut visibility) in
         query_tags.iter_mut()
     {
+        let is_focused = Some(entity) == hovered_name_tag || Some(entity) == selected_name_tag;
+
+        // A focused name tag is always shown and a non-show_all, unfocused one is
+        // always hidden, so only chat bubbles and show_all unfocused tags use the ray.
+        let occlusion_matters = match name_tag {
+            Some(name_tag) => !is_focused && name_tag_settings.show_all[name_tag.name_tag_type],
+            None => chat_bubble.is_some(),
+        };
+
         let mut occluded = occlusion_state.is_some_and(|state| state.occluded);
 
-        let should_check = occlusion_state.is_none()
-            || (u64::from(entity.index_u32()) % OCCLUSION_STAGGER_FRAMES
-                == frame_index % OCCLUSION_STAGGER_FRAMES);
+        if occlusion_matters {
+            let should_check = occlusion_state.is_none()
+                || (u64::from(entity.index_u32()) % OCCLUSION_STAGGER_FRAMES
+                    == frame_index % OCCLUSION_STAGGER_FRAMES);
 
-        if should_check {
-            let anchor = global_transform.translation();
-            let delta = anchor - camera_position;
-            let distance = delta.length();
+            if should_check {
+                let anchor = global_transform.translation();
+                let delta = anchor - camera_position;
+                let distance = delta.length();
 
-            occluded = if distance > OCCLUSION_EPSILON {
-                rapier_context
-                    .cast_ray(
-                        camera_position,
-                        delta / distance,
-                        distance - OCCLUSION_EPSILON,
-                        false,
-                        QueryFilter::new().groups(occluder_groups),
-                    )
-                    .is_some()
-            } else {
-                false
-            };
+                occluded = if distance > OCCLUSION_EPSILON {
+                    rapier_context
+                        .cast_ray(
+                            camera_position,
+                            delta / distance,
+                            distance - OCCLUSION_EPSILON,
+                            false,
+                            QueryFilter::new().groups(occluder_groups),
+                        )
+                        .is_some()
+                } else {
+                    false
+                };
 
-            if occlusion_state.is_none_or(|state| state.occluded != occluded) {
-                commands.entity(entity).queue_silenced(
-                    move |mut tag_entity: EntityWorldMut| {
-                        tag_entity.insert(OcclusionState { occluded });
-                    },
-                );
+                if occlusion_state.is_none_or(|state| state.occluded != occluded) {
+                    commands.entity(entity).queue_silenced(
+                        move |mut tag_entity: EntityWorldMut| {
+                            tag_entity.insert(OcclusionState { occluded });
+                        },
+                    );
+                }
             }
+        } else if occlusion_state.is_some() {
+            // Skip the raycast while it cannot change visibility, and drop the
+            // stored result so the tag is re-checked immediately (never with a
+            // stale result) as soon as occlusion matters again.
+            commands
+                .entity(entity)
+                .queue_silenced(|mut tag_entity: EntityWorldMut| {
+                    tag_entity.remove::<OcclusionState>();
+                });
         }
 
         let desired_visibility = if let Some(name_tag) = name_tag {
-            let is_focused =
-                Some(entity) == hovered_name_tag || Some(entity) == selected_name_tag;
             let base_visible = name_tag_settings.show_all[name_tag.name_tag_type] || is_focused;
             if base_visible && (is_focused || !occluded) {
                 Visibility::Inherited

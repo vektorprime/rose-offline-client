@@ -52,7 +52,7 @@ impl Default for Fish {
 /// Fish count scales with the water plane area so small ponds get a few fish
 /// while large lakes get more, instead of every plane receiving the same
 /// fixed count (which over-packed small planes into static clumps).
-#[derive(Resource, Reflect, Debug, Clone)]
+#[derive(Resource, Reflect, Debug, Clone, PartialEq)]
 #[reflect(Resource)]
 pub struct FishSettings {
     /// Fish density: number of fish per 1000 square meters of water surface.

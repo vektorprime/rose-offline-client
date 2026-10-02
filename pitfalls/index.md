@@ -11,13 +11,13 @@ This folder contains documentation of issues encountered during development and 
 | [networking.md](networking.md) | Network thread, respawn, and connection issues |
 | [rendering-camera.md](rendering-camera.md) | Depth of field, shadows, SSAO, TAA, camera setup |
 | [materials-transparency.md](materials-transparency.md) | Alpha modes, custom materials, texture arrays |
-| [lighting.md](lighting.md) | Ambient light, photometric units |
+| [lighting.md](lighting.md) | Ambient light, photometric units, AutoExposure compensation curve, VolumetricFog ambient veil on zoomed-in models |
 | [terrain-physics.md](terrain-physics.md) | Terrain adherence, spawn height, bundle limits |
 | [new-terrain.md](new-terrain.md) | `--new-terrain` PBR terrain: dark patches from world-space normal-map bake, tangent-space channel order |
 | [water-system.md](water-system.md) | Water materials, fish spawning, shader migration, multi-view world UI buffer corruption |
-| [zone-loading.md](zone-loading.md) | Asset tracking, state initialization, skybox loading |
+| [zone-loading.md](zone-loading.md) | Asset tracking, state initialization, skybox loading, zone data never freed / same-zone reloads |
 | [model-viewer.md](model-viewer.md) | Bundle duplicates, runtime panics |
-| [performance-memory.md](performance-memory.md) | GPU memory leaks, buffer management |
+| [performance-memory.md](performance-memory.md) | GPU memory leaks, buffer management, change detection fired by no-op writes, material bind group leak, shared model-part materials |
 | [blood-effects.md](blood-effects.md) | Terrain blood decal visibility, orientation, and wound overlay tuning |
 | [combat-sync.md](combat-sync.md) | Delayed monster death, client/server attack range mismatch, attack never starting (server range-boundary f32 fixed point) |
 | [flying.md](flying.md) | /fly flight system, server-authoritative movement echo, collision self-intersection |
@@ -28,6 +28,7 @@ This folder contains documentation of issues encountered during development and 
 | [blender-io-rose.md](blender-io-rose.md) | Blender io_rose addon: alpha import, ZMS export crash, Y-flip round-trip orientation |
 | [damage-digits-camera3d.md](damage-digits-camera3d.md) | Damage digits: Text2d never renders under Camera3d, Mesh3d+StandardMaterial replacement |
 | [atmosphere-flash.md](atmosphere-flash.md) | Cyan full-screen flashes from despawning the Atmosphere entity at night |
+| [postprocess-pass-race.md](postprocess-pass-race.md) | White flashes with SMAA / laggy 3D with tonemapping off: unordered post passes racing the ping-pong main texture |
 
 ## Quick Navigation by Bevy Version
 
@@ -45,6 +46,11 @@ This folder contains documentation of issues encountered during development and 
 
 ### Bevy 0.19 Changes
 - [Do not despawn Atmosphere entities at runtime](atmosphere-flash.md) - stale render-world bind groups make `render_sky` splash a cyan veil over random frames
+- [`AutoExposure::default()` targets average luminance 1.0 (very bright, night = day)](lighting.md) - give it a compensation curve
+- [`VolumetricFog::ambient_intensity` adds a near-camera white veil at any density](lighting.md) - models look shiny when zoomed in; keep it at 0
+- [Totally order every `post_process_write()` pass](postprocess-pass-race.md) - render passes are parallel systems; unordered ones race the main-texture ping-pong (white flash / stale frames)
+- [`&mut res.field`, `Assets::iter_mut()` and `AssetMut` writes flag changes even when nothing changes](performance-memory.md) - "write if changed" helpers must use `bypass_change_detection()` / compare first
+- [`CreateBindGroupDirectly` materials leak a bind group per modification](performance-memory.md) - return `UnpreparedBindGroup` with `OwnedBindingResource`s instead
 
 ## Common Patterns to Watch For
 

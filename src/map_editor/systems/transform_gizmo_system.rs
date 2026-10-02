@@ -7,6 +7,7 @@ use bevy::prelude::*;
 use bevy_egui::EguiContexts;
 
 use crate::map_editor::components::SelectedInEditor;
+use crate::map_editor::map_editor_active;
 use crate::map_editor::resources::{EditorAction, EditorMode, MapEditorState};
 
 /// Resource to track active gizmo drag state
@@ -369,7 +370,13 @@ pub struct TransformGizmoPlugin;
 
 impl Plugin for TransformGizmoPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<GizmoDragState>()
-            .add_systems(Update, (transform_gizmo_system, draw_gizmo_visuals).chain());
+        app.init_resource::<GizmoDragState>().add_systems(
+            Update,
+            (
+                transform_gizmo_system.run_if(map_editor_active),
+                draw_gizmo_visuals.run_if(map_editor_active),
+            )
+                .chain(),
+        );
     }
 }

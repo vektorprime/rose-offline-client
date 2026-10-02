@@ -5,10 +5,7 @@
 //! - Animation parameters (current frame, total frames, etc.)
 
 use bevy::image::Image;
-use bevy::mesh::MeshVertexBufferLayoutRef;
-use bevy::pbr::{
-    MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline, StandardMaterial,
-};
+use bevy::pbr::{MaterialExtension, StandardMaterial};
 use bevy::prelude::*;
 use bevy::render::render_resource::*;
 use bevy_shader::ShaderRef;
@@ -39,7 +36,7 @@ pub struct RoseEffectExtension {
 }
 
 /// Uniform structure for effect mesh animation state
-/// This matches the shader's AnimationState struct
+/// This matches `EffectMeshAnimationState` in `shaders/rose_effect_mesh.wgsl`
 #[derive(Clone, Copy, Debug, Default, Reflect, ShaderType)]
 pub struct EffectMeshAnimationUniform {
     /// Flags: bits 0-3 = animation flags (position/normal/uv/alpha), bits 4-31 = num_frames
@@ -61,6 +58,11 @@ impl Default for RoseEffectExtension {
     }
 }
 
+// The morph runs in every vertex stage the mesh is drawn with (forward pass, depth and
+// normal prepass, deferred G-buffer, shadow maps), so depth, shadows and shading follow
+// the animation. Fragment stages other than the forward one stay StandardMaterial's.
+// The shader applies the animation only when `animation_state` reports frames, so
+// meshes without an animation texture are drawn unmodified.
 impl MaterialExtension for RoseEffectExtension {
     fn vertex_shader() -> ShaderRef {
         crate::render::extension_material_plugin::ROSE_EFFECT_EXTENSION_SHADER_HANDLE.into()
@@ -70,21 +72,11 @@ impl MaterialExtension for RoseEffectExtension {
         crate::render::extension_material_plugin::ROSE_EFFECT_EXTENSION_SHADER_HANDLE.into()
     }
 
-    fn specialize(
-        _pipeline: &MaterialExtensionPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayoutRef,
-        _key: MaterialExtensionKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        // Always enable HAS_ANIMATION_TEXTURE shader define
-        // The shader checks num_frames > 0 before applying animation, so it's safe to always include
-        // Note: bind_group_data type is () for AsBindGroup, so we can't directly check animation_texture
-        // The shader will handle the case when animation_texture is None gracefully
-        descriptor
-            .vertex
-            .shader_defs
-            .push("HAS_ANIMATION_TEXTURE".into());
+    fn prepass_vertex_shader() -> ShaderRef {
+        crate::render::extension_material_plugin::ROSE_EFFECT_EXTENSION_SHADER_HANDLE.into()
+    }
 
-        Ok(())
+    fn deferred_vertex_shader() -> ShaderRef {
+        crate::render::extension_material_plugin::ROSE_EFFECT_EXTENSION_SHADER_HANDLE.into()
     }
 }

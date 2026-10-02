@@ -453,7 +453,7 @@ pub fn wound_visibility_system(
 }
 ```
 
-`wound_spawn_system` (same file) consumes `ShowWound` events and paints `BloodStain`s into the entity's `BloodOverlay` component. For entities with a `CharacterModel` component, the accurate `project_world_to_uv()` function (triangle-ray intersection with skinned mesh vertex transformation) finds the UV coordinates and material index; otherwise a cylindrical `world_pos_to_uv()` approximation is used. `blood_overlay_generate_system` (`src/systems/blood_overlay_system.rs`) regenerates per-material overlay textures and binds them to `RoseObjectExtension` (`blood_overlay_texture`, `blood_params`).
+`wound_spawn_system` (same file) consumes `ShowWound` events and paints `BloodStain`s into the entity's `BloodOverlay` component. For entities with a `CharacterModel` component, the accurate `project_world_to_uv()` function (triangle-ray intersection with skinned mesh vertex transformation) finds the UV coordinates and material index; otherwise a cylindrical `world_pos_to_uv()` approximation is used. `blood_overlay_generate_system` (`src/systems/blood_overlay_system.rs`) regenerates per-material overlay textures and binds them to `RoseObjectExtension` (`blood_overlay_texture`, `blood_params`). It writes a material only when a value differs. Model parts share materials (`SharedModelPartMaterial`, see [model-spawning.md](model-spawning.md)), so the first write for such a part clones the material into a private copy, swaps the part's `MeshMaterial3d` to it and removes the marker (copy-on-write); later writes go to the copy in place.
 
 ### Blood Spatter Fade System
 
@@ -494,32 +494,31 @@ pub fn blood_spatter_fade_system(
 
         // Alpha fades from base_alpha starting at config.fade_start_fraction,
         // and the color interpolates from wet_color to dry_color over time.
-        if let Some(material) = decal_materials.get_mut(&material_handle.0) {
+        // Written only when the 8-bit sRGBA value changes (see below).
+        let Some(current) = decal_materials.get(&material_handle.0) else { continue };
+        if srgba_u8(current.base.base_color) == srgba_u8(color) {
+            continue;
+        }
+        if let Some(mut material) = decal_materials.get_mut(&material_handle.0) {
             material.base.base_color = color;
         }
     }
 }
 ```
 
-### Wound Cleanup System
+**Fade write quantization.** Every decal owns its material, and each write marks it
+`Modified` (re-prepare + re-specialize). The colour drifts by ~1/20 of an 8-bit step per
+frame (wet 0.6 -> dry 0.28 red over 30 s), so the system writes only when the colour
+quantized to 8-bit sRGBA (`Srgba::to_u8_array`) differs from the material's current one.
+The decal lags the exact colour by less than one 8-bit step (not bit-exact, visually
+identical) and its material is updated ~5-20x less often.
 
-```rust
-// src/systems/gash_wound_system.rs (continued)
+`blood_spatter_spawn_system` returns before counting active spatters when there are no
+`BloodEffectEvent`s to read.
 
-/// System that cleans up wound visuals when their parent entity despawns.
-pub fn wound_cleanup_system(
-    mut commands: Commands,
-    query_wound_visuals: Query<(Entity, &WoundVisual)>,
-    query_parents: Query<(), Without<Dead>>,
-) {
-    for (wound_entity, wound_visual) in query_wound_visuals.iter() {
-        // If parent entity no longer exists, clean up the wound
-        if query_parents.get(wound_visual.parent_entity).is_err() {
-            commands.entity(wound_entity).despawn();
-        }
-    }
-}
-```
+There is no wound-cleanup system: wounds are painted into the UV-space overlay, and the
+`WoundVisual` component is never spawned (a `wound_cleanup_system` that iterated it every
+frame was removed).
 
 ## Shader Approach
 
@@ -573,7 +572,7 @@ src/
 │   │                             #   blood_spatter_fade_system
 │   ├── blood_overlay_system.rs   # blood_overlay_generate_system, BloodOverlayPlugin
 │   ├── gash_wound_system.rs      # wound_visibility_system, wound_spawn_system,
-│   │                             #   wound_cleanup_system, GashWoundPlugin
+│   │                             #   GashWoundPlugin
 │   └── mod.rs
 ├── render/
 │   ├── object_material_extension.rs # RoseObjectExtension (blood_overlay_texture, blood_params)
@@ -609,7 +608,7 @@ All phases below are implemented.
 2. Configuration options (`BloodEffectConfig`: enable/disable, intensity, LOD distances, per-frame spawn budget)
 3. Performance: distance-based LOD scaling, spawn budget per frame
 4. Wound texture variations (procedural variants, `BloodOverlayAtlas`)
-5. `wound_cleanup_system` on despawn
+5. Fade writes quantized to 8-bit sRGBA (decal materials re-prepared only when the visible colour changes)
 
 ## Performance Considerations
 

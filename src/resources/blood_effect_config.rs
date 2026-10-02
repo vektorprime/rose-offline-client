@@ -12,7 +12,7 @@ use bevy::{prelude::*, reflect::Reflect};
 ///
 /// This resource controls the behavior and limits of the blood effects system.
 /// Insert this resource into your app to customize blood effect behavior.
-#[derive(Resource, Reflect, Clone, Debug)]
+#[derive(Resource, Reflect, Clone, Debug, PartialEq)]
 #[reflect(Resource)]
 pub struct BloodEffectConfig {
     /// Whether blood effects are enabled globally.

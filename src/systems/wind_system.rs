@@ -41,5 +41,10 @@ pub fn sync_vegetation_wind_system(
     wind: Res<WindState>,
     mut sway_settings: ResMut<WindSwaySettings>,
 ) {
-    sway_settings.global_intensity = (wind.speed / 10.0).clamp(0.05, 0.3);
+    // Drives only the wind factor; the user's global_intensity multiplies it.
+    // Write only on difference (a ResMut write flags the resource changed)
+    let wind_intensity = (wind.speed / 10.0).clamp(0.05, 0.3);
+    if sway_settings.wind_intensity != wind_intensity {
+        sway_settings.wind_intensity = wind_intensity;
+    }
 }

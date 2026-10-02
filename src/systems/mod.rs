@@ -26,7 +26,6 @@ mod cooldown_system;
 mod damage_effects;
 mod damage_number_system;
 mod debug_inspector_system;
-mod directional_light_system;
 mod dirt_dash_system;
 mod effect_system;
 mod effect_resolution;
@@ -52,6 +51,7 @@ mod login_system;
 mod model_viewer_system;
 mod monster_chatter_system;
 mod monster_separation_system;
+mod shared_mesh_collider_system;
 mod memory_diagnostics;
 mod move_destination_effect_system;
 mod move_speed_command_system;
@@ -66,7 +66,6 @@ mod npc_model_add_collider_system;
 mod npc_model_system;
 mod orbit_camera_system;
 mod particle_sequence_system;
-mod passive_recovery_system;
 mod pending_damage_system;
 mod pending_skill_effect_system;
 mod personal_store_model_add_collider_system;
@@ -141,13 +140,12 @@ pub use client_entity_event_system::client_entity_event_system;
 pub use collision_system::{
     collision_height_only_system, collision_player_system, collision_player_system_join_zone,
 };
-pub use command_system::command_system;
+pub use command_system::{command_system, npc_chase_steering_system};
 pub use conversation_dialog_system::conversation_dialog_system;
 pub use cooldown_system::cooldown_system;
 pub use damage_number_system::{damage_number_animate_system, damage_number_billboard_system};
 pub use damage_effects::{emit_blood_and_wounds, normalize_or, random_local_wound_pose, spawn_damage_digits};
 pub use debug_inspector_system::DebugInspectorPlugin;
-pub use directional_light_system::directional_light_system;
 pub use dirt_dash_system::{
     dirt_dash_particle_update_system, dirt_dash_spawn_system, DirtDashPlugin,
 };
@@ -167,9 +165,7 @@ pub use game_connection_system::game_connection_system;
 pub use game_keyboard_input_system::game_keyboard_input_system;
 pub use game_mouse_input_system::game_mouse_input_system;
 pub use game_system::{game_state_enter_system, game_zone_change_system};
-pub use gash_wound_system::{
-    wound_cleanup_system, wound_spawn_system, wound_visibility_system, GashWoundPlugin,
-};
+pub use gash_wound_system::{wound_spawn_system, wound_visibility_system, GashWoundPlugin};
 pub use hit_event_system::hit_event_system;
 pub use item_drop_model_system::{item_drop_model_add_collider_system, item_drop_model_system};
 pub use login_connection_system::login_connection_system;
@@ -181,7 +177,10 @@ pub use model_viewer_system::{
 };
 pub use monster_chatter_system::{add_monster_chatter_system, monster_chatter_system};
 pub use monster_separation_system::monster_separation_system;
-pub use memory_diagnostics::memory_diagnostics_system;
+pub use shared_mesh_collider_system::{
+    shared_mesh_collider_system, MeshColliderCache, SharedMeshCollider,
+};
+pub use memory_diagnostics::{memory_diagnostics_due, memory_diagnostics_system};
 pub use move_destination_effect_system::move_destination_effect_system;
 pub use move_speed_command_system::parse_move_speed_command;
 pub use move_speed_set_system::move_speed_set_system;
@@ -198,7 +197,6 @@ pub use particle_sequence_system::{
     create_default_particle_texture, particle_sequence_system,
     particle_storage_buffer_update_system, DefaultParticleTexture,
 };
-pub use passive_recovery_system::passive_recovery_system;
 pub use pending_damage_system::pending_damage_system;
 pub use pending_skill_effect_system::pending_skill_effect_system;
 pub use personal_store_model_add_collider_system::personal_store_model_add_collider_system;
@@ -229,5 +227,5 @@ pub use wing_spawn_system::{wing_spawn_system, WingSpawnPlugin};
 pub use world_connection_system::world_connection_system;
 pub use world_time_system::world_time_system;
 pub use world_ui_occlusion_system::world_ui_occlusion_system;
-pub use zone_time_system::{update_time_of_day_grading_system, zone_time_system, TimeOfDayGrading};
+pub use zone_time_system::zone_time_system;
 pub use zone_viewer_system::zone_viewer_enter_system;

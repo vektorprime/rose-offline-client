@@ -1,8 +1,12 @@
 use bevy::{
     ecs::{message::MessageWriter, system::EntityCommands},
-    math::{Vec3, Vec3Swizzles},
-    prelude::{AssetServer, Commands, Entity, Handle, Local, Mut, Or, Query, Res, With},
+    math::{Quat, Vec2, Vec3, Vec3Swizzles},
+    prelude::{AssetServer, Commands, Entity, Handle, Local, Mut, Or, Query, Res, With, Without},
 };
+use bevy_rapier3d::geometry::ShapeCastOptions;
+use bevy_rapier3d::plugin::context::systemparams::{RapierContext, ReadRapierContext};
+use bevy_rapier3d::prelude::{CollisionGroups, QueryFilter};
+use bevy_rapier3d::rapier::prelude::{Ball, Shape};
 use rand::prelude::SliceRandom;
 
 use rose_data::{
@@ -17,10 +21,11 @@ use rose_game_common::{
 use crate::{
     animation::{SkeletalAnimation, ZmoAsset},
     components::{
-        CharacterModel, ClientEntity, ClientEntityType, Command, CommandAttack, CommandCastSkill,
-        CommandCastSkillState, CommandCastSkillTarget, CommandEmote, CommandMove, CommandSit, Dead,
-        FacingDirection, FlightState, NextCommand, NpcModel, PendingDamageList, PersonalStore,
-        PlayerCharacter, Position, Vehicle, VehicleModel,
+        BoatState, CharacterModel, ClientEntity, ClientEntityType, Command, CommandAttack,
+        CommandCastSkill, CommandCastSkillState, CommandCastSkillTarget, CommandEmote, CommandMove,
+        CommandSit, Dead, FacingDirection, FlightState, NextCommand, NpcModel, PendingDamageList,
+        PersonalStore, PlayerCharacter, Position, Vehicle, VehicleModel,
+        COLLISION_FILTER_COLLIDABLE, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_ZONE_TERRAIN,
     },
     events::{ClientEntityEvent, ConversationDialogEvent, PersonalStoreEvent},
     resources::{GameConnection, GameData},
@@ -29,6 +34,76 @@ use crate::{
 const NPC_MOVE_TO_DISTANCE: f32 = 250.0;
 const CHARACTER_MOVE_TO_DISTANCE: f32 = 1000.0;
 const ITEM_DROP_MOVE_TO_DISTANCE: f32 = 150.0;
+
+/// Probe distance (cm) for remote-chaser wall checks.
+const NPC_STEER_PROBE_CM: f32 = 300.0;
+/// Deflection angles tried when the straight step is blocked, in order.
+const NPC_STEER_ANGLES_DEG: [f32; 8] = [30.0, -30.0, 60.0, -60.0, 90.0, -90.0, 135.0, -135.0];
+
+/// Wall-slide for remotely simulated chasers (bots, monsters, NPCs).
+///
+/// The server routes long travel legs, but chase destinations are recomputed
+/// straight at the target every frame on both ends, and remote entities have
+/// no wall collision (`collision_player_system` only handles `CollisionPlayer`),
+/// so without this chasers visibly walk through walls. Probes the live Rapier
+/// world with the same ball cast the player wall check uses and returns a
+/// deflected game-space (cm) destination at the same distance.
+/// Returns `None` to keep the straight destination.
+fn deflect_remote_chase_destination(
+    rapier_context: &RapierContext,
+    self_entity: Entity,
+    from_cm: Vec2,
+    from_height_m: f32,
+    to_cm: Vec2,
+) -> Option<Vec2> {
+    let dx = to_cm.x - from_cm.x;
+    let dy = to_cm.y - from_cm.y;
+    let dist_cm = dx.hypot(dy);
+    if dist_cm < 1.0 {
+        return None;
+    }
+    let origin = Vec3::new(from_cm.x / 100.0, from_height_m + 1.2, -from_cm.y / 100.0);
+    // The same shape `Collider::ball(0.4)` wraps, without its Arc allocation
+    // (this runs per moving remote entity per frame).
+    let ball = Ball::new(0.4);
+    let shape: &dyn Shape = &ball;
+    let probe_m = dist_cm.min(NPC_STEER_PROBE_CM) / 100.0;
+    let is_clear = |dir: Vec3| {
+        rapier_context
+            .cast_shape(
+                origin + dir * 0.4,
+                Quat::default(),
+                dir,
+                shape,
+                ShapeCastOptions {
+                    max_time_of_impact: probe_m,
+                    target_distance: 0.0,
+                    compute_impact_geometry_on_penetration: false,
+                    stop_at_penetration: false,
+                },
+                QueryFilter::new()
+                    .exclude_collider(self_entity)
+                    .groups(CollisionGroups::new(
+                        COLLISION_FILTER_COLLIDABLE,
+                        !COLLISION_GROUP_ZONE_TERRAIN & !COLLISION_GROUP_PHYSICS_TOY,
+                    )),
+            )
+            .is_none()
+    };
+    // World-frame direction: game (x right, y forward) -> world (x right, z back).
+    let base = Vec2::new(dx / dist_cm, -dy / dist_cm);
+    if is_clear(Vec3::new(base.x, 0.0, base.y)) {
+        return None;
+    }
+    for deflect in NPC_STEER_ANGLES_DEG {
+        let rotated = base.rotate(Vec2::from_angle(deflect.to_radians()));
+        if is_clear(Vec3::new(rotated.x, 0.0, rotated.y)) {
+            // Same remaining distance, rotated back into game frame.
+            return Some(from_cm + Vec2::new(rotated.x, -rotated.y) * dist_cm);
+        }
+    }
+    None
+}
 
 fn get_attack_animation<R: rand::Rng + ?Sized>(
     rng: &mut R,
@@ -536,90 +611,95 @@ pub fn command_system(
 
         if !next_command.is_die() {
             // Handle skill casting transitions
-            if let Command::CastSkill(CommandCastSkill {
-                cast_skill_state,
-                ready_action,
-                action_motion_id,
-                cast_repeat_motion_id,
-                ..
-            }) = command.as_mut()
-            {
-                if *ready_action
-                    && matches!(
-                        *cast_skill_state,
-                        CommandCastSkillState::Casting | CommandCastSkillState::CastingRepeat
-                    )
+            // Only reborrow mutably for CastSkill: `as_mut` is a DerefMut that
+            // flags Changed<Command> (read by vehicle_sound_system) even when
+            // nothing is written, which marked every entity changed every frame.
+            if matches!(*command, Command::CastSkill(_)) {
+                if let Command::CastSkill(CommandCastSkill {
+                    cast_skill_state,
+                    ready_action,
+                    action_motion_id,
+                    cast_repeat_motion_id,
+                    ..
+                }) = command.as_mut()
                 {
-                    if let Some(action_motion_id) = action_motion_id {
-                        let motion_data = if let Some(npc_model) = npc_model {
-                            game_data
-                                .npcs
-                                .get_npc_motion(npc_model.npc_id, *action_motion_id)
-                        } else {
-                            game_data
-                                .character_motion_database
-                                .find_first_character_motion(
-                                    *action_motion_id,
-                                    weapon_motion_type,
-                                    weapon_motion_gender,
-                                )
-                        };
+                    if *ready_action
+                        && matches!(
+                            *cast_skill_state,
+                            CommandCastSkillState::Casting | CommandCastSkillState::CastingRepeat
+                        )
+                    {
+                        if let Some(action_motion_id) = action_motion_id {
+                            let motion_data = if let Some(npc_model) = npc_model {
+                                game_data
+                                    .npcs
+                                    .get_npc_motion(npc_model.npc_id, *action_motion_id)
+                            } else {
+                                game_data
+                                    .character_motion_database
+                                    .find_first_character_motion(
+                                        *action_motion_id,
+                                        weapon_motion_type,
+                                        weapon_motion_gender,
+                                    )
+                            };
 
-                        if let Some(motion_data) = motion_data {
-                            update_active_motion(
-                                &mut commands.entity(active_motion_entity),
-                                &mut active_motion,
-                                asset_server
-                                    .load(motion_data.path.path().to_string_lossy().into_owned()),
-                                1.0,
-                                false,
-                            );
+                            if let Some(motion_data) = motion_data {
+                                update_active_motion(
+                                    &mut commands.entity(active_motion_entity),
+                                    &mut active_motion,
+                                    asset_server
+                                        .load(motion_data.path.path().to_string_lossy().into_owned()),
+                                    1.0,
+                                    false,
+                                );
+                            }
                         }
-                    }
 
-                    *cast_skill_state = CommandCastSkillState::Action;
-                    continue;
-                } else if !*ready_action
-                    && matches!(*cast_skill_state, CommandCastSkillState::Casting)
-                {
-                    if let Some(cast_repeat_motion_id) = cast_repeat_motion_id {
-                        let motion_data = if let Some(npc_model) = npc_model {
-                            game_data
-                                .npcs
-                                .get_npc_motion(npc_model.npc_id, *cast_repeat_motion_id)
-                        } else {
-                            game_data
-                                .character_motion_database
-                                .find_first_character_motion(
-                                    *cast_repeat_motion_id,
-                                    weapon_motion_type,
-                                    weapon_motion_gender,
-                                )
-                        };
+                        *cast_skill_state = CommandCastSkillState::Action;
+                        continue;
+                    } else if !*ready_action
+                        && matches!(*cast_skill_state, CommandCastSkillState::Casting)
+                    {
+                        if let Some(cast_repeat_motion_id) = cast_repeat_motion_id {
+                            let motion_data = if let Some(npc_model) = npc_model {
+                                game_data
+                                    .npcs
+                                    .get_npc_motion(npc_model.npc_id, *cast_repeat_motion_id)
+                            } else {
+                                game_data
+                                    .character_motion_database
+                                    .find_first_character_motion(
+                                        *cast_repeat_motion_id,
+                                        weapon_motion_type,
+                                        weapon_motion_gender,
+                                    )
+                            };
 
-                        if let Some(motion_data) = motion_data {
-                            update_active_motion(
-                                &mut commands.entity(active_motion_entity),
-                                &mut active_motion,
-                                asset_server
-                                    .load(motion_data.path.path().to_string_lossy().into_owned()),
-                                1.0,
-                                true,
-                            );
+                            if let Some(motion_data) = motion_data {
+                                update_active_motion(
+                                    &mut commands.entity(active_motion_entity),
+                                    &mut active_motion,
+                                    asset_server
+                                        .load(motion_data.path.path().to_string_lossy().into_owned()),
+                                    1.0,
+                                    true,
+                                );
+                            }
                         }
-                    }
 
-                    *cast_skill_state = CommandCastSkillState::CastingRepeat;
-                    continue;
-                } else if !*ready_action
-                    && matches!(*cast_skill_state, CommandCastSkillState::CastingRepeat)
-                {
-                    // Repeat CastingRepeat motion until ready_action is true
-                    continue;
-                } else if matches!(cast_skill_state, CommandCastSkillState::Action)
-                    && next_command.is_none()
-                {
-                    *next_command = NextCommand::with_stop();
+                        *cast_skill_state = CommandCastSkillState::CastingRepeat;
+                        continue;
+                    } else if !*ready_action
+                        && matches!(*cast_skill_state, CommandCastSkillState::CastingRepeat)
+                    {
+                        // Repeat CastingRepeat motion until ready_action is true
+                        continue;
+                    } else if matches!(cast_skill_state, CommandCastSkillState::Action)
+                        && next_command.is_none()
+                    {
+                        *next_command = NextCommand::with_stop();
+                    }
                 }
             }
 
@@ -1307,6 +1387,51 @@ pub fn command_system(
                     *next_command = NextCommand::default();
                 }
             }
+        }
+    }
+}
+
+/// Wall-slide for remotely simulated movers (bots, monsters, NPCs).
+///
+/// Kept as a separate system because `command_system` is already at Bevy's
+/// 16-parameter system-function limit. Runs after `command_system` (which
+/// recomputes chase/tracking destinations straight at the target every frame)
+/// and before `update_position_system` (which walks them). Remote entities
+/// have no wall collision (`collision_player_system` only handles
+/// `CollisionPlayer`), so without this pass chasers visibly cross walls even
+/// when the server routes around them. Probes the live Rapier world with the
+/// same ball cast the player wall check uses; the local player is untouched.
+pub fn npc_chase_steering_system(
+    mut query: Query<
+        (Entity, &Position, &mut Command, Option<&FlightState>, Option<&BoatState>),
+        (Without<PlayerCharacter>, Or<(With<CharacterModel>, With<NpcModel>)>),
+    >,
+    rapier_context: ReadRapierContext,
+) {
+    let Ok(rapier) = rapier_context.single() else {
+        return;
+    };
+
+    for (entity, position, mut command, flight_state, boat_state) in query.iter_mut() {
+        if flight_state.map_or(false, |fs| fs.is_flying) {
+            continue;
+        }
+        if boat_state.map_or(false, |bs| bs.active) {
+            continue;
+        }
+        let Command::Move(move_cmd) = &mut *command else {
+            continue;
+        };
+        let destination = &mut move_cmd.destination;
+        if let Some(deflected) = deflect_remote_chase_destination(
+            &rapier,
+            entity,
+            position.position.xy(),
+            position.position.z / 100.0,
+            destination.xy(),
+        ) {
+            destination.x = deflected.x;
+            destination.y = deflected.y;
         }
     }
 }

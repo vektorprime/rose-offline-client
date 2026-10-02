@@ -85,7 +85,7 @@ impl From<&VolumetricCloudSettings> for VolumetricCloudStructuralSettings {
     }
 }
 
-#[derive(Resource, Reflect, Clone, Debug)]
+#[derive(Resource, Reflect, Clone, Debug, PartialEq)]
 pub struct VolumetricCloudSettings {
     pub enabled: bool,
     pub cloud_count: usize,
@@ -161,13 +161,18 @@ impl AsBindGroup for VolumetricCloudMaterial {
         VolumetricCloudMaterialKey
     }
 
-    fn as_bind_group(
+    /// Returns the bindings unprepared (instead of overriding `as_bind_group` and
+    /// returning `CreateBindGroupDirectly`) so Bevy's material allocator frees the
+    /// previous bind group when the material is modified. On Bevy 0.19.1 the
+    /// `CreateBindGroupDirectly` path never frees it, and this material is
+    /// modified ~30 times a second (drift time), so that path leaked GPU memory.
+    fn unprepared_bind_group(
         &self,
-        layout_descriptor: &BindGroupLayoutDescriptor,
+        _layout: &BindGroupLayout,
         render_device: &RenderDevice,
-        _pipeline_cache: &PipelineCache,
         _param: &mut (),
-    ) -> Result<PreparedBindGroup, AsBindGroupError> {
+        _bindless: bool,
+    ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
         let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("volumetric_cloud_uniforms"),
             contents: bytemuck::cast_slice(&[
@@ -199,30 +204,9 @@ impl AsBindGroup for VolumetricCloudMaterial {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let layout = _pipeline_cache.get_bind_group_layout(layout_descriptor);
-
-        let entries = vec![BindGroupEntry {
-            binding: 0,
-            resource: buffer.as_entire_binding(),
-        }];
-
-        let bind_group =
-            render_device.create_bind_group("volumetric_cloud_material", &layout, &entries);
-
-        Ok(PreparedBindGroup {
-            bindings: BindingResources(vec![]),
-            bind_group,
+        Ok(UnpreparedBindGroup {
+            bindings: BindingResources(vec![(0, OwnedBindingResource::Buffer(buffer))]),
         })
-    }
-
-    fn unprepared_bind_group(
-        &self,
-        _layout: &BindGroupLayout,
-        _render_device: &RenderDevice,
-        _param: &mut (),
-        _bindless: bool,
-    ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
-        Err(AsBindGroupError::CreateBindGroupDirectly)
     }
 
     fn bind_group_layout_entries(
@@ -589,7 +573,7 @@ pub fn update_volumetric_cloud_lighting_system(
     zone_lighting: Res<crate::render::ZoneLighting>,
     cloud_settings: Res<VolumetricCloudSettings>,
     mut materials: ResMut<Assets<VolumetricCloudMaterial>>,
-    query: Query<&MeshMaterial3d<VolumetricCloudMaterial>, With<VolumetricCloud>>,
+    query: Query<Ref<MeshMaterial3d<VolumetricCloudMaterial>>, With<VolumetricCloud>>,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
     let Some(zone_time) = zone_time else {
@@ -599,22 +583,38 @@ pub fn update_volumetric_cloud_lighting_system(
     if !cloud_settings.enabled || cloud_settings.tod_response <= 0.0 {
         return;
     }
-    // Lighting only changes when time/lighting/settings change. Previously this
+    // Lighting only changes when time/lighting/settings change, or when clouds
+    // are (re)spawned with the material's default lighting. Previously this
     // rewrote every cloud material every frame.
     if !zone_time.is_changed()
         && !zone_lighting.is_changed()
         && !cloud_settings.is_changed()
+        && !query.iter().any(|material_handle| material_handle.is_changed())
     {
         return;
     }
 
     let (sun_direction, sun_color, ambient_color, tod_factor) =
         crate::render::zone_lighting::calculate_cloud_lighting(&zone_time, &zone_lighting);
+    let sun_color = sun_color * cloud_settings.tod_response;
 
     for material_handle in query.iter() {
+        // Compare read-only first: get_mut + assignment marks the material
+        // Modified (full re-prepare) even when the values are identical, and
+        // blobs sharing one material would re-mark it once per blob.
+        let Some(material) = materials.get(&material_handle.0) else {
+            continue;
+        };
+        if material.sun_direction == sun_direction
+            && material.sun_color == sun_color
+            && material.ambient_color == ambient_color
+            && material.tod_factor == tod_factor
+        {
+            continue;
+        }
         if let Some(mut material) = materials.get_mut(&material_handle.0) {
             material.sun_direction = sun_direction;
-            material.sun_color = sun_color * cloud_settings.tod_response;
+            material.sun_color = sun_color;
             material.ambient_color = ambient_color;
             material.tod_factor = tod_factor;
         }

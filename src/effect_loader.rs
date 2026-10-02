@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use bevy::{
-    asset::RenderAssetUsages,
+    asset::{AssetId, Handle, RenderAssetUsages},
+    light::NotShadowCaster,
     math::{Quat, Vec3},
     pbr::{ExtendedMaterial, MeshMaterial3d, StandardMaterial},
     prelude::{
@@ -15,9 +16,11 @@ use bevy::{
         storage::ShaderBuffer,
     },
 };
-use bevy_camera::visibility::{InheritedVisibility, ViewVisibility};
+use bevy_camera::visibility::{InheritedVisibility, NoFrustumCulling, ViewVisibility};
 use bevy_mesh::{Mesh, PrimitiveTopology};
-use rose_file_readers::{EftFile, EftMesh, EftParticle, PtlFile, VfsPath, VirtualFilesystem};
+use rose_file_readers::{
+    EftFile, EftMesh, EftParticle, PtlFile, VfsPath, VfsPathBuf, VirtualFilesystem,
+};
 
 use crate::{
     animation::MeshAnimation,
@@ -35,12 +38,20 @@ use crate::{
 #[derive(Resource, Clone)]
 pub struct EffectCache {
     cache: Arc<RwLock<HashMap<String, Arc<EftFile>>>>,
+    /// Parsed particle (PTL) files referenced by effects, keyed by VFS path. Every
+    /// particle of every spawned effect used to re-read and re-parse its PTL file.
+    particle_cache: Arc<RwLock<HashMap<String, Arc<PtlFile>>>>,
+    /// Placeholder particle meshes by vertex count, shared by every particle sequence
+    /// of that size. Stores `AssetId`s only, so the cache keeps no mesh alive.
+    particle_meshes: Arc<RwLock<HashMap<usize, AssetId<Mesh>>>>,
 }
 
 impl Default for EffectCache {
     fn default() -> Self {
         Self {
             cache: Arc::new(RwLock::new(HashMap::new())),
+            particle_cache: Arc::new(RwLock::new(HashMap::new())),
+            particle_meshes: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -70,12 +81,49 @@ impl EffectCache {
         }
     }
 
-    /// Clear all cached effect files (useful for zone transitions)
+    /// Get a cached particle (PTL) file if available
+    pub fn get_particle_file(&self, path: &str) -> Option<Arc<PtlFile>> {
+        self.particle_cache.read().ok()?.get(path).cloned()
+    }
+
+    /// Insert a particle (PTL) file into the cache
+    pub fn insert_particle_file(&self, path: String, ptl_file: Arc<PtlFile>) {
+        if let Ok(mut cache) = self.particle_cache.write() {
+            cache.insert(path, ptl_file);
+        }
+    }
+
+    /// Shared placeholder mesh for particle sequences with `vertex_count` vertices.
+    /// Reuses the live mesh when one exists, otherwise creates it (also when the previous
+    /// one was dropped with its last sequence). Sharing is safe because the particle
+    /// shader makes `vertex_index` relative to the mesh's own slab offset and nothing
+    /// writes to these meshes.
+    pub fn particle_mesh(&self, meshes: &mut Assets<Mesh>, vertex_count: usize) -> Handle<Mesh> {
+        let Ok(mut particle_meshes) = self.particle_meshes.write() else {
+            return meshes.add(create_particle_mesh(vertex_count));
+        };
+
+        if let Some(mesh) = particle_meshes
+            .get(&vertex_count)
+            .and_then(|id| meshes.get_strong_handle(*id))
+        {
+            return mesh;
+        }
+
+        let mesh = meshes.add(create_particle_mesh(vertex_count));
+        particle_meshes.insert(vertex_count, mesh.id());
+        mesh
+    }
+
+    /// Clear all cached effect and particle files (useful for zone transitions)
     pub fn clear(&self) {
         if let Ok(mut cache) = self.cache.write() {
             let count = cache.len();
             cache.clear();
             log::info!("[EffectCache] Cleared {} cached effects", count);
+        }
+        if let Ok(mut cache) = self.particle_cache.write() {
+            cache.clear();
         }
     }
 
@@ -148,6 +196,7 @@ pub fn spawn_effect(
             meshes,
             storage_buffers,
             &eft_particle,
+            effect_cache,
         ) {
             child_entities.push(particle_entity);
         }
@@ -403,6 +452,43 @@ fn spawn_mesh(
     )
 }
 
+/// Placeholder mesh for a particle sequence: 6 vertices per particle (two triangles per
+/// quad). The particle shader ignores the vertex data and builds each quad from
+/// `vertex_index` and the material's storage buffers.
+fn create_particle_mesh(vertex_count: usize) -> Mesh {
+    let positions: Vec<[f32; 3]> = vec![[0.0, 0.0, 0.0]; vertex_count];
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+}
+
+/// Reads a PTL file through the effect cache (parsed once per path), or straight from
+/// the VFS when no cache is available.
+fn load_particle_file(
+    vfs: &VirtualFilesystem,
+    particle_file: &VfsPathBuf,
+    effect_cache: Option<&EffectCache>,
+) -> Option<Arc<PtlFile>> {
+    let Some(cache) = effect_cache else {
+        return vfs
+            .read_file::<PtlFile, _>(particle_file)
+            .ok()
+            .map(Arc::new);
+    };
+
+    let path = particle_file.path().to_string_lossy();
+    if let Some(cached) = cache.get_particle_file(&path) {
+        return Some(cached);
+    }
+
+    let loaded = Arc::new(vfs.read_file::<PtlFile, _>(particle_file).ok()?);
+    cache.insert_particle_file(path.into_owned(), Arc::clone(&loaded));
+    Some(loaded)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn spawn_particle(
     vfs: &VirtualFilesystem,
     commands: &mut Commands,
@@ -411,10 +497,9 @@ fn spawn_particle(
     meshes: &mut Assets<bevy::prelude::Mesh>,
     storage_buffers: &mut Assets<ShaderBuffer>,
     eft_particle: &EftParticle,
+    effect_cache: Option<&EffectCache>,
 ) -> Option<Entity> {
-    let ptl_file = vfs
-        .read_file::<PtlFile, _>(&eft_particle.particle_file)
-        .ok()?;
+    let ptl_file = load_particle_file(vfs, &eft_particle.particle_file, effect_cache)?;
 
     // TODO: eft_particle.is_linked
 
@@ -439,7 +524,7 @@ fn spawn_particle(
                 ViewVisibility::default(),
             ))
             .with_children(|child_builder| {
-                for sequence in ptl_file.sequences {
+                for sequence in ptl_file.sequences.iter() {
                     let particle_render_data = ParticleRenderData::new(
                         sequence.num_particles as usize,
                         sequence.blend_op as u8,
@@ -466,7 +551,9 @@ fn spawn_particle(
                             asset_server.load::<bevy::prelude::Image>(&particle_texture_path)
                         };
 
-                    // Initialize storage buffers with placeholder data to avoid zero-size buffer error
+                    // Initialize storage buffers with placeholder data to avoid zero-size buffer error.
+                    // They are sized for the full capacity: particle_storage_buffer_update_system
+                    // pads every upload to this length, so the GPU buffers are written in place.
                     let num_particles = sequence.num_particles as usize;
                     let positions_data: Vec<bevy::math::Vec4> =
                         vec![bevy::math::Vec4::ZERO; num_particles];
@@ -510,32 +597,36 @@ fn spawn_particle(
                         },
                     });
 
-                    // Create a custom mesh with num_particles * 6 vertices to match shader expectations
-                    // The shader uses vertex_index to calculate particle_idx = vertex_index / 6u and vert_idx = vertex_index % 6u
-                    // This means we need 6 vertices per particle (2 triangles forming a quad)
+                    // The mesh only provides the vertex count: num_particles * 6 vertices, the
+                    // shader derives particle_idx = vertex / 6 and the quad corner = vertex % 6.
+                    // Sequences of the same size share one mesh.
                     let particle_vertex_count = num_particles * 6;
-                    let particle_positions: Vec<[f32; 3]> =
-                        vec![[0.0, 0.0, 0.0]; particle_vertex_count];
-                    let particle_mesh = meshes.add(
-                        Mesh::new(
-                            PrimitiveTopology::TriangleList,
-                            RenderAssetUsages::default(),
-                        )
-                        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, particle_positions),
-                    );
+                    let particle_mesh = match effect_cache {
+                        Some(cache) => cache.particle_mesh(meshes, particle_vertex_count),
+                        None => meshes.add(create_particle_mesh(particle_vertex_count)),
+                    };
 
                     let mut entity_comands = child_builder.spawn((
                         EffectParticle {},
                         particle_render_data,
                         MeshMaterial3d(particle_material),
                         Mesh3d(particle_mesh),
-                        ParticleSequence::from(sequence)
+                        ParticleSequence::from_ref(sequence)
                             .with_start_delay(eft_particle.start_delay as f32 / 1000.0),
                         Transform::default(),
                         GlobalTransform::default(),
                         Visibility::default(),
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
+                        // The placeholder mesh would give a zero-size Aabb at the emitter
+                        // origin, culling every particle once the origin leaves the view
+                        // (frustum and GPU occlusion culling). Particles are world-space and
+                        // not bounded by the mesh, so never cull them, like the old client.
+                        // Without an Aabb, Bevy's GPU culling also uses an infinite box.
+                        NoFrustumCulling,
+                        // ParticleMaterial never draws shadows; this only keeps the
+                        // unculled entities out of every shadow view's visibility lists.
+                        NotShadowCaster,
                     ));
 
                     if let Some(transform_animation_path) = &eft_particle.animation_file {

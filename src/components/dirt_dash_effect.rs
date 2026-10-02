@@ -102,7 +102,7 @@ impl DirtDashParticle {
 }
 
 /// Resource for dust effect settings (smoke/fog that hovers near player)
-#[derive(Resource, Debug, Clone, Reflect)]
+#[derive(Resource, Debug, Clone, PartialEq, Reflect)]
 #[reflect(Resource)]
 pub struct DirtDashSettings {
     /// Base color for dust particles (light gray/white for smoke effect)

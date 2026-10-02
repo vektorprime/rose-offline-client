@@ -1,6 +1,7 @@
 //! Temporary memory diagnostics.
 //!
-//! Logs entity counts and key asset counts every 30 seconds so memory leaks can
+//! Logs entity counts and key asset counts every 30 seconds (gated by the
+//! `memory_diagnostics_due` run condition) so memory leaks can
 //! be pinpointed empirically (which counter keeps growing?). Remove this module
 //! once the leak is confirmed fixed.
 
@@ -24,7 +25,6 @@ use crate::{
     components::{Bird, ChatBubbleEntity, ClientEntity, DamageNumber, Fish, NameTag, Zone, ZoneObject},
     events::{ChatBubbleEvent, ZoneEvent},
     render::{ParticleMaterial, RoseObjectExtension},
-    vfs_asset_io::vfs_file_cache_stats,
     zone_loader::ZoneLoaderAsset,
 };
 
@@ -32,9 +32,8 @@ use crate::{
 /// single system parameter, so bundling keeps the system within Bevy's 20-parameter
 /// limit (this system would otherwise expand to 22 parameters).
 #[derive(SystemParam)]
-pub struct MemoryDiagMeta<'w, 's> {
+pub struct MemoryDiagMeta<'w> {
     time: Res<'w, Time>,
-    state: Local<'s, MemoryDiagState>,
     entities: &'w Entities,
 }
 
@@ -72,30 +71,23 @@ pub struct MemoryDiagQueries<'w, 's> {
     damage_number_query: Query<'w, 's, (), With<DamageNumber>>,
 }
 
-#[derive(Default)]
-pub struct MemoryDiagState {
-    last_log: Option<Instant>,
+/// Run condition for [`memory_diagnostics_system`]: true on the first frame,
+/// then once every 30 seconds.
+pub fn memory_diagnostics_due(mut last_log: Local<Option<Instant>>) -> bool {
+    let now = Instant::now();
+    if last_log.is_some_and(|last| now.duration_since(last) < Duration::from_secs(30)) {
+        return false;
+    }
+    *last_log = Some(now);
+    true
 }
 
 pub fn memory_diagnostics_system(
-    mut meta: MemoryDiagMeta,
+    meta: MemoryDiagMeta,
     assets: MemoryDiagAssets,
     queries: MemoryDiagQueries,
     events: MemoryDiagEvents,
 ) {
-    let now = Instant::now();
-    let should_log = meta
-        .state
-        .last_log
-        .map_or(true, |last| now.duration_since(last) >= Duration::from_secs(30));
-
-    if !should_log {
-        return;
-    }
-    meta.state.last_log = Some(now);
-
-    let (vfs_files, vfs_bytes) = vfs_file_cache_stats();
-
     let zones: Vec<String> = queries
         .zone_query
         .iter()
@@ -110,8 +102,7 @@ pub fn memory_diagnostics_system(
          zones=[{}] birds={} client_entities={} zone_objects={} fish={} name_tags={} chat_bubbles={} \
          meshes={} images={} shader_storage_buffers={} object_materials={} standard_materials={} \
          particle_materials={} damage_numbers={} zmo_assets={} audio_sources={} \
-         zone_assets={} zone_events_pending={} chat_bubble_events_pending={} \
-         vfs_cache_files={} vfs_cache_mb={:.1}",
+         zone_assets={} zone_events_pending={} chat_bubble_events_pending={}",
         meta.time.elapsed_secs(),
         1.0 / meta.time.delta_secs().max(0.0001),
         meta.entities.count_spawned(),
@@ -135,7 +126,5 @@ pub fn memory_diagnostics_system(
         assets.zone_loader_assets.len(),
         events.zone_events.len(),
         events.chat_bubble_events.len(),
-        vfs_files,
-        vfs_bytes as f64 / (1024.0 * 1024.0),
     );
 }

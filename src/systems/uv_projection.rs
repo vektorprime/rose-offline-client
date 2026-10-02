@@ -44,6 +44,30 @@ pub fn project_world_to_uv(
         .as_ref()
         .and_then(|sm| inverse_bindposes.get(&sm.inverse_bindposes));
 
+    // Per-joint skinning matrices (joint global * inverse bind pose), built once per
+    // call instead of once per triangle corner per influence. The skinning sum
+    // evaluated `joint_global * inv_bind * v`, which associates as
+    // `(joint_global * inv_bind) * v`, so caching the product is bit-identical.
+    // `None` entries are joints without a GlobalTransform (skipped, as before).
+    let joint_matrices: Option<Vec<Option<Mat4>>> = match (skinned_mesh, inv_bind_poses) {
+        (Some(sm), Some(ibp)) => Some(
+            sm.joints
+                .iter()
+                .enumerate()
+                .map(|(joint_idx, &joint_entity)| {
+                    let joint_global = transforms.get(joint_entity).ok()?.to_matrix();
+                    let inv_bind: Mat4 = *ibp.get(joint_idx)?;
+                    Some(joint_global * inv_bind)
+                })
+                .collect(),
+        ),
+        _ => None,
+    };
+
+    // World position per vertex, computed lazily the first time a triangle uses it
+    // (shared vertices were re-skinned for every triangle corner).
+    let mut world_vertices: Vec<Option<Vec3>> = Vec::new();
+
     for (part_enum, (_, part_entities)) in character_model.model_parts.iter() {
         let material_idx = part_enum as usize;
 
@@ -63,10 +87,14 @@ pub fn project_world_to_uv(
                 Some(VertexAttributeValues::Float32x2(uv)) => uv,
                 _ => continue,
             };
-            let indices = match mesh.indices() {
-                Some(Indices::U32(idx)) => idx.clone(),
-                Some(Indices::U16(idx)) => idx.iter().map(|&i| i as u32).collect(),
-                _ => continue,
+            let Some(indices) = mesh.indices() else {
+                continue;
+            };
+            let index_at = |k: usize| -> usize {
+                match indices {
+                    Indices::U16(idx) => idx[k] as usize,
+                    Indices::U32(idx) => idx[k] as usize,
+                }
             };
 
             // Handle skinning
@@ -75,53 +103,35 @@ pub fn project_world_to_uv(
 
             let mesh_global_transform = transforms.get(mesh_entity).ok()?.to_matrix();
 
-            // We iterate through triangles to find the closest point
-            for chunk in indices.chunks(3) {
-                if chunk.len() < 3 {
-                    continue;
-                }
-                let i0 = chunk[0] as usize;
-                let i1 = chunk[1] as usize;
-                let i2 = chunk[2] as usize;
+            world_vertices.clear();
+            world_vertices.resize(positions.len(), None);
+            let mut world_vertex = |i: usize| -> Vec3 {
+                *world_vertices[i].get_or_insert_with(|| {
+                    transform_vertex(
+                        Vec3::from(positions[i]),
+                        i,
+                        joint_matrices.as_deref(),
+                        &mesh_global_transform,
+                        joint_indices,
+                        joint_weights,
+                    )
+                })
+            };
 
-                let p0_local = Vec3::from(positions[i0]);
-                let p1_local = Vec3::from(positions[i1]);
-                let p2_local = Vec3::from(positions[i2]);
+            // We iterate through triangles to find the closest point
+            // (a trailing partial triangle is ignored, as before).
+            for triangle in 0..indices.len() / 3 {
+                let i0 = index_at(triangle * 3);
+                let i1 = index_at(triangle * 3 + 1);
+                let i2 = index_at(triangle * 3 + 2);
 
                 let uv0 = Vec2::from(uvs[i0]);
                 let uv1 = Vec2::from(uvs[i1]);
                 let uv2 = Vec2::from(uvs[i2]);
 
-                let p0_world = transform_vertex(
-                    p0_local,
-                    i0,
-                    skinned_mesh,
-                    inv_bind_poses,
-                    transforms,
-                    &mesh_global_transform,
-                    joint_indices,
-                    joint_weights,
-                );
-                let p1_world = transform_vertex(
-                    p1_local,
-                    i1,
-                    skinned_mesh,
-                    inv_bind_poses,
-                    transforms,
-                    &mesh_global_transform,
-                    joint_indices,
-                    joint_weights,
-                );
-                let p2_world = transform_vertex(
-                    p2_local,
-                    i2,
-                    skinned_mesh,
-                    inv_bind_poses,
-                    transforms,
-                    &mesh_global_transform,
-                    joint_indices,
-                    joint_weights,
-                );
+                let p0_world = world_vertex(i0);
+                let p1_world = world_vertex(i1);
+                let p2_world = world_vertex(i2);
 
                 if let Some((dist, uv)) = closest_point_on_triangle(
                     world_pos, p0_world, p1_world, p2_world, uv0, uv1, uv2,
@@ -169,22 +179,20 @@ mod tests {
     }
 }
 
+/// `joint_matrices` is `Some` when the character is skinned (skinned mesh and inverse
+/// bind poses available): per joint, `joint_global * inverse_bind_pose`, or `None`
+/// for a joint without a GlobalTransform.
 fn transform_vertex(
     local_pos: Vec3,
     vertex_idx: usize,
-    skinned_mesh: Option<&SkinnedMesh>,
-    inv_bind_poses: Option<&SkinnedMeshInverseBindposes>,
-    transforms: &Query<&GlobalTransform>,
+    joint_matrices: Option<&[Option<Mat4>]>,
     mesh_global_transform: &Mat4,
     joint_indices_attr: Option<&VertexAttributeValues>,
     joint_weights_attr: Option<&VertexAttributeValues>,
 ) -> Vec3 {
-    if let (Some(sm), Some(ibp), Some(indices_attr), Some(weights_attr)) = (
-        skinned_mesh,
-        inv_bind_poses,
-        joint_indices_attr,
-        joint_weights_attr,
-    ) {
+    if let (Some(joint_matrices), Some(indices_attr), Some(weights_attr)) =
+        (joint_matrices, joint_indices_attr, joint_weights_attr)
+    {
         let v_indices = match indices_attr {
             VertexAttributeValues::Uint16x4(idx) => idx[vertex_idx],
             VertexAttributeValues::Uint32x4(idx) => idx[vertex_idx].map(|v| v as u16),
@@ -203,13 +211,8 @@ fn transform_vertex(
                 continue;
             }
 
-            if let Some(&joint_entity) = sm.joints.get(joint_idx) {
-                if let Ok(joint_transform) = transforms.get(joint_entity) {
-                    let joint_global = joint_transform.to_matrix();
-                    let inv_bind: Mat4 = ibp[joint_idx];
-                    world_pos +=
-                        weight * (joint_global * inv_bind * Vec4::from((local_pos, 1.0))).xyz();
-                }
+            if let Some(Some(skin)) = joint_matrices.get(joint_idx) {
+                world_pos += weight * (*skin * Vec4::from((local_pos, 1.0))).xyz();
             }
         }
         world_pos

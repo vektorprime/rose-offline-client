@@ -5,20 +5,21 @@ use crate::{
     render::WorldUiRect,
 };
 
+/// Unfaded alpha of a chat bubble rect (text or background), set at spawn.
+/// The fade is applied to this every frame; applying it to the rect's current
+/// (already faded) alpha would compound and fade the bubble out far too early.
+#[derive(Component, Clone, Copy)]
+pub struct ChatBubbleBaseAlpha(pub f32);
+
 /// System that updates chat bubble lifetimes and handles fade-out effects
 pub fn chat_bubble_update_system(
     mut commands: Commands,
     time: Res<Time<Virtual>>,
     mut query_bubbles: Query<(Entity, &mut ChatBubble), With<ChatBubbleEntity>>,
     query_children: Query<&Children, With<ChatBubbleEntity>>,
-    // Use Without<> to make queries disjoint and avoid Bevy error B0001
-    mut query_text_rects: Query<
-        &mut WorldUiRect,
-        (With<ChatBubbleText>, Without<ChatBubbleBackground>),
-    >,
-    mut query_bg_rects: Query<
-        &mut WorldUiRect,
-        (With<ChatBubbleBackground>, Without<ChatBubbleText>),
+    mut query_rects: Query<
+        (&mut WorldUiRect, &ChatBubbleBaseAlpha),
+        Or<(With<ChatBubbleText>, With<ChatBubbleBackground>)>,
     >,
 ) {
     let delta = time.delta_secs();
@@ -34,29 +35,17 @@ pub fn chat_bubble_update_system(
         }
 
         // Calculate fade alpha. Fully-opaque phase (first 80% of lifetime) needs
-        // no color work: previously 2x to_srgba + rebuild ran per bubble per frame.
+        // no color work.
         let fade_alpha = chat_bubble.get_fade_alpha();
         if (fade_alpha - 1.0).abs() < f32::EPSILON {
             continue;
         }
 
-        // Update child rects if we can get them
+        // Update the text and background rects from their unfaded alpha
         if let Ok(children) = query_children.get(bubble_entity) {
             for child in children.iter() {
-                // Update text rect
-                if let Ok(mut rect) = query_text_rects.get_mut(child) {
-                    let base_color = rect.color;
-                    let srgba = base_color.to_srgba();
-                    rect.color =
-                        Color::srgba(srgba.red, srgba.green, srgba.blue, srgba.alpha * fade_alpha);
-                }
-
-                // Update background rect
-                if let Ok(mut rect) = query_bg_rects.get_mut(child) {
-                    let base_color = rect.color;
-                    let srgba = base_color.to_srgba();
-                    rect.color =
-                        Color::srgba(srgba.red, srgba.green, srgba.blue, srgba.alpha * fade_alpha);
+                if let Ok((mut rect, base_alpha)) = query_rects.get_mut(child) {
+                    rect.color.set_alpha(base_alpha.0 * fade_alpha);
                 }
             }
         }

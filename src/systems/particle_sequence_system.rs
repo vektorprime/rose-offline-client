@@ -10,7 +10,9 @@ use bevy::{
     },
     material::AlphaMode,
     render::{
-        render_resource::{Extent3d, TextureDimension, TextureFormat},
+        render_resource::{
+            encase::internal::WriteInto, Extent3d, ShaderType, TextureDimension, TextureFormat,
+        },
         storage::ShaderBuffer,
     },
 };
@@ -110,11 +112,13 @@ fn apply_keyframes<R: Rng>(
     let keyframe_timer = particle_sequence.particles[particle_index].keyframe_timer;
     let next_keyframe_index = particle_sequence.particles[particle_index].next_keyframe_index;
 
+    // Keyframes are sorted by start time (`ParticleSequence::from_ref`), so the
+    // started keyframes are a prefix and the scan can stop at the first future one.
     for keyframe in particle_sequence
         .keyframes
         .iter()
         .skip(next_keyframe_index)
-        .filter(|keyframe| keyframe.start_time <= keyframe_timer)
+        .take_while(|keyframe| keyframe.start_time <= keyframe_timer)
     {
         let next_fade_keyframe = keyframe
             .next_fade_keyframe_index
@@ -146,7 +150,7 @@ fn apply_keyframes<R: Rng>(
                 particle.next_keyframe_index = particle_sequence
                     .keyframes
                     .iter()
-                    .filter(|keyframe| keyframe.start_time <= particle.keyframe_timer)
+                    .take_while(|keyframe| keyframe.start_time <= particle.keyframe_timer)
                     .count();
                 return;
             }
@@ -391,6 +395,10 @@ pub fn particle_sequence_system(
                 }
             }
 
+            // World-space emitter rotation/translation, decomposed at most once per frame:
+            // the emitter transform does not change while this frame's particles spawn.
+            let mut world_emitter: Option<(Quat, Vec3)> = None;
+
             // Spawn new particles
             while particle_sequence.emit_counter > 1.0
                 && particle_sequence.particles.len() < particle_sequence.num_particles as usize
@@ -410,15 +418,18 @@ pub fn particle_sequence_system(
                 let mut gravity_local = Vec3::default();
                 let mut world_direction = None;
                 if matches!(particle_sequence.update_coords, PtlUpdateCoords::World) {
-                    let global_transform: &GlobalTransform = global_transform;
-                    let (_, global_rotation, global_translation) =
-                        global_transform.to_scale_rotation_translation();
-                    let rotation = Quat::from_xyzw(
-                        global_rotation.x,
-                        -global_rotation.z,
-                        global_rotation.y,
-                        global_rotation.w,
-                    );
+                    let (rotation, global_translation) = *world_emitter.get_or_insert_with(|| {
+                        let global_transform: &GlobalTransform = global_transform;
+                        let (_, global_rotation, global_translation) =
+                            global_transform.to_scale_rotation_translation();
+                        let rotation = Quat::from_xyzw(
+                            global_rotation.x,
+                            -global_rotation.z,
+                            global_rotation.y,
+                            global_rotation.w,
+                        );
+                        (rotation, global_translation)
+                    });
                     world_direction = Some(rotation);
                     gravity_local = rotation.inverse().mul_vec3(Vec3::new(
                         rng_gen_range(&mut rng, &particle_sequence.gravity_x),
@@ -501,6 +512,48 @@ pub fn particle_sequence_system(
     }
 }
 
+/// Copies `data` and pads it with zeroed entries up to `len` entries. A padded particle
+/// has size zero, so its quad is degenerate and rasterizes nothing.
+fn padded<T: Copy + Default>(data: &[T], len: usize) -> Vec<T> {
+    let len = len.max(data.len());
+    let mut padded = Vec::with_capacity(len);
+    padded.extend_from_slice(data);
+    padded.resize(len, T::default());
+    padded
+}
+
+/// Writes one particle attribute into its storage buffer asset.
+///
+/// Returns `None` when the data was written in place: with an unchanged byte length Bevy
+/// writes it into the existing GPU buffer (`GpuShaderBuffer::prepare_asset`), so the
+/// material's bind group stays valid. Otherwise (asset missing, or the byte length would
+/// change) returns a new buffer the material must bind. A resize under the same handle
+/// is not safe: Bevy would create a new GPU buffer, and the material's bind group clones
+/// the GPU buffer at prepare time, unordered with buffer preparation, so it could keep the
+/// old one. A new handle makes the material retry until the new buffer is prepared.
+fn upload_particle_buffer<T>(
+    storage_buffers: &mut Assets<ShaderBuffer>,
+    handle: &Handle<ShaderBuffer>,
+    data: T,
+) -> Option<Handle<ShaderBuffer>>
+where
+    T: ShaderType + WriteInto,
+{
+    let byte_len = data.size().get() as usize;
+    let same_len = storage_buffers
+        .get(handle)
+        .and_then(|buffer| buffer.data.as_ref())
+        .is_some_and(|bytes| bytes.len() == byte_len);
+    if !same_len {
+        return Some(storage_buffers.add(ShaderBuffer::from(data)));
+    }
+
+    if let Some(mut buffer) = storage_buffers.get_mut(handle) {
+        buffer.set_data(data);
+    }
+    None
+}
+
 /// Updates GPU storage buffers with particle render data.
 /// This system copies the CPU-side particle data from ParticleRenderData
 /// to the GPU-side storage buffers in ParticleMaterial.
@@ -508,13 +561,15 @@ pub fn particle_sequence_system(
 /// This is CRITICAL for particle rendering - without this, the storage buffers
 /// would contain only the placeholder data (zeros/ones) from initialization.
 ///
-/// OPTIMIZATION: This system now reuses storage buffers when particle count hasn't changed
-/// significantly, reducing GPU memory allocation overhead.
+/// The buffers are written in place at a constant (capacity) size, and the material is
+/// only modified when a buffer has to be replaced or a blend/billboard value changes.
+/// A sequence that runs out of particles is cleared once (all zero-size), like the
+/// original client, which only drew live particles.
 pub fn particle_storage_buffer_update_system(
     mut commands: Commands,
-    query: Query<(
+    mut query: Query<(
         Entity,
-        &ParticleRenderData,
+        &mut ParticleRenderData,
         Option<&MeshMaterial3d<ParticleMaterial>>,
     )>,
     mut materials: ResMut<Assets<ParticleMaterial>>,
@@ -522,14 +577,18 @@ pub fn particle_storage_buffer_update_system(
     mut meshes: ResMut<Assets<Mesh>>,
     default_texture: Res<DefaultParticleTexture>,
 ) {
-    for (entity, render_data, material_handle) in query.iter() {
-        // Skip if no particles to render
-        if render_data.positions.is_empty() {
+    for (entity, mut render_data, material_handle) in query.iter_mut() {
+        let particle_count = render_data.positions.len();
+
+        // No live particles: upload all-zero buffers once so the particles that died
+        // stop drawing (untouched buffers would keep showing the last frame's particles),
+        // then skip while the sequence stays empty. A sequence without a material is left
+        // alone until it has particles.
+        if particle_count == 0 && (render_data.gpu_buffers_empty || material_handle.is_none()) {
             continue;
         }
 
         // VALIDATION: Check data consistency
-        let particle_count = render_data.positions.len();
         if render_data.sizes.len() != particle_count {
             error!(
                 "⚠ [Particle {:?}] Size mismatch: {} positions but {} sizes",
@@ -560,70 +619,83 @@ pub fn particle_storage_buffer_update_system(
             continue;
         }
 
+        // Every upload is padded to the sequence capacity with zero-size (degenerate,
+        // invisible) particles. The mesh always draws capacity * 6 vertices, so slots
+        // past the live count are well defined, and the byte length never changes, so
+        // Bevy writes into the existing GPU buffers and the material's bind group stays
+        // valid without re-preparing the material.
+        let padded_len = render_data.capacity.max(particle_count);
+
         // Update or create mesh + material components
         if let Some(existing_material_handle) = material_handle {
-            // Update existing material - preserve the original texture!
-            if let Some(mut mat) = materials.get_mut(&existing_material_handle.0) {
-                // PERF: update storage buffers in place (same Handle) instead of
-                // add()+remove() every frame. add() allocates a new AssetId + GPU
-                // buffer and swaps the material handle (new bind group); remove()
-                // frees the old one. Per particle per frame that is 4 allocs + 4
-                // frees + bind-group rebuilds. set_data() re-uploads bytes into the
-                // existing asset, which the render extractor picks up without churn.
-                // Handles are only replaced if a buffer asset went missing.
-                // (Concrete types: same Vec<Vec4>/Vec<Vec2> as the From impls below,
-                // so no extra trait bounds needed here.)
-                // AssetMut has a Drop impl, so each get_mut borrow is scoped to
-                // end before the fallback add() re-borrows storage_buffers.
-                let positions_updated =
-                    if let Some(mut buf) = storage_buffers.get_mut(&mat.positions) {
-                        buf.set_data(render_data.positions.clone());
-                        true
-                    } else {
-                        false
-                    };
-                if !positions_updated {
-                    mat.positions = storage_buffers
-                        .add(ShaderBuffer::from(render_data.positions.clone()));
-                }
-                let sizes_updated = if let Some(mut buf) = storage_buffers.get_mut(&mat.sizes) {
-                    buf.set_data(render_data.sizes.clone());
-                    true
-                } else {
-                    false
-                };
-                if !sizes_updated {
-                    mat.sizes = storage_buffers
-                        .add(ShaderBuffer::from(render_data.sizes.clone()));
-                }
-                let colors_updated = if let Some(mut buf) = storage_buffers.get_mut(&mat.colors) {
-                    buf.set_data(render_data.colors.clone());
-                    true
-                } else {
-                    false
-                };
-                if !colors_updated {
-                    mat.colors = storage_buffers
-                        .add(ShaderBuffer::from(render_data.colors.clone()));
-                }
-                let textures_updated =
-                    if let Some(mut buf) = storage_buffers.get_mut(&mat.textures) {
-                        buf.set_data(render_data.textures.clone());
-                        true
-                    } else {
-                        false
-                    };
-                if !textures_updated {
-                    mat.textures = storage_buffers
-                        .add(ShaderBuffer::from(render_data.textures.clone()));
-                }
+            // Read-only first: `get_mut` marks the material Modified (re-extract, new bind
+            // group, re-specialization), so only take it when a value actually differs.
+            let Some(mat) = materials.get(&existing_material_handle.0) else {
+                continue;
+            };
 
-                // Update blend settings (these are cheap to update)
-                mat.blend_op = render_data.blend_op as u32;
-                mat.src_blend_factor = render_data.src_blend_factor as u32;
-                mat.dst_blend_factor = render_data.dst_blend_factor as u32;
-                mat.billboard_type = render_data.billboard_type as u32;
-                // NOTE: texture is preserved from original material (loaded in effect_loader.rs)
+            let blend_op = render_data.blend_op as u32;
+            let src_blend_factor = render_data.src_blend_factor as u32;
+            let dst_blend_factor = render_data.dst_blend_factor as u32;
+            let billboard_type = render_data.billboard_type as u32;
+            let settings_changed = mat.blend_op != blend_op
+                || mat.src_blend_factor != src_blend_factor
+                || mat.dst_blend_factor != dst_blend_factor
+                || mat.billboard_type != billboard_type;
+
+            let positions = upload_particle_buffer(
+                &mut storage_buffers,
+                &mat.positions,
+                padded(&render_data.positions, padded_len),
+            );
+            let sizes = upload_particle_buffer(
+                &mut storage_buffers,
+                &mat.sizes,
+                padded(&render_data.sizes, padded_len),
+            );
+            let colors = upload_particle_buffer(
+                &mut storage_buffers,
+                &mat.colors,
+                padded(&render_data.colors, padded_len),
+            );
+            let textures = upload_particle_buffer(
+                &mut storage_buffers,
+                &mat.textures,
+                padded(&render_data.textures, padded_len),
+            );
+
+            let uploaded_empty = particle_count == 0;
+            if render_data.gpu_buffers_empty != uploaded_empty {
+                render_data.gpu_buffers_empty = uploaded_empty;
+            }
+
+            if !settings_changed
+                && positions.is_none()
+                && sizes.is_none()
+                && colors.is_none()
+                && textures.is_none()
+            {
+                continue;
+            }
+
+            // NOTE: texture is preserved from original material (loaded in effect_loader.rs)
+            if let Some(mut mat) = materials.get_mut(&existing_material_handle.0) {
+                if let Some(positions) = positions {
+                    mat.positions = positions;
+                }
+                if let Some(sizes) = sizes {
+                    mat.sizes = sizes;
+                }
+                if let Some(colors) = colors {
+                    mat.colors = colors;
+                }
+                if let Some(textures) = textures {
+                    mat.textures = textures;
+                }
+                mat.blend_op = blend_op;
+                mat.src_blend_factor = src_blend_factor;
+                mat.dst_blend_factor = dst_blend_factor;
+                mat.billboard_type = billboard_type;
             }
         } else {
             // Create new material - use default white texture as fallback
@@ -631,12 +703,18 @@ pub fn particle_storage_buffer_update_system(
             let texture = default_texture.handle.clone();
 
             let material = ParticleMaterial {
-                positions: storage_buffers
-                    .add(ShaderBuffer::from(render_data.positions.clone())),
-                sizes: storage_buffers.add(ShaderBuffer::from(render_data.sizes.clone())),
-                colors: storage_buffers.add(ShaderBuffer::from(render_data.colors.clone())),
-                textures: storage_buffers
-                    .add(ShaderBuffer::from(render_data.textures.clone())),
+                positions: storage_buffers.add(ShaderBuffer::from(padded(
+                    &render_data.positions,
+                    padded_len,
+                ))),
+                sizes: storage_buffers
+                    .add(ShaderBuffer::from(padded(&render_data.sizes, padded_len))),
+                colors: storage_buffers
+                    .add(ShaderBuffer::from(padded(&render_data.colors, padded_len))),
+                textures: storage_buffers.add(ShaderBuffer::from(padded(
+                    &render_data.textures,
+                    padded_len,
+                ))),
                 texture,
                 blend_op: render_data.blend_op as u32,
                 src_blend_factor: render_data.src_blend_factor as u32,
@@ -648,9 +726,11 @@ pub fn particle_storage_buffer_update_system(
                     AlphaMode::Premultiplied
                 },
             };
+            // Only reached with live particles (empty sequences without a material skip).
+            render_data.gpu_buffers_empty = false;
 
-            // Create mesh with proper vertex count
-            let vertex_count = particle_count * 6; // 6 vertices per quad
+            // Create mesh with proper vertex count (padded like the buffers)
+            let vertex_count = padded_len * 6; // 6 vertices per quad
             let mut mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
                 RenderAssetUsages::RENDER_WORLD,

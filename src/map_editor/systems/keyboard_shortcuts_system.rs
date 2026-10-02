@@ -330,6 +330,9 @@ pub struct KeyboardShortcutsPlugin;
 
 impl Plugin for KeyboardShortcutsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, keyboard_shortcuts_system);
+        app.add_systems(
+            Update,
+            keyboard_shortcuts_system.run_if(crate::map_editor::map_editor_active),
+        );
     }
 }

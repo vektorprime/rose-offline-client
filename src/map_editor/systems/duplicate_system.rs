@@ -23,7 +23,7 @@ use crate::map_editor::{
     resources::{DuplicateSelectedEvent, EditorAction, EditorMode, MapEditorState, ModelCategory},
     systems::model_placement_system::EditorPlacedObject,
 };
-use crate::render::RoseObjectExtension;
+use crate::render::{rose_object_material, RoseObjectExtension};
 use crate::resources::CurrentZone;
 use crate::zone_loader::ZoneLoaderAsset;
 
@@ -32,8 +32,11 @@ pub struct DuplicateSystemPlugin;
 
 impl Plugin for DuplicateSystemPlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<DuplicateSelectedEvent>()
-            .add_systems(Update, handle_duplicate_event);
+        app.add_message::<DuplicateSelectedEvent>().add_systems(
+            Update,
+            // Only acts on messages, which only the editor writes.
+            handle_duplicate_event.run_if(on_message::<DuplicateSelectedEvent>),
+        );
     }
 }
 
@@ -56,6 +59,7 @@ pub fn handle_duplicate_event(
         &ZoneObjectPart,
         Option<&Mesh3d>,
         Option<&MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
+        Option<&bevy_mesh::MeshTag>,
     )>,
     mut mesh_assets: ResMut<Assets<Mesh>>,
     mut object_materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
@@ -306,6 +310,7 @@ fn duplicate_child_parts(
         &ZoneObjectPart,
         Option<&Mesh3d>,
         Option<&MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
+        Option<&bevy_mesh::MeshTag>,
     )>,
     mesh_assets: &mut Assets<Mesh>,
     object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
@@ -314,7 +319,7 @@ fn duplicate_child_parts(
 ) {
     for child in children.iter() {
         // Try to get part data
-        if let Ok((transform, part, mesh, material)) = part_query.get(child) {
+        if let Ok((transform, part, mesh, material, mesh_tag)) = part_query.get(child) {
             // Create duplicate part
             let mut part_commands = commands.spawn((
                 EditorSelectable,
@@ -351,6 +356,11 @@ fn duplicate_child_parts(
             // Copy or reload material
             if let Some(material_handle) = material {
                 part_commands.insert(material_handle.clone());
+                // A lit part's shared lightmap-page material reads the part's cell from
+                // its MeshTag; without it the copy would show cell 0 of the page.
+                if let Some(mesh_tag) = mesh_tag {
+                    part_commands.insert(mesh_tag.clone());
+                }
             } else if let Some(zd) = zone_data {
                 // Try to load material from zone data
                 load_material_for_part(
@@ -459,9 +469,9 @@ fn load_material_for_part(
         asset_server.load(&material_path)
     };
 
-    // Create material
-    let material = object_materials.add(ExtendedMaterial {
-        base: StandardMaterial {
+    // Create material (forward-rendered, see `rose_object_material`)
+    let material = object_materials.add(rose_object_material(
+        StandardMaterial {
             base_color_texture: Some(base_texture_handle),
             unlit: false,
             double_sided: zsc_material.two_sided,
@@ -478,15 +488,14 @@ fn load_material_for_part(
             },
             ..Default::default()
         },
-        extension: RoseObjectExtension {
+        RoseObjectExtension {
             lightmap_params: Vec3::new(0.0, 0.0, 1.0).extend(0.0),
             lightmap_texture: None,
             specular_texture: None,
-            blink_state: 0, // Default to eyes open
             blood_overlay_texture: None,
             blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
         },
-    });
+    ));
 
     part_commands.insert(MeshMaterial3d(material));
 

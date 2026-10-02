@@ -6191,6 +6191,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
+ "wgpu",
 ]
 
 [[package]]

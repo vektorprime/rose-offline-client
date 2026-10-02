@@ -98,19 +98,45 @@ pub struct ParticleSequence {
     pub finished: bool,
 }
 
+/// Copies keyframe data out of a (cached, shared) PTL file; rose-file-readers'
+/// PTL types do not implement `Clone`.
+fn clone_keyframe_data(data: &PtlKeyframeData) -> PtlKeyframeData {
+    match data {
+        PtlKeyframeData::SizeXY(x, y) => PtlKeyframeData::SizeXY(x.clone(), y.clone()),
+        PtlKeyframeData::Timer(value) => PtlKeyframeData::Timer(value.clone()),
+        PtlKeyframeData::Red(value) => PtlKeyframeData::Red(value.clone()),
+        PtlKeyframeData::Green(value) => PtlKeyframeData::Green(value.clone()),
+        PtlKeyframeData::Blue(value) => PtlKeyframeData::Blue(value.clone()),
+        PtlKeyframeData::Alpha(value) => PtlKeyframeData::Alpha(value.clone()),
+        PtlKeyframeData::ColourRGBA(red, green, blue, alpha) => {
+            PtlKeyframeData::ColourRGBA(red.clone(), green.clone(), blue.clone(), alpha.clone())
+        }
+        PtlKeyframeData::VelocityX(value) => PtlKeyframeData::VelocityX(value.clone()),
+        PtlKeyframeData::VelocityY(value) => PtlKeyframeData::VelocityY(value.clone()),
+        PtlKeyframeData::VelocityZ(value) => PtlKeyframeData::VelocityZ(value.clone()),
+        PtlKeyframeData::VelocityXYZ(x, y, z) => {
+            PtlKeyframeData::VelocityXYZ(x.clone(), y.clone(), z.clone())
+        }
+        PtlKeyframeData::Texture(value) => PtlKeyframeData::Texture(value.clone()),
+        PtlKeyframeData::Rotation(value) => PtlKeyframeData::Rotation(value.clone()),
+    }
+}
+
 impl ParticleSequence {
-    pub fn from(sequence: PtlSequence) -> Self {
+    /// Builds a sequence from a borrowed PTL sequence, so parsed PTL files can be
+    /// cached and shared between spawns (see `EffectCache`).
+    pub fn from_ref(sequence: &PtlSequence) -> Self {
         let mut rng = rand::thread_rng();
 
         // Select key frame start times
         let mut keyframes: Vec<ParticleSequenceKeyframe> = sequence
             .keyframes
-            .into_iter()
+            .iter()
             .map(|keyframe| ParticleSequenceKeyframe {
-                start_time: rng.gen_range(keyframe.start_time),
+                start_time: rng.gen_range(keyframe.start_time.clone()),
                 fade: keyframe.fade,
                 next_fade_keyframe_index: None,
-                data: keyframe.data,
+                data: clone_keyframe_data(&keyframe.data),
             })
             .collect();
         keyframes.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap());
@@ -136,14 +162,14 @@ impl ParticleSequence {
             num_emitted: 0,
             particles: Vec::with_capacity(sequence.num_particles as usize),
             finished: false,
-            emit_rate: sequence.emit_rate,
-            particle_life: sequence.life,
-            emit_radius_x: sequence.emit_radius_x,
-            emit_radius_y: sequence.emit_radius_y,
-            emit_radius_z: sequence.emit_radius_z,
-            gravity_x: sequence.gravity_x,
-            gravity_y: sequence.gravity_y,
-            gravity_z: sequence.gravity_z,
+            emit_rate: sequence.emit_rate.clone(),
+            particle_life: sequence.life.clone(),
+            emit_radius_x: sequence.emit_radius_x.clone(),
+            emit_radius_y: sequence.emit_radius_y.clone(),
+            emit_radius_z: sequence.emit_radius_z.clone(),
+            gravity_x: sequence.gravity_x.clone(),
+            gravity_y: sequence.gravity_y.clone(),
+            gravity_z: sequence.gravity_z.clone(),
             texture_atlas_cols: sequence.texture_atlas_cols,
             texture_atlas_rows: sequence.texture_atlas_rows,
             update_coords: sequence.update_coords,

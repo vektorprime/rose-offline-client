@@ -2,21 +2,38 @@ use super::loading::load_zone;
 use super::spawning::spawn_zone;
 use super::*;
 
+/// `zone_loader_system` state for answering a repeated `LoadZoneEvent` from the zone
+/// already displayed, and for freeing zone assets nothing uses any more.
+#[derive(Default)]
+pub struct ZoneReuseState {
+    /// Key of the most recent successful load; `None` after a failed one.
+    last_loaded: Option<ZoneLoadKey>,
+    /// Zones requested again while displayed. Answered on the next run, the earliest
+    /// an async load can answer, so no new event timing is introduced.
+    pending: Vec<ZoneId>,
+    /// Every zone asset this system added to `Assets<ZoneLoaderAsset>`.
+    loaded_assets: Vec<Handle<ZoneLoaderAsset>>,
+}
+
 pub fn zone_loader_system(
-    mut zone_loader_cache: Local<ZoneLoaderCache>,
     mut loading_zones: Local<Vec<LoadingZone>>,
+    mut zone_reuse: Local<ZoneReuseState>,
     mut load_zone_events: MessageReader<LoadZoneEvent>,
-    mut zone_events: MessageWriter<ZoneEvent>,
     mut zone_loaded_from_vfs_events: MessageWriter<ZoneLoadedFromVfsEvent>,
     zone_load_receiver: ResMut<ZoneLoadChannelReceiver>,
     zone_load_sender: Res<ZoneLoadChannelSender>,
     mut spawn_zone_params: SpawnZoneParams,
-    mut debug_inspector_state: ResMut<DebugInspector>,
+    current_zone: Option<Res<CurrentZone>>,
+    zones: Query<&Zone>,
 ) {
     let _span = info_span!("zone_loader_system").entered();
-    let use_new_terrain = spawn_zone_params.render_config.use_new_terrain;
+    free_unreferenced_zone_assets(
+        &mut zone_reuse.loaded_assets,
+        &mut spawn_zone_params.zone_loader_assets,
+    );
+
     let has_load_events = load_zone_events.len() > 0;
-    let has_loading_zones = !loading_zones.is_empty();
+    let has_loading_zones = !loading_zones.is_empty() || !zone_reuse.pending.is_empty();
 
     // Early return if no zones are loading and no load events to process
     // This prevents unnecessary memory allocations from logging every frame
@@ -34,17 +51,16 @@ pub fn zone_loader_system(
         match zone_asset_result {
             Ok(zone_asset) => {
                 // Remove the zone from the loading queue since it's now received from channel
-                if let Some(pos) = loading_zones
-                    .iter()
-                    .position(|lz| lz.loading_via_async_task && lz.zone_id == Some(zone_id))
-                {
-                    loading_zones.remove(pos);
-                } else {
-                    log::warn!(
-                        "[ZONE LOADER SYSTEM] Could not find zone {} in loading queue to remove",
-                        zone_id.get()
-                    );
-                }
+                let load_key =
+                    if let Some(pos) = loading_zones.iter().position(|lz| lz.zone_id == zone_id) {
+                        Some(loading_zones.remove(pos).load_key)
+                    } else {
+                        log::warn!(
+                            "[ZONE LOADER SYSTEM] Could not find zone {} in loading queue to remove",
+                            zone_id.get()
+                        );
+                        None
+                    };
 
                 // CRITICAL FIX: Add the zone asset to the Assets collection HERE where we have ownership
                 // This allows collision_player_system to access terrain height data
@@ -54,6 +70,9 @@ pub fn zone_loader_system(
                     zone_id.get(),
                     zone_handle
                 );
+                zone_reuse.loaded_assets.push(zone_handle.clone());
+                // A load that timed out of the queue has no key and is never reused.
+                zone_reuse.last_loaded = load_key;
 
                 // Send event with the handle (not the Arc) to zone_loaded_from_vfs_system for spawning
                 zone_loaded_from_vfs_events
@@ -65,25 +84,37 @@ pub fn zone_loader_system(
                     zone_id.get(),
                     e
                 );
-                // Remove the failed loading zone from cache and loading queue
-                let zone_index = zone_id.get() as usize;
-                zone_loader_cache.cache[zone_index] = None;
+                zone_reuse.last_loaded = None;
 
                 // Remove from loading queue
-                if let Some(pos) = loading_zones
-                    .iter()
-                    .position(|lz| lz.loading_via_async_task && lz.zone_id == Some(zone_id))
-                {
+                if let Some(pos) = loading_zones.iter().position(|lz| lz.zone_id == zone_id) {
                     loading_zones.remove(pos);
                 }
             }
         }
     }
 
-    if zone_loader_cache.cache.is_empty() {
-        zone_loader_cache
-            .cache
-            .resize_with(spawn_zone_params.game_data.zone_list.len(), || None);
+    // Answer the zones requested again on the previous run (see below).
+    for zone_id in std::mem::take(&mut zone_reuse.pending) {
+        let load_key = ZoneLoadKey::new(zone_id, &spawn_zone_params);
+        match reusable_zone(&zone_reuse, load_key, current_zone.as_deref(), &zones) {
+            Some(zone_handle) => {
+                log::info!(
+                    "[ZONE LOADER SYSTEM] Zone {} is already displayed and unchanged, reusing its loaded data",
+                    zone_id.get()
+                );
+                zone_loaded_from_vfs_events
+                    .write(ZoneLoadedFromVfsEvent::new(zone_id, zone_handle));
+            }
+            // Replaced or changed since the request: load it like any other zone.
+            None => start_zone_load(
+                zone_id,
+                load_key,
+                &mut loading_zones,
+                &zone_load_sender,
+                &spawn_zone_params,
+            ),
+        }
     }
 
     for event in load_zone_events.read() {
@@ -91,342 +122,149 @@ pub fn zone_loader_system(
         log::info!("[ZONE LOADER SYSTEM DIAGNOSTIC] LoadZoneEvent received: zone_id={}, despawn_other_zones={}",
             event.id.get(), event.despawn_other_zones);
 
-        let zone_index = event.id.get() as usize;
-
-        // Memory tracking: Log cache state
-        let cached_zones = zone_loader_cache
-            .cache
-            .iter()
-            .filter(|z| z.is_some())
-            .count();
-        let spawned_zones = zone_loader_cache
-            .cache
-            .iter()
-            .filter(|z| z.is_some() && z.as_ref().unwrap().spawned_entity.is_some())
-            .count();
-        log::info!(
-            "[MEMORY] Cache state: {} zones cached, {} spawned",
-            cached_zones,
-            spawned_zones
-        );
-
         // CRITICAL FIX: Check for duplicate zone loading to prevent memory leaks
         // and double-spawning of the same zone
-        let is_already_loading = loading_zones.iter().any(|lz| lz.zone_id == Some(event.id));
-        let is_already_loaded = zone_loader_cache
-            .cache
-            .get(zone_index)
-            .map(|c| {
-                c.as_ref()
-                    .map(|cz| cz.spawned_entity.is_some())
-                    .unwrap_or(false)
-            })
-            .unwrap_or(false);
-
+        let is_already_loading = loading_zones.iter().any(|lz| lz.zone_id == event.id)
+            || zone_reuse.pending.contains(&event.id);
         if is_already_loading {
             log::warn!("[ZONE LOADER SYSTEM] Zone {} is already loading via async task, skipping duplicate request",
                 event.id.get());
             continue;
         }
 
-        if is_already_loaded {
-            log::warn!("[ZONE LOADER SYSTEM] Zone {} is already loaded. Consider despawning old instance first.",
-                event.id.get());
-            // Optionally: Despawn the old zone here if event.despawn_other_zones is true
-            if event.despawn_other_zones {
-                if let Some(Some(cached)) = zone_loader_cache.cache.get(zone_index) {
-                    if let Some(entity) = cached.spawned_entity {
-                        spawn_zone_params.commands.entity(entity).despawn();
-                    }
-                }
-                zone_loader_cache.cache[zone_index] = None;
-            } else {
-                // Skip if already loaded and not despawning
-                continue;
-            }
-        }
-
-        if zone_loader_cache
-            .cache
-            .get(zone_index)
-            .map(|c| c.is_none())
-            .unwrap_or(true)
-        {
-            // WORKAROUND: Load zone directly from VFS without using AssetServer
-            let zone_id = event.id;
-            let vfs = spawn_zone_params.vfs_resource.vfs.clone();
-            let base_path = spawn_zone_params.vfs_resource.base_path.clone();
-            let tx = zone_load_sender.0.clone();
-
-            // Check if pool is initialized and get reference
-            let pool = match AsyncComputeTaskPool::try_get() {
-                Some(pool) => pool,
-                None => {
-                    log::error!("[ZONE LOADER SYSTEM] AsyncComputeTaskPool is NOT initialized! Cannot spawn async task!");
-                    log::error!("[ZONE LOADER SYSTEM] This is likely why zones are not loading!");
-                    // DO NOT spawn the task - skip this zone and continue to next
-                    continue;
-                }
-            };
-
-            // Spawn async task to load zone using AsyncComputeTaskPool
-            let task = pool.spawn(async move {
-                match load_zone(zone_id, &vfs, &base_path, use_new_terrain).await {
-                    Ok(zone_asset) => {
-                        if let Err(e) = tx.send((zone_id, Ok(zone_asset))) {
-                            log::error!("[ZONE LOADER DIRECT TASK] Failed to send zone through channel: {:?}", e);
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("[ZONE LOADER DIRECT TASK] Failed to load zone {}: {:?}", zone_id.get(), e);
-                        if let Err(send_err) = tx.send((zone_id, Err(e))) {
-                            log::error!("[ZONE LOADER DIRECT TASK] Failed to send error through channel: {:?}", send_err);
-                        }
-                    }
-                }
-            });
-
-            // Detach the task so it runs in the background
-            task.detach();
-
-            // Add zone to loading queue to track that it's being loaded
-            // This ensures we know the zone is in progress even though spawning is handled by zone_loaded_from_vfs_system
-            loading_zones.push(LoadingZone {
-                state: LoadingZoneState::Loading,
-                handle: Handle::<ZoneLoaderAsset>::default(),
-                despawn_other_zones: event.despawn_other_zones,
-                zone_assets: Vec::default(),
-                loading_via_async_task: true,
-                zone_id: Some(zone_id),
-                loading_start_time: Instant::now(), // Initialize start time
-                assets_cleared: false,
-            });
-        } else if let Some(zone_entity) = zone_loader_cache.cache[zone_index]
-            .as_ref()
-            .and_then(|cached_zone| cached_zone.spawned_entity)
-        {
-            // Zone is already spawned
-            zone_events.write(ZoneEvent::Loaded(event.id));
-            debug_inspector_state.entity = Some(zone_entity);
+        let load_key = ZoneLoadKey::new(event.id, &spawn_zone_params);
+        if reusable_zone(&zone_reuse, load_key, current_zone.as_deref(), &zones).is_some() {
+            // Same-zone respawn/teleport, character select back to login, ...: the zone
+            // is displayed, so zone_loaded_from_vfs_system would discard a new load
+            // ("already exists") and only report it loaded. Skip reading it again.
+            zone_reuse.pending.push(event.id);
             continue;
-        } else {
-            // Zone cached but not spawned, using cached handle
-            let cached_zone = zone_loader_cache.cache[zone_index].as_ref().unwrap();
-
-            loading_zones.push(LoadingZone {
-                state: LoadingZoneState::Loading,
-                handle: cached_zone.data_handle.clone(),
-                despawn_other_zones: event.despawn_other_zones,
-                zone_assets: Vec::default(),
-                loading_via_async_task: false,
-                zone_id: None,
-                loading_start_time: Instant::now(), // Initialize start time
-                assets_cleared: false,
-            });
         }
+
+        start_zone_load(
+            event.id,
+            load_key,
+            &mut loading_zones,
+            &zone_load_sender,
+            &spawn_zone_params,
+        );
     }
 
-    let mut index = 0;
-    while index < loading_zones.len() {
-        let loading_zone = &mut loading_zones[index];
+    // Async loads stay queued until their result arrives through the channel
+    loading_zones.retain(|loading_zone| {
+        // Check for timeout (30 seconds)
+        let timed_out = loading_zone.loading_start_time.elapsed() > Duration::from_secs(30);
+        if timed_out {
+            log::error!(
+                "[ZONE LOADER SYSTEM] Zone {} loading timeout after 30s, removing from queue",
+                loading_zone.zone_id.get()
+            );
+        }
+        !timed_out
+    });
+}
 
-        match loading_zone.state {
-            LoadingZoneState::Loading => {
-                // Zones loaded via async task should stay in queue and wait for channel
-                if loading_zone.loading_via_async_task {
-                    let zone_path = loading_zone
-                        .handle
-                        .path()
-                        .map(|p| p.to_string())
-                        .unwrap_or_else(|| "unknown".to_string());
+/// Starts loading `zone_id` on the AsyncComputeTaskPool. The result arrives through
+/// the zone load channel.
+fn start_zone_load(
+    zone_id: ZoneId,
+    load_key: ZoneLoadKey,
+    loading_zones: &mut Vec<LoadingZone>,
+    zone_load_sender: &ZoneLoadChannelSender,
+    spawn_zone_params: &SpawnZoneParams<'_, '_>,
+) {
+    // WORKAROUND: Load zone directly from VFS without using AssetServer
+    let vfs = spawn_zone_params.vfs_resource.vfs.clone();
+    let base_path = spawn_zone_params.vfs_resource.base_path.clone();
+    let use_new_terrain = load_key.use_new_terrain;
+    // The load task builds terrain meshes with it (see load_zone).
+    let terrain_noise = Arc::new((*spawn_zone_params.terrain_noise).clone());
+    let tx = zone_load_sender.0.clone();
 
-                    // Check for timeout (30 seconds)
-                    if loading_zone.loading_start_time.elapsed() > Duration::from_secs(30) {
-                        log::error!("[ZONE LOADER SYSTEM] Zone {} loading timeout after 30s, removing from queue", zone_path);
+    // Check if pool is initialized and get reference
+    let pool = match AsyncComputeTaskPool::try_get() {
+        Some(pool) => pool,
+        None => {
+            log::error!("[ZONE LOADER SYSTEM] AsyncComputeTaskPool is NOT initialized! Cannot spawn async task!");
+            log::error!("[ZONE LOADER SYSTEM] This is likely why zones are not loading!");
+            // DO NOT spawn the task - skip this zone
+            return;
+        }
+    };
 
-                        // MEMORY LEAK FIX: Clear asset handles before removing timed-out zone
-                        loading_zone.clear_asset_handles();
-
-                        loading_zones.remove(index);
-                        continue;
-                    }
-
-                    index += 1;
-                    continue;
-                } else {
-                    // Zone is loading via AssetServer - check LoadState
-                    let zone_path = loading_zone
-                        .handle
-                        .path()
-                        .map(|p| p.to_string())
-                        .unwrap_or_else(|| "unknown".to_string());
-
-                    match spawn_zone_params
-                        .asset_server
-                        .get_load_state(&loading_zone.handle)
-                    {
-                        Some(LoadState::NotLoaded) | Some(LoadState::Loading) => {
-                            index += 1;
-                        }
-                        Some(LoadState::Loaded) => {
-                            loading_zone.state = LoadingZoneState::Spawned;
-                            index += 1;
-                        }
-                        None | Some(LoadState::Failed(_)) => {
-                            log::warn!("[ZONE LOADER SYSTEM] Zone {} failed to load (LoadState: {:?}), removing from queue",
-                                zone_path, spawn_zone_params.asset_server.get_load_state(&loading_zone.handle));
-
-                            // MEMORY LEAK FIX: Clear asset handles before removing failed zone
-                            loading_zone.clear_asset_handles();
-
-                            loading_zones.remove(index);
-                        }
-                    }
+    // Spawn async task to load zone using AsyncComputeTaskPool
+    let task = pool.spawn(async move {
+        match load_zone(zone_id, vfs, base_path, use_new_terrain, terrain_noise).await {
+            Ok(zone_asset) => {
+                if let Err(e) = tx.send((zone_id, Ok(zone_asset))) {
+                    log::error!("[ZONE LOADER DIRECT TASK] Failed to send zone through channel: {:?}", e);
                 }
             }
-
-            LoadingZoneState::Spawned => {
-                // DIAGNOSTIC: Zone transitioning to Spawned state
-                log::info!("[ZONE LOADER SYSTEM DIAGNOSTIC] LoadingZone transitioning to Spawned state for zone");
-
-                let zone_handle = loading_zone.handle.clone();
-
-                // Get zone_id from handle by looking up in cache
-                let zone_id = if zone_loader_cache
-                    .cache
-                    .iter()
-                    .any(|z| {
-                        z.as_ref()
-                            .map(|z| z.data_handle == zone_handle)
-                            .unwrap_or(false)
-                    })
-                {
-                    zone_loader_cache
-                        .cache
-                        .iter()
-                        .enumerate()
-                        .find_map(|(idx, z)| {
-                            z.as_ref().and_then(|cached| {
-                                if cached.data_handle == zone_handle {
-                                    Some(ZoneId::new(idx as u16).unwrap())
-                                } else {
-                                    None
-                                }
-                            })
-                        })
-                        .unwrap()
-                } else {
-                    log::error!("[ZONE LOADER SYSTEM] Cannot find zone_id for handle");
-
-                    // MEMORY LEAK FIX: Clear asset handles before removing zone with error
-                    loading_zone.clear_asset_handles();
-
-                    loading_zones.remove(index);
-                    continue;
-                };
-
-                // Despawn other zones first
-                if loading_zone.despawn_other_zones {
-                    // Clear the VFS file cache when switching zones to free memory
-                    // This removes all cached DDS textures and model files from memory
-                    clear_vfs_file_cache();
-
-                    for cached_zone in zone_loader_cache
-                        .cache
-                        .iter_mut()
-                        .filter_map(|x| x.as_mut())
-                    {
-                        if let Some(spawned_entity) = cached_zone.spawned_entity.take() {
-                            log::warn!("[ZONE LOADER SYSTEM DIAGNOSTIC] ✗ Despawning existing zone entity: entity={:?}", spawned_entity);
-                            spawn_zone_params.commands.entity(spawned_entity).despawn();
-                            spawn_zone_params.memory_tracking.log_entity_despawned();
-                        }
-                    }
-
-                    spawn_zone_params.commands.remove_resource::<CurrentZone>();
-                }
-
-                // DIAGNOSTIC: About to spawn zone from zone_loader_system
-                log::info!(
-                    "[ZONE LOADER SYSTEM DIAGNOSTIC] About to call spawn_zone for zone_id={}",
-                    zone_id.get()
-                );
-
-                // Get zone_data and spawn
-                // The asset is temporarily removed from the Assets collection so spawn_zone
-                // can be called without borrow conflicts, then re-inserted immediately after.
-                let zone_handle_clone = zone_handle.clone();
-                let spawn_result = match spawn_zone_params
-                    .zone_loader_assets
-                    .remove(&zone_handle_clone)
-                {
-                    Some(zone_data) => {
-                        let result = spawn_zone(&mut spawn_zone_params, &zone_data);
-                        spawn_zone_params
-                            .zone_loader_assets
-                            .insert(zone_handle_clone.id(), zone_data);
-                        Some(result)
-                    }
-                    None => {
-                        log::warn!("[ZONE LOADER SYSTEM] Zone data not available!");
-                        None::<Result<(Entity, Vec<UntypedHandle>), anyhow::Error>>
-                    }
-                };
-
-                if let Some(result) = spawn_result {
-                    match result {
-                        Ok((zone_entity, zone_loading_assets)) => {
-                            // DIAGNOSTIC: Zone entity successfully spawned from zone_loader_system
-                            log::info!("[ZONE LOADER SYSTEM DIAGNOSTIC] ✓ Zone entity created in zone_loader_system: entity={:?}, zone_id={}",
-                                zone_entity, zone_id.get());
-
-                            // Check if assets are empty before moving
-                            let assets_empty = zone_loading_assets.is_empty();
-
-                            // Update cache with spawned entity
-                            let zone_index = zone_id.get() as usize;
-                            if let Some(cached_zone) = zone_loader_cache.cache[zone_index].as_mut()
-                            {
-                                cached_zone.spawned_entity = Some(zone_entity);
-                            }
-
-                            loading_zone.zone_assets = zone_loading_assets;
-                            loading_zone.state = LoadingZoneState::Spawned;
-
-                            // CRITICAL FIX: Set CurrentZone resource (was missing in Bevy 0.13 implementation)
-                            // This matches Bevy 0.11 behavior (lines 482-485)
-                            spawn_zone_params.commands.insert_resource(CurrentZone {
-                                id: zone_id,
-                                handle: zone_handle_clone,
-                            });
-
-                            if assets_empty {
-                                // MEMORY LEAK FIX: Clear asset handles before removing zone
-                                loading_zone.clear_asset_handles();
-
-                                zone_events.write(ZoneEvent::Loaded(zone_id));
-                                loading_zones.remove(index);
-                            } else {
-                                index += 1;
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("[ZONE LOADER SYSTEM] Failed to spawn zone: {:?}", e);
-
-                            // DIAGNOSTIC: Zone entity spawn failed in zone_loader_system
-                            log::error!("[ZONE LOADER SYSTEM DIAGNOSTIC] ✗ spawn_zone FAILED in zone_loader_system for zone_id={}: error={:?}",
-                                zone_id.get(), e);
-
-                            // MEMORY LEAK FIX: Clear asset handles before removing zone on failure
-                            loading_zone.clear_asset_handles();
-
-                            loading_zones.remove(index);
-                        }
-                    }
+            Err(e) => {
+                log::error!("[ZONE LOADER DIRECT TASK] Failed to load zone {}: {:?}", zone_id.get(), e);
+                if let Err(send_err) = tx.send((zone_id, Err(e))) {
+                    log::error!("[ZONE LOADER DIRECT TASK] Failed to send error through channel: {:?}", send_err);
                 }
             }
         }
+    });
+
+    // Detach the task so it runs in the background
+    task.detach();
+
+    // Add zone to loading queue to track that it's being loaded
+    // This ensures we know the zone is in progress even though spawning is handled by zone_loaded_from_vfs_system
+    loading_zones.push(LoadingZone {
+        zone_id,
+        loading_start_time: Instant::now(),
+        load_key,
+    });
+}
+
+/// The displayed zone's data handle if a new load of `load_key` can be skipped:
+/// a Zone entity with that id exists (zone_loaded_from_vfs_system then only reports
+/// it loaded, whatever data it gets), and the most recent load was of this zone with
+/// nothing it depends on changed since.
+fn reusable_zone(
+    zone_reuse: &ZoneReuseState,
+    load_key: ZoneLoadKey,
+    current_zone: Option<&CurrentZone>,
+    zones: &Query<&Zone>,
+) -> Option<Handle<ZoneLoaderAsset>> {
+    if zone_reuse.last_loaded != Some(load_key) {
+        return None;
     }
+    let current_zone = current_zone.filter(|current_zone| current_zone.id == load_key.zone_id)?;
+    zones
+        .iter()
+        .any(|zone| zone.id == load_key.zone_id)
+        .then(|| current_zone.handle.clone())
+}
+
+/// `Assets<ZoneLoaderAsset>` is initialised as a plain resource (no asset tracking
+/// systems run for it), so a zone asset is not freed when its last handle drops.
+/// Free each zone loaded here once `loaded_assets` holds its only handle: every user
+/// (CurrentZone, events, spawning) reaches zone data through a strong handle.
+fn free_unreferenced_zone_assets(
+    loaded_assets: &mut Vec<Handle<ZoneLoaderAsset>>,
+    zone_loader_assets: &mut ResMut<Assets<ZoneLoaderAsset>>,
+) {
+    loaded_assets.retain(|handle| {
+        let Handle::Strong(strong_handle) = handle else {
+            return false;
+        };
+        if Arc::strong_count(strong_handle) > 1 {
+            return true;
+        }
+        if let Some(zone_asset) = zone_loader_assets.remove_untracked(handle) {
+            // Dropping a zone's block data takes a moment; keep it off the main thread.
+            match AsyncComputeTaskPool::try_get() {
+                Some(pool) => pool.spawn(async move { drop(zone_asset) }).detach(),
+                None => drop(zone_asset),
+            }
+        }
+        false
+    });
 }
 
 /// System to handle spawning zones that were loaded from VFS via async tasks
@@ -435,7 +273,9 @@ pub fn zone_loader_system(
 /// CRITICAL FIX: Deduplicate events and prevent spawning already-loaded zones
 pub fn zone_loaded_from_vfs_system(
     mut events: MessageReader<ZoneLoadedFromVfsEvent>,
-    mut zone_loader_cache: Local<ZoneLoaderCache>,
+    // Zone entities spawned here and not despawned yet. Holds no zone data handle,
+    // so a replaced zone's data can be freed (see zone_loader_system).
+    mut spawned_zones: Local<Vec<Entity>>,
     mut zone_events: MessageWriter<ZoneEvent>,
     mut debug_inspector_state: ResMut<DebugInspector>,
     mut spawn_zone_params: SpawnZoneParams,
@@ -446,13 +286,6 @@ pub fn zone_loaded_from_vfs_system(
     let event_count = events.len();
     if event_count == 0 {
         return;
-    }
-
-    // Initialize cache if empty
-    if zone_loader_cache.cache.is_empty() {
-        zone_loader_cache
-            .cache
-            .resize_with(spawn_zone_params.game_data.zone_list.len(), || None);
     }
 
     // CRITICAL FIX: Check for already-loaded zones to prevent duplicates
@@ -490,27 +323,15 @@ pub fn zone_loaded_from_vfs_system(
 
         processed_count += 1;
 
-        let zone_index = event.zone_id.get() as usize;
-
         // CRITICAL FIX: Handle despawn_other_zones flag (matching AssetServer path behavior)
         // Default to true to match the typical behavior when loading a new zone
         let despawn_other_zones = true;
 
         if despawn_other_zones {
-            // Clear the VFS file cache when switching zones to free memory
-            // This removes all cached DDS textures and model files from memory
-            clear_vfs_file_cache();
-
-            for cached_zone in zone_loader_cache
-                .cache
-                .iter_mut()
-                .filter_map(|x| x.as_mut())
-            {
-                if let Some(spawned_entity) = cached_zone.spawned_entity.take() {
-                    log::warn!("[ZONE LOADED FROM VFS DIAGNOSTIC] ✗ Despawning existing zone entity: entity={:?}", spawned_entity);
-                    spawn_zone_params.commands.entity(spawned_entity).despawn();
-                    spawn_zone_params.memory_tracking.log_entity_despawned();
-                }
+            for spawned_entity in spawned_zones.drain(..) {
+                log::warn!("[ZONE LOADED FROM VFS DIAGNOSTIC] ✗ Despawning existing zone entity: entity={:?}", spawned_entity);
+                spawn_zone_params.commands.entity(spawned_entity).despawn();
+                spawn_zone_params.memory_tracking.log_entity_despawned();
             }
 
             spawn_zone_params.commands.remove_resource::<CurrentZone>();
@@ -523,7 +344,7 @@ pub fn zone_loaded_from_vfs_system(
         // Spawn the zone using the asset from the collection (via handle)
         // The asset is temporarily removed from the Assets collection so spawn_zone
         // can be called without borrow conflicts, then re-inserted immediately after.
-        let zone_data = match spawn_zone_params.zone_loader_assets.remove(&zone_handle) {
+        let mut zone_data = match spawn_zone_params.zone_loader_assets.remove(&zone_handle) {
             Some(asset) => asset,
             None => {
                 log::error!(
@@ -533,19 +354,15 @@ pub fn zone_loaded_from_vfs_system(
                 continue;
             }
         };
-        let spawn_result = spawn_zone(&mut spawn_zone_params, &zone_data);
+        let spawn_result = spawn_zone(&mut spawn_zone_params, &mut zone_data);
         spawn_zone_params
             .zone_loader_assets
             .insert(zone_handle.id(), zone_data);
 
         match spawn_result {
             Ok((entity, _zone_assets)) => {
-                // CRITICAL FIX: Cache VFS-loaded zones with the REAL handle (not placeholder)
-                // The spawned_entity is what matters for despawning; handle is used for terrain height lookups
-                zone_loader_cache.cache[zone_index] = Some(CachedZone {
-                    data_handle: zone_handle.clone(),
-                    spawned_entity: Some(entity),
-                });
+                // The spawned_entity is what matters for despawning; the handle is kept by CurrentZone
+                spawned_zones.push(entity);
 
                 // CRITICAL FIX: Set CurrentZone resource with the REAL handle
                 // This allows collision_player_system to access zone data via zone_loader_assets.get(&current_zone.handle)

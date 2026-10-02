@@ -1,13 +1,18 @@
 use bevy::prelude::*;
 
 /// Resource for global wind sway settings that can be tweaked at runtime
-#[derive(Resource, Debug, Clone, Reflect)]
+#[derive(Resource, Debug, Clone, PartialEq, Reflect)]
 #[reflect(Resource, Default)]
 pub struct WindSwaySettings {
     /// Whether wind sway is enabled
     pub enabled: bool,
-    /// Global wind intensity multiplier (affects all vegetation)
+    /// User multiplier on the wind-driven intensity (affects all vegetation).
+    /// 1.0 = sway exactly as driven by the current wind.
     pub global_intensity: f32,
+    /// Wind-driven intensity, derived from the wind speed every frame by
+    /// `sync_vegetation_wind_system`. Runtime state, not a user setting: kept
+    /// apart from `global_intensity` so the wind does not overwrite the slider.
+    pub wind_intensity: f32,
     /// Speed multiplier for grass sway
     pub grass_speed: f32,
     /// Amplitude multiplier for grass sway (radians)
@@ -24,7 +29,9 @@ impl Default for WindSwaySettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            global_intensity: 0.1,
+            global_intensity: 1.0,
+            // Used until the first wind sync (and outside the game state)
+            wind_intensity: 0.1,
             grass_speed: 2.0,
             grass_amplitude: 0.2, // ~11 degrees - clearly visible
             tree_speed: 1.5,
@@ -154,11 +161,15 @@ pub fn wind_sway_system(
     let cull_dist_sq = 120.0 * 120.0;
 
     let time_seconds = time.elapsed_secs();
+    let settings = &*settings;
+    let intensity = settings.global_intensity * settings.wind_intensity;
 
-    for (wind_sway, global_transform, mut transform) in query.iter_mut() {
+    // Each entity only reads shared inputs and writes its own Transform (no RNG,
+    // no cross-entity state), so iteration order cannot affect the result.
+    query.par_iter_mut().for_each(|(wind_sway, global_transform, mut transform)| {
         if let Some(camera_pos) = camera_pos {
             if global_transform.translation().distance_squared(camera_pos) > cull_dist_sq {
-                continue;
+                return;
             }
         }
 
@@ -180,7 +191,7 @@ pub fn wind_sway_system(
 
         // Combine waves with settings
         let combined_sway =
-            (primary_wave + secondary_wave + slow_wave) * amplitude * settings.global_intensity;
+            (primary_wave + secondary_wave + slow_wave) * amplitude * intensity;
 
         // Create rotation quaternion around the sway axis
         let sway_rotation = Quat::from_axis_angle(wind_sway.sway_axis, combined_sway);
@@ -201,14 +212,14 @@ pub fn wind_sway_system(
             // Tree leaves sway more gently with slight flutter
             let flutter = (time_seconds * 8.0 + wind_sway.phase_offset).sin()
                 * 0.02
-                * settings.global_intensity;
+                * intensity;
             let flutter_rot = Quat::from_axis_angle(Vec3::Y, flutter);
             let new_rotation = wind_sway.base_rotation * sway_rotation * flutter_rot;
             if transform.rotation != new_rotation {
                 transform.rotation = new_rotation;
             }
         }
-    }
+    });
 }
 
 /// Plugin for vegetation wind sway effects (grass, trees, leaves)

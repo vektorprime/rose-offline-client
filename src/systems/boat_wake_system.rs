@@ -272,7 +272,12 @@ pub fn boat_wake_update_system(
         let current_scale = particle.initial_scale * (1.0 + life_t * 0.5);
         transform.scale = Vec3::splat(current_scale);
 
-        material_handle.0 = material_for_alpha(&wake_assets.wake_materials, current_alpha);
+        // Swap only when the alpha bucket changes: assigning through Mut flags
+        // Changed<MeshMaterial3d>, which re-specializes the particle every frame.
+        let wanted = material_for_alpha(&wake_assets.wake_materials, current_alpha);
+        if material_handle.0 != wanted {
+            material_handle.0 = wanted;
+        }
     }
 
     for (entity, mut particle, mut transform, mut material_handle) in spray_query.iter_mut() {
@@ -291,6 +296,9 @@ pub fn boat_wake_update_system(
         let current_scale = particle.initial_scale * (1.0 + life_t * 0.35);
         transform.scale = Vec3::splat(current_scale);
 
-        material_handle.0 = material_for_alpha(&wake_assets.spray_materials, current_alpha);
+        let wanted = material_for_alpha(&wake_assets.spray_materials, current_alpha);
+        if material_handle.0 != wanted {
+            material_handle.0 = wanted;
+        }
     }
 }

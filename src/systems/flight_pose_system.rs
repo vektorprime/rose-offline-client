@@ -6,16 +6,24 @@
 //! - Toe-down rotation on the feet
 //! - Ragdoll "hanging from wings" effect:
 //!   - Body slightly lowered (simulating hanging from wings)
-//!   - Arms dangling downward
-//!   - Legs hanging naturally with slight knee bend
+//!   - Arms dangling straight down instead of swinging back with the lean
+//!   - Legs hanging slightly back
 //!   - Head tilted up to look forward while hanging
 //! - Pose only activates after the character is airborne (current_speed > 0.1)
+//!
+//! The pose is applied to the skeleton joints (`SkinnedMesh::joints`): the body,
+//! arms and feet model parts are GPU-skinned, so their own `Transform` is ignored
+//! when rendering and only the joints move them. The joints are written by the
+//! skeletal animation every frame, so the pose is re-applied on top of the freshly
+//! animated skeleton each frame and taken off again before the next animation pass:
+//! - `flight_pose_blend_update_system` (Update) restores the un-posed joints and
+//!   advances `FlightState::pose_blend`.
+//! - `flight_pose_system` (PostUpdate, after `RoseAnimationSystem`, before
+//!   `TransformSystems::Propagate`) applies the blended pose.
 
-use bevy::prelude::*;
+use bevy::{mesh::skinning::SkinnedMesh, prelude::*};
 
-use crate::components::{
-    CharacterModel, CharacterModelPart, FacingDirection, FlightState, PlayerCharacter,
-};
+use crate::components::{FlightState, PlayerCharacter};
 
 /// Forward lean angle for flight pose in radians (~17 degrees)
 const FLIGHT_PITCH_ANGLE: f32 = 0.3;
@@ -33,221 +41,224 @@ const AIRBORNE_SPEED_THRESHOLD: f32 = 0.1;
 // Ragdoll Hanging Pose Constants
 // ============================================
 
-/// Body downward translation for hanging effect (in local units)
+/// Body downward translation for hanging effect (in meters)
 /// Simulates the body hanging from the wings attached at shoulder blades
 const RAGDOLL_BODY_HANG_OFFSET: f32 = -0.08;
 
-/// Arms dangling rotation angle in radians (~45 degrees down)
-const RAGDOLL_ARMS_DANGLE_ANGLE: f32 = 0.785;
+/// Arms pitch in radians. 0 = the arms keep their animated orientation, so they
+/// dangle straight down instead of swinging back with the body's forward lean.
+const RAGDOLL_ARMS_DANGLE_ANGLE: f32 = 0.0;
 
-/// Legs hanging rotation at hips in radians (~15 degrees back)
+/// Legs hanging back at the hips in radians (~15 degrees back)
 const RAGDOLL_LEGS_HANG_ANGLE: f32 = 0.26;
 
 /// Head tilt-up angle in radians (~10 degrees up)
 /// Character looks forward while hanging from wings
 const RAGDOLL_HEAD_TILT_ANGLE: f32 = 0.175;
 
-/// System that applies a flight pose to the player character model when flying.
-///
-/// When flying and airborne:
-/// - Applies a forward pitch rotation (lean forward) to visual model parts only
-/// - Applies toe-down rotation to feet
-/// - Applies ragdoll "hanging from wings" pose:
-///   - Body lowered slightly (hanging effect)
-///   - Arms dangling downward
-///   - Legs hanging naturally
-///   - Head tilted up to look forward
-/// - Smoothly interpolates to the flight pose
-///
-/// When flight ends or character is not yet airborne:
-/// - Smoothly returns to the original rotation and position
-///
-/// This system applies rotations to CharacterModel parts (Body, Feet, etc.) rather than
-/// the player root transform. This ensures the flight pose is visual-only and doesn't
-/// affect movement direction (which comes from FacingDirection and camera).
-pub fn flight_pose_system(
-    time: Res<Time>,
-    player_query: Query<(&FlightState, &FacingDirection, &CharacterModel), With<PlayerCharacter>>,
-    mut body_transforms: Query<&mut Transform, (With<CharacterModel>, Without<PlayerCharacter>)>,
+// ============================================
+// Skeleton
+// ============================================
+
+/// Joint indices, identical in the male and female skeletons
+/// (3DDATA/AVATAR/MALE.ZMD, FEMALE.ZMD). Pelvis and head match the original
+/// client's BONE_IDX_PELVIS / BONE_IDX_HEAD.
+const BONE_PELVIS: usize = 0;
+const BONE_HEAD: usize = 4;
+const BONE_LEFT_UPPER_ARM: usize = 6;
+const BONE_RIGHT_UPPER_ARM: usize = 10;
+const BONE_LEFT_THIGH: usize = 13;
+const BONE_LEFT_FOOT: usize = 15;
+const BONE_RIGHT_THIGH: usize = 17;
+const BONE_RIGHT_FOOT: usize = 19;
+
+/// Parent of each skeleton bone (dummy bones excluded). The pelvis is the root,
+/// parented to the character entity.
+const SKELETON_PARENTS: [usize; 21] = [
+    0, 0, 1, 2, 3, 3, 5, 6, 7, 3, 9, 10, 11, 0, 13, 14, 15, 0, 17, 18, 19,
+];
+const SKELETON_BONE_COUNT: usize = SKELETON_PARENTS.len();
+
+/// Posed bones and their pitch, ancestors first. Each pitch is a rotation about
+/// the character's lateral axis (character space: +Y up, +Z forward, +X lateral)
+/// relative to the bone's animated orientation. Positive pitches forward: the top
+/// of the part moves forward and down, a downward limb swings back, toes go down.
+const POSED_BONES: [(usize, f32); 8] = [
+    (BONE_PELVIS, FLIGHT_PITCH_ANGLE),
+    (BONE_HEAD, -RAGDOLL_HEAD_TILT_ANGLE),
+    (BONE_LEFT_UPPER_ARM, RAGDOLL_ARMS_DANGLE_ANGLE),
+    (BONE_RIGHT_UPPER_ARM, RAGDOLL_ARMS_DANGLE_ANGLE),
+    (BONE_LEFT_THIGH, RAGDOLL_LEGS_HANG_ANGLE),
+    (BONE_LEFT_FOOT, TOE_DOWN_ANGLE),
+    (BONE_RIGHT_THIGH, RAGDOLL_LEGS_HANG_ANGLE),
+    (BONE_RIGHT_FOOT, TOE_DOWN_ANGLE),
+];
+
+/// Joints posed by `flight_pose_system` this frame: (joint, un-posed, posed)
+/// local transforms. Restored before the next skeletal animation pass so the
+/// pose never accumulates (an animation that is finished or still loading does
+/// not rewrite the joints) and never leaks into an animation blend (which starts
+/// from the joints' current transforms).
+#[derive(Component, Default)]
+pub struct FlightPoseRestore {
+    joints: Vec<(Entity, Transform, Transform)>,
+}
+
+/// Puts back the un-posed joint transforms, unless something else (the skeletal
+/// animation, a model respawn) has written the joint since it was posed.
+fn restore_unposed_joints(
+    restore: &mut FlightPoseRestore,
+    query_transform: &mut Query<&mut Transform>,
 ) {
-    let delta_time = time.delta_secs();
-
-    for (flight_state, _facing_direction, character_model) in player_query.iter() {
-        // Check if character is airborne (actually moving in flight)
-        // Pose should only apply after lift-off, not just when flight mode is toggled
-        let is_airborne =
-            flight_state.is_flying && flight_state.current_speed > AIRBORNE_SPEED_THRESHOLD;
-
-        if is_airborne {
-            // Flying and airborne - blend towards full flight pose
-            // Get current pose blend (we'll update it on FlightState in a separate query)
-            let pose_blend = flight_state.pose_blend;
-            let blend_factor = POSE_BLEND_SPEED * delta_time;
-
-            // Calculate target pose blend
-            let _target_blend = (pose_blend + POSE_BLEND_SPEED * delta_time).min(1.0);
-
-            // ============================================
-            // BODY: Forward lean + hanging effect
-            // ============================================
-            if let Some(body_entities) =
-                get_model_part_entities(character_model, CharacterModelPart::Body)
-            {
-                for &body_entity in body_entities {
-                    if let Ok(mut transform) = body_transforms.get_mut(body_entity) {
-                        // Calculate the flight pitch rotation (forward lean)
-                        let flight_pitch = Quat::from_rotation_x(-FLIGHT_PITCH_ANGLE);
-
-                        // Interpolate rotation
-                        transform.rotation = transform.rotation.slerp(flight_pitch, blend_factor);
-
-                        // Apply hanging effect - lower body slightly
-                        // This simulates the character hanging from their wings
-                        let target_translation = Vec3::new(0.0, RAGDOLL_BODY_HANG_OFFSET, 0.0);
-                        transform.translation = transform
-                            .translation
-                            .lerp(target_translation, blend_factor * 0.5);
-                    }
-                }
-            }
-
-            // ============================================
-            // HANDS/ARMS: Dangling downward (ragdoll style)
-            // ============================================
-            if let Some(hands_entities) =
-                get_model_part_entities(character_model, CharacterModelPart::Hands)
-            {
-                for &hands_entity in hands_entities {
-                    if let Ok(mut transform) = body_transforms.get_mut(hands_entity) {
-                        // Arms dangle down - rotate around X-axis to point downward
-                        // Combined with forward lean for natural hanging pose
-                        let arm_dangle = Quat::from_rotation_x(RAGDOLL_ARMS_DANGLE_ANGLE);
-                        let flight_pitch = Quat::from_rotation_x(-FLIGHT_PITCH_ANGLE * 0.5);
-                        let combined_rotation = flight_pitch * arm_dangle;
-
-                        transform.rotation =
-                            transform.rotation.slerp(combined_rotation, blend_factor);
-                    }
-                }
-            }
-
-            // ============================================
-            // FEET/LEGS: Hanging naturally with toe-down
-            // ============================================
-            if let Some(feet_entities) =
-                get_model_part_entities(character_model, CharacterModelPart::Feet)
-            {
-                for &feet_entity in feet_entities {
-                    if let Ok(mut transform) = body_transforms.get_mut(feet_entity) {
-                        // Legs hang with slight back angle (like dangling from a bar)
-                        // Combined with toe-down rotation
-                        let leg_hang = Quat::from_rotation_x(-RAGDOLL_LEGS_HANG_ANGLE);
-                        let toe_down = Quat::from_rotation_x(TOE_DOWN_ANGLE);
-                        let combined_rotation = leg_hang * toe_down;
-
-                        transform.rotation =
-                            transform.rotation.slerp(combined_rotation, blend_factor);
-                    }
-                }
-            }
-
-            // ============================================
-            // HEAD: Tilt up to look forward while hanging
-            // ============================================
-            if let Some(head_entities) =
-                get_model_part_entities(character_model, CharacterModelPart::Head)
-            {
-                for &head_entity in head_entities {
-                    if let Ok(mut transform) = body_transforms.get_mut(head_entity) {
-                        // Head tilts up to look forward while body hangs
-                        let head_tilt = Quat::from_rotation_x(RAGDOLL_HEAD_TILT_ANGLE);
-                        transform.rotation = transform.rotation.slerp(head_tilt, blend_factor);
-                    }
-                }
-            }
-        } else {
-            // Not airborne - blend back to normal pose
-            let pose_blend = flight_state.pose_blend;
-
-            if pose_blend > 0.01 {
-                let blend_factor = POSE_BLEND_SPEED * delta_time;
-
-                // Blend back to identity rotation and zero translation for body parts
-                let identity = Quat::IDENTITY;
-
-                // Reset Body rotation and translation
-                if let Some(body_entities) =
-                    get_model_part_entities(character_model, CharacterModelPart::Body)
-                {
-                    for &body_entity in body_entities {
-                        if let Ok(mut transform) = body_transforms.get_mut(body_entity) {
-                            transform.rotation = transform.rotation.slerp(identity, blend_factor);
-                            // Reset translation to zero (remove hanging offset)
-                            transform.translation =
-                                transform.translation.lerp(Vec3::ZERO, blend_factor * 0.5);
-                        }
-                    }
-                }
-
-                // Reset Hands rotation
-                if let Some(hands_entities) =
-                    get_model_part_entities(character_model, CharacterModelPart::Hands)
-                {
-                    for &hands_entity in hands_entities {
-                        if let Ok(mut transform) = body_transforms.get_mut(hands_entity) {
-                            transform.rotation = transform.rotation.slerp(identity, blend_factor);
-                        }
-                    }
-                }
-
-                // Reset Feet rotation
-                if let Some(feet_entities) =
-                    get_model_part_entities(character_model, CharacterModelPart::Feet)
-                {
-                    for &feet_entity in feet_entities {
-                        if let Ok(mut transform) = body_transforms.get_mut(feet_entity) {
-                            transform.rotation = transform.rotation.slerp(identity, blend_factor);
-                        }
-                    }
-                }
-
-                // Reset Head rotation
-                if let Some(head_entities) =
-                    get_model_part_entities(character_model, CharacterModelPart::Head)
-                {
-                    for &head_entity in head_entities {
-                        if let Ok(mut transform) = body_transforms.get_mut(head_entity) {
-                            transform.rotation = transform.rotation.slerp(identity, blend_factor);
-                        }
-                    }
-                }
+    for (joint, unposed, posed) in restore.joints.drain(..) {
+        if let Ok(mut transform) = query_transform.get_mut(joint) {
+            if *transform == posed {
+                *transform = unposed;
             }
         }
     }
 }
 
-/// Helper function to get entities for a specific model part
-fn get_model_part_entities(
-    character_model: &CharacterModel,
-    part: CharacterModelPart,
-) -> Option<&Vec<Entity>> {
-    let (_, entities) = &character_model.model_parts[part];
-    if entities.is_empty() {
-        None
-    } else {
-        Some(entities)
+/// Rotation of `bone` in character space (the character entity's local space),
+/// composed from the joints' local rotations.
+fn character_rotation(local_rotations: &[Quat; SKELETON_BONE_COUNT], bone: usize) -> Quat {
+    let mut rotation = local_rotations[bone];
+    let mut current = bone;
+    while current != BONE_PELVIS {
+        current = SKELETON_PARENTS[current];
+        rotation = local_rotations[current] * rotation;
+    }
+    rotation
+}
+
+/// Local joint rotations with the flight pose blended in by `blend` (0..=1).
+/// Each posed bone ends up pitched by its angle in character space relative to
+/// its animated orientation; the other bones keep their local rotation and so
+/// follow their nearest posed ancestor.
+fn posed_joint_rotations(
+    animated: &[Quat; SKELETON_BONE_COUNT],
+    blend: f32,
+) -> [Quat; SKELETON_BONE_COUNT] {
+    let mut posed = *animated;
+    for &(bone, pitch) in POSED_BONES.iter() {
+        let target = Quat::from_rotation_x(pitch * blend) * character_rotation(animated, bone);
+        let parent = if bone == BONE_PELVIS {
+            Quat::IDENTITY
+        } else {
+            character_rotation(&posed, SKELETON_PARENTS[bone])
+        };
+        posed[bone] = (parent.inverse() * target).normalize();
+    }
+    posed
+}
+
+/// System that applies a flight pose to the player character's skeleton when flying.
+///
+/// When flying and airborne:
+/// - Leans the body forward (pelvis) and lowers it slightly (hanging effect)
+/// - Arms dangle straight down, legs hang slightly back, toes point down
+/// - Head tilted up to look forward
+/// - Blended in by `FlightState::pose_blend`
+///
+/// When flight ends or the character is not yet airborne the pose blends back out.
+///
+/// Only the skeleton joints are touched, never the character root transform, so
+/// the pose is visual-only and doesn't affect movement direction (which comes from
+/// FacingDirection and camera).
+///
+/// Must run in PostUpdate after `RoseAnimationSystem` (which rewrites the joints)
+/// and before `TransformSystems::Propagate`.
+pub fn flight_pose_system(
+    mut commands: Commands,
+    mut query_player: Query<
+        (
+            Entity,
+            &FlightState,
+            &SkinnedMesh,
+            Option<&mut FlightPoseRestore>,
+        ),
+        With<PlayerCharacter>,
+    >,
+    mut query_transform: Query<&mut Transform>,
+) {
+    for (player_entity, flight_state, skinned_mesh, mut restore) in query_player.iter_mut() {
+        // Normally already restored by flight_pose_blend_update_system; this only
+        // matters if that system did not run since the last pose.
+        if let Some(restore) = restore
+            .as_mut()
+            .filter(|restore| !restore.joints.is_empty())
+        {
+            restore_unposed_joints(restore, &mut query_transform);
+        }
+
+        let blend = flight_state.pose_blend;
+        if blend <= 0.0 || skinned_mesh.joints.len() < SKELETON_BONE_COUNT {
+            continue;
+        }
+
+        let mut animated = [Quat::IDENTITY; SKELETON_BONE_COUNT];
+        let mut joints_found = true;
+        for (rotation, joint) in animated.iter_mut().zip(skinned_mesh.joints.iter()) {
+            match query_transform.get(*joint) {
+                Ok(transform) => *rotation = transform.rotation,
+                Err(_) => {
+                    joints_found = false;
+                    break;
+                }
+            }
+        }
+        if !joints_found {
+            continue;
+        }
+
+        let posed = posed_joint_rotations(&animated, blend);
+
+        let mut applied = Vec::with_capacity(POSED_BONES.len());
+        for &(bone, _) in POSED_BONES.iter() {
+            let joint = skinned_mesh.joints[bone];
+            let Ok(mut transform) = query_transform.get_mut(joint) else {
+                continue;
+            };
+
+            let unposed = *transform;
+            transform.rotation = posed[bone];
+            if bone == BONE_PELVIS {
+                // The pelvis' parent is the character entity, so its translation
+                // is already in character space (+Y up)
+                transform.translation.y += RAGDOLL_BODY_HANG_OFFSET * blend;
+            }
+            applied.push((joint, unposed, *transform));
+        }
+
+        match restore {
+            Some(mut restore) => restore.joints = applied,
+            None => {
+                commands
+                    .entity(player_entity)
+                    .insert(FlightPoseRestore { joints: applied });
+            }
+        }
     }
 }
 
 /// System that updates the FlightState pose_blend value.
 /// This runs separately to track the blend state on the FlightState component.
+///
+/// It also takes last frame's pose off the skeleton (see `FlightPoseRestore`).
+/// It runs in Update, before the PostUpdate skeletal animation pass, so the
+/// animation always starts from the un-posed joints.
 pub fn flight_pose_blend_update_system(
     time: Res<Time>,
-    mut query: Query<&mut FlightState, With<PlayerCharacter>>,
+    mut query: Query<(&mut FlightState, Option<&mut FlightPoseRestore>), With<PlayerCharacter>>,
+    mut query_transform: Query<&mut Transform>,
 ) {
     let delta_time = time.delta_secs();
 
-    for mut flight_state in query.iter_mut() {
+    for (mut flight_state, restore) in query.iter_mut() {
+        if let Some(mut restore) = restore.filter(|restore| !restore.joints.is_empty()) {
+            restore_unposed_joints(&mut restore, &mut query_transform);
+        }
+
         let is_airborne =
             flight_state.is_flying && flight_state.current_speed > AIRBORNE_SPEED_THRESHOLD;
 
@@ -266,6 +277,20 @@ pub fn flight_pose_blend_update_system(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An arbitrary non-trivial animated skeleton pose.
+    fn animated_pose() -> [Quat; SKELETON_BONE_COUNT] {
+        let mut rotations = [Quat::IDENTITY; SKELETON_BONE_COUNT];
+        for (index, rotation) in rotations.iter_mut().enumerate() {
+            let i = index as f32;
+            *rotation = Quat::from_euler(EulerRot::XYZ, 0.1 * i, 0.2 - 0.03 * i, -0.05 * i);
+        }
+        rotations
+    }
+
+    fn same_rotation(a: Quat, b: Quat) -> bool {
+        a.abs_diff_eq(b, 1e-4) || a.abs_diff_eq(-b, 1e-4)
+    }
 
     #[test]
     fn test_flight_pitch_angle() {
@@ -309,13 +334,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ragdoll_arms_dangle_angle() {
-        // Arms should dangle approximately 45 degrees down
-        let angle_degrees = RAGDOLL_ARMS_DANGLE_ANGLE.to_degrees();
-        assert!(angle_degrees > 40.0 && angle_degrees < 50.0);
-    }
-
-    #[test]
     fn test_ragdoll_legs_hang_angle() {
         // Legs should hang back approximately 15 degrees
         let angle_degrees = RAGDOLL_LEGS_HANG_ANGLE.to_degrees();
@@ -327,5 +345,69 @@ mod tests {
         // Head should tilt up approximately 10 degrees
         let angle_degrees = RAGDOLL_HEAD_TILT_ANGLE.to_degrees();
         assert!(angle_degrees > 5.0 && angle_degrees < 15.0);
+    }
+
+    // ============================================
+    // Skeleton Pose Tests
+    // ============================================
+
+    #[test]
+    fn test_posed_bones_ancestors_first() {
+        // Every posed bone's posed ancestors must be processed before it
+        for (position, &(bone, _)) in POSED_BONES.iter().enumerate() {
+            let mut current = bone;
+            while current != BONE_PELVIS {
+                current = SKELETON_PARENTS[current];
+                if let Some(ancestor_position) =
+                    POSED_BONES.iter().position(|&(posed, _)| posed == current)
+                {
+                    assert!(ancestor_position < position);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_zero_blend_keeps_animation() {
+        let animated = animated_pose();
+        let posed = posed_joint_rotations(&animated, 0.0);
+        for bone in 0..SKELETON_BONE_COUNT {
+            assert!(same_rotation(posed[bone], animated[bone]));
+        }
+    }
+
+    #[test]
+    fn test_posed_bones_pitch_in_character_space() {
+        let animated = animated_pose();
+        let posed = posed_joint_rotations(&animated, 1.0);
+        for &(bone, pitch) in POSED_BONES.iter() {
+            assert!(same_rotation(
+                character_rotation(&posed, bone),
+                Quat::from_rotation_x(pitch) * character_rotation(&animated, bone),
+            ));
+        }
+    }
+
+    #[test]
+    fn test_unposed_bones_follow_posed_ancestor() {
+        let animated = animated_pose();
+        let posed = posed_joint_rotations(&animated, 1.0);
+        // The calf is not posed: it follows the thigh
+        let calf = 14;
+        assert!(same_rotation(posed[calf], animated[calf]));
+        assert!(same_rotation(
+            character_rotation(&posed, calf),
+            Quat::from_rotation_x(RAGDOLL_LEGS_HANG_ANGLE) * character_rotation(&animated, calf),
+        ));
+    }
+
+    #[test]
+    fn test_forward_pitch_tips_up_axis_forward() {
+        // Character space is +Y up, +Z forward: a positive pitch leans forward
+        let up = Quat::from_rotation_x(FLIGHT_PITCH_ANGLE) * Vec3::Y;
+        assert!(up.z > 0.0);
+        // and points the toes (+Z) down
+        let toes = Quat::from_rotation_x(TOE_DOWN_ANGLE) * Vec3::Z;
+        assert!(toes.y < 0.0);
     }
 }

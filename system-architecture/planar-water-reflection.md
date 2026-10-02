@@ -36,7 +36,7 @@ flowchart TB
     end
 
     subgraph Render Target
-        Img[Image<br/>Bgra8UnormSrgb, LDR, half resolution]
+        Img[Image<br/>Rgba16Float, linear HDR, half resolution]
     end
 
     subgraph GPU Shader src/render/shaders/water_material.wgsl
@@ -97,7 +97,7 @@ RenderLayers::layer(0),                    // never renders water (layer 1)
 WaterReflectionCamera,                     // marker used by Without<> filters
 ```
 
-Render target: `Bgra8UnormSrgb` (LDR) — identical to the official `mirror` example. WGSL sampling of an sRGB texture returns linear values. Target size = window size × `reflection_scale` (default 0.5).
+Render target: `Rgba16Float` (linear HDR, untonemapped). The reflection camera carries `Hdr` + `Tonemapping::None`. The water draws the reflection into the main HDR pass, where the main camera's Auto Exposure and tonemapping apply once to the whole frame. Reflections therefore match the scene's brightness at every time of day. Until 2026-09-30 this was an LDR `Bgra8UnormSrgb` target (as in Bevy's `mirror` example) with its own fixed-exposure TonyMcMapface, so reflections were tonemapped twice and never auto-exposed. Target size = window size × `reflection_scale` (default 0.5).
 
 **Why a second `Camera3d` is safe**: every game system that called `.single()` on `With<Camera3d>` queries got a `Without<WaterReflectionCamera>` filter. Without those filters the reflection camera breaks camera-follow logic, input, minimap, lights, audio, etc.
 
@@ -113,14 +113,21 @@ Runs in `PostUpdate` **before** `TransformSystems::Propagate` so the engine prop
    let plane_offset = Mat4::from_translation(Vec3::Y * surface_y);
    let reflect = Mat4::from_mat3a(reflection_matrix(Vec3::Y));
    let mirror_matrix = plane_offset * reflect * plane_offset.inverse();
-   *transform = Transform::from_matrix(mirror_matrix * main_transform.to_matrix());
+   let mirrored_transform = Transform::from_matrix(mirror_matrix * main_transform.to_matrix());
+   if *transform != mirrored_transform {
+       *transform = mirrored_transform;
+   }
    ```
+
+   The transform and `camera.is_active` are written only on difference, so a still main camera does not re-flag (and re-propagate) the reflection camera every frame.
 
 2. **Copies the projection**: `*projection = Projection::Perspective(main_perspective.clone())`.
 3. **Writes the frustum directly** (see *The Frustum Trap* below).
-4. **Gates the camera**: `camera.is_active` is true only when reflections are enabled in settings, a water volume exists, the camera is not underwater, and the nearest water volume is ≤ 300 m away.
+4. **Gates the camera**: `camera.is_active` is true only when reflections are enabled in settings, a water volume exists, the camera is not underwater, the nearest water volume is ≤ 300 m away, **and a water plane intersects the main camera's frustum** (AABB vs frustum built from this frame's main transform, far plane ignored, same test as `check_visibility`; water spawned this frame counts as visible). With no water fragment on screen the reflection texture is never sampled, so the whole second scene render and its shadow cascades are skipped. The gate runs before transform propagation, so the frame water enters the view the camera renders first (order −1) and the water never samples a stale reflection. The debug status is not updated while culled this way.
 5. **Mirrors the `EnvironmentMapLight`** onto the reflection camera (when present) so the reflected scene is lit identically.
 6. **Pushes status + logs** (see *Diagnostics*).
+
+`sync_reflection_textures` keeps a `WaterMaterialRegistry` of water material ids. It drops ids whose material no longer exists before scanning (every zone load replaces the water materials; asset ids are generational, so a removed id never matches a new material), so the per-frame scans do not grow over a session.
 
 The mirrored camera *position* is logged as `refl_pos` — it should always be `(x, 2*surface_y - y, z)` relative to the main camera.
 
@@ -245,5 +252,5 @@ Periodic log (every 150 frames):
 
 1. **Oblique near clip plane disabled**: the Lengyel clip plane (from the mirror example) that would hide the lake bed from reflections is currently disabled (`// DEBUG TEST` in `sync_reflection_camera`) because its sign made the derived frustum cull everything. It must be re-enabled and sign-corrected now that the frustum is written manually.
 2. **Debug threshold** (300 visible entities) is a heuristic; re-verify when the oblique plane is back.
-3. **Performance**: the reflection pass renders the whole scene again — gated by the 300 m distance check, but terrain-heavy zones still pay for it. Future: reduce to a low-res texture with blur, or skip reflections when few entities are visible.
-4. **LDR target** (`Bgra8UnormSrgb`): fine for now; an HDR target would allow exposure/tonemapping consistency with the main view.
+3. **Performance**: the reflection pass renders the whole scene again while water is on screen (gated by the 300 m distance check and the main-frustum water test). Future: reduce to a low-res texture with blur.
+4. **HDR target** (`Rgba16Float`, done 2026-09-30): exposure and tonemapping are now consistent with the main view. It costs twice the memory of the old 8-bit target at `reflection_scale` size.

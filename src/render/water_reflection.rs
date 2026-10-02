@@ -23,7 +23,7 @@
 use bevy::{
     asset::RenderAssetUsages,
     camera::{
-        primitives::{Frustum, Sphere},
+        primitives::{Aabb, Frustum, Sphere},
         visibility::VisibleEntities,
         Camera, CameraProjection, ClearColorConfig, Projection, RenderTarget,
     },
@@ -32,9 +32,10 @@ use bevy::{
     light::EnvironmentMapLight,
     math::{vec2, Isometry3d, Mat4, primitives::InfinitePlane3d, reflection_matrix},
     prelude::{
-        App, Assets, Camera3d, Commands, Component, Entity, GlobalTransform, Handle,
-        IntoScheduleConfigs, Local, Mesh3d, Msaa, PerspectiveProjection, Plugin, Query, Res,
-        ResMut, Resource, Transform, UVec2, Vec3, Vec3A, Visibility, Window, With, Without,
+        App, Assets, Camera3d, Commands, Component, DetectChanges, Entity, GlobalTransform, Handle,
+        IntoScheduleConfigs, Local, Mesh3d, MeshMaterial3d, Msaa, PerspectiveProjection, Plugin,
+        Query, Ref, Res, ResMut, Resource, Transform, UVec2, Vec3, Vec3A, Visibility, Window,
+        With, Without,
     },
     render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
 };
@@ -110,9 +111,13 @@ fn create_reflection_image(images: &mut Assets<Image>, size: UVec2) -> Handle<Im
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        // LDR sRGB target - identical to the official Bevy `mirror` example.
-        // (Sampling an sRGB texture in WGSL returns linear values.)
-        TextureFormat::Bgra8UnormSrgb,
+        // Linear HDR target (untonemapped scene radiance). The water draws it
+        // into the main HDR pass, where the main camera's Auto Exposure and
+        // tonemapping apply once to the whole frame, so reflections match the
+        // scene's brightness at every time of day. Previously an LDR sRGB
+        // target with its own fixed-exposure TonyMcMapface: tonemapped twice
+        // and never auto-exposed.
+        TextureFormat::Rgba16Float,
         RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
     );
     image.texture_descriptor.usage |= TextureUsages::TEXTURE_BINDING
@@ -149,6 +154,12 @@ fn setup_water_reflection(
         // `Without<WaterReflectionCamera>` filters.
         Camera3d::default(),
         Msaa::Off,
+        // Render linear HDR radiance with NO tonemapping (see
+        // create_reflection_image): the main camera tonemaps the water pixels,
+        // reflection included, exactly once. With Tonemapping::None the
+        // tonemapping pass skips this view without flipping its ping-pong.
+        bevy::camera::Hdr,
+        bevy::core_pipeline::tonemapping::Tonemapping::None,
         Camera {
             order: -1,
             is_active: false,
@@ -238,6 +249,12 @@ fn sync_reflection_textures(
     reflection_image: Res<WaterReflectionImage>,
     mut registry: ResMut<WaterMaterialRegistry>,
 ) {
+    // Drop materials that no longer exist (every zone load replaces them), so
+    // the per-frame `contains` scans below do not grow for the whole session.
+    // Asset ids are generational, so a removed id never matches a new material.
+    if registry.ids.iter().any(|id| !materials.contains(*id)) {
+        registry.ids.retain(|id| materials.contains(*id));
+    }
     for (id, _) in materials.iter() {
         if !registry.ids.contains(&id) {
             registry.ids.push(id);
@@ -292,6 +309,7 @@ fn sync_reflection_camera(
     >,
     underwater_volumes: Res<UnderwaterVolumes>,
     water_settings: Res<WaterSettings>,
+    water_planes: Query<(Ref<GlobalTransform>, &Aabb), With<MeshMaterial3d<WaterMaterial>>>,
 ) {
     let Some((main_transform, main_projection, underwater_state, main_envmap)) =
         main_cameras.iter().next()
@@ -361,6 +379,29 @@ fn sync_reflection_camera(
         return;
     }
 
+    // Skip the reflection pass (a second full scene render plus its own shadow
+    // cascades) while no water plane intersects the main camera's view: with no
+    // water fragment on screen the reflection texture is never sampled. This runs
+    // before transform propagation and visibility, so the frame water enters the
+    // view the camera is re-enabled, renders first (order -1), and the water never
+    // samples a stale reflection. Same test as Bevy's check_visibility (AABB vs
+    // frustum, far plane ignored). Water spawned this frame has no propagated
+    // GlobalTransform yet, so it counts as in view. The debug status is left
+    // unchanged so looking away does not re-prepare the water material.
+    let main_frustum = main_perspective.compute_frustum(&GlobalTransform::from(*main_transform));
+    let water_in_view = water_planes.iter().any(|(water_transform, water_aabb)| {
+        water_transform.is_added()
+            || main_frustum.intersects_obb(water_aabb, &water_transform.affine(), true, false)
+    });
+    if !water_in_view {
+        for (_, _, _, mut camera, _, _, _, _) in reflection_cameras.iter_mut() {
+            if camera.is_active {
+                camera.is_active = false;
+            }
+        }
+        return;
+    }
+
     let mut reflection_log = None;
     for (
         entity,
@@ -373,7 +414,12 @@ fn sync_reflection_camera(
         mut envmap,
     ) in reflection_cameras.iter_mut()
     {
-        *transform = Transform::from_matrix(mirror_matrix * main_transform.to_matrix());
+        // Written only on difference: an identical write still flags
+        // Changed<Transform> and re-propagates the camera every frame.
+        let mirrored_transform = Transform::from_matrix(mirror_matrix * main_transform.to_matrix());
+        if *transform != mirrored_transform {
+            *transform = mirrored_transform;
+        }
         // DEBUG TEST: temporarily disabled the oblique near clip plane to
         // determine whether the clip plane or the mirror transform breaks the
         // frustum culling.
@@ -391,7 +437,9 @@ fn sync_reflection_camera(
         } else {
             *projection = Projection::Perspective(reflection_perspective.clone());
         }
-        camera.is_active = reflection_active;
+        if camera.is_active != reflection_active {
+            camera.is_active = reflection_active;
+        }
 
         // Write the frustum directly from the REFLECTION perspective (not the main
         // one): update_frusta only recomputes on Changed<GlobalTransform|Projection>,

@@ -11,10 +11,12 @@ The pipeline is designed to handle complex environmental effects including proce
 The engine utilizes deferred rendering for opaque objects to efficiently manage numerous light sources in the scene. 
 - **Method**: `DefaultOpaqueRendererMethod::deferred()` is used to separate geometry processing from lighting calculations.
 - **Advantages**: Reduced lighting complexity and support for more dynamic environmental lights (e.g., zone-specific lighting).
+- **ROSE object materials are forward.** Every `ExtendedMaterial<StandardMaterial, RoseObjectExtension>` (zone object parts, character/NPC/vehicle/item parts) is built through `rose_object_material()` (`src/render/object_material_extension.rs`), which sets `opaque_render_method: Forward`. The deferred G-buffer has no room for the lightmap, the specular map or the blood overlay, alpha-masked parts were shaded twice (G-buffer + forward), and the water reflection camera (no deferred prepass) skipped deferred opaque parts entirely. Animated zone objects (`RoseEffectExtension`) are forward too. Forward materials still write the depth/normal prepass (SSAO), cast shadows and get fog.
 
 ### WGPU Settings and Feature Flags
-The rendering backend is powered by `wgpu`. The client configures `WgpuSettings` in `src/lib.rs` to disable problematic bindless features for stability across hardware, while relying on core wgpu features for the custom pipeline:
+The rendering backend is powered by `wgpu`. `WgpuSettings` are built by `create_wgpu_settings()` in `src/render/wgpu_settings.rs` (used by `src/lib.rs`):
 - Disabled features: `BUFFER_BINDING_ARRAY`, `STORAGE_RESOURCE_BINDING_ARRAY`, and `PARTIALLY_BOUND_BINDING_ARRAY` (bindless paths), while texture binding arrays remain available for `TerrainMaterial`.
+- wgpu debug/validation instance flags are off (wgpu turns `DEBUG | VALIDATION | VALIDATION_INDIRECT_CALL` on in debug builds). An adapter probe at startup predicts wgpu's adapter choice; when it is a non-DX12 hardware adapter (Vulkan on Windows) the backend is pinned to it and `VALIDATION_INDIRECT_CALL` is dropped too. On DX12 that flag must stay (wgpu needs it for correct `instance_index`/`vertex_index` with indirect draws). Re-enable per session with `WGPU_VALIDATION=1`, `WGPU_DEBUG=1`, `WGPU_VALIDATION_INDIRECT_CALL=1`.
 - Read-only storage buffers carry per-particle and per-material data to the GPU (particles, damage digits, water, terrain lighting).
 - Specialized vertex buffer layouts for procedural geometry are configured per material in each material's `specialize()`.
 - Reverse-Z depth buffering (Bevy default) is used; sky and cloud materials combine it with `CompareFunction::GreaterEqual`.
@@ -61,33 +63,49 @@ The following extensions allow the `StandardMaterial` to be augmented with ROSE-
 
 | Extension | Purpose | Key Features |
 | :--- | :--- | :--- |
-| **RoseObjectExtension** | General object enhancement | Lightmap support, specular maps, and blink state for characters. |
-| **RoseEffectExtension** | VFX mesh rendering | Frame-based animation using texture atlases and interpolation. |
+| **RoseObjectExtension** | General object enhancement | Lightmap (pipeline key `has_lightmap` -> `ROSE_OBJECT_LIGHTMAP`; ZMS lightmap UVs are bound from `MESH_ATTRIBUTE_UV_1` at location 3 as `uv_b`; UV = `(uv_b + cell) * (1 / parts_per_row)` with the cell from `MeshTag`; blended as the original MODULATE2X, i.e. x4.5948 on the sRGB-sampled texel), specular map only for ZSC materials with the specular flag (`has_specular` -> `ROSE_OBJECT_SPECULAR`, red channel -> reflectance; others keep the standard reflectance), UV-space blood overlay. No blink state: blinking swaps face meshes (`character_model_blink_system`). |
+| **RoseEffectExtension** | VFX meshes and animated zone objects | ZMO morph animation (position, normal, UV) from an animation texture, applied in `rose_effect_mesh.wgsl` in the forward, prepass and deferred vertex stages (`textureLoad` at `vertex_index - first_vertex_index`). `mesh_animation_system` animates every `MeshAnimation` entity (no `EffectMesh` filter). |
 
 Terrain and water are **not** `StandardMaterial` extensions — they use standalone custom `Material` implementations:
-- **TerrainMaterial** (`src/render/terrain_material.rs`): up to 100 tile textures in a texture binding array, selected per-vertex via `TERRAIN_MESH_ATTRIBUTE_TILE_INFO` (two layers + rotation), with lightmap support via UV0.
+- **TerrainMaterial** (`src/render/terrain_material.rs`): up to 100 tile textures in a texture binding array, selected per-vertex via `TERRAIN_MESH_ATTRIBUTE_TILE_INFO` (two layers + rotation), with lightmap support via UV0. One instance per zone, shared by every block (created in `spawn_zone`).
 - **WaterMaterial** (`src/render/water_material.rs`): fully procedural shading with a custom `AsBindGroup` that packs per-material values into a storage buffer.
 
 ## Post-Processing Effects
 
-The main camera spawns with a fixed default set (`src/lib.rs:1990-2008`); everything else is opt-in via `src/graphics/apply_systems.rs`. No TAA, SSR, or AutoExposure component is spawned anywhere in `src/` (`src/lib.rs:1995-1999`).
+The main camera spawns with a fixed default set (`src/lib.rs`, see [graphics-settings.md](graphics-settings.md)); everything else is opt-in via `src/graphics/apply_systems.rs`. No TAA or SSR implementation exists in `src/`.
 
 Default-on at startup:
-- **Bloom** (`Bloom::NATURAL`): light bleeding from bright sources.
-- **Depth of Field (DoF)** (`DepthOfField` Gaussian): cinematic focus effects.
-- **Tonemapping** (`TonyMcMapface`): filmic HDR mapping.
+- **Tonemapping** (`TonyMcMapface`): RESTORED 2026-09-25. The white "film"/"flash" was traced to ColorGrading exposure (Brightness slider + TOD tint) landing on clamped HDR, NOT to the tonemap pass — so the whole color-grading path (`ColorGrading` camera component, brightness/contrast/saturation/gamma fields, `apply_color_grading_system`, `TimeOfDayGrading` + its writer in zone_time_system.rs) was DELETED and the filmic curve is the sole tone path. CORRECTION (2026-09-30): the random white *flashes* with SMAA on, and the "3D view crawls with tonemapping off" symptom, were both the post-process pass race described below, not ColorGrading or menu cost. Racy frames showed the pre-tonemap HDR image when tonemapping was on, and a stale frame when it was off. See [pitfalls/postprocess-pass-race.md](../pitfalls/postprocess-pass-race.md).
+- **AutoExposure** (Histogram, custom compensation curve): normalizes sun-lux/atmosphere output toward `GraphicsSettings::auto_exposure_target_ev` (default -1.3 EV; Bevy's default curve targets 0 EV = very bright), with 50% adaptation in dark scenes so night stays darker than day. `AutoExposurePlugin` is added manually (Bevy 0.19.1's `PostProcessPlugin` does not register it). See [graphics-settings.md](graphics-settings.md) "Auto Exposure target".
+- **Bloom** (`Bloom { intensity: 0.15, ..NATURAL }`): light bleeding from bright sources.
+- **SMAA** (`Smaa`, Ultra preset): default anti-aliasing (`Msaa::Off`); quality switchable via `apply_smaa_system`.
 - **SSAO** (`ScreenSpaceAmbientOcclusion`, Medium default): contact depth. Ultra is only `SsaoQuality::Ultra`.
 - **Shadow filtering** (`ShadowFilteringMethod::Gaussian`).
 - **Prepasses**: `DepthPrepass` + `DeferredPrepass` (the latter is required for deferred; without it Bevy 0.18.1 panics in `queue_prepass_material_meshes`), plus `OcclusionCulling`.
 
 Opt-in via graphics settings (NOT on by default):
-- **SMAA** (`apply_smaa_system`): Disabled/Low/Medium/High/Ultra.
+- **Depth of Field** (`DepthOfField`): Gaussian; inserted on demand.
 - **Motion Blur** (`apply_motion_blur_system`): inserted/removed on demand; stripped from the water-reflection view.
 
 Not implemented:
 - **SSR**: no implementation; explicitly left off.
-- **Auto Exposure**: no `AutoExposure` component in `src/`.
 - **TAA**: no `TemporalAntiAliasing` component in `src/` (only mentioned in the `Msaa::Off` compatibility comment).
+
+### Post-process pass ordering invariant (Bevy 0.19)
+
+Render-graph nodes are plain systems in the `Core3d` schedule (multi-threaded executor). `RenderContext`/`ViewQuery` are read-only, so **unordered passes run in parallel**. Command buffers are submitted in schedule (topological) order, but `ViewTarget::post_process_write()` flips the shared main-texture ping-pong index in *thread* order. Two unordered passes that both call `post_process_write()` therefore randomly read a texture that has not been written yet this frame. With tonemapping on, the pre-tonemap HDR frame reaches the screen (white flash). With tonemapping off, a stale frame reaches it (3D view appears to crawl while egui stays live).
+
+Rules:
+- Every custom pass that calls `post_process_write()` must be totally ordered against the others. `underwater_effect` is `.after(tonemapping).before(fxaa).before(smaa)` and returns before flipping when not underwater (`src/render/underwater_effect.rs`).
+- Bevy leaves `fxaa` and `smaa` mutually unordered, so `apply_fxaa_system` only inserts `Fxaa` while SMAA is Disabled.
+- `bevy_egui::render::egui_pass` is pinned after `Core3dSystems::PostProcess` (`src/lib.rs`, next to the `EguiPlugin` setup). By default it is only `.after(EarlyPostProcess)`.
+
+### Material update invariants (Bevy 0.19.1)
+
+- `Assets::iter_mut()` queues `AssetEvent::Modified` for **every** asset it visits, written or not, and `Assets::get_mut()` does so on any `DerefMut`. Each `Modified` material is re-extracted, its bind group rebuilt, and every mesh using it re-specialized. Find stale assets with `iter()`/`get()` and call `get_mut()` only when a value differs (see `update_terrain_lighting_system`, `apply_water_settings`, `sync_material_overlay` in `blood_overlay_system.rs`).
+- A custom material that overrides `as_bind_group` and returns `CreateBindGroupDirectly` from `unprepared_bind_group` **leaks its previous bind group on every modification**: `prepare_asset` inserts a new allocator slot without freeing the old one (`bevy_pbr` `material.rs`). Return the bindings from `unprepared_bind_group` instead (`OwnedBindingResource::Buffer/TextureView/Sampler`); that path frees the old slot. Cloud, starry sky, volumetric cloud and water materials do this. `TerrainMaterial` must stay on the direct path (texture-view array), so it is shared per zone and only written on change.
+- A repainted `Image` (same descriptor, `COPY_DST`) is written into the existing GPU texture, so materials that bind it need no re-prepare.
+- `sync_volumetric_fog_step_count` (`zone_lighting.rs`, PostUpdate) runs `VolumetricFog` at 1 step while every `FogVolume` has zero density (output is identical, only the ambient term remains) and at 64 otherwise. The camera's `VolumetricFog::ambient_intensity` is 0: Bevy adds that ambient as `exp(-depth * (absorption + scattering)) * ambient` regardless of density, which put a white veil on nearby models that grew as the camera zoomed in.
 
 ## Code Examples
 

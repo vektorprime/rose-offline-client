@@ -1,26 +1,16 @@
 use super::*;
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn spawn_terrain(
-    commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
-    terrain_materials: &mut Assets<TerrainMaterial>,
-    tile_textures: &Vec<Handle<Image>>,
-    zone_data: &ZoneLoaderAsset,
+/// Builds a legacy terrain block's render mesh, bounds and collider.
+///
+/// Pure function of the block's height/tile maps, the zone's tile table and the
+/// terrain noise, so `load_zone` runs it on the async load task and `spawn_terrain`
+/// only spawns the result. Returns `None` if rapier rejects the collider trimesh.
+pub(crate) fn build_terrain_geometry(
+    zon: &ZonFile,
+    tile_texture_count: usize,
     block_data: &ZoneLoaderBlock,
     terrain_noise: &crate::terrain::GlobalTerrainNoise,
-) -> Entity {
-    let _span = info_span!(
-        "spawn_terrain",
-        block_x = block_data.block_x,
-        block_y = block_data.block_y
-    )
-    .entered();
-    log::info!(
-        "[SPAWN TERRAIN] Spawning terrain block {}_{}",
-        block_data.block_x,
-        block_data.block_y
-    );
+) -> Option<TerrainBlockGeometry> {
     let offset_x = 160.0 * block_data.block_x as f32;
     let offset_y = 160.0 * (65.0 - block_data.block_y as f32);
 
@@ -35,7 +25,7 @@ pub(super) fn spawn_terrain(
     let heightmap = &block_data.him;
 
     // Build tile_texture_map for UV lookup
-    let mut tile_texture_map = vec![0u32; tile_textures.len().max(1)];
+    let mut tile_texture_map = vec![0u32; tile_texture_count.max(1)];
 
     // First pass: build the texture mapping
     for tile_x in 0..16 {
@@ -44,11 +34,11 @@ pub(super) fn spawn_terrain(
                 .map(|tm| tm.get_clamped(tile_x, tile_y) as usize)
                 .unwrap_or(0);
 
-            if tile_idx >= zone_data.zon.tiles.len() {
+            if tile_idx >= zon.tiles.len() {
                 continue;
             }
 
-            let tile = &zone_data.zon.tiles[tile_idx];
+            let tile = &zon.tiles[tile_idx];
             let tile_array_index1 = (tile.layer1 + tile.offset1) as usize;
             let tile_array_index2 = (tile.layer2 + tile.offset2) as usize;
 
@@ -81,8 +71,8 @@ pub(super) fn spawn_terrain(
                 .map(|tm| tm.get_clamped(tile_x, tile_y) as usize)
                 .unwrap_or(0);
 
-            let tile = if tile_idx < zone_data.zon.tiles.len() {
-                &zone_data.zon.tiles[tile_idx]
+            let tile = if tile_idx < zon.tiles.len() {
+                &zon.tiles[tile_idx]
             } else {
                 continue;
             };
@@ -203,7 +193,7 @@ pub(super) fn spawn_terrain(
         terrain_min = Vec3::new(0.0, -50.0, 0.0);
         terrain_max = Vec3::new(160.0, 50.0, 160.0);
     }
-    let terrain_aabb = Aabb::from_min_max(terrain_min, terrain_max);
+    let aabb = Aabb::from_min_max(terrain_min, terrain_max);
 
     let mut mesh = Mesh::new(
         PrimitiveTopology::TriangleList,
@@ -223,11 +213,6 @@ pub(super) fn spawn_terrain(
 
     log::info!("[SPAWN TERRAIN] Block {}_{}: Mesh created with {} vertices, {} triangles (with tile_info attribute)",
         block_data.block_x, block_data.block_y, vertex_count, triangle_count);
-    log::info!(
-        "[MEMORY] Terrain mesh created for block {}_{}",
-        block_data.block_x,
-        block_data.block_y
-    );
 
     let mut collider_verts = Vec::new();
     let mut collider_indices = Vec::new();
@@ -261,14 +246,58 @@ pub(super) fn spawn_terrain(
         }
     }
 
-    // Create TerrainMaterial with all tile textures for proper multi-texture terrain rendering
-    // The shader uses binding_array to sample from up to 100 textures based on per-vertex tile_info
-    let material_handle = terrain_materials.add(TerrainMaterial {
-        textures: tile_textures.clone(),
-        light_direction: Vec3::new(0.5, 1.0, 0.3).normalize(),
-        light_color: Color::WHITE,
-        ambient_color: Color::srgb(0.9, 0.9, 1.0),
-    });
+    let collider = Collider::trimesh(collider_verts, collider_indices).ok()?;
+
+    Some(TerrainBlockGeometry {
+        new_terrain: false,
+        mesh,
+        aabb,
+        collider,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn spawn_terrain(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    terrain_material: &Handle<TerrainMaterial>,
+    tile_textures: &Vec<Handle<Image>>,
+    zone_data: &ZoneLoaderAsset,
+    block_data: &ZoneLoaderBlock,
+    prebuilt_geometry: Option<TerrainBlockGeometry>,
+    terrain_noise: &crate::terrain::GlobalTerrainNoise,
+    map_editor: bool,
+) -> Entity {
+    let _span = info_span!(
+        "spawn_terrain",
+        block_x = block_data.block_x,
+        block_y = block_data.block_y
+    )
+    .entered();
+    log::info!(
+        "[SPAWN TERRAIN] Spawning terrain block {}_{}",
+        block_data.block_x,
+        block_data.block_y
+    );
+    let offset_x = 160.0 * block_data.block_x as f32;
+    let offset_y = 160.0 * (65.0 - block_data.block_y as f32);
+
+    // Mesh, bounds and collider are normally prebuilt on the async load task
+    // (load_zone); build them here only if that did not happen.
+    let TerrainBlockGeometry {
+        mesh,
+        aabb: terrain_aabb,
+        collider,
+        ..
+    } = prebuilt_geometry
+        .filter(|geometry| !geometry.new_terrain)
+        .or_else(|| {
+            build_terrain_geometry(&zone_data.zon, tile_textures.len(), block_data, terrain_noise)
+        })
+        .expect("Failed to create terrain collider");
+
+    // All blocks share the zone's TerrainMaterial (see spawn_zone).
+    let material_handle = terrain_material.clone();
 
     // Split spawn to avoid Bundle tuple limit (15+ components not supported)
     let terrain_entity = commands
@@ -278,19 +307,6 @@ pub(super) fn spawn_terrain(
                 block_x: block_data.block_x as u32,
                 block_y: block_data.block_y as u32,
             }),
-            MapEditorTerrainBlock {
-                block_x: block_data.block_x as u32,
-                block_y: block_data.block_y as u32,
-                him_width: heightmap.width,
-                him_height: heightmap.height,
-                him_heights_cm: heightmap.heights.clone(),
-                til_width: tilemap.map(|t| t.width).unwrap_or(0),
-                til_height: tilemap.map(|t| t.height).unwrap_or(0),
-                til_tiles: tilemap.map(|t| t.tiles.clone()).unwrap_or_default(),
-                height_offset_cm: 0.0,
-                fill_tile_id: None,
-                dirty: false,
-            },
             TerrainMeshForGrass,
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(material_handle),
@@ -305,8 +321,7 @@ pub(super) fn spawn_terrain(
         ))
         .insert((
             RigidBody::Fixed,
-            Collider::trimesh(collider_verts, collider_indices)
-                .expect("Failed to create terrain collider"),
+            collider,
             CollisionGroups::new(
                 COLLISION_GROUP_ZONE_TERRAIN,
                 COLLISION_FILTER_INSPECTABLE
@@ -317,20 +332,149 @@ pub(super) fn spawn_terrain(
             ),
         ))
         .id();
+    if map_editor {
+        commands
+            .entity(terrain_entity)
+            .insert(map_editor_terrain_block(block_data));
+    }
     log::info!(
         "[SPAWN TERRAIN] Terrain entity created: {:?} at position ({}, 0, {})",
         terrain_entity,
         offset_x,
         offset_y
     );
-    log::info!(
-        "[MEMORY] Terrain material created for block {}_{}",
-        block_data.block_x,
-        block_data.block_y
-    );
     terrain_entity
 }
 
+/// The map editor's editable copy of a block's height and tile maps. Only inserted
+/// in map editor mode (see spawn_zone); nothing else reads it.
+fn map_editor_terrain_block(block_data: &ZoneLoaderBlock) -> MapEditorTerrainBlock {
+    let tilemap = block_data.til.as_ref();
+    let heightmap = &block_data.him;
+    MapEditorTerrainBlock {
+        block_x: block_data.block_x as u32,
+        block_y: block_data.block_y as u32,
+        him_width: heightmap.width,
+        him_height: heightmap.height,
+        him_heights_cm: heightmap.heights.clone(),
+        til_width: tilemap.map(|t| t.width).unwrap_or(0),
+        til_height: tilemap.map(|t| t.height).unwrap_or(0),
+        til_tiles: tilemap.map(|t| t.tiles.clone()).unwrap_or_default(),
+        height_offset_cm: 0.0,
+        fill_tile_id: None,
+        dirty: false,
+    }
+}
+
+/// Builds a `--new-terrain` block's render mesh, bounds and collider from its
+/// prebaked mesh data. Like [`build_terrain_geometry`] this runs on the async load
+/// task. Returns `None` if the block has no mesh data, the data is truncated, or
+/// rapier rejects the collider trimesh.
+pub(crate) fn build_new_terrain_geometry(
+    block_data: &ZoneLoaderBlock,
+) -> Option<TerrainBlockGeometry> {
+    let mesh_data = block_data.new_terrain_mesh.as_ref()?;
+    let mut cursor = 0;
+
+    let read_u32 = |cursor: &mut usize, data: &[u8]| -> Option<u32> {
+        let val = u32::from_le_bytes(data.get(*cursor..*cursor + 4)?.try_into().ok()?);
+        *cursor += 4;
+        Some(val)
+    };
+
+    let read_f32 = |cursor: &mut usize, data: &[u8]| -> Option<f32> {
+        let val = f32::from_le_bytes(data.get(*cursor..*cursor + 4)?.try_into().ok()?);
+        *cursor += 4;
+        Some(val)
+    };
+
+    let vertex_count = read_u32(&mut cursor, mesh_data)? as usize;
+    let mut positions = Vec::with_capacity(vertex_count);
+    for _ in 0..vertex_count {
+        positions.push([
+            read_f32(&mut cursor, mesh_data)?,
+            read_f32(&mut cursor, mesh_data)?,
+            read_f32(&mut cursor, mesh_data)?,
+        ]);
+    }
+
+    let mut normals = Vec::with_capacity(vertex_count);
+    for _ in 0..vertex_count {
+        normals.push([
+            read_f32(&mut cursor, mesh_data)?,
+            read_f32(&mut cursor, mesh_data)?,
+            read_f32(&mut cursor, mesh_data)?,
+        ]);
+    }
+
+    let mut uvs = Vec::with_capacity(vertex_count);
+    for _ in 0..vertex_count {
+        uvs.push([
+            read_f32(&mut cursor, mesh_data)?,
+            read_f32(&mut cursor, mesh_data)?,
+        ]);
+    }
+
+    let has_tangents = read_u32(&mut cursor, mesh_data)? == 1;
+    let tangents = if has_tangents {
+        let mut t = Vec::with_capacity(vertex_count);
+        for _ in 0..vertex_count {
+            t.push([
+                read_f32(&mut cursor, mesh_data)?,
+                read_f32(&mut cursor, mesh_data)?,
+                read_f32(&mut cursor, mesh_data)?,
+                read_f32(&mut cursor, mesh_data)?,
+            ]);
+        }
+        Some(t)
+    } else {
+        None
+    };
+
+    let index_count = read_u32(&mut cursor, mesh_data)? as usize;
+    let mut indices = Vec::with_capacity(index_count);
+    for _ in 0..index_count {
+        indices.push(read_u32(&mut cursor, mesh_data)?);
+    }
+
+    let mut min = Vec3::splat(f32::MAX);
+    let mut max = Vec3::splat(f32::MIN);
+    let mut collider_verts = Vec::with_capacity(vertex_count);
+    for p in &positions {
+        let pos = Vec3::new(p[0], p[1], p[2]);
+        collider_verts.push(pos);
+        min = min.min(pos);
+        max = max.max(pos);
+    }
+
+    let mut collider_indices = Vec::with_capacity(indices.len() / 3);
+    for i in 0..indices.len() / 3 {
+        collider_indices.push([indices[i * 3], indices[i * 3 + 1], indices[i * 3 + 2]]);
+    }
+
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_indices(Indices::U32(indices));
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    if let Some(tangents) = tangents {
+        mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, tangents);
+    }
+
+    let collider = Collider::trimesh(collider_verts, collider_indices).ok()?;
+
+    Some(TerrainBlockGeometry {
+        new_terrain: true,
+        mesh,
+        aabb: Aabb::from_min_max(min, max),
+        collider,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn spawn_new_terrain(
     commands: &mut Commands,
     asset_server: &AssetServer,
@@ -338,6 +482,8 @@ pub(super) fn spawn_new_terrain(
     standard_materials: &mut Assets<StandardMaterial>,
     zone_data: &ZoneLoaderAsset,
     block_data: &ZoneLoaderBlock,
+    prebuilt_geometry: Option<TerrainBlockGeometry>,
+    map_editor: bool,
 ) -> Entity {
     let _span = info_span!(
         "spawn_new_terrain",
@@ -354,84 +500,16 @@ pub(super) fn spawn_new_terrain(
     let offset_x = 160.0 * block_data.block_x as f32;
     let offset_y = 160.0 * (65.0 - block_data.block_y as f32);
 
-    let mesh_data = block_data
-        .new_terrain_mesh
-        .as_ref()
-        .expect("New terrain mesh data missing");
-    let mut cursor = 0;
-
-    let read_u32 = |cursor: &mut usize, data: &[u8]| {
-        let val = u32::from_le_bytes(data[*cursor..*cursor + 4].try_into().unwrap());
-        *cursor += 4;
-        val
-    };
-
-    let read_f32 = |cursor: &mut usize, data: &[u8]| {
-        let val = f32::from_le_bytes(data[*cursor..*cursor + 4].try_into().unwrap());
-        *cursor += 4;
-        val
-    };
-
-    let vertex_count = read_u32(&mut cursor, mesh_data) as usize;
-    let mut positions = Vec::with_capacity(vertex_count);
-    for _ in 0..vertex_count {
-        positions.push([
-            read_f32(&mut cursor, mesh_data),
-            read_f32(&mut cursor, mesh_data),
-            read_f32(&mut cursor, mesh_data),
-        ]);
-    }
-
-    let mut normals = Vec::with_capacity(vertex_count);
-    for _ in 0..vertex_count {
-        normals.push([
-            read_f32(&mut cursor, mesh_data),
-            read_f32(&mut cursor, mesh_data),
-            read_f32(&mut cursor, mesh_data),
-        ]);
-    }
-
-    let mut uvs = Vec::with_capacity(vertex_count);
-    for _ in 0..vertex_count {
-        uvs.push([
-            read_f32(&mut cursor, mesh_data),
-            read_f32(&mut cursor, mesh_data),
-        ]);
-    }
-
-    let has_tangents = read_u32(&mut cursor, mesh_data) == 1;
-    let tangents = if has_tangents {
-        let mut t = Vec::with_capacity(vertex_count);
-        for _ in 0..vertex_count {
-            t.push([
-                read_f32(&mut cursor, mesh_data),
-                read_f32(&mut cursor, mesh_data),
-                read_f32(&mut cursor, mesh_data),
-                read_f32(&mut cursor, mesh_data),
-            ]);
-        }
-        Some(t)
-    } else {
-        None
-    };
-
-    let index_count = read_u32(&mut cursor, mesh_data) as usize;
-    let mut indices = Vec::with_capacity(index_count);
-    for _ in 0..index_count {
-        indices.push(read_u32(&mut cursor, mesh_data));
-    }
-
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    );
-    mesh.insert_indices(Indices::U32(indices.clone()));
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions.clone());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
-    if let Some(tangents) = tangents {
-        mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, tangents);
-    }
+    // Normally prebuilt on the async load task (load_zone).
+    let TerrainBlockGeometry {
+        mesh,
+        aabb,
+        collider,
+        ..
+    } = prebuilt_geometry
+        .filter(|geometry| geometry.new_terrain)
+        .or_else(|| build_new_terrain_geometry(block_data))
+        .expect("New terrain mesh data missing or invalid");
 
     let albedo_path = zone_data.zone_path.join(format!(
         "block_{}_{}_albedo.png",
@@ -462,21 +540,6 @@ pub(super) fn spawn_new_terrain(
         ..Default::default()
     });
 
-    let mut min = Vec3::splat(f32::MAX);
-    let mut max = Vec3::splat(f32::MIN);
-    let mut collider_verts = Vec::with_capacity(vertex_count);
-    for p in &positions {
-        let pos = Vec3::new(p[0], p[1], p[2]);
-        collider_verts.push(pos);
-        min = min.min(pos);
-        max = max.max(pos);
-    }
-
-    let mut collider_indices = Vec::with_capacity(indices.len() / 3);
-    for i in 0..indices.len() / 3 {
-        collider_indices.push([indices[i * 3], indices[i * 3 + 1], indices[i * 3 + 2]]);
-    }
-
     let terrain_entity = commands
         .spawn((
             EditorSelectable,
@@ -484,23 +547,6 @@ pub(super) fn spawn_new_terrain(
                 block_x: block_data.block_x as u32,
                 block_y: block_data.block_y as u32,
             }),
-            MapEditorTerrainBlock {
-                block_x: block_data.block_x as u32,
-                block_y: block_data.block_y as u32,
-                him_width: block_data.him.width,
-                him_height: block_data.him.height,
-                him_heights_cm: block_data.him.heights.clone(),
-                til_width: block_data.til.as_ref().map(|t| t.width).unwrap_or(0),
-                til_height: block_data.til.as_ref().map(|t| t.height).unwrap_or(0),
-                til_tiles: block_data
-                    .til
-                    .as_ref()
-                    .map(|t| t.tiles.clone())
-                    .unwrap_or_default(),
-                height_offset_cm: 0.0,
-                fill_tile_id: None,
-                dirty: false,
-            },
             TerrainMeshForGrass,
             Mesh3d(meshes.add(mesh)),
             MeshMaterial3d(material),
@@ -509,14 +555,13 @@ pub(super) fn spawn_new_terrain(
             Visibility::Visible,
             ViewVisibility::default(),
             InheritedVisibility::default(),
-            Aabb::from_min_max(min, max),
+            aabb,
             RenderLayers::layer(0),
             NotShadowCaster,
         ))
         .insert((
             RigidBody::Fixed,
-            Collider::trimesh(collider_verts, collider_indices)
-                .expect("Failed to create terrain collider"),
+            collider,
             CollisionGroups::new(
                 COLLISION_GROUP_ZONE_TERRAIN,
                 COLLISION_FILTER_INSPECTABLE
@@ -527,6 +572,11 @@ pub(super) fn spawn_new_terrain(
             ),
         ))
         .id();
+    if map_editor {
+        commands
+            .entity(terrain_entity)
+            .insert(map_editor_terrain_block(block_data));
+    }
 
     terrain_entity
 }

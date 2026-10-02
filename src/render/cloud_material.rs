@@ -201,13 +201,18 @@ impl AsBindGroup for CloudMaterial {
         CloudMaterialKey
     }
 
-    fn as_bind_group(
+    /// Returns the bindings unprepared (instead of overriding `as_bind_group` and
+    /// returning `CreateBindGroupDirectly`) so Bevy's material allocator frees the
+    /// previous bind group when the material is modified. On Bevy 0.19.1 the
+    /// `CreateBindGroupDirectly` path never frees it, and this material is
+    /// modified every frame (animation time), so that path leaked GPU memory.
+    fn unprepared_bind_group(
         &self,
-        layout_descriptor: &BindGroupLayoutDescriptor,
+        _layout: &BindGroupLayout,
         render_device: &RenderDevice,
-        _pipeline_cache: &PipelineCache,
         _param: &mut (),
-    ) -> Result<PreparedBindGroup, AsBindGroupError> {
+        _bindless: bool,
+    ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
         // Create uniform buffer with all material data
         // Layout matches shader expectations
         let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
@@ -249,30 +254,9 @@ impl AsBindGroup for CloudMaterial {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let layout = _pipeline_cache.get_bind_group_layout(layout_descriptor);
-
-        let entries = vec![BindGroupEntry {
-            binding: 0,
-            resource: buffer.as_entire_binding(),
-        }];
-
-        let bind_group = render_device.create_bind_group("cloud_material", &layout, &entries);
-
-        Ok(PreparedBindGroup {
-            bindings: BindingResources(vec![]),
-            bind_group,
+        Ok(UnpreparedBindGroup {
+            bindings: BindingResources(vec![(0, OwnedBindingResource::Buffer(buffer))]),
         })
-    }
-
-    fn unprepared_bind_group(
-        &self,
-        _layout: &BindGroupLayout,
-        _render_device: &RenderDevice,
-        _param: &mut (),
-        _bindless: bool,
-    ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
-        // We override as_bind_group, so this should never be called
-        Err(AsBindGroupError::CreateBindGroupDirectly)
     }
 
     fn bind_group_layout_entries(

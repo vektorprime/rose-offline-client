@@ -33,7 +33,7 @@ impl Default for Bird {
 }
 
 /// Resource for bird configuration settings
-#[derive(Resource, Reflect, Clone, Debug, Serialize, Deserialize)]
+#[derive(Resource, Reflect, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[reflect(Resource, Default, Serialize, Deserialize)]
 pub struct BirdSettings {
     /// Whether birds are enabled

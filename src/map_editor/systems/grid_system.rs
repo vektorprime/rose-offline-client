@@ -3,8 +3,9 @@
 //! This module provides a visual grid for the map editor at y=0.
 //! The grid helps with positioning and alignment of objects.
 
-use bevy::prelude::{App, Color, Gizmos, Plugin, Res, Update, Vec3};
+use bevy::prelude::{App, Color, Gizmos, IntoScheduleConfigs, Plugin, Res, Update, Vec3};
 
+use crate::map_editor::map_editor_active;
 use crate::map_editor::resources::{EditorGridSettings, MapEditorState};
 
 /// Plugin for the editor grid system
@@ -12,7 +13,7 @@ pub struct EditorGridPlugin;
 
 impl Plugin for EditorGridPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, grid_render_system);
+        app.add_systems(Update, grid_render_system.run_if(map_editor_active));
     }
 }
 

@@ -10,6 +10,7 @@
 //! deferred phases, and Bevy 0.18.1 panics in `queue_prepass_material_meshes`
 //! (prepass/mod.rs unwrap) once a deferred material is visible to it.
 
+use crate::dds_image_loader::{ImagePluginDefaultSampler, TextureLodMinClamp};
 use crate::graphics::*;
 use bevy::{
     anti_alias::{
@@ -17,93 +18,67 @@ use bevy::{
         smaa::{Smaa, SmaaPreset},
     },
     core_pipeline::tonemapping::Tonemapping,
-    image::Image,
+    image::{Image, ImageSampler, ImageSamplerDescriptor},
+    math::cubic_splines::LinearSpline,
     pbr::{ScreenSpaceAmbientOcclusion, ScreenSpaceAmbientOcclusionQualityLevel},
     post_process::motion_blur::MotionBlur,
     prelude::*,
-    render::view::ColorGrading,
 };
 use bevy_light::{
     CascadeShadowConfig, DirectionalLight, DirectionalLightShadowMap, ShadowFilteringMethod,
 };
+use bevy_post_process::auto_exposure::{AutoExposure, AutoExposureCompensationCurve};
 use bevy_post_process::bloom::Bloom;
 use bevy_post_process::dof::DepthOfField;
 
-/// System that applies color grading settings (brightness, contrast, saturation, gamma)
-/// to all cameras with ColorGrading components.
+/// System that applies tonemapping settings to cameras.
 ///
-/// SOLE WRITER of the camera `ColorGrading`: the time-of-day tint is composed
-/// here (user saturation x time-of-day multiplier, plus time-of-day
-/// temperature and shadow lift from `TimeOfDayGrading`) instead of a second
-/// system writing the same component, which would ping-pong (same lesson as
-/// the sun shadow-flag fight; see bevy-0.19-upgrade-plan.md).
-pub fn apply_color_grading_system(
+/// RESTORED 2026-09-25 (second removal reverted): the white film/flash was
+/// traced to ColorGrading exposure on clamped HDR, not the tonemap pass.
+/// Color grading (and its writer) are now DELETED; this is a neutral pipeline.
+pub fn apply_tonemapping_system(
     graphics_settings: Res<GraphicsSettings>,
-    tod_grading: Res<crate::systems::TimeOfDayGrading>,
     mut cameras: Query<
-        &mut ColorGrading,
+        &mut Tonemapping,
         (With<Camera>, Without<crate::render::WaterReflectionCamera>),
     >,
 ) {
-    // Skip if neither input changed
-    if !graphics_settings.is_changed() && !tod_grading.is_changed() {
+    // Skip if settings haven't changed
+    if !graphics_settings.is_changed() {
         return;
     }
 
-    for mut color_grading in cameras.iter_mut() {
-        // GATED (was unconditional): every field write marks the view changed.
-        let exposure = (graphics_settings.brightness - 1.0) * 2.0;
-        if color_grading.global.exposure != exposure {
-            color_grading.global.exposure = exposure;
-        }
-
-        // Apply contrast to all sections (gated: see above).
-        if color_grading.shadows.contrast != graphics_settings.contrast {
-            color_grading.shadows.contrast = graphics_settings.contrast;
-            color_grading.midtones.contrast = graphics_settings.contrast;
-            color_grading.highlights.contrast = graphics_settings.contrast;
-        }
-
-        // Apply saturation: user setting composed with the time-of-day
-        // multiplier (warm/cool tint path owns this field jointly, so it is
-        // composed here in the sole writer rather than a second system).
-        let saturation = graphics_settings.saturation * tod_grading.saturation_mult;
-        if color_grading.global.post_saturation != saturation {
-            color_grading.global.post_saturation = saturation;
-        }
-
-        // Apply time-of-day white-balance shift (this system never otherwise
-        // touches temperature, so no ownership conflict).
-        if color_grading.global.temperature != tod_grading.temperature {
-            color_grading.global.temperature = tod_grading.temperature;
-        }
-
-        // Apply gamma to all sections (gated).
-        if color_grading.shadows.gamma != graphics_settings.gamma {
-            color_grading.shadows.gamma = graphics_settings.gamma;
-            color_grading.midtones.gamma = graphics_settings.gamma;
-            color_grading.highlights.gamma = graphics_settings.gamma;
-        }
-
-        // Apply time-of-day shadow lift (higher at night to avoid crushed
-        // blacks). Owned by the tint path; nothing else writes lift.
-        if color_grading.shadows.lift != tod_grading.shadow_lift {
-            color_grading.shadows.lift = tod_grading.shadow_lift;
+    for mut tonemapping in cameras.iter_mut() {
+        // GATED: writing marks the view changed and forces post-chain
+        // re-specialization.
+        let new = match graphics_settings.tonemapping {
+            TonemappingMode::None => Tonemapping::None,
+            TonemappingMode::Reinhard => Tonemapping::Reinhard,
+            TonemappingMode::ReinhardLuminance => Tonemapping::ReinhardLuminance,
+            TonemappingMode::AcesFitted => Tonemapping::AcesFitted,
+            TonemappingMode::AgX => Tonemapping::AgX,
+            TonemappingMode::SomewhatBoringDisplayTransform => {
+                Tonemapping::SomewhatBoringDisplayTransform
+            }
+            TonemappingMode::TonyMcMapface => Tonemapping::TonyMcMapface,
+            TonemappingMode::BlenderFilmic => Tonemapping::BlenderFilmic,
+            TonemappingMode::KhronosPbrNeutral => Tonemapping::KhronosPbrNeutral,
+        };
+        if *tonemapping != new {
+            *tonemapping = new;
         }
     }
 }
 
 /// System that applies shadow quality settings to directional lights.
-/// Skips MoonLight: the time-of-day table owns moon shadows (always off for perf).
+/// Includes MoonLight: it casts shadows while the sun is down (the time-of-day
+/// system owns the on/off flags), so it needs the same cascade layout.
 /// Skips SkyFillLight: the sky-bounce fill never casts shadows by design.
 pub fn apply_shadow_quality_system(
     graphics_settings: Res<GraphicsSettings>,
     mut directional_lights: Query<
         (&mut DirectionalLight, Option<&mut CascadeShadowConfig>),
-        (
-            Without<crate::render::MoonLight>,
-            Without<crate::render::zone_lighting::SkyFillLight>,
-        ),
+        Without<crate::render::zone_lighting::SkyFillLight>,
     >,
     mut shadow_map_resource: ResMut<DirectionalLightShadowMap>,
 ) {
@@ -168,40 +143,6 @@ pub fn apply_shadow_quality_system(
     }
 }
 
-/// System that applies tonemapping settings to cameras.
-pub fn apply_tonemapping_system(
-    graphics_settings: Res<GraphicsSettings>,
-    mut cameras: Query<
-        &mut Tonemapping,
-        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
-    >,
-) {
-    // Skip if settings haven't changed
-    if !graphics_settings.is_changed() {
-        return;
-    }
-
-    for mut tonemapping in cameras.iter_mut() {
-        // GATED (was unconditional): writing marks the view changed and forces
-        // post-chain re-specialization every frame the tab is open.
-        let new = match graphics_settings.tonemapping {
-            TonemappingMode::None => Tonemapping::None,
-            TonemappingMode::Reinhard => Tonemapping::Reinhard,
-            TonemappingMode::ReinhardLuminance => Tonemapping::ReinhardLuminance,
-            TonemappingMode::AcesFitted => Tonemapping::AcesFitted,
-            TonemappingMode::AgX => Tonemapping::AgX,
-            TonemappingMode::SomewhatBoringDisplayTransform => {
-                Tonemapping::SomewhatBoringDisplayTransform
-            }
-            TonemappingMode::TonyMcMapface => Tonemapping::TonyMcMapface,
-            TonemappingMode::BlenderFilmic => Tonemapping::BlenderFilmic,
-        };
-        if *tonemapping != new {
-            *tonemapping = new;
-        }
-    }
-}
-
 /// System that applies bloom settings to cameras.
 /// Disabling REMOVES the component so the bloom pyramid pass is skipped entirely.
 /// Previously intensity was set to 0.0, which still dispatched the full pass.
@@ -220,9 +161,9 @@ pub fn apply_bloom_system(
 
     for (entity, bloom) in cameras.iter() {
         if graphics_settings.bloom_enabled {
-            // TEMP-BISECT (blue-flash hunt): skip re-insert when identical so
-            // the per-frame churn while the Graphics tab is open stops. If the
-            // flashing returns / tab speeds up, the churn was masking/costing.
+            // SINGLE-OWNER + write-on-change: Bloom is owned by this system
+            // only (PostProcessing page no longer toggles it). Re-inserting an
+            // identical component churns ViewTarget/pipeline re-specialization.
             let same = matches!(bloom, Some(existing)
                 if (existing.intensity - graphics_settings.bloom_intensity).abs() <= 1e-4);
             if !same {
@@ -237,34 +178,15 @@ pub fn apply_bloom_system(
     }
 }
 
-/// System that applies shadow filtering method to lights.
+/// System that applies the shadow filtering method.
+///
+/// `ShadowFilteringMethod` is a CAMERA component in Bevy ("add this component
+/// to a Camera3d"). This used to query `With<DirectionalLight>`, which matched
+/// nothing, so the dropdown never took effect.
 pub fn apply_shadow_filtering_system(
     graphics_settings: Res<GraphicsSettings>,
-    mut lights: Query<&mut ShadowFilteringMethod, With<DirectionalLight>>,
-) {
-    // Skip if settings haven't changed
-    if !graphics_settings.is_changed() {
-        return;
-    }
-
-    for mut filtering in lights.iter_mut() {
-        // GATED (was unconditional).
-        let new = match graphics_settings.shadow_filtering {
-            GraphicsShadowFilteringMethod::Hardware2x2 => ShadowFilteringMethod::Hardware2x2,
-            GraphicsShadowFilteringMethod::Gaussian => ShadowFilteringMethod::Gaussian,
-            GraphicsShadowFilteringMethod::Temporal => ShadowFilteringMethod::Temporal,
-        };
-        if *filtering != new {
-            *filtering = new;
-        }
-    }
-}
-
-/// System that applies MSAA settings to cameras.
-pub fn apply_msaa_system(
-    graphics_settings: Res<GraphicsSettings>,
     mut cameras: Query<
-        &mut Msaa,
+        &mut ShadowFilteringMethod,
         (With<Camera>, Without<crate::render::WaterReflectionCamera>),
     >,
 ) {
@@ -273,18 +195,14 @@ pub fn apply_msaa_system(
         return;
     }
 
-    let new_msaa = match graphics_settings.msaa_samples {
-        MsaaSamples::X1 => Msaa::Off,
-        MsaaSamples::X2 => Msaa::Sample2,
-        MsaaSamples::X4 => Msaa::Sample4,
-        MsaaSamples::X8 => Msaa::Sample8,
-    };
-
-    for mut msaa in cameras.iter_mut() {
-        // GATED (was unconditional): same reason as tonemapping (Msaa sits in
-        // nearly every pipeline key + sizes the view targets).
-        if *msaa != new_msaa {
-            *msaa = new_msaa;
+    for mut filtering in cameras.iter_mut() {
+        // GATED (was unconditional).
+        let new = match graphics_settings.shadow_filtering {
+            GraphicsShadowFilteringMethod::Hardware2x2 => ShadowFilteringMethod::Hardware2x2,
+            GraphicsShadowFilteringMethod::Gaussian => ShadowFilteringMethod::Gaussian,
+        };
+        if *filtering != new {
+            *filtering = new;
         }
     }
 }
@@ -321,8 +239,7 @@ pub fn apply_ssao_system(
             SsaoQuality::High => ScreenSpaceAmbientOcclusionQualityLevel::High,
             SsaoQuality::Ultra => ScreenSpaceAmbientOcclusionQualityLevel::Ultra,
         };
-        // TEMP-BISECT (blue-flash hunt): skip re-insert when identical.
-        // See apply_bloom_system.
+        // SINGLE-OWNER + write-on-change (see apply_bloom_system).
         let same = matches!(ssao, Some(existing) if existing.quality_level == level);
         if !same {
             commands.entity(entity).insert(ScreenSpaceAmbientOcclusion {
@@ -373,6 +290,112 @@ pub fn apply_smaa_system(
                     });
                 }
             }
+        }
+    }
+}
+
+/// Bottom/top of the default `AutoExposure` histogram range (-8..=8), i.e. the
+/// span of metered scene averages (log2 luminance) the curve must cover.
+const AUTO_EXPOSURE_MIN_LOG_LUM: f32 = -8.0;
+const AUTO_EXPOSURE_MAX_LOG_LUM: f32 = 8.0;
+/// Metered scene average (log2 luminance, before exposure) at and above which
+/// Auto Exposure fully adapts to the target. Daylight scenes meter around -1
+/// (unit-scale terrain lighting ~0.5-0.8, 7000-lux PBR at EV100 9.7).
+const AUTO_EXPOSURE_FULL_ADAPTATION_LOG_LUM: f32 = -2.0;
+/// Fraction of the extra darkness below the full-adaptation point that Auto
+/// Exposure compensates. 0.5 = half, so night/caves stay visibly darker than
+/// day instead of being lifted to daylight brightness.
+const AUTO_EXPOSURE_DARK_ADAPTATION: f32 = 0.5;
+
+/// Builds the camera's Auto Exposure compensation curve.
+///
+/// Bevy's shader sets `target = curve(avg) - avg`, so the curve's y value is
+/// the log2 luminance the metered scene average is driven to. Bevy's default
+/// curve is flat 0 (average -> 1.0, very bright, and night lifted to day).
+/// This curve is flat at `target_ev` for daylight-and-brighter scenes and
+/// slopes down below that for partial adaptation in dark scenes.
+pub fn auto_exposure_compensation_curve(target_ev: f32) -> AutoExposureCompensationCurve {
+    let target_ev = target_ev.clamp(-6.0, 2.0);
+    let dark_target_ev = target_ev
+        - (1.0 - AUTO_EXPOSURE_DARK_ADAPTATION)
+            * (AUTO_EXPOSURE_FULL_ADAPTATION_LOG_LUM - AUTO_EXPOSURE_MIN_LOG_LUM);
+    AutoExposureCompensationCurve::from_curve(LinearSpline::new([
+        Vec2::new(AUTO_EXPOSURE_MIN_LOG_LUM, dark_target_ev),
+        Vec2::new(AUTO_EXPOSURE_FULL_ADAPTATION_LOG_LUM, target_ev),
+        Vec2::new(AUTO_EXPOSURE_MAX_LOG_LUM, target_ev),
+    ]))
+    .unwrap_or_else(|err| {
+        log::error!("[AUTO-EXPOSURE] compensation curve build failed: {err}");
+        AutoExposureCompensationCurve::default()
+    })
+}
+
+/// The camera's shared Auto Exposure compensation curve asset, plus the target
+/// it was last built for. Created at app build (src/lib.rs) so the camera can
+/// spawn with it; rebuilt in place only by `apply_auto_exposure_system`.
+#[derive(Resource)]
+pub struct AutoExposureCurve {
+    pub handle: Handle<AutoExposureCompensationCurve>,
+    target_ev: f32,
+}
+
+impl AutoExposureCurve {
+    pub fn new(curves: &mut Assets<AutoExposureCompensationCurve>, target_ev: f32) -> Self {
+        Self {
+            handle: curves.add(auto_exposure_compensation_curve(target_ev)),
+            target_ev,
+        }
+    }
+
+    /// The `AutoExposure` component for the main camera, using this curve.
+    pub fn component(&self) -> AutoExposure {
+        AutoExposure {
+            compensation_curve: self.handle.clone(),
+            ..Default::default()
+        }
+    }
+}
+
+/// System that applies AutoExposure enable to cameras via insert/remove, and
+/// keeps the compensation curve in sync with `auto_exposure_target_ev`.
+/// AutoExposure is spawned by default (matching `GraphicsSettings::default()`);
+/// removing the component skips its histogram/adaptation compute passes
+/// entirely. Needed as a live toggle to bisect night white-out regressions
+/// (see pitfalls/atmosphere-flash.md for the earlier cyan-veil incident).
+pub fn apply_auto_exposure_system(
+    graphics_settings: Res<GraphicsSettings>,
+    mut curve: ResMut<AutoExposureCurve>,
+    mut curves: ResMut<Assets<AutoExposureCompensationCurve>>,
+    mut commands: Commands,
+    cameras: Query<
+        (Entity, Option<&AutoExposure>),
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
+) {
+    if !graphics_settings.is_changed() {
+        return;
+    }
+
+    // Rebuild the curve only when the target actually moved: the settings
+    // resource is marked changed every frame the Graphics tab is open, and a
+    // curve edit re-uploads its GPU texture. The camera keeps the same handle.
+    let target_ev = graphics_settings.auto_exposure_target_ev;
+    if (curve.target_ev - target_ev).abs() > 1e-3 {
+        if let Some(mut asset) = curves.get_mut(&curve.handle) {
+            *asset = auto_exposure_compensation_curve(target_ev);
+        }
+        curve.target_ev = target_ev;
+    }
+
+    for (entity, auto_exposure) in cameras.iter() {
+        if graphics_settings.auto_exposure_enabled {
+            let uses_curve =
+                auto_exposure.is_some_and(|existing| existing.compensation_curve == curve.handle);
+            if !uses_curve {
+                commands.entity(entity).insert(curve.component());
+            }
+        } else if auto_exposure.is_some() {
+            commands.entity(entity).remove::<AutoExposure>();
         }
     }
 }
@@ -440,6 +463,10 @@ pub fn apply_dof_enabled_system(
 /// System that applies FXAA enable to cameras via insert/remove.
 /// Previously `fxaa_enabled` (including Low preset's `fxaa:true` fallback) had no
 /// consumer, so the preset promised AA it never got.
+///
+/// FXAA is only applied while SMAA is Disabled: Bevy 0.19.1 orders both passes
+/// only `.after(tonemapping)`, so with both on they run in parallel and race
+/// the main-texture ping-pong (random pre-tonemap/stale frames on screen).
 pub fn apply_fxaa_system(
     graphics_settings: Res<GraphicsSettings>,
     mut commands: Commands,
@@ -452,8 +479,10 @@ pub fn apply_fxaa_system(
         return;
     }
 
+    let fxaa_wanted = graphics_settings.fxaa_enabled
+        && graphics_settings.smaa_quality == SmaaQuality::Disabled;
     for (entity, fxaa) in cameras.iter() {
-        if graphics_settings.fxaa_enabled {
+        if fxaa_wanted {
             if fxaa.is_none() {
                 commands.entity(entity).insert(Fxaa::default());
             }
@@ -478,8 +507,10 @@ pub fn apply_view_distance_system(
     }
     let far = (graphics_settings.view_distance * 16.0).clamp(6000.0, 12000.0);
     for mut projection in cameras.iter_mut() {
-        if let Projection::Perspective(ref mut perspective) = *projection {
-            if (perspective.far - far).abs() > 1.0 {
+        // Read-only check first (menu-open change spam must not mark cameras).
+        let matches = matches!(projection.as_ref(), Projection::Perspective(p) if (p.far - far).abs() <= 1.0);
+        if !matches {
+            if let Projection::Perspective(perspective) = projection.as_mut() {
                 perspective.far = far;
             }
         }
@@ -487,26 +518,174 @@ pub fn apply_view_distance_system(
 }
 
 /// System that wires texture_quality to image sampler LOD clamps.
-/// Previously `mip_bias()` was dead code (never applied). Mapping bias to
-/// lod_min_clamp forces smaller mips on Low (faster, blurrier) and full res on
-/// High/Ultra. Only runs on settings change; converts Default samplers to explicit
-/// descriptors preserving all other fields.
+///
+/// Low/Medium set the sampler's `lod_min_clamp` to 2/1 so the GPU skips the
+/// largest mips, like the original client's texture loading scale (textures
+/// loaded at 1/4 and 1/2 size); High/Ultra use full resolution (lod_min_clamp
+/// cannot express Ultra's negative bias).
+///
+/// Which images: only those with a mip chain (a min-LOD clamp does nothing on a
+/// single-level image), which already leaves out render targets (water
+/// reflection), cubemaps and `3ddata/control/` UI textures (the DDS loader keeps
+/// both single-level), images built in code and PNG/TGA files from Bevy's
+/// loader. Images registered with egui (UI, minimap) are kept at full
+/// resolution even with mips: egui draws them at their own size, and the
+/// original client loads its UI images unscaled. In practice the clamped images
+/// are the DDS game textures.
+///
+/// On a settings change it checks every image and publishes the clamp to the
+/// DDS loader (`TextureLodMinClamp`), so textures loaded later start with it.
+/// Other frames it checks only images added, loaded or replaced since the last
+/// run (a load that raced the change, or an image not from the DDS loader), or
+/// every image again when the egui texture registry changed. Images are read
+/// first and `get_mut` only for samplers that actually change: each `get_mut`
+/// re-extracts and re-uploads the image.
+///
+/// A material captures its images' samplers when it is prepared and is not
+/// re-prepared when an image changes (Bevy 0.19.1), so after a settings change
+/// rewrote samplers, `refresh_materials_after_sampler_change` re-prepares the
+/// materials once (`MaterialSamplersStale`). egui rebuilds its bind groups
+/// every frame and needs nothing.
 pub fn apply_texture_quality_system(
     graphics_settings: Res<GraphicsSettings>,
+    loader_lod_min_clamp: Option<Res<TextureLodMinClamp>>,
+    image_plugin_default: Option<Res<ImagePluginDefaultSampler>>,
+    egui_user_textures: Option<Res<bevy_egui::EguiUserTextures>>,
+    mut image_events: MessageReader<AssetEvent<Image>>,
     mut images: ResMut<Assets<Image>>,
+    mut material_samplers_stale: ResMut<MaterialSamplersStale>,
 ) {
-    if !graphics_settings.is_changed() {
-        return;
-    }
-    let bias = graphics_settings.texture_quality.mip_bias();
     // bias 2.0/1.0 (Low/Medium) -> force mip >= 2/1; 0.0/-0.5 (High/Ultra) -> full res.
-    let lod_min = bias.max(0.0);
-    for (_, image) in images.iter_mut() {
-        let descriptor = image.sampler.get_or_init_descriptor();
-        if (descriptor.lod_min_clamp - lod_min).abs() > f32::EPSILON {
-            descriptor.lod_min_clamp = lod_min;
+    let lod_min = graphics_settings.texture_quality.mip_bias().max(0.0);
+    let default_sampler = image_plugin_default.as_deref().map(|sampler| &sampler.0);
+    let target_lod_min = |id: AssetId<Image>| -> f32 {
+        let shown_by_egui = egui_user_textures
+            .as_ref()
+            .is_some_and(|textures| textures.image_id(id).is_some());
+        if shown_by_egui {
+            0.0
+        } else {
+            lod_min
+        }
+    };
+    let needs_update = |id: AssetId<Image>, image: &Image| -> bool {
+        needs_lod_min_clamp(image, target_lod_min(id), default_sampler)
+    };
+
+    if graphics_settings.is_changed() {
+        if let Some(loader_lod_min_clamp) = &loader_lod_min_clamp {
+            loader_lod_min_clamp.set(lod_min);
         }
     }
+    let check_all = graphics_settings.is_changed()
+        || egui_user_textures
+            .as_ref()
+            .is_some_and(|textures| textures.is_changed());
+
+    let stale_images: Vec<AssetId<Image>> = if check_all {
+        // Every image is checked below, which covers the queued messages too.
+        image_events.clear();
+        images
+            .iter()
+            .filter(|(id, image)| needs_update(*id, *image))
+            .map(|(id, _)| id)
+            .collect()
+    } else {
+        image_events
+            .read()
+            .filter_map(|event| match event {
+                AssetEvent::Added { id }
+                | AssetEvent::LoadedWithDependencies { id }
+                | AssetEvent::Modified { id } => Some(*id),
+                _ => None,
+            })
+            .filter(|id| {
+                images
+                    .get(*id)
+                    .is_some_and(|image| needs_update(*id, image))
+            })
+            .collect()
+    };
+
+    // Materials already prepared with these images keep their old samplers
+    // until re-prepared (see refresh_materials_after_sampler_change).
+    if graphics_settings.is_changed() && !stale_images.is_empty() && !material_samplers_stale.0 {
+        material_samplers_stale.0 = true;
+    }
+
+    for id in stale_images {
+        // Re-check: one image can be listed by several messages (Added, then
+        // LoadedWithDependencies), and only the first visit may write.
+        if !images.get(id).is_some_and(|image| needs_update(id, image)) {
+            continue;
+        }
+        let Some(mut image) = images.get_mut(id) else {
+            continue;
+        };
+        let mut descriptor = match &image.sampler {
+            ImageSampler::Descriptor(descriptor) => descriptor.clone(),
+            // A Default sampler means the global default (linear), not
+            // `ImageSamplerDescriptor::default()` (nearest), which
+            // `get_or_init_descriptor()` would install.
+            ImageSampler::Default => match default_sampler {
+                Some(default_sampler) => default_sampler.clone(),
+                None => continue,
+            },
+        };
+        descriptor.lod_min_clamp = target_lod_min(id);
+        image.sampler = ImageSampler::Descriptor(descriptor);
+    }
+}
+
+/// Set by `apply_texture_quality_system` when a Texture Quality change rewrote
+/// image samplers that existing materials captured at prepare time.
+#[derive(Resource, Default)]
+pub struct MaterialSamplersStale(bool);
+
+/// Run condition for [`refresh_materials_after_sampler_change`].
+pub fn material_samplers_stale(stale: Res<MaterialSamplersStale>) -> bool {
+    stale.0
+}
+
+/// Re-prepares every material that can sample game textures, once, after a
+/// Texture Quality change rewrote their images' samplers. Ordered before
+/// `apply_texture_quality_system`, so it runs on the frame after the images
+/// changed: the render world has prepared the new samplers by then, and the
+/// re-prepared bind groups pick them up. `iter_mut` marks every asset Modified;
+/// a one-time cost on an explicit settings change.
+pub fn refresh_materials_after_sampler_change(
+    mut material_samplers_stale: ResMut<MaterialSamplersStale>,
+    mut object_materials: ResMut<Assets<bevy::pbr::ExtendedMaterial<StandardMaterial, crate::render::RoseObjectExtension>>>,
+    mut effect_materials: ResMut<Assets<bevy::pbr::ExtendedMaterial<StandardMaterial, crate::render::RoseEffectExtension>>>,
+    mut standard_materials: ResMut<Assets<StandardMaterial>>,
+    mut particle_materials: ResMut<Assets<crate::render::ParticleMaterial>>,
+) {
+    material_samplers_stale.0 = false;
+    object_materials.iter_mut().for_each(|_| {});
+    effect_materials.iter_mut().for_each(|_| {});
+    standard_materials.iter_mut().for_each(|_| {});
+    particle_materials.iter_mut().for_each(|_| {});
+}
+
+/// Whether `image` has a mip chain and its sampler's `lod_min_clamp` is not
+/// `lod_min` yet. A `Default` sampler is only converted when the global default
+/// sampler is known (`ImagePluginDefaultSampler`).
+fn needs_lod_min_clamp(
+    image: &Image,
+    lod_min: f32,
+    default_sampler: Option<&ImageSamplerDescriptor>,
+) -> bool {
+    if image.texture_descriptor.mip_level_count <= 1 {
+        return false;
+    }
+    let current = match &image.sampler {
+        ImageSampler::Descriptor(descriptor) => descriptor.lod_min_clamp,
+        ImageSampler::Default => match default_sampler {
+            Some(default_sampler) => default_sampler.lod_min_clamp,
+            None => return false,
+        },
+    };
+    (current - lod_min).abs() > f32::EPSILON
 }
 
 /// System that applies ambient lighting settings to the global AmbientLight resource.

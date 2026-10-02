@@ -37,31 +37,23 @@ pub fn status_effect_system(
             }
         };
 
-        for (status_effect_type, status_effect_slot) in status_effects.active.iter() {
-            if let Some(status_effect) = status_effect_slot {
-                match status_effect_type {
-                    StatusEffectType::Poisoned => {
-                        if apply_per_second_effect {
-                            if let Some(data) =
-                                game_data.status_effects.get_status_effect(status_effect.id)
-                            {
-                                health_points.hp =
-                                    i32::max(health_points.hp - data.apply_per_second_value, 1);
-                            }
-                        }
-                    }
-                    StatusEffectType::DecreaseLifeTime => {
-                        if apply_per_second_effect {
-                            if let Some(data) =
-                                game_data.status_effects.get_status_effect(status_effect.id)
-                            {
-                                if health_points.hp > data.apply_per_second_value {
-                                    health_points.hp -= data.apply_per_second_value;
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
+        // Both effects handled here only act on the per-second tick, so the
+        // 35-slot map is not scanned on other frames. They are checked in enum
+        // order (Poisoned before DecreaseLifeTime), the order the full scan used.
+        if !apply_per_second_effect {
+            continue;
+        }
+
+        if let Some(status_effect) = &status_effects.active[StatusEffectType::Poisoned] {
+            if let Some(data) = game_data.status_effects.get_status_effect(status_effect.id) {
+                health_points.hp = i32::max(health_points.hp - data.apply_per_second_value, 1);
+            }
+        }
+
+        if let Some(status_effect) = &status_effects.active[StatusEffectType::DecreaseLifeTime] {
+            if let Some(data) = game_data.status_effects.get_status_effect(status_effect.id) {
+                if health_points.hp > data.apply_per_second_value {
+                    health_points.hp -= data.apply_per_second_value;
                 }
             }
         }

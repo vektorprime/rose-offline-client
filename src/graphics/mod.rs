@@ -3,7 +3,7 @@
 //! This module provides runtime-configurable graphics options including:
 //! - Display settings (VSync, MSAA, view distance)
 //! - Shadow quality configuration
-//! - Image adjustments (brightness, contrast, saturation, gamma)
+//! - Tonemapping selection (Image adjustments/color grading removed 2026-09-25)
 //! - Post-processing effects (bloom, motion blur, SSAO, DOF)
 //! - Texture quality settings
 

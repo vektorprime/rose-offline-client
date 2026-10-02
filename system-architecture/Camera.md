@@ -6,7 +6,7 @@ The camera system in `rose-offline-client` manages 3D perspective, user interact
 ## 2. Camera3d Configuration
 Cameras are configured using Bevy's `Camera3d` bundle.
 - **PerspectiveProjection**: Controls field of view (FOV), aspect ratio, and near/far clipping planes (`src/lib.rs:1972-1982`: fov PI/4, near 0.1, far 8000.0).
-- **MSAA & Clear Color**: The main camera spawns with `Msaa::Off` (`src/lib.rs:1967`; MSAA X1/X2/X4/X8 is opt-in via `apply_msaa_system` in `src/graphics/apply_systems.rs:208-231`) and `clear_color: Custom(srgb(0.0, 0.0, 0.02))` near-black for star visibility (`src/lib.rs:1969`). The water-reflection camera uses `Msaa::Off` + `Custom(BLACK)` (`src/render/water_reflection.rs:151-156).
+- **MSAA & Clear Color**: The main camera spawns with `Msaa::Off` (`src/lib.rs`). There is no MSAA setting: the camera is deferred (`DeferredPrepass`), and Bevy's `check_msaa` forces `Msaa::Off` on deferred cameras, so the old X2/X4/X8 option and `apply_msaa_system` were removed 2026-09-30. SMAA is the anti-aliasing. It spawns with `clear_color: Custom(srgb(0.0, 0.0, 0.02))` near-black for star visibility (`src/lib.rs:1969`). The water-reflection camera uses `Msaa::Off` + `Custom(BLACK)` (`src/render/water_reflection.rs:151-156).
 
 ## 3. Visibility System
 Visibility is managed through three primary components plus Bevy's internal systems, ensuring efficient rendering and correct hierarchy propagation:
@@ -35,7 +35,7 @@ Used for debugging, map editing, and free exploration in the viewer modes (zone 
 Used as the main third-person gameplay camera, following a target entity (e.g., the player character, boats, flight movement) with an offset and distance.
 - **Controls**: Right-click + Drag to rotate, Mouse Wheel to zoom.
 - **Implementation**: `src/systems/orbit_camera_system.rs`
-- **Logic**: Uses a `CameraRig` with `YawPitch` and `Position` drivers for smooth movement and collision detection via `bevy_rapier3d`.
+- **Logic**: Uses a `CameraRig` with `YawPitch` and `Position` drivers for smooth movement and collision detection via `bevy_rapier3d`. The collision shape cast runs every frame (as in the original client); skipping it while the camera was static let the arm extend through walls after the player stopped next to one.
 
 ### Sail Camera
 Boat-follow camera used while sailing.

@@ -98,7 +98,10 @@ pub fn load_dialog_sprites_system(
 
     if ui_resources.loaded_required_textures {
         for handle in load_state.pending_dialogs.drain(..) {
-            if let Some(mut dialog) = assets.get_mut(handle) {
+            // Untracked: a tracked `get_mut` write queues AssetEvent::Modified, which
+            // this system reads next frame, re-loading every dialog's widgets every
+            // frame forever. Nothing else consumes Dialog asset events.
+            if let Some(dialog) = assets.get_mut_untracked(handle) {
                 dialog.widgets.load_widget(&ui_resources);
                 dialog.loaded = true;
             }

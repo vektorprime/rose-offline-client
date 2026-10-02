@@ -30,7 +30,9 @@ impl Plugin for EditorSelectionPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            editor_picking_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+            editor_picking_system
+                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+                .run_if(crate::map_editor::map_editor_active),
         );
     }
 }

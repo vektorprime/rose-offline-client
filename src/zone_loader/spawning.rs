@@ -4,14 +4,27 @@ mod objects;
 mod terrain;
 mod water;
 
-use self::objects::{spawn_animated_object, spawn_effect_object, spawn_object, spawn_sound_object};
+use self::objects::{
+    spawn_animated_object, spawn_effect_object, spawn_object, spawn_sound_object,
+    ObjectMaterialCache,
+};
 use self::terrain::{spawn_new_terrain, spawn_terrain};
+pub(super) use self::terrain::{build_new_terrain_geometry, build_terrain_geometry};
 use self::water::spawn_water;
 
 pub fn spawn_zone(
     params: &mut SpawnZoneParams,
-    zone_data: &ZoneLoaderAsset,
+    zone_data: &mut ZoneLoaderAsset,
 ) -> Result<(Entity, Vec<UntypedHandle>), anyhow::Error> {
+    // Terrain geometry prebuilt on the async load task; moved into the spawned
+    // entities (the rest of the zone data is kept for height queries).
+    let mut terrain_geometries: Vec<Option<TerrainBlockGeometry>> = zone_data
+        .blocks
+        .iter_mut()
+        .map(|block| block.as_mut().and_then(|block| block.terrain_geometry.take()))
+        .collect();
+    let zone_data: &ZoneLoaderAsset = zone_data;
+
     let _span = info_span!("spawn_zone", zone_id = zone_data.zone_id.get()).entered();
     log::info!("[SPAWN ZONE] ===========================================");
     log::info!(
@@ -67,11 +80,17 @@ pub fn spawn_zone(
         ref mut water_spawned_events,
         terrain_noise,
         effect_cache,
+        app_state,
     } = params;
     log::info!(
         "[SPAWN ZONE] render_config.use_new_terrain: {}",
         render_config.use_new_terrain
     );
+
+    // MapEditorTerrainBlock copies each block's height and tile maps for the map
+    // editor. AppState::MapEditor is only ever the initial state (nothing transitions
+    // into it), so only zones spawned while in it can be edited.
+    let map_editor = *app_state.get() == AppState::MapEditor;
 
     game_data
         .zone_list
@@ -102,6 +121,24 @@ pub fn spawn_zone(
         log::info!("[MEMORY] Water material handle created");
         material
     };
+
+    // One TerrainMaterial shared by every block of the zone: all blocks use the
+    // same tile texture list and the same lighting, so per-block copies were
+    // identical. Sharing lets terrain blocks batch, and a lighting update
+    // re-prepares one bind group instead of one per block.
+    // The shader uses binding_array to sample from up to 100 textures based on per-vertex tile_info.
+    let terrain_material = terrain_materials.add(TerrainMaterial {
+        textures: tile_textures.clone(),
+        light_direction: Vec3::new(0.5, 1.0, 0.3).normalize(),
+        light_color: Color::WHITE,
+        ambient_color: Color::srgb(0.9, 0.9, 1.0),
+        // Overwritten with the live moon by update_terrain_lighting_system.
+        moon_direction: crate::render::terrain_material::DEFAULT_MOON_DIRECTION.normalize(),
+        moon_color: Color::BLACK,
+    });
+
+    // Zone object materials shared across all objects of the zone (see ObjectMaterialCache).
+    let mut object_material_cache = ObjectMaterialCache::default();
 
     let mut zone_loading_assets: Vec<UntypedHandle> = Vec::default();
     let zone_entity = commands
@@ -169,16 +206,20 @@ pub fn spawn_zone(
                             standard_materials,
                             zone_data,
                             block_data,
+                            terrain_geometries[block_x + block_y * 64].take(),
+                            map_editor,
                         )
                     } else {
                         spawn_terrain(
                             commands,
                             meshes,
-                            terrain_materials,
+                            &terrain_material,
                             &tile_textures,
                             zone_data,
                             block_data,
+                            terrain_geometries[block_x + block_y * 64].take(),
                             terrain_noise,
+                            map_editor,
                         )
                     };
                 commands.entity(zone_entity).add_child(terrain_entity);
@@ -217,6 +258,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             object_materials.as_mut(),
+                            &mut object_material_cache,
                             specular_texture,
                             &game_data.zsc_event_object,
                             &lightmap_path,
@@ -243,6 +285,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             object_materials.as_mut(),
+                            &mut object_material_cache,
                             specular_texture,
                             &game_data.zsc_special_object,
                             &lightmap_path,
@@ -274,6 +317,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             object_materials.as_mut(),
+                            &mut object_material_cache,
                             specular_texture,
                             &zone_data.zsc_cnst,
                             &lightmap_path,
@@ -301,6 +345,7 @@ pub fn spawn_zone(
                             asset_server,
                             &mut zone_loading_assets,
                             object_materials.as_mut(),
+                            &mut object_material_cache,
                             specular_texture,
                             &zone_data.zsc_deco,
                             &lightmap_path,

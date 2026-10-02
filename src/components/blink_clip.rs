@@ -1,80 +1,29 @@
-use bevy::{
-    ecs::query::QueryItem,
-    prelude::*,
-    reflect::Reflect,
-    render::{
-        extract_component::{ExtractComponent, ExtractComponentPlugin},
-        render_resource::ShaderType,
-    },
-};
+use bevy::prelude::{Component, Handle, Mesh};
 
-/// Controls whether character face eyes are rendered or clipped for blinking
-#[derive(Component, Reflect, Default, Clone, Copy, Debug)]
-pub enum BlinkClip {
-    #[default]
-    EyesOpen, // Render full face including eye mesh
-    EyesClosed, // Clip eye vertices to hide eyes (blink)
+/// Eye-blink variants of a character face mesh, added to the face part entity by
+/// `character_model_blink_system` once the face mesh and its material split have loaded.
+///
+/// A face ZMS holds the closed eyelids as its first material and the open eyes as its last
+/// (same face count). The original client clipped one of them from the index range at draw
+/// time; here each variant is a copy of the face mesh without one of them, and the blink
+/// swaps the part's `Mesh3d` between the two.
+#[derive(Component)]
+pub struct BlinkClipMeshes {
+    /// The loaded face mesh with every face. Kept alive so faces spawned later reuse the
+    /// loaded asset and the variants already derived from it.
+    pub source: Handle<Mesh>,
+    /// Every face except the first material's (closed eyelids).
+    pub eyes_open: Handle<Mesh>,
+    /// Every face except the last material's (open eyes).
+    pub eyes_closed: Handle<Mesh>,
 }
 
-impl BlinkClip {
-    pub fn as_u32(&self) -> u32 {
-        match self {
-            BlinkClip::EyesOpen => 0,
-            BlinkClip::EyesClosed => 1,
+impl BlinkClipMeshes {
+    pub fn get(&self, eyes_open: bool) -> &Handle<Mesh> {
+        if eyes_open {
+            &self.eyes_open
+        } else {
+            &self.eyes_closed
         }
-    }
-}
-
-/// Render-extracted blink state component for shader uniform access.
-/// This is automatically extracted to the render thread via ExtractComponent derive macro.
-#[derive(Component, Clone, Copy, Debug, Default, Reflect, ExtractComponent)]
-#[reflect(Component, Default, Clone)]
-#[extract_component_filter(With<Mesh3d>)] // Only apply to mesh entities
-pub struct BlinkClipState(pub u32);
-
-/// Uniform buffer structure passed to the shader (for future custom pipeline use)
-#[derive(Debug, Clone, ShaderType, Copy)]
-pub struct BlinkUniform {
-    pub state: u32, // 0 = eyes open, 1 = eyes closed
-}
-
-impl Default for BlinkUniform {
-    fn default() -> Self {
-        Self { state: 0 }
-    }
-}
-
-/// Plugin that sets up the blink component extraction system
-pub struct BlinkClipPlugin;
-
-impl Plugin for BlinkClipPlugin {
-    fn build(&self, app: &mut App) {
-        // Register type and extract to render world
-        app.register_type::<BlinkClipState>()
-            .add_plugins(ExtractComponentPlugin::<BlinkClipState>::default())
-            .add_systems(Update, sync_blink_clip_to_state);
-    }
-}
-
-/// System that runs before render extraction to sync BlinkClip -> BlinkClipState
-/// This ensures mesh entities have BlinkClipState for proper extraction
-pub fn sync_blink_clip_to_state(
-    mut commands: Commands,
-    query: Query<(Entity, &BlinkClip), With<Mesh3d>>,
-) {
-    for (entity, blink_clip) in query.iter() {
-        let state = BlinkClipState(blink_clip.as_u32());
-        commands.entity(entity).insert(state);
-    }
-}
-
-/// System to update existing BlinkClipState when BlinkClip changes
-pub fn update_blink_clip_state(
-    mut commands: Commands,
-    query: Query<(Entity, &BlinkClip), With<BlinkClipState>>,
-) {
-    for (entity, blink_clip) in query.iter() {
-        let state = BlinkClipState(blink_clip.as_u32());
-        commands.entity(entity).insert(state);
     }
 }

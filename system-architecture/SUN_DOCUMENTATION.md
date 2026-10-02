@@ -172,18 +172,9 @@ CascadeShadowConfig {
 }
 ```
 
-`directional_light_system.rs` (`src/systems/directional_light_system.rs`) tracks the player position (falling back to the main camera) and constructs shadow view-projection matrices:
-
-```rust
-// directional_light_system.rs
-pub fn directional_light_system(
-    query_player: Query<&GlobalTransform, With<PlayerCharacter>>,
-    query_light: Query<&GlobalTransform, With<DirectionalLight>>,
-    // ... constructs shadow view-projection matrices
-)
-```
-
-Note: the cascade shadow maps themselves are built automatically by Bevy's built-in CSM systems. The matrices constructed in this system are currently discarded (the code comments note that manual cascade management is no longer supported since Bevy 0.13) — treat this system as dead-code reference, not active shadow architecture.
+The cascade shadow maps are built automatically by Bevy's built-in CSM systems. (A
+`directional_light_system` that built shadow view-projection matrices and then discarded
+them, a leftover from before Bevy 0.13, was removed.)
 
 ---
 

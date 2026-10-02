@@ -32,9 +32,10 @@ use crate::{
     },
     map_editor::{
         components::EditorSelectable,
+        map_editor_active, map_editor_active_or_just_left,
         resources::{EditorMode, MapEditorState, ModelCategory, SelectedModel},
     },
-    render::RoseObjectExtension,
+    render::{rose_object_material, RoseObjectExtension},
     resources::CurrentZone,
     zone_loader::ZoneLoaderAsset,
     VfsResource,
@@ -47,15 +48,22 @@ impl Plugin for ModelPlacementPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            model_placement_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+            model_placement_system
+                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+                .run_if(map_editor_active),
         )
         .add_systems(
             Update,
-            model_preview_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+            // Also runs once after leaving the editor: that run despawns the preview.
+            model_preview_system
+                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+                .run_if(map_editor_active_or_just_left),
         )
         .add_systems(
             Update,
-            add_to_zone_system.after(bevy_egui::EguiPreUpdateSet::InitContexts),
+            add_to_zone_system
+                .after(bevy_egui::EguiPreUpdateSet::InitContexts)
+                .run_if(map_editor_active),
         );
     }
 }
@@ -357,9 +365,9 @@ fn place_model_at_position(
             asset_server.load(&material_path)
         };
 
-        // Create material with proper settings
-        let material = object_materials.add(ExtendedMaterial {
-            base: StandardMaterial {
+        // Create material with proper settings (forward-rendered, see `rose_object_material`)
+        let material = object_materials.add(rose_object_material(
+            StandardMaterial {
                 base_color_texture: Some(base_texture_handle),
                 unlit: false, // Enable PBR lighting
                 double_sided: zsc_material.two_sided,
@@ -376,15 +384,14 @@ fn place_model_at_position(
                 },
                 ..Default::default()
             },
-            extension: RoseObjectExtension {
+            RoseObjectExtension {
                 lightmap_params: Vec3::new(0.0, 0.0, 1.0).extend(0.0), // No lightmap for placed objects
                 lightmap_texture: None,
                 specular_texture: None, // No specular for placed objects
-                blink_state: 0,         // Default to eyes open
                 blood_overlay_texture: None,
                 blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
             },
-        });
+        ));
 
         // Determine collision settings
         let mut collision_filter = COLLISION_FILTER_INSPECTABLE;

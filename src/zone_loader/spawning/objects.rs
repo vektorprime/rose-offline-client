@@ -1,11 +1,41 @@
 use super::*;
 use std::collections::HashMap;
 
+use crate::render::rose_object_material;
+
+/// Everything a zone object part's material is built from. Parts with equal keys
+/// get identical materials, so they share one asset (one bind group), which lets
+/// Bevy batch their draws in every view (main, shadow cascades, reflection).
+#[derive(Hash, PartialEq, Eq)]
+pub(super) struct ObjectMaterialKey {
+    texture_path: String,
+    two_sided: bool,
+    alpha_enabled: bool,
+    /// `alpha_test` threshold bits.
+    alpha_test: Option<u32>,
+    /// ZSC specular flag (whether the specular map is bound).
+    specular_enabled: bool,
+    /// Lightmap page path and its parts per row. The part's cell within the page is
+    /// not part of the material: it is the part entity's `MeshTag` (see below).
+    lightmap: Option<(PathBuf, u32)>,
+}
+
+/// Zone-wide cache of zone object materials, shared by all `spawn_object` calls of
+/// one `spawn_zone`.
+///
+/// INVARIANT: zone statics never receive BloodOverlay (character-only) and nothing
+/// else mutates these materials, so sharing one asset across parts and objects is
+/// safe. If zone objects ever gain overlays, the blood system must clone-on-write
+/// instead of mutating the shared asset.
+pub(super) type ObjectMaterialCache =
+    HashMap<ObjectMaterialKey, Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>;
+
 pub(super) fn spawn_object(
     commands: &mut Commands,
     asset_server: &AssetServer,
     zone_loading_assets: &mut Vec<UntypedHandle>,
     object_materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    material_cache: &mut ObjectMaterialCache,
     specular_texture: &SpecularTexture,
     zsc: &ZscFile,
     lightmap_path: &Path,
@@ -39,19 +69,6 @@ pub(super) fn spawn_object(
         ));
 
     let mut mesh_cache: Vec<Option<Handle<Mesh>>> = vec![None; zsc.meshes.len()];
-    // In-object material dedup: identical (material, lightmap) parts share one
-    // ExtendedMaterial instead of one bind-group/pipeline-key per part instance.
-    // (Cross-object sharing still goes through the asset-server handle cache.)
-    // INVARIANT: zone statics never receive BloodOverlay (character-only), so sharing
-    // one asset across parts is safe. If zone objects ever gain overlays, the blood
-    // system must clone-on-write instead of mutating the shared asset.
-    let mut material_cache: HashMap<
-        (
-            usize,
-            Option<(String, u32, u32, u32)>,
-        ),
-        Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
-    > = HashMap::new();
 
     let object_entity_commands = commands.spawn((
         EditorSelectable,
@@ -116,32 +133,36 @@ pub(super) fn spawn_object(
             handle
         });
         zone_loading_assets.push(UntypedHandle::from(mesh.clone()));
-        let lit_part = lit_object.and_then(|lit_object| {
-            for part in lit_object.parts.iter() {
-                if part_index == part.object_part_index as usize {
-                    return Some(part);
+        let lit_part = lit_object
+            .and_then(|lit_object| {
+                for part in lit_object.parts.iter() {
+                    if part_index == part.object_part_index as usize {
+                        return Some(part);
+                    }
                 }
-            }
 
-            lit_object.parts.get(part_index)
-        });
-        let lightmap_texture = lit_part.map(|lit_part| {
-            let path = lightmap_path.join(&lit_part.filename);
+                lit_object.parts.get(part_index)
+            })
+            // A page without a grid has no cells (the old offset math divided by it).
+            .filter(|lit_part| lit_part.parts_per_row > 0);
+        let lightmap_page_path = lit_part.map(|lit_part| lightmap_path.join(&lit_part.filename));
+        let lightmap_texture = lightmap_page_path.as_ref().map(|path| {
             let path_str = path.to_string_lossy().into_owned();
             asset_server.load::<bevy::prelude::Image>(&path_str)
         });
-        let (lightmap_uv_offset, lightmap_uv_scale) = lit_part
-            .map(|lit_part| {
-                let scale = 1.0 / lit_part.parts_per_row as f32;
-                (
-                    Vec2::new(
-                        (lit_part.part_index % lit_part.parts_per_row) as f32,
-                        (lit_part.part_index / lit_part.parts_per_row) as f32,
-                    ),
-                    scale,
-                )
-            })
-            .unwrap_or((Vec2::new(0.0, 0.0), 1.0));
+        // Lightmap UV = uv_b * scale + (column, row) of the part's cell in the page.
+        // The material holds the page layout (x, y = 0, z = scale, w = parts per row);
+        // the shader rebuilds (column, row) = (cell % per_row, cell / per_row) from the
+        // part's MeshTag = cell index. Same integers and the same float ops as when the
+        // offset was stored per material, so materials can be shared per page.
+        let lightmap_params = lit_part.map_or(Vec4::new(0.0, 0.0, 1.0, 0.0), |lit_part| {
+            Vec4::new(
+                0.0,
+                0.0,
+                1.0 / lit_part.parts_per_row as f32,
+                lit_part.parts_per_row as f32,
+            )
+        });
 
         // NOTE: material_id was already bounds-checked above; this fetch is for local use.
         let material_id = object_part.material_id as usize;
@@ -149,27 +170,25 @@ pub(super) fn spawn_object(
         let zsc_material = zsc.materials[material_id].clone();
         let material_path = zsc_material.path.path().to_string_lossy().into_owned();
 
-        // Dedup key includes lightmap identity (path + quantized UVs) so lit parts
-        // with different lightmaps still get distinct materials, while repeated
-        // unlit parts share one material.
-        let lightmap_key = lit_part.map(|p| {
-            (
-                p.filename.clone(),
-                lightmap_uv_offset.x.to_bits(),
-                lightmap_uv_offset.y.to_bits(),
-                lightmap_uv_scale.to_bits(),
-            )
-        });
-        let material_cache_key = (material_id, lightmap_key);
+        let material_cache_key = ObjectMaterialKey {
+            texture_path: material_path.clone(),
+            two_sided: zsc_material.two_sided,
+            alpha_enabled: zsc_material.alpha_enabled,
+            alpha_test: zsc_material.alpha_test.map(f32::to_bits),
+            specular_enabled: zsc_material.specular_enabled,
+            lightmap: lightmap_page_path
+                .clone()
+                .zip(lit_part.map(|lit_part| lit_part.parts_per_row)),
+        };
         let material = if let Some(cached) = material_cache.get(&material_cache_key) {
             cached.clone()
         } else {
             let base_texture_handle: Handle<Image> = asset_server.load(&material_path);
 
-            // Create ExtendedMaterial with RoseObjectExtension for zone lighting support
-            // This applies zone lighting ambient color to darken objects to match the original game
-            let handle = object_materials.add(ExtendedMaterial {
-                base: StandardMaterial {
+            // Forward-rendered RoseObjectExtension material (lightmap, specular); see
+            // `rose_object_material`.
+            let handle = object_materials.add(rose_object_material(
+                StandardMaterial {
                     base_color_texture: if material_path.is_empty() || material_path == "" || material_path == "NULL" {
                         log::warn!("[SPAWN OBJECT DEBUG] Empty or NULL texture path for mesh_id {}, using fallback", mesh_id);
                         Some(asset_server.load("ETC/SPECULAR_SPHEREMAP.DDS"))
@@ -192,15 +211,18 @@ pub(super) fn spawn_object(
                     },
                     ..Default::default()
                 },
-                extension: RoseObjectExtension {
-                    lightmap_params: Vec3::new(lightmap_uv_offset.x, lightmap_uv_offset.y, lightmap_uv_scale).extend(0.0),
+                RoseObjectExtension {
+                    lightmap_params,
                     lightmap_texture: lightmap_texture.clone(),
-                    specular_texture: Some(specular_texture.image.clone()),
-                    blink_state: 0, // Default to eyes open
+                    // Only for ZSC materials flagged specular (the original's
+                    // sphere-map specular); others keep the standard reflectance.
+                    specular_texture: zsc_material
+                        .specular_enabled
+                        .then(|| specular_texture.image.clone()),
                     blood_overlay_texture: None,
                     blood_params: bevy::math::Vec4::new(0.0, 0.0, 0.0, 0.0),
                 },
-            });
+            ));
             material_cache.insert(material_cache_key, handle.clone());
             handle
         };
@@ -272,9 +294,8 @@ pub(super) fn spawn_object(
                 // box made every part always-visible in main, shadow and reflection passes.
                 RenderLayers::layer(0),
                 ColliderParent::new(object_entity),
-                AsyncCollider(ComputedColliderShape::TriMesh(
-                    bevy_rapier3d::prelude::TriMeshFlags::FIX_INTERNAL_EDGES,
-                )),
+                // Shape built once per mesh and shared (see SharedMeshCollider).
+                SharedMeshCollider(bevy_rapier3d::prelude::TriMeshFlags::FIX_INTERNAL_EDGES),
                 CollisionGroups::new(collision_group, collision_filter),
             ))
             .id();
@@ -283,6 +304,13 @@ pub(super) fn spawn_object(
         // Opaque and alpha-masked materials should cast shadows
         if is_transparent {
             commands.entity(part_entity).insert(NotShadowCaster);
+        }
+
+        // The part's lightmap cell (see lightmap_params above).
+        if let Some(lit_part) = lit_part {
+            commands
+                .entity(part_entity)
+                .insert(bevy_mesh::MeshTag(lit_part.part_index));
         }
 
         let active_motion = object_part.animation_path.as_ref().map(|animation_path| {
@@ -432,6 +460,10 @@ pub(super) fn spawn_animated_object(
                 AlphaMode::Opaque
             },
             double_sided: two_sided,
+            // Forward, like the ROSE object materials: the water reflection camera
+            // has no deferred prepass, so deferred animated objects were missing
+            // from reflections.
+            opaque_render_method: bevy::material::OpaqueRendererMethod::Forward,
             ..Default::default()
         },
         extension: RoseEffectExtension {
@@ -460,11 +492,12 @@ pub(super) fn spawn_animated_object(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-            // No explicit Aabb: auto-computed from mesh once loaded (see calculate_bounds).
+            // The morph animation moves vertices outside the base mesh bounds, so
+            // bounds-based culling would pop them at screen edges (the original
+            // client also drew these without frustum culling).
+            bevy::camera::visibility::NoFrustumCulling,
             RenderLayers::layer(0),
-            AsyncCollider(ComputedColliderShape::TriMesh(
-                bevy_rapier3d::prelude::TriMeshFlags::empty(),
-            )),
+            SharedMeshCollider(bevy_rapier3d::prelude::TriMeshFlags::empty()),
             CollisionGroups::new(COLLISION_GROUP_ZONE_OBJECT, COLLISION_FILTER_INSPECTABLE),
         ))
         .id();

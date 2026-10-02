@@ -41,6 +41,7 @@ var<uniform> billboard_type: u32;
 
 struct VertexInput {
     @builtin(vertex_index) vertex_idx: u32,
+    @builtin(instance_index) instance_idx: u32,
 }
 
 struct VertexOutput {
@@ -60,8 +61,12 @@ fn vertex(model: VertexInput) -> VertexOutput {
         vec2<f32>(1.0, 1.0),
     );
 
-    let vert_idx = model.vertex_idx % 6u;
-    let particle_idx = model.vertex_idx / 6u;
+    // vertex_index includes the mesh's offset inside Bevy's shared vertex slab
+    // (direct draws use the slab range, indirect draws set it as base_vertex), so
+    // make it relative to this mesh before indexing the particle buffers.
+    let local_vertex_idx = model.vertex_idx - mesh[model.instance_idx].first_vertex_index;
+    let vert_idx = local_vertex_idx % 6u;
+    let particle_idx = local_vertex_idx / 6u;
 
     // Get billboard vectors
     var camera_right: vec3<f32>;

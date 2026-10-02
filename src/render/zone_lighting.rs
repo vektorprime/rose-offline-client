@@ -1,28 +1,19 @@
 use crate::graphics::{GraphicsSettings, ShadowQuality};
 use crate::render::starry_sky_material::MoonLight;
-use crate::resources::{ZoneTime, ZoneTimeState};
+use crate::resources::ZoneTime;
 use bevy::camera::visibility::RenderLayers;
 use bevy::{
     asset::{load_internal_asset, weak_handle, Handle},
     ecs::component::Component,
-    light::{CascadeShadowConfig, FogVolume, VolumetricLight},
-    math::{Vec3, Vec4},
+    light::{CascadeShadowConfig, FogVolume, VolumetricFog, VolumetricLight},
+    math::Vec3,
     prelude::{
         App, Color, ColorToComponents, Commands, DetectChanges, Dir3, DirectionalLight, EulerRot,
-        FromWorld, GlobalAmbientLight, GlobalTransform, IntoScheduleConfigs, LinearRgba, Plugin,
-        Quat, Query, ReflectResource, Res, ResMut, Resource, Shader, Startup, Transform, Update,
-        With, Without, World,
+        GlobalAmbientLight, GlobalTransform, IntoScheduleConfigs, LinearRgba, Plugin, PostUpdate,
+        Quat, Query, Ref, ReflectResource, Res, ResMut, Resource, Shader, Startup, Transform,
+        Update, With, Without,
     },
     reflect::{Reflect, TypePath},
-    render::{
-        render_resource::{
-            encase, BindGroup, BindGroupEntry, BindGroupLayout, BindGroupLayoutEntry, BindingType,
-            Buffer, BufferBindingType, BufferDescriptor, BufferUsages, ShaderSize, ShaderStages,
-            ShaderType,
-        },
-        renderer::{RenderDevice, RenderQueue},
-        Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
-    },
 };
 
 /// Marker component for the volumetric fog volume entity.
@@ -33,7 +24,8 @@ pub struct VolumetricFogVolume;
 /// Marker component for the sky-bounce fill light (no shadows).
 /// This is a low-intensity directional light from a fixed high angle that
 /// lifts the shadow side of characters so faces/bodies stay readable when
-/// backlit by the sun. Intensity is scaled by daylight (0 at night).
+/// backlit by the sun. Intensity follows daylight by day and fades to
+/// NIGHT_FILL_ILLUMINANCE with the moon at night (fills moon shadows).
 #[derive(Component, Debug, Clone, Copy, Default)]
 pub struct SkyFillLight;
 
@@ -55,10 +47,54 @@ pub const SUN_MAX_ILLUMINANCE: f32 = 5000.0;
 /// Settings > Sky "Shadow fill". 40% of the sun gives a ~2.5:1 key-to-fill
 /// ratio: shadows stay visible but faces are readable.
 pub const FILL_MAX_ILLUMINANCE: f32 = 2000.0;
+/// Peak moonlight illuminance (lux) once the sun is well below the horizon.
+/// The moon is the night key light and casts shadows while the sun is down.
+pub const MOON_MAX_ILLUMINANCE: f32 = 2000.0;
+/// Night sky-fill illuminance (lux): 40% of the moon, the same ~2.5:1
+/// key-to-fill ratio as daytime, so moon shadows stay readable instead of
+/// black. Moon + fill (2800 lux) keeps night about as bright as the old
+/// unshadowed 3000-lux moon.
+pub const NIGHT_FILL_ILLUMINANCE: f32 = 800.0;
+/// Sun elevation sine above which the sun casts shadows (~1 deg). At or below
+/// it the moon casts them instead.
+const SUN_SHADOW_MIN_HEIGHT: f32 = 0.02;
+/// Moonlight tint (slightly blue-white), shared by the moon light and terrain.
+pub const MOON_COLOR: Color = Color::srgb(0.8, 0.85, 0.95);
+
+fn smoothstep01(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Sun strength (0..1) from the sun's elevation sine: 0 at the horizon, full
+/// once ~14 deg up. Drives sun illuminance and the terrain's sunlight.
+pub fn sun_light_factor(sun_height: f32) -> f32 {
+    smoothstep01(sun_height / 0.25)
+}
+
+/// Moon strength (0..1) from the SUN's elevation sine: 0 while the sun is more
+/// than ~6 deg up, full once it is ~9 deg below the horizon. Continuous, so
+/// dusk/dawn no longer jump (was a Morning/Day/Evening/Night table of
+/// 500/0/800/3000 lux that switched instantly on state changes).
+pub fn moon_light_factor(sun_height: f32) -> f32 {
+    smoothstep01((0.10 - sun_height) / 0.25)
+}
+
+/// Shared cascade layout for the sun and moon: the High default, 3 cascades
+/// to 200m (matches ShadowQuality::High + GraphicsSettings shadow_max_distance
+/// 200; apply_shadow_quality_system recomputes identical bounds on the first
+/// settings change).
+pub fn default_cascade_shadow_config() -> CascadeShadowConfig {
+    CascadeShadowConfig {
+        bounds: vec![200.0 / 3.0, 200.0 * 2.0 / 3.0, 200.0],
+        overlap_proportion: 0.2,
+        minimum_distance: 0.1,
+    }
+}
 
 /// Runtime-tunable daylight parameters (Settings > Sky). Defaults match the
 /// constants above so out-of-the-box visuals are unchanged.
-#[derive(Resource, Reflect, Clone, Debug)]
+#[derive(Resource, Reflect, Clone, Debug, PartialEq)]
 #[reflect(Resource)]
 pub struct DaylightSettings {
     /// Sunrise hour (game hours, 0-24). Default 5.0.
@@ -97,7 +133,7 @@ pub enum SkyMode {
 
 /// Resource for controlling sky and time-of-day settings.
 /// Allows players to manually set the time or let it follow game time automatically.
-#[derive(Resource, Reflect, Clone)]
+#[derive(Resource, Reflect, Clone, PartialEq)]
 #[reflect(Resource)]
 pub struct SkySettings {
     /// Whether time is automatic (follows game time) or manual (user-controlled)
@@ -153,17 +189,9 @@ impl Plugin for ZoneLightingPlugin {
             .init_resource::<SkySettings>()
             .init_resource::<DaylightSettings>();
 
-        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
-            // bevy::log::info!("[ZONE LIGHTING] Initializing render app systems");
-            render_app
-                .add_systems(ExtractSchedule, extract_uniform_data)
-                .add_systems(
-                    Render,
-                    (prepare_uniform_data,).in_set(RenderSystems::Prepare),
-                );
-        } else {
-            bevy::log::error!("[ZONE LIGHTING] FAILED to get render app - lighting will not work!");
-        }
+        // No render-world uniform: a ZoneLighting uniform used to be extracted
+        // and uploaded every frame, but no pipeline ever bound it (world_ui.wgsl
+        // only declares it under the never-defined ZONE_LIGHTING_GROUP_2).
 
         app.add_systems(Startup, spawn_lights).add_systems(
             Update,
@@ -179,14 +207,10 @@ impl Plugin for ZoneLightingPlugin {
                     .after(update_sun_position_system),
             ),
         );
+        // PostUpdate: after every Update writer of FogVolume density
+        // (update_volumetric_fog_system) and VolumetricFog insertion.
+        app.add_systems(PostUpdate, sync_volumetric_fog_step_count);
         // bevy::log::info!("[ZONE LIGHTING] ZoneLightingPlugin build complete");
-    }
-
-    fn finish(&self, app: &mut App) {
-        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
-            return;
-        };
-        render_app.init_resource::<ZoneLightingUniformMeta>();
     }
 }
 
@@ -203,13 +227,8 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
                 ..Default::default()
             },
             default_light_transform(),
-            CascadeShadowConfig {
-                // Medium default: 2 cascades to 100m (matches ShadowQuality::Medium).
-                // Previously 4 cascades to 1000m (Ultra) at startup with 30% overlap.
-                bounds: vec![50.0, 100.0],
-                overlap_proportion: 0.2,
-                minimum_distance: 0.1,
-            },
+            // Previously 4 cascades to 1000m (Ultra) at startup with 30% overlap.
+            default_cascade_shadow_config(),
             RenderLayers::default(),
             VolumetricLight, // Enable volumetric light shafts for this directional light
         ))
@@ -332,6 +351,42 @@ fn update_volumetric_fog_system(
     }
 }
 
+/// Raymarch steps for `VolumetricFog` while any fog volume has density
+/// (the value the camera is spawned with).
+const VOLUMETRIC_FOG_STEP_COUNT: u32 = 64;
+
+/// Drops the volumetric fog raymarch to a single step while every `FogVolume`
+/// has `density_factor == 0` (ZoneLighting volumetric fog off, the default).
+///
+/// In Bevy 0.19.1's volumetric_fog.wgsl every per-step term is multiplied by the
+/// density: in-scattering adds exactly 0 and the per-step transmittance is
+/// exp(-0) = 1, so the output is only the step-independent ambient term
+/// (`exp(-ray_length * (absorption + scattering)) * ambient`). The camera sets
+/// that ambient to 0 (it put a distance-dependent veil on nearby models), so at
+/// zero density the pass adds nothing. One step renders the identical image;
+/// 64 steps cost 2 x 64 iterations per pixel (each with a shadow-map fetch and
+/// a cluster lookup). `step_count` is only a uniform, so switching it does not
+/// re-specialize any pipeline.
+fn sync_volumetric_fog_step_count(
+    fog_volumes: Query<&FogVolume>,
+    mut volumetric_fogs: Query<&mut VolumetricFog>,
+) {
+    let step_count = if fog_volumes
+        .iter()
+        .any(|fog_volume| fog_volume.density_factor != 0.0)
+    {
+        VOLUMETRIC_FOG_STEP_COUNT
+    } else {
+        1
+    };
+
+    for mut volumetric_fog in volumetric_fogs.iter_mut() {
+        if volumetric_fog.step_count != step_count {
+            volumetric_fog.step_count = step_count;
+        }
+    }
+}
+
 /// System that syncs ZoneLighting resource values to Bevy's built-in lights
 /// This ensures that both custom shaders and standard PBR materials use the same lighting
 ///
@@ -407,8 +462,13 @@ fn sync_zone_lighting_to_bevy_lights_system(
         }
 
         // Update zone_lighting.light_direction from the actual light transform
-        // This ensures custom shaders (like terrain) stay in sync with the sun position
-        let current_dir: Dir3 = transform.forward();
+        // This ensures custom shaders (like terrain) stay in sync with the sun position.
+        // Convention: direction TOWARD the sun (`back()`), as ZoneLighting's
+        // default and the terrain shader's `max(dot(N, L), 0)` expect. This
+        // used `forward()` (the direction light travels), which lit terrain
+        // from the wrong side: flat ground got no sun by day and was lit from
+        // below by the set sun at night.
+        let current_dir: Dir3 = transform.back();
         if zone_lighting.light_direction != *current_dir {
             zone_lighting.light_direction = *current_dir;
         }
@@ -487,9 +547,20 @@ fn update_sun_position_system(
 ) {
     // Determine if we should update based on mode and what changed.
     // Daylight slider moves must refresh the sun even when the clock hasn't ticked.
+    // Automatic mode used to run every frame (ZoneTime was flagged changed every
+    // frame), so it also reacts to every other input: a zone change alters
+    // day_cycle (the ticks -> hours scale), and a light spawned or written
+    // elsewhere is brought back to the computed state.
     let should_update = match sky_settings.mode {
         SkyMode::Automatic => {
-            zone_time.is_changed() || sky_settings.is_changed() || daylight.is_changed()
+            zone_time.is_changed()
+                || sky_settings.is_changed()
+                || daylight.is_changed()
+                || current_zone
+                    .as_ref()
+                    .is_some_and(|current_zone| current_zone.is_changed())
+                || sun_query.iter_mut().any(|transform| transform.is_changed())
+                || fill_query.iter_mut().any(|fill| fill.is_changed())
         }
         SkyMode::Manual => sky_settings.is_changed() || daylight.is_changed(),
     };
@@ -544,12 +615,14 @@ fn update_sun_position_system(
         }
     }
 
-    // Sky fill follows daylight: full at midday, off when the sun is down.
-    // smoothstep(0, 0.35) reaches full well before noon so faces read clearly
-    // through the whole bright plateau, and fades out across dusk.
-    let daylight_t = (elevation_sin / 0.35).clamp(0.0, 1.0);
+    // Sky fill: daylight fill by day, moonlit-sky fill at night.
+    // Day part: smoothstep(0, 0.35) reaches full well before noon so faces read
+    // clearly through the whole bright plateau, and fades out across dusk.
+    // Night part: fades in with the moon (NIGHT_FILL is 40% of the moon, same
+    // key-to-fill ratio as daytime) so moon shadows are not pitch black.
     let fill_peak = daylight.fill_illuminance.max(0.0);
-    let fill_illuminance = fill_peak * daylight_t * daylight_t * (3.0 - 2.0 * daylight_t);
+    let fill_illuminance = fill_peak * smoothstep01(elevation_sin / 0.35)
+        + NIGHT_FILL_ILLUMINANCE * moon_light_factor(elevation_sin);
     for mut fill in fill_query.iter_mut() {
         if (fill.illuminance - fill_illuminance).abs() > 1.0 {
             fill.illuminance = fill_illuminance;
@@ -572,15 +645,17 @@ fn apply_sky_settings_to_zone_time(
     game_data: Res<crate::resources::GameData>,
     mut zone_time: ResMut<crate::resources::ZoneTime>,
 ) {
-    // Only update if sky_settings changed
-    if !sky_settings.is_changed() {
-        return;
-    }
-
     // Need current zone to get day_cycle
     let Some(current_zone) = current_zone else {
         return;
     };
+
+    // Re-apply when the settings change, and when the zone changes: the manual
+    // hour is stored as ticks of the zone's day_cycle, and a setting changed
+    // while no zone was loaded must still take effect once one is.
+    if !sky_settings.is_changed() && !current_zone.is_changed() {
+        return;
+    }
 
     let Some(zone_data) = game_data.zone_list.get_zone(current_zone.id) else {
         return;
@@ -593,7 +668,9 @@ fn apply_sky_settings_to_zone_time(
             let manual_time_hours = sky_settings.manual_time.clamp(0.0, 24.0);
             let tick_value = ((manual_time_hours / 24.0) * zone_data.day_cycle as f32) as u32;
 
-            zone_time.debug_overwrite_time = Some(tick_value);
+            if zone_time.debug_overwrite_time != Some(tick_value) {
+                zone_time.debug_overwrite_time = Some(tick_value);
+            }
 
             // Log once when manual mode is enabled
             // if zone_time.debug_overwrite_time.is_some() {
@@ -605,41 +682,56 @@ fn apply_sky_settings_to_zone_time(
             //     );
             // }
         }
-        SkyMode::Automatic => {
+        // Only on a settings change: a zone change must not clear an override
+        // set from the debug Zone Time window.
+        SkyMode::Automatic if sky_settings.is_changed() => {
             // Clear the override to use game time
             zone_time.debug_overwrite_time = None;
             log::info!("[SKY SETTINGS] Automatic time enabled - following game time");
         }
+        SkyMode::Automatic => {}
     }
 }
 
-/// System that adjusts shadow settings based on the live sun elevation.
-/// The sun stays on (with shadows) whenever it is above the horizon, so light
-/// lasts through Evening until ~20:00 instead of cutting out at 17:00.
-/// Illuminance ramps smoothly with elevation: soft dawn/dusk, full midday.
+/// System that adjusts sun/moon illuminance and shadows from the live sun
+/// elevation. The sun stays on (with shadows) whenever it is above the
+/// horizon, so light lasts through Evening until ~20:00. Both lights ramp
+/// smoothly with elevation (no jumps on Morning/Day/Evening/Night changes).
 ///
-/// Shadow State by Time (moon shadows stay off in all states for perf):
-/// | Time State    | Sun Shadows            | Moon Shadows |
-/// |---------------|------------------------|--------------|
-/// | Morning/Day   | Enabled (sun is up)    | Disabled     |
-/// | Evening (sun) | Enabled while up       | Disabled     |
-/// | Evening/Night | Disabled (sun is down) | Disabled     |
+/// Exactly one light casts shadows at a time, so night costs the same as day:
+/// | Sun position        | Sun Shadows | Moon Shadows                  |
+/// |---------------------|-------------|-------------------------------|
+/// | Above the horizon   | Enabled     | Disabled                      |
+/// | At/below horizon    | Disabled    | Enabled (moon fading in/full) |
 pub fn update_shadows_for_time_of_day_system(
     zone_time: Res<ZoneTime>,
     daylight: Res<DaylightSettings>,
     mut sun_query: Query<
-        (&mut DirectionalLight, &GlobalTransform),
+        (&mut DirectionalLight, Ref<GlobalTransform>),
         (With<VolumetricLight>, Without<MoonLight>, Without<SkyFillLight>),
     >,
     mut moon_query: Query<&mut DirectionalLight, With<MoonLight>>,
     graphics_settings: Option<Res<GraphicsSettings>>,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
-    // Only re-evaluate when the time state actually changed (or a daylight slider
-    // moved). Previously this wrote shadow_maps_enabled/illuminance every frame,
-    // invalidating the shadow-map cache and forcing cascade re-renders even for
-    // a static scene.
-    if !zone_time.is_changed() && !daylight.is_changed() {
+    // Only re-evaluate when an input changed. Previously this wrote
+    // shadow_maps_enabled/illuminance every frame, invalidating the shadow-map
+    // cache and forcing cascade re-renders even for a static scene. The output
+    // is a pure function of the inputs checked here: the time state, daylight
+    // sliders, the shadow quality switch, the sun's GlobalTransform (updated in
+    // PostUpdate, so a sun move is seen on the following frame) and lights
+    // that were spawned or written by another system. Own writes are not seen
+    // as changes on the next run.
+    let inputs_changed = zone_time.is_changed()
+        || daylight.is_changed()
+        || graphics_settings
+            .as_ref()
+            .is_some_and(|settings| settings.is_changed())
+        || sun_query
+            .iter_mut()
+            .any(|(light, transform)| light.is_changed() || transform.is_changed())
+        || moon_query.iter_mut().any(|light| light.is_changed());
+    if !inputs_changed {
         return;
     }
 
@@ -653,28 +745,16 @@ pub fn update_shadows_for_time_of_day_system(
         .map(|g| g.shadow_quality != ShadowQuality::Off)
         .unwrap_or(true);
 
-    // Moon illuminance still follows the named state (it is a state proxy for
-    // "how dark is the sky"), while the sun follows its live elevation so the
-    // Evening dusk keeps sunlight until the disk actually sets.
-    let (moon_shadows, moon_illuminance) = match zone_time.state {
-        ZoneTimeState::Morning => (false, 500.0),
-        ZoneTimeState::Day => (false, 0.0),
-        ZoneTimeState::Evening => (false, 800.0),
-        ZoneTimeState::Night => (false, 3000.0),
-    };
+    // Sun height sine from the live transform (set by update_sun_position_system,
+    // which runs before us in Update order). No sun entity -> treat as day.
+    let mut sun_height: f32 = 1.0;
 
     // Write only on actual change to avoid dirtying the light every frame.
     for (mut light, transform) in sun_query.iter_mut() {
-        // Sun height sine from the live transform (set by
-        // update_sun_position_system, which runs before us in Update order).
-        let sun_height: f32 = -transform.forward().y;
-        let sun_up = sun_height > 0.02;
-        // Smooth dawn/dusk ramp: 0 at the horizon, full once ~14 deg up.
-        let ramp = (sun_height / 0.25).clamp(0.0, 1.0);
-        let smooth = ramp * ramp * (3.0 - 2.0 * ramp);
-        let sun_illuminance = daylight.sun_illuminance.max(0.0) * smooth;
+        sun_height = -transform.forward().y;
+        let sun_illuminance = daylight.sun_illuminance.max(0.0) * sun_light_factor(sun_height);
         // Sun shadows only when the quality switch allows AND the sun is up.
-        let sun_shadows = shadow_maps_enabled_by_settings && sun_up;
+        let sun_shadows = shadow_maps_enabled_by_settings && sun_height > SUN_SHADOW_MIN_HEIGHT;
         if light.shadow_maps_enabled != sun_shadows {
             light.shadow_maps_enabled = sun_shadows;
         }
@@ -683,7 +763,13 @@ pub fn update_shadows_for_time_of_day_system(
         }
     }
 
-    // Apply to moon light (shadows stay off in all states per table; illuminance follows night).
+    // The moon takes over as the shadowed key light exactly when the sun's
+    // shadows switch off (it is already ~25% up by then), so only one
+    // directional shadow map set is ever rendered.
+    let moon_illuminance = MOON_MAX_ILLUMINANCE * moon_light_factor(sun_height);
+    let moon_shadows = shadow_maps_enabled_by_settings
+        && sun_height <= SUN_SHADOW_MIN_HEIGHT
+        && moon_illuminance > 1.0;
     for mut light in moon_query.iter_mut() {
         if light.shadow_maps_enabled != moon_shadows {
             light.shadow_maps_enabled = moon_shadows;
@@ -694,7 +780,7 @@ pub fn update_shadows_for_time_of_day_system(
     }
 }
 
-#[derive(Resource, Reflect)]
+#[derive(Resource, Reflect, Clone, PartialEq)]
 #[reflect(Resource)]
 pub struct ZoneLighting {
     pub map_ambient_color: Vec3,
@@ -760,144 +846,6 @@ impl Default for ZoneLighting {
             volumetric_scattering_asymmetry: 0.7, // Higher asymmetry for forward-scattering (Mie scattering)
         }
     }
-}
-
-#[derive(Clone, ShaderType, Resource)]
-pub struct ZoneLightingUniformData {
-    // Group 0: 64 bytes (4 vec4)
-    pub map_ambient_color: Vec4,
-    pub character_ambient_color: Vec4,
-    pub character_diffuse_color: Vec4,
-    pub light_direction: Vec4,
-
-    // Group 1: 64 bytes (4 vec4)
-    pub fog_color: Vec4,
-    pub day_color: Vec4,
-    pub night_color: Vec4,
-    // Pack 4 f32 values into vec4 for alignment: fog_density, fog_min_density, fog_max_density, fog_height_density
-    pub fog_params: Vec4,
-
-    // Group 2: 48 bytes (3 vec4)
-    // Pack 4 f32 values into vec4 for alignment: fog_min_height, fog_max_height, time_of_day, unused
-    pub fog_height_params: Vec4,
-    // Pack 2 f32 values with padding: fog_alpha_range_start, fog_alpha_range_end, unused, unused
-    pub fog_alpha_params: Vec4,
-    pub _padding: Vec4, // Padding to ensure total size is multiple of 16
-}
-
-#[derive(Resource)]
-pub struct ZoneLightingUniformMeta {
-    buffer: Buffer,
-    bind_group: BindGroup,
-    pub bind_group_layout: BindGroupLayout,
-}
-
-impl FromWorld for ZoneLightingUniformMeta {
-    fn from_world(world: &mut World) -> Self {
-        let render_device = world.resource::<RenderDevice>();
-
-        let buffer = render_device.create_buffer(&BufferDescriptor {
-            size: ZoneLightingUniformData::min_size().get(),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-            label: Some("zone_lighting_uniform_buffer"),
-        });
-
-        let bind_group_layout = render_device.create_bind_group_layout(
-            Some("zone_lighting_uniform_layout"),
-            &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::VERTEX_FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: Some(ZoneLightingUniformData::min_size()),
-                },
-                count: None,
-            }],
-        );
-
-        let bind_group = render_device.create_bind_group(
-            "zone_lighting_uniform_bind_group",
-            &bind_group_layout,
-            &[BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
-        );
-
-        ZoneLightingUniformMeta {
-            buffer,
-            bind_group,
-            bind_group_layout,
-        }
-    }
-}
-
-fn extract_uniform_data(mut commands: Commands, zone_lighting: Extract<Res<ZoneLighting>>) {
-    commands.insert_resource(ZoneLightingUniformData {
-        map_ambient_color: zone_lighting.map_ambient_color.extend(1.0),
-        character_ambient_color: zone_lighting.character_ambient_color.extend(1.0),
-        character_diffuse_color: zone_lighting.character_diffuse_color.extend(1.0),
-        light_direction: zone_lighting.light_direction.extend(1.0),
-        fog_color: zone_lighting.fog_color.extend(1.0),
-        day_color: zone_lighting.day_color.extend(1.0),
-        night_color: zone_lighting.night_color.extend(1.0),
-        // Pack fog params: fog_density, fog_min_density, fog_max_density, fog_height_density
-        fog_params: Vec4::new(
-            if zone_lighting.color_fog_enabled {
-                zone_lighting.fog_density
-            } else {
-                0.0
-            },
-            if zone_lighting.color_fog_enabled {
-                zone_lighting.fog_min_density
-            } else {
-                0.0
-            },
-            if zone_lighting.color_fog_enabled {
-                zone_lighting.fog_max_density
-            } else {
-                0.0
-            },
-            zone_lighting.fog_height_density,
-        ),
-        // Pack fog height params: fog_min_height, fog_max_height, time_of_day, unused
-        fog_height_params: Vec4::new(
-            zone_lighting.fog_min_height,
-            zone_lighting.fog_max_height,
-            zone_lighting.time_of_day,
-            0.0, // unused
-        ),
-        // Pack fog alpha params: fog_alpha_range_start, fog_alpha_range_end, unused, unused
-        fog_alpha_params: Vec4::new(
-            if zone_lighting.alpha_fog_enabled {
-                zone_lighting.fog_alpha_weight_start
-            } else {
-                99999999999.0
-            },
-            if zone_lighting.alpha_fog_enabled {
-                zone_lighting.fog_alpha_weight_end
-            } else {
-                999999999.0
-            },
-            0.0, // unused
-            0.0, // unused
-        ),
-        _padding: Vec4::ZERO,
-    });
-}
-
-fn prepare_uniform_data(
-    uniform_data: Res<ZoneLightingUniformData>,
-    uniform_meta: ResMut<ZoneLightingUniformMeta>,
-    render_queue: Res<RenderQueue>,
-) {
-    let byte_buffer = [0u8; ZoneLightingUniformData::SHADER_SIZE.get() as usize];
-    let mut buffer = encase::UniformBuffer::new(byte_buffer);
-    buffer.write(uniform_data.as_ref()).unwrap();
-
-    render_queue.write_buffer(&uniform_meta.buffer, 0, buffer.as_ref());
 }
 
 /// Calculate cloud lighting parameters based on time of day

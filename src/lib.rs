@@ -1,9 +1,9 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 use animation::RoseAnimationPlugin;
-use bevy::ecs::schedule::ApplyDeferred;
 use bevy::{
-    asset::AssetApp,
+    anti_alias::smaa::{Smaa, SmaaPreset},
+    asset::{AssetApp, AssetId},
     camera::visibility::{Visibility, VisibilitySystems},
     camera::Camera,
     core_pipeline::prepass::{DeferredPrepass, DepthPrepass},
@@ -15,18 +15,18 @@ use bevy::{
         StandardMaterial,
     },
     post_process::{
+        auto_exposure::{AutoExposureCompensationCurve, AutoExposurePlugin},
         bloom::Bloom,
         dof::{DepthOfField, DepthOfFieldMode},
     },
     prelude::{
         default, in_state, resource_exists, App, AppExtStates, AssetServer, Assets, Camera3d,
-        ClearColorConfig, Color, Commands, Entity, IntoScheduleConfigs, Msaa, OnEnter, OnExit,
+        ClearColorConfig, Color, Commands, Entity, IntoScheduleConfigs, Local, Msaa, OnEnter, OnExit,
         PerspectiveProjection, PluginGroup, PostStartup, PostUpdate, PreUpdate, Projection, Quat,
         Query, Res, ResMut, Startup, SystemSet, Transform, Update, Vec3, With, Without,
     },
     render::occlusion_culling::OcclusionCulling,
-    render::view::ColorGrading,
-    render::settings::{Backends, RenderCreation, WgpuFeatures, WgpuSettings},
+    render::settings::RenderCreation,
     transform::{components::GlobalTransform, TransformSystems},
     window::{Window, WindowMode},
 };
@@ -84,7 +84,7 @@ use audio::{
     boat_loop_sound_update_system, boat_one_shot_sound_system, ensure_boat_sound_state_system,
     setup_boat_sound_assets,
 };
-use dds_image_loader::DdsImageLoader;
+use dds_image_loader::DdsImageLoaderPlugin;
 use events::{
     BankEvent, BoardBoatEvent, CharacterSelectEvent, ChatBubbleEvent, ChatboxEvent,
     ClanDialogEvent, ClientEntityEvent, ConversationDialogEvent, DisembarkBoatEvent,
@@ -166,7 +166,6 @@ use systems::{
     create_default_particle_texture,
     damage_number_animate_system,
     damage_number_billboard_system,
-    directional_light_system,
     effect_system,
     ensure_boat_state_system,
     ensure_boat_wake_emitter_system,
@@ -203,12 +202,12 @@ use systems::{
     name_tag_visibility_system,
     network_thread_system,
     npc_idle_sound_system,
+    npc_chase_steering_system,
     npc_model_add_collider_system,
     npc_model_update_system,
     orbit_camera_system,
     particle_sequence_system,
     particle_storage_buffer_update_system,
-    passive_recovery_system,
     pending_damage_system,
     pending_skill_effect_system,
     personal_store_model_add_collider_system,
@@ -228,7 +227,6 @@ use systems::{
     system_func_event_system,
     update_position_system,
     use_item_event_system,
-    update_time_of_day_grading_system,
     vehicle_model_system,
     vehicle_sound_system,
     visible_status_effects_system,
@@ -240,7 +238,6 @@ use systems::{
     zone_viewer_enter_system,
     BirdPlugin,
     CharacterSelectInputState,
-    TimeOfDayGrading,
     DebugInspectorPlugin,
     DirtDashPlugin,
     FishPlugin,
@@ -655,8 +652,6 @@ enum GameStages {
     ZoneChange,
     ZoneChangeFlush,
     AfterUpdate,
-    DebugRenderPreFlush,
-    DebugRender,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
@@ -745,18 +740,10 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_plugins((
             bevy::prelude::DefaultPlugins
                 .set(bevy::render::RenderPlugin {
-                    render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                        backends: Some(Backends::all()),
-                        // Keep problematic bindless features disabled for stability,
-                        // but allow texture binding arrays needed by TerrainMaterial.
-                        disabled_features: Some(
-                            WgpuFeatures::BUFFER_BINDING_ARRAY
-                                | WgpuFeatures::STORAGE_RESOURCE_BINDING_ARRAY
-                                | WgpuFeatures::PARTIALLY_BOUND_BINDING_ARRAY
-                                ,
-                        ),
-                        ..Default::default()
-                    })),
+                    // Backend pinning + debug/validation flags off: see wgpu_settings.rs.
+                    render_creation: RenderCreation::Automatic(Box::new(
+                        render::wgpu_settings::create_wgpu_settings(),
+                    )),
                     synchronous_pipeline_compilation: false,
                     debug_flags: Default::default(),
                 })
@@ -787,8 +774,14 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
                     ..default()
                 })
                 .set(bevy::pbr::PbrPlugin::default()),
-            bevy::diagnostic::EntityCountDiagnosticsPlugin::default(),
-            bevy::diagnostic::FrameTimeDiagnosticsPlugin::new(60),  // 60 frame history
+            // EntityCountDiagnosticsPlugin / FrameTimeDiagnosticsPlugin REMOVED:
+            // their only reader (ui_debug_diagnostics_system) is disabled, and
+            // memory_diagnostics computes fps itself. Re-add them together with
+            // that window.
+            // RenderDiagnosticsPlugin REMOVED (2026-09-25): its timestamp-query
+            // serialization distorts per-pass timings and depresses fps on this
+            // 4K debug build; measurements must be honest. Re-add only when
+            // per-pass breakdowns are explicitly requested.
         ));
 
     // Initialise 3rd party bevy plugins
@@ -811,6 +804,19 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         auto_create_primary_context: false,
         ..Default::default()
     });
+    // bevy_egui 0.40 orders its 3D pass only `.after(EarlyPostProcess)
+    // .before(upscaling)`, leaving it unordered against tonemapping/SMAA/etc.
+    // It draws into whichever ping-pong main texture is current when its
+    // (parallel, read-only) system runs, so the UI could land in a texture a
+    // later post pass overwrites or re-processes. Pin it after the whole
+    // PostProcess set, the same slot bevy_ui's ui_pass uses.
+    if let Some(render_app) = app.get_sub_app_mut(bevy::render::RenderApp) {
+        render_app.configure_sets(
+            bevy::core_pipeline::Core3d,
+            bevy::core_pipeline::Core3dSystems::PostProcess
+                .before(bevy_egui::render::egui_pass),
+        );
+    }
     app.add_plugins(bevy_rapier3d::prelude::RapierPhysicsPlugin::<
         bevy_rapier3d::prelude::NoUserData,
     >::default());
@@ -835,7 +841,24 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_plugins(terrain::TerrainEnhancementPlugin);
     log::info!("[TERRAIN] Terrain enhancement plugin initialized with procedural noise");
 
-    // Shadow map resolution matches Medium default (2 cascades x 2048).
+    // AutoExposure is NOT registered by DefaultPlugins/PostProcessPlugin in
+    // Bevy 0.19.1 (verified in bevy_post_process-0.19.1/src/lib.rs); the game
+    // camera spawns the AutoExposure component to normalize the photometric
+    // HDR pipeline (sun lux + atmosphere + volumetric fog).
+    app.add_plugins(AutoExposurePlugin);
+    // Compensation curve for that component (Bevy's default flat-0 curve
+    // drives the scene average to 1.0 = very bright, and lifts night to day).
+    // Built here so the camera spawns with it; graphics::apply_auto_exposure_system
+    // rebuilds it in place when the Graphics tab's Exposure Target changes.
+    let auto_exposure_curve = graphics::AutoExposureCurve::new(
+        &mut app
+            .world_mut()
+            .resource_mut::<Assets<AutoExposureCompensationCurve>>(),
+        graphics::GraphicsSettings::default().auto_exposure_target_ev,
+    );
+    app.insert_resource(auto_exposure_curve);
+
+    // Shadow map resolution matches High default (3 cascades x 2048).
     // Previously 4096 paid 4x texels before the user ever touched settings.
     app.insert_resource(DirectionalLightShadowMap { size: 2048 });
 
@@ -848,7 +871,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.register_asset_loader(ZmsAssetLoader)
         .init_asset::<ZmsMaterialNumFaces>()
         .register_asset_loader(ZmsNoSkinAssetLoader)
-        .register_asset_loader(DdsImageLoader)
+        // DDS loader registers itself in finish(), once GPU BC support is known.
+        .add_plugins(DdsImageLoaderPlugin)
         .register_asset_loader(ExeResourceLoader)
         .init_asset::<ExeResourceCursor>()
         .register_asset_loader(DialogLoader)
@@ -991,12 +1015,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .add_message::<ZoneLoadedFromVfsEvent>()
         .add_message::<UiSoundEvent>();
 
-    app.add_systems(PostUpdate, ApplyDeferred);
-
-    app.add_systems(
-        PostUpdate,
-        (ApplyDeferred,).in_set(GameStages::DebugRenderPreFlush),
-    );
+    // (Two ApplyDeferred systems used to sit in PostUpdate: one unordered and
+    // one in an otherwise empty DebugRenderPreFlush set. Each stopped every
+    // worker thread; Bevy inserts the sync points ordering actually needs.)
 
     // Camera systems use EguiContexts to check if egui wants pointer input
     app.add_systems(
@@ -1071,7 +1092,12 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             character_model_add_collider_system,
         ),
     );
-    app.add_systems(Update, memory_diagnostics_system);
+    // The condition keeps the system (and its read access to 9 asset
+    // collections) out of the frame between its 30 s log lines.
+    app.add_systems(
+        Update,
+        memory_diagnostics_system.run_if(systems::memory_diagnostics_due),
+    );
     // name_tag_system uses EguiContexts - must run in EguiPrimaryContextPass for bevy_egui 0.39
     app.add_systems(bevy_egui::EguiPrimaryContextPass, name_tag_system);
     // chat_bubble_spawn_system uses EguiContexts for text rendering - must run in EguiPrimaryContextPass for bevy_egui 0.39
@@ -1129,7 +1155,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             // Update starry sky night_factor from zone time state
             // Must run after zone_time_system and before update_starry_sky_system
             update_starry_sky_night_factor.after(zone_time_system),
-            directional_light_system,
             // Update terrain lighting based on zone lighting and time of day
             // Must run after zone_time_system to get current time state for intensity adjustment
             render::terrain_material::update_terrain_lighting_system.after(zone_time_system),
@@ -1145,10 +1170,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         (
             follow_sky_to_camera_system,
             moon_light_follow_camera_system,
-            // Time-of-day screen tint (compute here; apply_color_grading_system
-            // in PostUpdate is the sole ColorGrading writer). Must run after
-            // zone_time_system to use the current state.
-            update_time_of_day_grading_system.after(zone_time_system),
         ),
     );
     // Must run after name_tag_visibility_system so the line-of-sight result
@@ -1217,8 +1238,9 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(PostUpdate, (vehicle_model_system, vehicle_sound_system));
 
     // Configure vehicle system ordering
+    // (vehicle_sound_system is registered once, above: a second registration ran a
+    // second instance that spawned a duplicate, orphaned set of engine sounds.)
     app.configure_sets(PostUpdate, GameStages::AfterUpdate);
-    app.add_systems(PostUpdate, vehicle_sound_system);
 
     // Run zone change system just before physics sync which is after Update
     // DIAGNOSTIC: Added explicit system ordering to ensure proper event flow:
@@ -1355,6 +1377,7 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<NameTagSettings>()
         .init_resource::<DepthOfFieldSettings>()
         .init_resource::<ui::PostProcessingSettings>()
+        .init_resource::<ui::FlashBisectState>()
         .init_resource::<ui::StarrySkyRenderSettings>()
         .init_resource::<WaterSettings>()
         .init_resource::<FlightSettings>()
@@ -1362,7 +1385,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         .init_resource::<WindState>()
         .init_resource::<MonsterChatterPhrases>()
         .init_resource::<AtmosphereState>()
-        .init_resource::<TimeOfDayGrading>()
         .init_resource::<graphics::GraphicsSettings>();
 
     app.add_systems(OnEnter(AppState::Game), game_state_enter_system);
@@ -1387,21 +1409,28 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.add_systems(
         PostUpdate,
         (
-            graphics::apply_color_grading_system,
-            graphics::apply_shadow_quality_system,
             graphics::apply_tonemapping_system,
+            graphics::apply_shadow_quality_system,
             graphics::apply_bloom_system,
             graphics::apply_ssao_system,
             graphics::apply_smaa_system,
+            graphics::apply_auto_exposure_system,
             graphics::apply_fxaa_system,
             graphics::apply_motion_blur_system,
             graphics::apply_dof_enabled_system,
             graphics::apply_view_distance_system,
             graphics::apply_texture_quality_system,
             graphics::apply_shadow_filtering_system,
-            graphics::apply_msaa_system,
             graphics::apply_ambient_light_system,
         ),
+    );
+    // One-shot material re-prepare the frame after a Texture Quality change
+    // rewrote image samplers (materials capture samplers at prepare time).
+    app.init_resource::<graphics::MaterialSamplersStale>().add_systems(
+        PostUpdate,
+        graphics::refresh_materials_after_sampler_change
+            .before(graphics::apply_texture_quality_system)
+            .run_if(graphics::material_samplers_stale),
     );
 
     // Game systems - part 1
@@ -1413,6 +1442,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             command_system,
             facing_direction_system,
             update_position_system.after(command_system),
+            // Remote movers (bots, monsters, NPCs) have no wall collision:
+            // slide their freshly recomputed destinations along live colliders
+            // before update_position_system walks them, so rendered chases no
+            // longer cross walls. Server legs stay authoritative.
+            npc_chase_steering_system
+                .after(command_system)
+                .before(update_position_system),
             // monster_separation_system DISABLED: it displaced monsters client-side
             // only (the server has no separation), desyncing combat positions with
             // no reconciliation path. Result: player swung at ghosts (no damage,
@@ -1440,16 +1476,20 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             flight_toggle_system.after(ensure_flight_state_system),
             flight_movement_system.after(flight_toggle_system),
             // Flight pose blend update system - updates pose_blend value on FlightState
+            // (and restores the un-posed joints before the animation runs)
             flight_pose_blend_update_system.after(flight_toggle_system),
-            // Flight pose system applies visual-only rotations to character model parts
-            // Runs after facing_direction_system and character_model_update_system
-            flight_pose_system
-                .after(facing_direction_system)
-                .after(flight_toggle_system)
-                .after(character_model_update_system),
             // Move speed command system
             move_speed_set_system,
         )
+            .run_if(in_state(AppState::Game)),
+    );
+    // Flight pose is applied to the skeleton joints on top of the skeletal
+    // animation: after it, before transform propagation.
+    app.add_systems(
+        PostUpdate,
+        flight_pose_system
+            .after(animation::RoseAnimationSystem)
+            .before(TransformSystems::Propagate)
             .run_if(in_state(AppState::Game)),
     );
 
@@ -1582,7 +1622,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         (
             use_item_event_system,
             status_effect_system,
-            passive_recovery_system,
             quest_trigger_system,
         )
             .run_if(in_state(AppState::Game)),
@@ -1733,6 +1772,13 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         (GameStages::AfterUpdate,).before(PhysicsSet::SyncBackend),
     );
 
+    // Zone object trimesh colliders, shared per mesh; inserted just before
+    // bevy_rapier's SyncBackend creates them (where AsyncCollider was handled).
+    app.init_resource::<systems::MeshColliderCache>().add_systems(
+        PostUpdate,
+        systems::shared_mesh_collider_system.before(PhysicsSet::SyncBackend),
+    );
+
     app.configure_sets(
         PostUpdate,
         (
@@ -1741,11 +1787,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
             GameStages::AfterUpdate,
         )
             .before(PhysicsSet::SyncBackend),
-    );
-
-    app.configure_sets(
-        PostUpdate,
-        (GameStages::DebugRenderPreFlush, GameStages::DebugRender).chain(),
     );
 
     // CRITICAL FIX: Use Bevy's default ordering for internal systems
@@ -1762,10 +1803,6 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
     app.configure_sets(
         PostUpdate,
         VisibilitySystems::CheckVisibility.after(VisibilitySystems::VisibilityPropagate),
-    );
-    app.configure_sets(
-        PostUpdate,
-        GameStages::DebugRenderPreFlush.after(VisibilitySystems::CheckVisibility),
     );
 
     app.configure_sets(
@@ -1931,6 +1968,7 @@ fn load_common_game_data(
     mut meshes: ResMut<Assets<Mesh>>,
     mut standard_materials: ResMut<Assets<bevy::pbr::StandardMaterial>>,
     mut scattering_mediums: ResMut<Assets<bevy::light::atmosphere::ScatteringMedium>>,
+    auto_exposure_curve: Res<graphics::AutoExposureCurve>,
 ) {
 
 
@@ -1985,27 +2023,18 @@ fn load_common_game_data(
             GlobalTransform::default(),
             // Primary Egui Context - required for bevy_egui 0.32+
             PrimaryEguiContext,
-            // Tonemapping DISABLED by default (TonemappingMode::default() = None)
-            // as part of the night blue-flash investigation; re-enable via the
-            // Graphics tab if desired.
-            bevy::core_pipeline::tonemapping::Tonemapping::None,
-            // ColorGrading target for the graphics apply systems (user
-            // brightness/contrast/saturation/gamma) and the time-of-day tint
-            // (temperature/saturation-multiplier/shadow lift, composed by
-            // apply_color_grading_system as sole writer). Must exist or both
-            // paths are silent no-ops (removed in c782f70 "lighting").
-            ColorGrading::default(),
-            // NOTE: Bloom / SSAO / DOF are NOT spawned by default (all default
-            // off in GraphicsSettings). The graphics apply systems insert them
-            // on demand when the user enables them. Spawning them here anyway
-            // caused startup-vs-settings mismatch.
+            // Tonemapping RESTORED (2026-09-25): the white film was traced to
+            // ColorGrading exposure applied to clamped HDR, not to the tonemap
+            // pass. Color grading (component, fields, systems, TOD tint) is
+            // now fully deleted; TonyMcMapface is the sole tone/exposure path.
+            bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
             // Shadow filtering - Gaussian for high-quality soft shadows
             ShadowFilteringMethod::Gaussian,
-            // NOTE: SMAA / SSR / MotionBlur / AutoExposure / CAS are NOT spawned by
-            // default. They are inserted on demand by graphics apply systems when the
-            // user enables them (SMAA/motion-blur have settings; SSR/AutoExposure/CAS
-            // stay off until a future settings toggle wires them). Previously all were
-            // stacked at startup for a ~6-pass fullscreen cost even on Low.
+            // NOTE: SSR / MotionBlur / CAS are NOT spawned by default.
+            // MotionBlur is inserted on demand by the graphics apply system
+            // when the user enables it; SSR/CAS stay off until a future
+            // settings toggle wires them. SMAA and AutoExposure ARE spawned by
+            // default now (see the quality-defaults insert below).
             // Prepasses for depth (required for some effects and GPU occlusion culling)
             DepthPrepass,
             // DeferredPrepass is REQUIRED with DefaultOpaqueRendererMethod::deferred():
@@ -2035,6 +2064,30 @@ fn load_common_game_data(
         // Render layers 0 and 1: layer 0 is the world, layer 1 is water
         // (kept separate so the reflection camera can exclude water).
         bevy::camera::visibility::RenderLayers::from_layers(&[0, 1]),
+        // Tier-1 quality defaults, spawned to match GraphicsSettings::default()
+        // exactly so the first-frame graphics apply systems see identical
+        // values and no-op. Keep these in sync with graphics_settings.rs.
+        // Bloom: soft NATURAL pyramid at the default 0.15 intensity.
+        Bloom {
+            intensity: 0.15,
+            ..Bloom::NATURAL
+        },
+        // SSAO Medium (MSAA stays Off, which the camera spawn already sets).
+        ScreenSpaceAmbientOcclusion {
+            quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium,
+            ..Default::default()
+        },
+        // SMAA Ultra: the only anti-aliasing active by default (Msaa::Off);
+        // apply_smaa_system keeps it in sync with the Graphics tab.
+        Smaa {
+            preset: SmaaPreset::Ultra,
+            ..Default::default()
+        },
+        // AutoExposure normalizes the 5000-lux sun + atmosphere HDR output
+        // (component-driven; AutoExposurePlugin added in setup), using the
+        // shared compensation curve so apply_auto_exposure_system no-ops on
+        // the first frame. DoF remains opt-in via settings.
+        auto_exposure_curve.component(),
     ));
     // Insert additional components separately to avoid tuple size limit
     // DEBUG: Disable atmosphere when testing starry sky
@@ -2052,11 +2105,15 @@ fn load_common_game_data(
         commands.entity(camera_entity).insert((
             // Bevy 0.19 built-in atmospheric scattering for realistic sky
             AtmosphereSettings::default(),
-            // NOTE: DepthOfField / SSAO intentionally not spawned (both default
-            // off). Inserted on demand by graphics apply systems when enabled.
+            // NOTE: DepthOfField intentionally not spawned (default off); it
+            // is inserted on demand by the graphics apply systems when enabled.
             // VolumetricFog: 64 steps = Bevy default (was 128 = 2x raymarch cost).
+            // ambient_intensity 0: Bevy 0.19.1 adds the fog ambient as
+            // exp(-depth * (absorption + scattering)) * ambient, independent of
+            // density. Nearby surfaces got a white veil (the "shine" on models
+            // when zoomed in) that faded as the camera zoomed out.
             VolumetricFog {
-                ambient_intensity: 0.1,
+                ambient_intensity: 0.0,
                 jitter: 0.0,
                 step_count: 64,
                 ..default()
@@ -2170,18 +2227,23 @@ fn apply_depth_of_field_settings(
     }
 }
 
-/// System to apply post-processing settings from the resource to the camera
-/// This allows live toggling of bloom, SSAO, volumetric fog, and color grading via the Settings UI
+/// System to apply post-processing settings from the resource to the camera.
+///
+/// SINGLE-OWNER (2026-09-25): this system used to insert/remove Bloom and SSAO
+/// from `PostProcessingSettings`, competing with the `GraphicsSettings`-owned
+/// apply systems over the same components. Divergent mirror values produced
+/// remove/re-insert churn (logged 16x "[PostProcess] Bloom enabled" in one
+/// 25s window), each cycle recreating the ViewTarget textures and
+/// re-specializing the post pipelines -- the stall/flash mechanism.
+/// Bloom/SSAO are now owned exclusively by graphics/apply_systems.rs; this
+/// system owns only VolumetricFog enable/disable.
 fn apply_post_processing_settings(
     post_process_settings: Res<ui::PostProcessingSettings>,
     // NOTE: reflection camera excluded (see graphics/apply_systems.rs invariant).
-    mut camera_query: Query<(
-        Entity,
-        Option<&mut Bloom>,
-        Option<&mut ScreenSpaceAmbientOcclusion>,
-        Option<&mut VolumetricFog>,
-        Option<&mut ColorGrading>,
-    ), (With<Camera>, Without<crate::render::WaterReflectionCamera>)>,
+    mut camera_query: Query<
+        (Entity, Option<&mut VolumetricFog>),
+        (With<Camera>, Without<crate::render::WaterReflectionCamera>),
+    >,
     mut commands: Commands,
 ) {
     use bevy::ecs::change_detection::DetectChanges;
@@ -2191,56 +2253,22 @@ fn apply_post_processing_settings(
         return;
     }
 
-    for (entity, bloom, ssao, volumetric_fog, _color_grading) in camera_query.iter_mut() {
-        // Handle Bloom (insert/remove so the pass is skipped when off).
-        // NOTE: GraphicsSettings.bloom is the primary owner (PostUpdate wins on
-        // simultaneous ticks); this page mirrors it. Intensity is honored here.
-        if post_process_settings.bloom_enabled {
-            if bloom.is_none() {
-                // Add Bloom component if not present
-                commands.entity(entity).insert(Bloom {
-                    intensity: post_process_settings.bloom_intensity,
-                    ..Bloom::NATURAL
-                });
-                info!("[PostProcess] Bloom enabled on camera");
-            }
-        } else {
-            if bloom.is_some() {
-                // Remove Bloom component if present
-                commands.entity(entity).remove::<Bloom>();
-                info!("[PostProcess] Bloom disabled on camera");
-            }
-        }
-
-        // Handle SSAO: remove the component when disabled so the SSAO pass is
-        // skipped. Previously this only downgraded to Low (still full cost).
-        if post_process_settings.ssao_enabled {
-            if ssao.is_none() {
-                commands.entity(entity).insert(ScreenSpaceAmbientOcclusion {
-                    quality_level: ScreenSpaceAmbientOcclusionQualityLevel::Medium,
-                    ..Default::default()
-                });
-                info!("[PostProcess] SSAO enabled on camera");
-            }
-        } else if ssao.is_some() {
-            commands.entity(entity).remove::<ScreenSpaceAmbientOcclusion>();
-            info!("[PostProcess] SSAO disabled on camera");
-        }
-
+    for (entity, volumetric_fog) in camera_query.iter_mut() {
         // Handle Volumetric Fog: remove when disabled so raymarching is skipped.
         // Previously step_count=1 still dispatched the volume.
         if post_process_settings.volumetric_fog_enabled {
             if volumetric_fog.is_none() {
+                // ambient_intensity 0: see the camera spawn in load_common_game_data.
                 commands.entity(entity).insert(VolumetricFog {
-                    ambient_intensity: 0.1,
+                    ambient_intensity: 0.0,
                     step_count: 64,
                     ..Default::default()
                 });
-                info!("[PostProcess] Volumetric fog enabled on camera");
+                log::info!("[PostProcess] Volumetric fog enabled on camera");
             }
         } else if volumetric_fog.is_some() {
             commands.entity(entity).remove::<VolumetricFog>();
-            info!("[PostProcess] Volumetric fog disabled on camera");
+            log::info!("[PostProcess] Volumetric fog disabled on camera");
         }
     }
 }
@@ -2248,23 +2276,46 @@ fn apply_post_processing_settings(
 /// System to apply water settings from the resource to water materials
 /// This allows live adjustment of water parameters via the Settings UI
 /// Also syncs fog parameters from ZoneLighting to integrate water with scene fog
+///
+/// Runs every frame without a change gate (the compare is cheap), so a water
+/// material created by a zone load is synced on its first frame.
 fn apply_water_settings(
     water_settings: Res<WaterSettings>,
     zone_lighting: Res<render::ZoneLighting>,
     mut water_materials: ResMut<Assets<WaterMaterial>>,
+    mut stale_materials: Local<Vec<AssetId<WaterMaterial>>>,
 ) {
-    use bevy::ecs::change_detection::DetectChanges;
+    let fog_color = zone_lighting.fog_color.extend(1.0);
 
-    // Update if water settings or zone lighting have changed
-    if water_settings.is_changed() || zone_lighting.is_changed() {
-        for (_, material) in water_materials.iter_mut() {
+    // Find stale materials read-only, then `get_mut` only those:
+    // `Assets::iter_mut` queues AssetEvent::Modified for EVERY asset it visits,
+    // written or not, which re-prepared every WaterMaterial every frame.
+    stale_materials.clear();
+    stale_materials.extend(
+        water_materials
+            .iter()
+            .filter(|(_, material)| {
+                material.settings != *water_settings
+                    || material.fog_color != fog_color
+                    || material.fog_density != zone_lighting.fog_density
+                    || material.fog_min_density != zone_lighting.fog_min_density
+                    || material.fog_max_density != zone_lighting.fog_max_density
+            })
+            .map(|(id, _)| id),
+    );
+
+    for id in stale_materials.drain(..) {
+        let Some(mut material) = water_materials.get_mut(id) else {
+            continue;
+        };
+        if material.settings != *water_settings {
             material.settings = water_settings.clone();
-            // Sync fog parameters from ZoneLighting for water-scene integration
-            material.fog_color = zone_lighting.fog_color.extend(1.0);
-            material.fog_density = zone_lighting.fog_density;
-            material.fog_min_density = zone_lighting.fog_min_density;
-            material.fog_max_density = zone_lighting.fog_max_density;
         }
+        // Sync fog parameters from ZoneLighting for water-scene integration
+        material.fog_color = fog_color;
+        material.fog_density = zone_lighting.fog_density;
+        material.fog_min_density = zone_lighting.fog_min_density;
+        material.fog_max_density = zone_lighting.fog_max_density;
     }
 }
 
@@ -2360,22 +2411,27 @@ fn spawn_starry_sky_and_moon(
     log::info!("[STARRY SKY] StarrySky entity spawned with id: {:?}", sky_entity);
 
     // Spawn moon directional light (separate from sun).
-    // Night illumination; shadows stay OFF in all states per
-    // update_shadows_for_time_of_day_system (second shadow map doubles cost).
-    // Illuminance is modulated by time-of-day (0 by day, up to 3000 at night).
+    // Night key light: update_shadows_for_time_of_day_system fades it in as the
+    // sun sets (0 by day, up to MOON_MAX_ILLUMINANCE at night) and gives it the
+    // shadows exactly while the sun's are off, so only one directional shadow
+    // map set is ever rendered.
     let moon_entity = commands
         .spawn((
             MoonLight,
             DirectionalLightComponent {
-                illuminance: 5000.0,                 // Moonlight intensity (much dimmer than sun)
-                color: Color::srgb(0.8, 0.85, 0.95), // Slightly blue-white moonlight
+                illuminance: 0.0, // Driven by the time-of-day system
+                color: render::zone_lighting::MOON_COLOR,
                 shadow_maps_enabled: false,
-                // No contact shadows for the moon (second shadow map doubles cost).
+                // No contact shadows for the moon (screen-space cost; the
+                // cascaded shadow maps already cover it).
                 contact_shadows_enabled: false,
                 shadow_depth_bias: 0.02,
                 shadow_normal_bias: 1.0,
                 affects_lightmapped_mesh_diffuse: true,
             },
+            // Same cascade layout as the sun; apply_shadow_quality_system keeps
+            // both in sync with the Shadow Quality setting.
+            render::zone_lighting::default_cascade_shadow_config(),
             Transform::from_xyz(0.0, 100.0, 0.0).looking_at(Vec3::new(0.0, 0.0, 0.0), Vec3::Y),
             Visibility::Visible,
         ))

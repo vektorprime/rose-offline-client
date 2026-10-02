@@ -37,6 +37,11 @@ fn build_spatter_transform(position: Vec3, normal: Vec3, size: f32, rotation: f3
         .with_scale(Vec3::new(size, size, 1.0))
 }
 
+/// A colour quantized to 8-bit sRGBA, the precision of the displayed result.
+fn srgba_u8(color: Color) -> [u8; 4] {
+    color.to_srgba().to_u8_array()
+}
+
 fn pick_spatter_texture(atlas: &BloodDecalAtlas) -> Option<Handle<Image>> {
     if atlas.spatter_textures.is_empty() {
         None
@@ -152,6 +157,10 @@ pub fn blood_spatter_spawn_system(
 ) {
     if !config.enable_blood {
         blood_events.clear();
+        return;
+    }
+    // Nothing to spawn: skip counting the active spatters
+    if blood_events.is_empty() {
         return;
     }
 
@@ -430,6 +439,16 @@ pub fn blood_spatter_fade_system(
             spatter.alpha,
         );
 
+        // Each write marks the decal material Modified (re-prepare + re-specialize),
+        // and the colour drifts by ~1/20 of an 8-bit step per frame. Only write
+        // once the 8-bit sRGBA value would change: the decal lags the exact
+        // colour by under one 8-bit step, with ~5-20x fewer material updates.
+        let Some(current) = decal_materials.get(&material_handle.0) else {
+            continue;
+        };
+        if srgba_u8(current.base.base_color) == srgba_u8(color) {
+            continue;
+        }
         if let Some(mut material) = decal_materials.get_mut(&material_handle.0) {
             material.base.base_color = color;
         }

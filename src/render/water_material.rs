@@ -189,17 +189,20 @@ impl AsBindGroup for WaterMaterial {
         WaterMaterialKey
     }
 
-    /// Override as_bind_group to create bind group with packed per-material data.
-    fn as_bind_group(
+    /// Builds the bindings with packed per-material data.
+    ///
+    /// Returned unprepared (instead of overriding `as_bind_group` and returning
+    /// `CreateBindGroupDirectly`) so Bevy's material allocator frees the previous
+    /// bind group when the material is modified. On Bevy 0.19.1 the
+    /// `CreateBindGroupDirectly` path never frees it, which leaked a bind group,
+    /// buffer and sampler per modification.
+    fn unprepared_bind_group(
         &self,
-        layout_descriptor: &BindGroupLayoutDescriptor,
+        _layout: &BindGroupLayout,
         render_device: &RenderDevice,
-        pipeline_cache: &PipelineCache,
         (image_assets, fallback_image): &mut SystemParamItem<'_, '_, Self::Param>,
-    ) -> Result<PreparedBindGroup, AsBindGroupError> {
-        // Get the actual bind group layout from the pipeline cache
-        let layout = pipeline_cache.get_bind_group_layout(layout_descriptor);
-
+        _bindless: bool,
+    ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
         // Pack all per-material values into a read-only storage buffer.
         // Layout:
         // [0] light_direction (vec4)
@@ -289,15 +292,14 @@ impl AsBindGroup for WaterMaterial {
 
         // Reflection render target produced by the mirrored reflection camera.
         // Falls back to the fallback image until the real texture is available.
-        use std::ops::Deref;
         let reflection_view = match image_assets.get(&self.reflection_texture) {
-            Some(image) => &*image.texture_view,
+            Some(image) => image.texture_view.clone(),
             None => {
                 log::warn!(
                     "[WATER MATERIAL] Reflection texture {:?} not ready, binding fallback image",
                     self.reflection_texture.id()
                 );
-                &*fallback_image.d2.texture_view
+                fallback_image.d2.texture_view.clone()
             }
         };
         let reflection_sampler = render_device.create_sampler(&SamplerDescriptor {
@@ -310,41 +312,22 @@ impl AsBindGroup for WaterMaterial {
             ..Default::default()
         });
 
-        // Create bind group entries
-        let entries = vec![
-            BindGroupEntry {
-                binding: 0,
-                resource: water_material_data_buffer.as_entire_binding(),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::TextureView(reflection_view),
-            },
-            BindGroupEntry {
-                binding: 2,
-                resource: BindingResource::Sampler(&reflection_sampler),
-            },
-        ];
-
-        // Create bind group
-        let bind_group = render_device.create_bind_group(Self::label(), &layout, &entries);
-
-        Ok(PreparedBindGroup {
-            bindings: BindingResources(vec![]),
-            bind_group,
+        Ok(UnpreparedBindGroup {
+            bindings: BindingResources(vec![
+                (0, OwnedBindingResource::Buffer(water_material_data_buffer)),
+                (
+                    1,
+                    OwnedBindingResource::TextureView(TextureViewDimension::D2, reflection_view),
+                ),
+                (
+                    2,
+                    OwnedBindingResource::Sampler(
+                        SamplerBindingType::Filtering,
+                        reflection_sampler,
+                    ),
+                ),
+            ]),
         })
-    }
-
-    /// Required by trait even though we override as_bind_group
-    fn unprepared_bind_group(
-        &self,
-        _layout: &BindGroupLayout,
-        _render_device: &RenderDevice,
-        _param: &mut SystemParamItem<'_, '_, Self::Param>,
-        _bindless: bool,
-    ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
-        // This should never be called since we override as_bind_group
-        Err(AsBindGroupError::CreateBindGroupDirectly)
     }
 
     fn bind_group_layout_entries(

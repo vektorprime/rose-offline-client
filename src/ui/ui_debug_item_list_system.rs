@@ -16,6 +16,10 @@ pub struct UiStateDebugItemList {
     filter_item_type: ItemType,
     filter_name: String,
     filtered_items: Vec<u16>,
+    /// Set when an input of `filtered_items` changed (name filter, item type) and
+    /// on first show. Replaces the old "refilter while empty" check, which
+    /// rescanned the whole item table every frame when a filter matched nothing.
+    filter_dirty: bool,
     spawn_as_drop: bool,
     spawn_has_socket: bool,
     spawn_gem: usize,
@@ -29,6 +33,7 @@ impl Default for UiStateDebugItemList {
             filter_item_type: ItemType::Face,
             filter_name: String::new(),
             filtered_items: Vec::default(),
+            filter_dirty: true,
             spawn_as_drop: false,
             spawn_has_socket: false,
             spawn_gem: 0,
@@ -60,8 +65,6 @@ pub fn ui_debug_item_list_system(
         .default_height(300.0)
         .open(&mut ui_state_debug_windows.item_list_open)
         .show(egui_context.ctx_mut().unwrap(), |ui| {
-            let mut filter_changed = false;
-
             egui::Grid::new("item_list_controls_grid")
                 .num_columns(2)
                 .show(ui, |ui| {
@@ -70,7 +73,7 @@ pub fn ui_debug_item_list_system(
                         .text_edit_singleline(&mut ui_state_debug_item_list.filter_name)
                         .changed()
                     {
-                        filter_changed = true;
+                        ui_state_debug_item_list.filter_dirty = true;
                     }
                     ui.end_row();
 
@@ -222,16 +225,12 @@ pub fn ui_debug_item_list_system(
             });
 
             if previous_item_list_type != ui_state_debug_item_list.filter_item_type {
-                filter_changed = true;
+                ui_state_debug_item_list.filter_dirty = true;
             }
 
-            if ui_state_debug_item_list.filter_name.is_empty()
-                && ui_state_debug_item_list.filtered_items.is_empty()
-            {
-                filter_changed = true;
-            }
-
-            if filter_changed {
+            // Refilter only when one of the inputs changed
+            if ui_state_debug_item_list.filter_dirty {
+                ui_state_debug_item_list.filter_dirty = false;
                 let filter_name_re = if !ui_state_debug_item_list.filter_name.is_empty() {
                     Some(
                         Regex::new(&format!(

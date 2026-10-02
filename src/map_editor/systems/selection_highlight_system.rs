@@ -4,12 +4,13 @@
 //! It draws selection outlines/highlights using Bevy's gizmo system.
 
 use bevy::prelude::{
-    App, Color, Gizmos, GlobalTransform, InheritedVisibility, Plugin, Query, Res, Transform,
-    Update, Vec3, With,
+    App, Color, Gizmos, GlobalTransform, InheritedVisibility, IntoScheduleConfigs, Plugin, Query,
+    Res, Transform, Update, Vec3, With,
 };
 
 use crate::map_editor::{
     components::SelectedInEditor,
+    map_editor_active,
     resources::MapEditorState,
 };
 
@@ -18,7 +19,7 @@ pub struct SelectionHighlightPlugin;
 
 impl Plugin for SelectionHighlightPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, selection_highlight_system);
+        app.add_systems(Update, selection_highlight_system.run_if(map_editor_active));
     }
 }
 

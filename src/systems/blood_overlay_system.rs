@@ -19,6 +19,7 @@ use bevy::{
 
 use crate::{
     components::BloodOverlay,
+    model_loader::SharedModelPartMaterial,
     render::RoseObjectExtension,
     resources::{BloodEffectConfig, BloodOverlayAtlas},
 };
@@ -61,6 +62,109 @@ fn collect_material_entities_recursive(
     }
 }
 
+/// Binds (or clears) a blood overlay on one material, touching the asset only when a
+/// value actually differs.
+///
+/// `Assets::get_mut` emits `AssetEvent::Modified` unconditionally, which makes the render
+/// world re-prepare the material (bind group) and re-specialize every mesh using it. A
+/// repainted overlay needs no material write: `GpuImage::prepare_asset` writes new pixels
+/// into the existing GPU texture (same descriptor, `COPY_DST`), so the bind group stays valid.
+///
+/// Model parts spawned by `ModelLoader` share one material per distinct part material
+/// (`SharedModelPartMaterial`), so writing into it would paint every model of that type.
+/// Such a part first gets its own copy of the material (copy-on-write): the copy is added
+/// with the new values, swapped onto the part entity and its handle returned so the
+/// caller's per-frame list follows it. Later writes go to the copy in place.
+fn sync_material_overlay(
+    commands: &mut Commands,
+    materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    mat_entity: Entity,
+    mat_handle: &Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    shared: bool,
+    overlay: Option<&Handle<Image>>,
+    intensity: f32,
+) -> Option<Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>> {
+    let params = if overlay.is_some() {
+        Vec4::new(intensity.clamp(0.0, 1.0), 1.0, 0.0, 0.0)
+    } else {
+        Vec4::ZERO
+    };
+
+    let material = materials.get(mat_handle)?;
+    if material.extension.blood_overlay_texture.as_ref() == overlay
+        && material.extension.blood_params == params
+    {
+        return None;
+    }
+
+    if shared {
+        let mut private_material = material.clone();
+        private_material.extension.blood_overlay_texture = overlay.cloned();
+        private_material.extension.blood_params = params;
+        let private_handle = materials.add(private_material);
+        commands
+            .entity(mat_entity)
+            .try_insert(MeshMaterial3d(private_handle.clone()))
+            .try_remove::<SharedModelPartMaterial>();
+        return Some(private_handle);
+    }
+
+    if let Some(mut material) = materials.get_mut(mat_handle) {
+        material.extension.blood_overlay_texture = overlay.cloned();
+        material.extension.blood_params = params;
+    }
+    None
+}
+
+/// Runs [`sync_material_overlay`] for every collected material entity, using the overlay
+/// texture stored for that entity (none clears the overlay).
+fn sync_material_overlays(
+    commands: &mut Commands,
+    materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    query_shared: &Query<(), With<SharedModelPartMaterial>>,
+    material_entities: &mut [(
+        Entity,
+        Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    )],
+    textures: &HashMap<Entity, Handle<Image>>,
+    intensity: f32,
+) {
+    for index in 0..material_entities.len() {
+        let (mat_entity, mat_handle) = &material_entities[index];
+        let mat_entity = *mat_entity;
+        let private_handle = sync_material_overlay(
+            commands,
+            materials,
+            mat_entity,
+            mat_handle,
+            query_shared.contains(mat_entity),
+            textures.get(&mat_entity),
+            intensity,
+        );
+
+        // The marker removal is deferred; an entity listed twice must see its new copy
+        // (which already holds the wanted values) rather than copy again.
+        if let Some(private_handle) = private_handle {
+            for (entity, handle) in material_entities.iter_mut() {
+                if *entity == mat_entity {
+                    *handle = private_handle.clone();
+                }
+            }
+        }
+    }
+}
+
+/// Per-frame scratch buffers for [`blood_overlay_generate_system`], reused to avoid
+/// allocating a Vec and HashSet per overlay entity every frame.
+#[derive(Default)]
+pub struct BloodOverlayScratch {
+    material_entities: Vec<(
+        Entity,
+        Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
+    )>,
+    visited: std::collections::HashSet<Entity>,
+}
+
 /// System that generates per-material blood overlay textures for entities with blood stains
 /// and applies them to the entity's materials.
 ///
@@ -85,10 +189,12 @@ pub fn blood_overlay_generate_system(
         Entity,
         &MeshMaterial3d<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
     )>,
+    query_shared: Query<(), With<SharedModelPartMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
     atlas: Res<BloodOverlayAtlas>,
     config: Res<BloodEffectConfig>,
+    mut scratch: Local<BloodOverlayScratch>,
 ) {
     if !config.enable_blood {
         return;
@@ -98,14 +204,16 @@ pub fn blood_overlay_generate_system(
         return;
     }
 
+    let BloodOverlayScratch {
+        material_entities,
+        visited,
+    } = &mut *scratch;
+
     for (entity, mut blood_overlay, _children, own_material, existing_textures) in query.iter_mut()
     {
         // Collect all material entities from this entity and descendants
-        let mut material_entities: Vec<(
-            Entity,
-            Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
-        )> = Vec::new();
-        let mut visited = std::collections::HashSet::new();
+        material_entities.clear();
+        visited.clear();
 
         // Add own material if present
         if let Some(handle) = own_material {
@@ -117,8 +225,8 @@ pub fn blood_overlay_generate_system(
             entity,
             &query_children,
             &query_materials,
-            &mut material_entities,
-            &mut visited,
+            material_entities,
+            visited,
         );
 
         // If the overlay texture data is already generated and clean, we still need to
@@ -130,18 +238,14 @@ pub fn blood_overlay_generate_system(
                 continue;
             };
 
-            for (mat_entity, mat_handle) in &material_entities {
-                if let Some(mut material) = materials.get_mut(mat_handle) {
-                    if let Some(overlay_handle) = existing.textures.get(mat_entity) {
-                        material.extension.blood_overlay_texture = Some(overlay_handle.clone());
-                        material.extension.blood_params =
-                            Vec4::new(config.intensity.clamp(0.0, 1.0), 1.0, 0.0, 0.0);
-                    } else {
-                        material.extension.blood_overlay_texture = None;
-                        material.extension.blood_params = Vec4::new(0.0, 0.0, 0.0, 0.0);
-                    }
-                }
-            }
+            sync_material_overlays(
+                &mut commands,
+                &mut materials,
+                &query_shared,
+                material_entities,
+                &existing.textures,
+                config.intensity,
+            );
 
             continue;
         }
@@ -157,7 +261,7 @@ pub fn blood_overlay_generate_system(
         }
 
         // For each material entity, generate/update its overlay texture
-        for (mat_entity, _mat_handle) in &material_entities {
+        for (mat_entity, _mat_handle) in material_entities.iter() {
             let needs_update = blood_overlay.is_material_dirty(*mat_entity);
 
             if !needs_update {
@@ -175,16 +279,13 @@ pub fn blood_overlay_generate_system(
             }
 
             // Reuse existing texture image when possible.
-            // The get_mut borrow is scoped to a bool so the fallback path
-            // can re-borrow images (AssetMut has a Drop impl, which extends
-            // the borrow across the if/else otherwise).
+            // Read-only check first: get_mut would mark the image Modified (and
+            // AssetMut's Drop impl would extend the borrow across the if/else).
             let overlay_handle =
                 if let Some(existing_handle) = per_material_textures.get(mat_entity) {
-                    let has_data = if let Some(image) = images.get_mut(existing_handle) {
-                        image.data.is_some()
-                    } else {
-                        false
-                    };
+                    let has_data = images
+                        .get(existing_handle)
+                        .is_some_and(|image| image.data.is_some());
                     if has_data {
                         let image = images.get_mut(existing_handle).unwrap().into_inner();
                         paint_overlay_texture(image, &material_stains, &atlas);
@@ -200,25 +301,21 @@ pub fn blood_overlay_generate_system(
             blood_overlay.mark_material_clean(*mat_entity);
         }
 
+        // Bind overlay textures to extension fields on each material
+        // (materials without stains get blood disabled)
+        sync_material_overlays(
+            &mut commands,
+            &mut materials,
+            &query_shared,
+            material_entities,
+            &per_material_textures,
+            config.intensity,
+        );
+
         // Store per-material texture map on the owner entity
         commands.entity(entity).insert(BloodOverlayTextures {
-            textures: per_material_textures.clone(),
+            textures: per_material_textures,
         });
-
-        // Bind overlay textures to extension fields on each material
-        for (mat_entity, mat_handle) in &material_entities {
-            if let Some(mut material) = materials.get_mut(mat_handle) {
-                if let Some(overlay_handle) = per_material_textures.get(mat_entity) {
-                    material.extension.blood_overlay_texture = Some(overlay_handle.clone());
-                    material.extension.blood_params =
-                        Vec4::new(config.intensity.clamp(0.0, 1.0), 1.0, 0.0, 0.0);
-                } else {
-                    // No stains for this material — disable blood on it
-                    material.extension.blood_overlay_texture = None;
-                    material.extension.blood_params = Vec4::new(0.0, 0.0, 0.0, 0.0);
-                }
-            }
-        }
 
         blood_overlay.texture_dirty = false;
     }
@@ -237,21 +334,10 @@ pub struct BloodOverlayTextures {
 /// This system sets blood_params to intensity=1.0, enabled=1.0 on all materials
 /// that have a blood overlay texture, regardless of configuration.
 /// Use this to isolate whether the issue is with parameter binding or texture generation.
+/// Only registered when the `DEBUG_FORCE_BLOOD` environment variable is set to "1".
 pub fn blood_overlay_force_enable_system(
     mut materials: ResMut<Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>>,
-    mut checked: Local<bool>,
-    mut debug_force_blood: Local<bool>,
 ) {
-    // Only run when DEBUG_FORCE_BLOOD environment variable is set to "1"
-    if !*checked {
-        *debug_force_blood = std::env::var("DEBUG_FORCE_BLOOD").unwrap_or_default() == "1";
-        *checked = true;
-    }
-
-    if !*debug_force_blood {
-        return;
-    }
-
     bevy::log::warn!(
         "[BloodOverlay Force Enable] DEBUG_FORCE_BLOOD=1 detected - forcing blood on all materials"
     );
@@ -303,9 +389,7 @@ fn paint_overlay_texture(
         return;
     };
 
-    for byte in data.iter_mut() {
-        *byte = 0;
-    }
+    data.fill(0);
 
     let size = image.texture_descriptor.size.width;
 
@@ -384,14 +468,17 @@ impl Plugin for BloodOverlayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<BloodOverlayAtlas>();
         app.add_systems(Startup, initialize_blood_overlay_atlas_system);
-        app.add_systems(
-            PostUpdate,
-            (
-                blood_overlay_generate_system,
-                // DIAGNOSTIC: Force enable blood on all materials when DEBUG_FORCE_BLOOD=1
-                blood_overlay_force_enable_system,
-            ),
-        );
+        app.add_systems(PostUpdate, blood_overlay_generate_system);
+
+        // DIAGNOSTIC: Force enable blood on all materials when DEBUG_FORCE_BLOOD=1.
+        // Registered only when requested so normal play doesn't hold exclusive access to
+        // the material assets every frame.
+        if std::env::var("DEBUG_FORCE_BLOOD").unwrap_or_default() == "1" {
+            app.add_systems(
+                PostUpdate,
+                blood_overlay_force_enable_system.after(blood_overlay_generate_system),
+            );
+        }
     }
 }
 

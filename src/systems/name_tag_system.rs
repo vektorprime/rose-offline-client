@@ -197,6 +197,7 @@ fn create_nametag_data(
     egui_context: &mut EguiContexts,
     _egui_managed_textures: &bevy_egui::EguiManagedTextures,
     images: &mut Assets<Image>,
+    font_atlas: &mut Option<egui::ColorImage>,
     pending_data: NameTagPendingData,
 ) -> Option<NameTagData> {
     let pixels_per_point = egui_context.ctx_mut().unwrap().pixels_per_point();
@@ -206,10 +207,15 @@ fn create_nametag_data(
     let mut row_bounds = Vec::new();
     // Read the CPU-side egui font atlas directly.
     // This is immediately available after layout and does not depend on render-pass texture uploads.
-    let font_source_texture = egui_context
-        .ctx_mut()
-        .unwrap()
-        .fonts_mut(|fonts| fonts.image());
+    // Copied at most once per name_tag_system run (it is several MB; zone entry
+    // creates many tags in one frame). Pending galleys were laid out in earlier
+    // frames and egui only appends glyphs mid-frame, so the copy covers them all.
+    let font_source_texture: &egui::ColorImage = font_atlas.get_or_insert_with(|| {
+        egui_context
+            .ctx_mut()
+            .unwrap()
+            .fonts_mut(|fonts| fonts.image())
+    });
 
     for (row_index, row) in pending_data.galley.rows.iter().enumerate() {
         let mut row_min = Vec2::new(10000.0, 10000.0);
@@ -247,7 +253,7 @@ fn create_nametag_data(
 
     // Copy letters to texture
     for row in pending_data.galley.rows.iter() {
-        let row_font_texture = &font_source_texture;
+        let row_font_texture = font_source_texture;
 
         unsafe {
             let src = row_font_texture.pixels.as_ptr();
@@ -312,7 +318,7 @@ fn create_nametag_data(
             depth_or_array_layers: 1,
         },
         TextureDimension::D2,
-        data.clone(),
+        data,
         TextureFormat::Rgba8Unorm,
         RenderAssetUsages::default(),
     );
@@ -415,6 +421,9 @@ pub fn name_tag_system(
         }
     }
 
+    // Font atlas copy shared by every tag created this run (see create_nametag_data).
+    let mut font_atlas: Option<egui::ColorImage> = None;
+
     for object in query_add.iter() {
         let name_tag_type = if let Some(npc) = object.npc {
             if object
@@ -442,6 +451,7 @@ pub fn name_tag_system(
                 &mut egui_context,
                 &egui_managed_textures,
                 &mut images,
+                &mut font_atlas,
                 pending_name_tag_data.clone(),
             ) {
                 name_tag_cache

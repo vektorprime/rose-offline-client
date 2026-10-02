@@ -2,7 +2,7 @@ use bevy::{
     asset::LoadState,
     pbr::{ExtendedMaterial, MeshMaterial3d},
     prelude::{
-        AssetServer, Assets, Component, Deref, DerefMut, Entity, Handle, Query, Res, ResMut, With,
+        AssetServer, Assets, Component, Deref, DerefMut, Entity, Handle, Query, Res, ResMut,
     },
     reflect::Reflect,
     time::Time,
@@ -10,7 +10,6 @@ use bevy::{
 
 use crate::{
     animation::{AnimationState, ZmoAsset},
-    components::EffectMesh,
     render::{EffectMeshAnimationUniform, RoseEffectExtension},
 };
 
@@ -32,17 +31,16 @@ impl MeshAnimation {
     }
 }
 
+/// Advances every `MeshAnimation` (effect meshes and the zone's animated morph
+/// objects) and writes the frame state into its `RoseEffectExtension` material, whose
+/// shader morphs the mesh. Each such entity owns its material, so the per-entity
+/// animation state never reaches another entity.
 pub fn mesh_animation_system(
-    mut query: Query<
-        (
-            &mut MeshAnimation,
-            Entity,
-            Option<
-                &MeshMaterial3d<ExtendedMaterial<bevy::pbr::StandardMaterial, RoseEffectExtension>>,
-            >,
-        ),
-        With<EffectMesh>,
-    >,
+    mut query: Query<(
+        &mut MeshAnimation,
+        Entity,
+        Option<&MeshMaterial3d<ExtendedMaterial<bevy::pbr::StandardMaterial, RoseEffectExtension>>>,
+    )>,
     mut effect_mesh_materials: ResMut<
         Assets<ExtendedMaterial<bevy::pbr::StandardMaterial, RoseEffectExtension>>,
     >,

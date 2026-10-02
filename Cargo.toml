@@ -51,6 +51,8 @@ thiserror = "1.0"
 tokio = { version = "1.17", features = [ "rt", "net", "sync", "macros", "io-util" ] }
 toml = "0.7.2"
 uuid = "1"
+# Same crate/version Bevy 0.19 uses (features unify); used for the adapter probe in render/wgpu_settings.rs.
+wgpu = { version = "29", default-features = false }
 quick-xml = { version = "0.26.0", features = ["serialize"] }
 regex = "1"
 rose-data = { path = "C:/Users/vicha/RustroverProjects/rose-offline/rose-data" }

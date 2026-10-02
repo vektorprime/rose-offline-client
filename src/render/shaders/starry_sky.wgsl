@@ -105,11 +105,21 @@ fn star_layer(dir: vec3<f32>, scale: f32, brightness_base: f32, twinkle_speed: f
     let grid_fract = fract(p);
     
     var star_brightness = 0.0;
-    
+
+    // A cell's star sits inside that cell (star_pos in [0, 1]) with radius
+    // star_size = 0.02 + rand * 0.03 <= 0.05; at dist >= star_size its
+    // intensity is exactly 0. So a neighbour at offset -1 on an axis can only
+    // reach this pixel when grid_fract < 0.05 on that axis, and +1 only when
+    // grid_fract > 0.95. Skip the other neighbours (0.06 / 0.94 add a margin
+    // over float rounding). Skipped cells only ever added +/-0, and the visited
+    // cells keep their original order, so the sum is bit-identical.
+    let lo = select(vec3<i32>(0), vec3<i32>(-1), grid_fract < vec3<f32>(0.06));
+    let hi = select(vec3<i32>(0), vec3<i32>(1), grid_fract > vec3<f32>(0.94));
+
     // Check neighboring cells for stars
-    for (var z = -1; z <= 1; z++) {
-        for (var y = -1; y <= 1; y++) {
-            for (var x = -1; x <= 1; x++) {
+    for (var z = lo.z; z <= hi.z; z++) {
+        for (var y = lo.y; y <= hi.y; y++) {
+            for (var x = lo.x; x <= hi.x; x++) {
                 let cell_offset = vec3<f32>(f32(x), f32(y), f32(z));
                 let cell_id = grid_id + cell_offset;
                 

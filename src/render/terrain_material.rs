@@ -9,12 +9,11 @@
 use std::num::NonZeroU32;
 
 use bevy::{
-    asset::{load_internal_asset, weak_handle, Asset, AssetApp, Assets, Handle},
+    asset::{load_internal_asset, weak_handle, Asset, AssetApp, AssetId, Assets, Handle},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     pbr::{Material, MaterialPipeline, MaterialPipelineKey},
     prelude::{
-        App, Color, ColorToComponents, DetectChanges, LinearRgba, Mesh, Plugin, Res, ResMut, Vec3,
-        Vec4,
+        App, Color, ColorToComponents, LinearRgba, Local, Mesh, Plugin, Res, ResMut, Vec3, Vec4,
     },
     material::AlphaMode,
     reflect::TypePath,
@@ -29,7 +28,13 @@ use bevy::{
 use bevy_mesh::MeshVertexBufferLayoutRef;
 
 use crate::graphics::GraphicsSettings;
-use crate::render::{ZoneLighting, MESH_ATTRIBUTE_UV_1, TERRAIN_MESH_ATTRIBUTE_TILE_INFO};
+use crate::render::zone_lighting::{
+    moon_light_factor, sun_light_factor, DaylightSettings, MOON_COLOR, MOON_MAX_ILLUMINANCE,
+    SUN_MAX_ILLUMINANCE,
+};
+use crate::render::{
+    StarrySkySettings, ZoneLighting, MESH_ATTRIBUTE_UV_1, TERRAIN_MESH_ATTRIBUTE_TILE_INFO,
+};
 
 /// Shader handle for the terrain material shader
 pub const TERRAIN_MATERIAL_SHADER_HANDLE: Handle<Shader> =
@@ -61,61 +66,111 @@ impl Plugin for TerrainMaterialPlugin {
     }
 }
 
-/// System that updates terrain material lighting based on ZoneLighting and time of day.
+/// Terrain light units per `terrain_light_intensity` unit at the full sun
+/// (default intensity 5 x 2.5 / 5 = 2.5, the old "Day" value).
+const TERRAIN_SUN_SCALE: f32 = 2.5 / 5.0;
+
+/// System that updates terrain material lighting from ZoneLighting and the
+/// live sun/moon.
 ///
-/// The terrain lighting intensity is adjusted based on the time of day:
-/// | Time State | Intensity Multiplier | Time Period  |
-/// |------------|---------------------|--------------|
-/// | Morning    | 2.0                 | 5:00-11:00   |
-/// | Day        | 2.5                 | 11:00-17:00  |
-/// | Evening    | 2.0                 | 17:00-20:00  |
-/// | Night      | 1.0                 | 20:00-5:00   |
+/// The legacy terrain shader has its own unit-scale lighting (not lux), so it
+/// mirrors the PBR lights instead of a time-of-day table:
+/// - sun: `zone_lighting.light_direction` (toward the sun), strength follows
+///   `sun_light_factor` (the same ramp as the sun's illuminance) and the Sky
+///   tab's sun brightness;
+/// - moon: a second directional light toward `moon_direction`, fading in with
+///   `moon_light_factor` at MOON/SUN of the sun's strength.
+///
+/// Both are continuous in the sun's elevation, so there are no jumps at
+/// Morning/Day/Evening/Night changes (was a 2.0/2.5/2.0/1.0 step table).
+///
+/// Runs every frame without a change gate: the targets are a handful of float
+/// ops, and a gate would leave a newly spawned zone's material (created with
+/// placeholder lighting) stale until the next lighting change.
 pub fn update_terrain_lighting_system(
     zone_lighting: Res<ZoneLighting>,
     graphics_settings: Res<GraphicsSettings>,
-    zone_time: Res<crate::resources::ZoneTime>,
+    daylight: Res<DaylightSettings>,
+    starry_sky_settings: Option<Res<StarrySkySettings>>,
     mut terrain_materials: ResMut<Assets<TerrainMaterial>>,
+    mut stale_materials: Local<Vec<AssetId<TerrainMaterial>>>,
 ) {
-    // Only update if zone_lighting, graphics_settings, or zone_time has changed
-    if !zone_lighting.is_changed() && !graphics_settings.is_changed() && !zone_time.is_changed() {
-        return;
-    }
+    // Compute targets first; write only on actual difference.
+    let base_scale = graphics_settings.terrain_light_intensity * TERRAIN_SUN_SCALE;
+    let light_direction = zone_lighting.light_direction;
+    let sun_height = light_direction.y;
+    let sun_strength = base_scale
+        * (daylight.sun_illuminance.max(0.0) / SUN_MAX_ILLUMINANCE)
+        * sun_light_factor(sun_height);
+    // Sun color matches the PBR sun (sync_zone_lighting_to_bevy_lights_system
+    // sets it to character_diffuse_color).
+    let char_diffuse = zone_lighting.character_diffuse_color;
+    let light_color = Color::from(LinearRgba::new(
+        char_diffuse.x * sun_strength,
+        char_diffuse.y * sun_strength,
+        char_diffuse.z * sun_strength,
+        1.0,
+    ));
 
-    // Get the terrain light intensity scale from graphics settings
-    let base_intensity = graphics_settings.terrain_light_intensity;
+    let moon_strength = base_scale
+        * (MOON_MAX_ILLUMINANCE / SUN_MAX_ILLUMINANCE)
+        * moon_light_factor(sun_height);
+    let moon_tint = MOON_COLOR.to_linear();
+    let moon_color = Color::from(LinearRgba::new(
+        moon_tint.red * moon_strength,
+        moon_tint.green * moon_strength,
+        moon_tint.blue * moon_strength,
+        1.0,
+    ));
+    // StarrySkySettings::moon_direction points TOWARD the moon (the moon light
+    // sits at camera + moon_direction and looks back at the camera).
+    let moon_direction = starry_sky_settings
+        .as_ref()
+        .map(|settings| settings.moon_direction)
+        .unwrap_or(DEFAULT_MOON_DIRECTION)
+        .normalize_or(Vec3::Y);
 
-    // Apply time-of-day multiplier to terrain lighting intensity
-    // This creates more realistic lighting transitions throughout the day
-    let time_multiplier = match zone_time.state {
-        crate::resources::ZoneTimeState::Morning => 2.0, // 5:00-11:00: Moderate morning light
-        crate::resources::ZoneTimeState::Day => 2.5,     // 11:00-17:00: Bright daylight
-        crate::resources::ZoneTimeState::Evening => 2.0, // 17:00-20:00: Dimming evening light
-        crate::resources::ZoneTimeState::Night => 1.0,   // 20:00-5:00: Dim night light
-    };
+    let map_ambient = zone_lighting.map_ambient_color;
+    let ambient_color = Color::from(LinearRgba::new(
+        map_ambient.x,
+        map_ambient.y,
+        map_ambient.z,
+        1.0,
+    ));
 
-    // Combine base intensity with time multiplier
-    // Scale down by dividing by 5.0 to keep values in reasonable range (base is 5.0)
-    let intensity_scale = (base_intensity * time_multiplier) / 5.0;
+    // Find stale materials read-only, then `get_mut` only those. `Assets::iter_mut`
+    // queues AssetEvent::Modified for EVERY asset it visits, written or not, and
+    // each Modified TerrainMaterial is re-prepared by the render world. On Bevy
+    // 0.19.1's CreateBindGroupDirectly path that re-prepare also never frees the
+    // previous bind group (bevy_pbr material.rs prepare_asset), so it leaks.
+    stale_materials.clear();
+    stale_materials.extend(
+        terrain_materials
+            .iter()
+            .filter(|(_, material)| {
+                material.light_direction != light_direction
+                    || material.light_color != light_color
+                    || material.ambient_color != ambient_color
+                    || material.moon_direction != moon_direction
+                    || material.moon_color != moon_color
+            })
+            .map(|(id, _)| id),
+    );
 
-    for (_, material) in terrain_materials.iter_mut() {
-        material.light_direction = zone_lighting.light_direction;
-        let char_diffuse = zone_lighting.character_diffuse_color;
-        // Scale the light color to match the perceptual brightness of DirectionalLight's HDR illuminance
-        material.light_color = Color::from(LinearRgba::new(
-            char_diffuse.x * intensity_scale,
-            char_diffuse.y * intensity_scale,
-            char_diffuse.z * intensity_scale,
-            1.0,
-        ));
-        let map_ambient = zone_lighting.map_ambient_color;
-        material.ambient_color = Color::from(LinearRgba::new(
-            map_ambient.x,
-            map_ambient.y,
-            map_ambient.z,
-            1.0,
-        ));
+    for id in stale_materials.drain(..) {
+        if let Some(mut material) = terrain_materials.get_mut(id) {
+            material.light_direction = light_direction;
+            material.light_color = light_color;
+            material.ambient_color = ambient_color;
+            material.moon_direction = moon_direction;
+            material.moon_color = moon_color;
+        }
     }
 }
+
+/// Fallback moon direction (toward the moon) when StarrySkySettings is absent;
+/// matches `StarrySkySettings::default().moon_direction`.
+pub const DEFAULT_MOON_DIRECTION: Vec3 = Vec3::new(0.3, 0.8, 0.5);
 
 /// Custom terrain material supporting multiple tile textures via texture array
 #[derive(Asset, Debug, Clone, TypePath)]
@@ -123,15 +178,19 @@ pub struct TerrainMaterial {
     /// Array of tile texture handles (up to TERRAIN_MATERIAL_MAX_TEXTURES)
     pub textures: Vec<Handle<bevy::image::Image>>,
 
-    /// Terrain directional light direction.
+    /// Terrain sun direction, pointing TOWARD the sun.
     ///
     /// Uploaded to a read-only storage buffer in the material bind group to remain
     /// compatible with wgpu 27's binding-array restrictions.
     pub light_direction: Vec3,
-    /// Terrain directional light color.
+    /// Terrain sun color (pre-scaled by strength; black when the sun is down).
     pub light_color: Color,
     /// Terrain ambient light color.
     pub ambient_color: Color,
+    /// Terrain moon direction, pointing TOWARD the moon.
+    pub moon_direction: Vec3,
+    /// Terrain moon color (pre-scaled by strength; black by day).
+    pub moon_color: Color,
 }
 
 /// Data stored alongside the prepared bind group
@@ -187,21 +246,12 @@ impl Material for TerrainMaterial {
         ])?;
         descriptor.vertex.buffers = vec![vertex_layout];
 
-        // Configure blending for terrain
+        // No blending: terrain_material.wgsl always outputs alpha 1.0, so the former
+        // SrcAlpha/OneMinusSrcAlpha blend reduced to src * 1 + dst * 0 = src. Writing
+        // src directly is identical and skips the destination read on the HDR target.
         if let Some(fragment) = descriptor.fragment.as_mut() {
             for color_target_state in fragment.targets.iter_mut().filter_map(|x| x.as_mut()) {
-                color_target_state.blend = Some(BlendState {
-                    color: BlendComponent {
-                        src_factor: BlendFactor::SrcAlpha,
-                        dst_factor: BlendFactor::OneMinusSrcAlpha,
-                        operation: BlendOperation::Add,
-                    },
-                    alpha: BlendComponent {
-                        src_factor: BlendFactor::SrcAlpha,
-                        dst_factor: BlendFactor::OneMinusSrcAlpha,
-                        operation: BlendOperation::Add,
-                    },
-                });
+                color_target_state.blend = None;
             }
         }
 
@@ -269,6 +319,8 @@ impl AsBindGroup for TerrainMaterial {
         // so terrain lighting is provided via a read-only storage buffer instead of uniforms.
         let light_color = self.light_color.to_linear().to_f32_array();
         let ambient_color = self.ambient_color.to_linear().to_f32_array();
+        let moon_color = self.moon_color.to_linear().to_f32_array();
+        // Layout must match `terrain_lighting` in terrain_material.wgsl.
         let lighting_data = [
             Vec4::new(
                 self.light_direction.x,
@@ -288,6 +340,13 @@ impl AsBindGroup for TerrainMaterial {
                 ambient_color[2],
                 ambient_color[3],
             ),
+            Vec4::new(
+                self.moon_direction.x,
+                self.moon_direction.y,
+                self.moon_direction.z,
+                0.0,
+            ),
+            Vec4::new(moon_color[0], moon_color[1], moon_color[2], moon_color[3]),
         ];
         let lighting_buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("terrain_lighting_buffer"),

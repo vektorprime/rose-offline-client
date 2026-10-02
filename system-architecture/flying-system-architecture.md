@@ -397,21 +397,11 @@ Location: `src/systems/flight_pose_system.rs`
 **Purpose**: Applies a visual-only flight pose to the character model while flying (the planned `wing_animation_system` was never implemented)
 
 **Responsibilities**:
-- Forward lean (pitch) on the body
-- Toe-down rotation on the feet
-- Ragdoll "hanging from wings" pose: body lowered, arms dangling, legs hanging, head tilted up
-- Pose only activates when airborne (`current_speed > 0.1`), blends in/out at 5.0/sec
-- Rotations are applied to `CharacterModel` part entities (Body, Hands, Feet, Head) so movement is unaffected
+- Pelvis leans forward and drops, head tilts up, upper arms hang straight down (cancelling the lean), thighs swing back, feet point toes-down
+- Pose only activates when airborne (`current_speed > 0.1`), blends in/out with `FlightState::pose_blend`
+- Applied to the player's skeleton joints (`SkinnedMesh::joints`, bone indices from MALE/FEMALE.ZMD: pelvis 0, head 4 like the C++ client's `BONE_IDX_PELVIS`/`BONE_IDX_HEAD`), relative to the animated pose, never to the root `Transform`/`Position`/`FacingDirection`, so movement and collision are unaffected. (It used to rotate model-part entities through a query that never matched them; body/hands/feet are GPU-skinned, so their own Transforms are ignored anyway.)
 
-```rust
-pub fn flight_pose_system(
-    time: Res<Time>,
-    player_query: Query<(&FlightState, &FacingDirection, &CharacterModel), With<PlayerCharacter>>,
-    mut body_transforms: Query<&mut Transform, (With<CharacterModel>, Without<PlayerCharacter>)>,
-)
-```
-
-`flight_pose_blend_update_system` tracks `FlightState::pose_blend`. Both run after `flight_toggle_system` and `character_model_update_system` (`src/lib.rs:1416-1423`).
+Scheduling: `flight_pose_system` runs in PostUpdate after `RoseAnimationSystem` (the skeletal animation writes the joints there) and before transform propagation (`src/lib.rs`). The un-posed joint values are kept in `FlightPoseRestore`; `flight_pose_blend_update_system` (Update, before the animation) restores them each frame so the pose never accumulates or leaks into animation blends.
 
 ### 6. Wind Effect Systems
 

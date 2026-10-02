@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use bevy::{
-    asset::LoadState,
+    asset::{LoadState, RenderAssetUsages},
     prelude::{AssetServer, Assets, Commands, Handle, Image, Res, ResMut, Resource, Vec2},
+    render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use bevy_egui::{egui, EguiContexts};
 use enum_map::{enum_map, Enum, EnumMap};
@@ -298,6 +300,38 @@ fn load_ui_spritesheet(
 }
 
 fn premultiply_image_alpha(image: &mut Image) {
+    let width = image.width() as usize;
+    let height = image.height() as usize;
+    let byte_len = width * height * 4;
+
+    // Fast path for the RGBA8 sRGB textures the UI uses: per-byte table lookups
+    // instead of two colour-space conversions per pixel. Any case the table does
+    // not cover exactly (other formats/dimensions, missing or short data) takes
+    // the generic per-pixel path unchanged.
+    let table = srgb8_premultiply_table();
+    if image.texture_descriptor.format == TextureFormat::Rgba8UnormSrgb
+        && image.texture_descriptor.dimension == TextureDimension::D2
+        && image.texture_descriptor.size.depth_or_array_layers >= 1
+        && table.len() == 256 * 256 * 4
+    {
+        if let Some(data) = image.data.as_mut().filter(|data| data.len() >= byte_len) {
+            // get_color_at/set_color_at address layer 0 only: the first width*height pixels.
+            for pixel in data[..byte_len].chunks_exact_mut(4) {
+                let row = pixel[3] as usize * 256;
+                pixel[0] = table[(row + pixel[0] as usize) * 4];
+                pixel[1] = table[(row + pixel[1] as usize) * 4 + 1];
+                pixel[2] = table[(row + pixel[2] as usize) * 4 + 2];
+                pixel[3] = table[row * 4 + 3];
+            }
+            return;
+        }
+    }
+
+    premultiply_image_alpha_per_pixel(image);
+}
+
+/// Generic premultiply through `get_color_at` / `set_color_at` (any supported format).
+fn premultiply_image_alpha_per_pixel(image: &mut Image) {
     let width = image.width();
     let height = image.height();
 
@@ -312,6 +346,38 @@ fn premultiply_image_alpha(image: &mut Image) {
             }
         }
     }
+}
+
+/// Premultiplied RGBA8 sRGB output for every (channel, alpha) byte pair, laid out as
+/// a 256x256 RGBA8 image: pixel (x = channel, y = alpha) holds the result for input
+/// [channel, channel, channel, alpha]. It is produced by running the generic
+/// per-pixel path over exactly that image, and each output channel depends only on
+/// its own input byte and alpha (per-channel sRGB transfer, alpha passed through),
+/// so a lookup is bit-identical to converting the pixel itself.
+fn srgb8_premultiply_table() -> &'static [u8] {
+    static TABLE: OnceLock<Vec<u8>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut data = Vec::with_capacity(256 * 256 * 4);
+        for alpha in 0..=u8::MAX {
+            for channel in 0..=u8::MAX {
+                data.extend_from_slice(&[channel, channel, channel, alpha]);
+            }
+        }
+        let mut image = Image::new(
+            Extent3d {
+                width: 256,
+                height: 256,
+                depth_or_array_layers: 1,
+            },
+            TextureDimension::D2,
+            data,
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::MAIN_WORLD,
+        );
+        premultiply_image_alpha_per_pixel(&mut image);
+        // Image::new always stores the data, so this is the full 256x256x4 table.
+        image.data.unwrap_or_default()
+    })
 }
 
 pub fn update_ui_resources(

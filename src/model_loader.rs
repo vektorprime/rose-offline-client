@@ -1,11 +1,15 @@
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
+};
 
 use arrayvec::ArrayVec;
 use bevy::{
+    asset::AssetId,
     math::{Mat4, Quat, Vec2, Vec3, Vec4},
     pbr::{ExtendedMaterial, MeshMaterial3d, StandardMaterial},
     prelude::{
-        AssetServer, Assets, Color, Commands, Entity, GlobalTransform, Handle, Image,
+        AssetServer, Assets, Color, Commands, Component, Entity, GlobalTransform, Handle, Image,
         InheritedVisibility, Mesh, Mesh3d, Resource, Transform, ViewVisibility, Visibility,
     },
     material::AlphaMode,
@@ -50,7 +54,9 @@ const TRAIL_COLOURS: [Color; 9] = [
     Color::srgba(1.0, 0.5, 0.0, 1.0),
 ];
 
-/// Helper function to create ExtendedMaterial for ROSE objects
+/// Helper function to create ExtendedMaterial for ROSE objects.
+/// `lightmap_offset` is the part's (column, row) cell in the lightmap page and
+/// `lightmap_scale` is 1 / parts per row.
 pub fn create_rose_object_material(
     materials: &mut Assets<ExtendedMaterial<StandardMaterial, RoseObjectExtension>>,
     base_texture: Handle<Image>,
@@ -61,8 +67,8 @@ pub fn create_rose_object_material(
     alpha_mode: AlphaMode,
     two_sided: bool,
 ) -> Handle<ExtendedMaterial<StandardMaterial, RoseObjectExtension>> {
-    materials.add(ExtendedMaterial {
-        base: StandardMaterial {
+    materials.add(crate::render::rose_object_material(
+        StandardMaterial {
             base_color_texture: Some(base_texture),
             alpha_mode,
             double_sided: two_sided,
@@ -70,15 +76,59 @@ pub fn create_rose_object_material(
             unlit: false,
             ..StandardMaterial::default()
         },
-        extension: RoseObjectExtension {
+        RoseObjectExtension {
             lightmap_params: Vec4::new(lightmap_offset.x, lightmap_offset.y, lightmap_scale, 0.0),
             lightmap_texture,
             specular_texture,
-            blink_state: 0, // Default to eyes open
             blood_overlay_texture: None,
             blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
         },
-    })
+    ))
+}
+
+type ObjectMaterial = ExtendedMaterial<StandardMaterial, RoseObjectExtension>;
+
+/// Marker on model part entities whose `MeshMaterial3d` comes from the shared
+/// part-material cache, i.e. may be used by every model part with the same texture and
+/// material settings. A system that writes per-entity values into the material (blood
+/// overlay) must give the part its own copy first and remove this marker.
+#[derive(Component)]
+pub struct SharedModelPartMaterial;
+
+/// Alpha mode of a model part material in hashable form.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum PartAlphaMode {
+    Opaque,
+    Blend,
+    /// Mask threshold as raw `f32` bits.
+    Mask(u32),
+}
+
+/// Every input `spawn_model` passes to [`create_rose_object_material`]; equal keys
+/// create identical materials, so one material asset is shared per key.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct PartMaterialKey {
+    texture_path: String,
+    /// Set only for ZSC materials with the specular flag.
+    specular_texture: Option<AssetId<Image>>,
+    alpha_mode: PartAlphaMode,
+    two_sided: bool,
+}
+
+/// Identifies the skeleton file an inverse-bindposes asset was computed from.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum SkeletonKey {
+    Male,
+    Female,
+    Cart,
+    CastleGear,
+    Npc(usize),
+}
+
+type PartMaterialCache = Mutex<HashMap<PartMaterialKey, AssetId<ObjectMaterial>>>;
+
+fn lock_cache<T>(cache: &Mutex<T>) -> MutexGuard<'_, T> {
+    cache.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 #[derive(Resource)]
@@ -128,6 +178,17 @@ pub struct ModelLoader {
     // Field Item
     field_item: ZscFile,
     field_item_motion_path: String,
+
+    // Spawn caches. `ModelLoader` is only reachable through `Res`, hence the Mutexes.
+    // Asset caches store `AssetId`s, never strong handles, so they keep nothing alive:
+    // `Assets::get_strong_handle` revives an entry while a spawned model still holds the
+    // asset and returns None once it was dropped, in which case it is created again.
+    /// Parsed NPC skeletons by `LIST_NPC.CHR` skeleton index (was re-read per spawn).
+    npc_skeletons: Mutex<HashMap<usize, Arc<ZmdFile>>>,
+    /// One inverse-bindposes asset per skeleton (the matrices depend only on the file).
+    inverse_bindposes: Mutex<HashMap<SkeletonKey, AssetId<SkinnedMeshInverseBindposes>>>,
+    /// One material per distinct model part material, shared by all spawned models.
+    part_materials: PartMaterialCache,
 }
 
 impl ModelLoader {
@@ -179,6 +240,10 @@ impl ModelLoader {
             // Field items
             field_item: vfs.read_file::<ZscFile, _>("3DDATA/ITEM/LIST_FIELDITEM.ZSC")?,
             field_item_motion_path: "3DDATA/MOTION/ITEM_ANI.ZMO".to_string(),
+
+            npc_skeletons: Mutex::new(HashMap::new()),
+            inverse_bindposes: Mutex::new(HashMap::new()),
+            part_materials: Mutex::new(HashMap::new()),
 
             vfs,
             character_motion_database,
@@ -235,6 +300,118 @@ impl ModelLoader {
         }
     }
 
+    /// Returns the parsed NPC skeleton for `skeleton_index`, reading it from the VFS only
+    /// on first use. Failed reads are not cached (retried next time, as before).
+    fn npc_skeleton(&self, skeleton_index: usize) -> Option<Arc<ZmdFile>> {
+        if let Some(skeleton) = lock_cache(&self.npc_skeletons).get(&skeleton_index) {
+            return Some(Arc::clone(skeleton));
+        }
+
+        let skeleton = Arc::new(
+            self.npc_chr
+                .skeleton_files
+                .get(skeleton_index)
+                .and_then(|p| self.vfs.read_file::<ZmdFile, _>(p).ok())?,
+        );
+        lock_cache(&self.npc_skeletons).insert(skeleton_index, Arc::clone(&skeleton));
+        Some(skeleton)
+    }
+
+    /// Returns the inverse-bindposes asset for `skeleton`, shared by every model spawned
+    /// with the same skeleton instead of adding an identical asset per spawn.
+    fn skeleton_inverse_bindposes(
+        &self,
+        key: SkeletonKey,
+        skeleton: &ZmdFile,
+        skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
+    ) -> Handle<SkinnedMeshInverseBindposes> {
+        let mut cache = lock_cache(&self.inverse_bindposes);
+        let existing = cache
+            .get(&key)
+            .and_then(|id| skinned_mesh_inverse_bindposes_assets.get_strong_handle(*id));
+        if let Some(handle) = existing {
+            return handle;
+        }
+
+        let handle = skinned_mesh_inverse_bindposes_assets.add(SkinnedMeshInverseBindposes::from(
+            compute_inverse_bind_poses(skeleton),
+        ));
+        cache.insert(key, handle.id());
+        handle
+    }
+
+    fn spawn_skeleton(
+        &self,
+        commands: &mut Commands,
+        model_entity: Entity,
+        skeleton: &ZmdFile,
+        skeleton_key: SkeletonKey,
+        skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
+    ) -> SkinnedMesh {
+        let bone_entities: Vec<Entity> = skeleton_local_transforms(skeleton)
+            .into_iter()
+            .map(|transform| {
+                commands
+                    .spawn((
+                        Visibility::default(),
+                        InheritedVisibility::default(),
+                        ViewVisibility::default(),
+                        transform,
+                        GlobalTransform::default(),
+                    ))
+                    .id()
+            })
+            .collect();
+
+        // CRITICAL VALIDATION: Ensure skeleton has bones
+        assert!(
+            !skeleton.bones.is_empty(),
+            "Skeleton has no bones! This will cause rendering errors."
+        );
+
+        assert_eq!(
+            bone_entities.len(),
+            skeleton.bones.len() + skeleton.dummy_bones.len(),
+            "Bone entity count mismatch: expected {}, got {}",
+            skeleton.bones.len() + skeleton.dummy_bones.len(),
+            bone_entities.len()
+        );
+
+        let handle = self.skeleton_inverse_bindposes(
+            skeleton_key,
+            skeleton,
+            skinned_mesh_inverse_bindposes_assets,
+        );
+
+        for (i, bone) in skeleton
+            .bones
+            .iter()
+            .chain(skeleton.dummy_bones.iter())
+            .enumerate()
+        {
+            if let Some(&bone_entity) = bone_entities.get(i) {
+                if bone.parent as usize == i {
+                    commands.entity(model_entity).add_child(bone_entity);
+                } else if let Some(&parent_entity) = bone_entities.get(bone.parent as usize) {
+                    commands.entity(parent_entity).add_child(bone_entity);
+                }
+            }
+        }
+
+        // VERIFY: Asset exists (critical for preventing bind group mismatch)
+        if skinned_mesh_inverse_bindposes_assets.get(&handle).is_none() {
+            log::error!(
+               "[SKINNED_MESH_FIX] CRITICAL: Failed to add inverse bind poses asset to assets collection! This will cause a bind group mismatch!"
+            );
+            panic!("Failed to add inverse bind poses asset");
+        }
+
+        SkinnedMesh {
+            inverse_bindposes: handle,
+            joints: bone_entities,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn spawn_npc_model(
         &self,
@@ -251,17 +428,16 @@ impl ModelLoader {
         npc_id: NpcId,
     ) -> Option<(NpcModel, SkinnedMesh, DummyBoneOffset)> {
         let npc_model_data = self.npc_chr.npcs.get(&npc_id.get())?;
-        let (skinned_mesh, root_bone_position, dummy_bone_offset) = if let Some(skeleton) = self
-            .npc_chr
-            .skeleton_files
-            .get(npc_model_data.skeleton_index as usize)
-            .and_then(|p| self.vfs.read_file::<ZmdFile, _>(p).ok())
+        let skeleton_index = npc_model_data.skeleton_index as usize;
+        let (skinned_mesh, root_bone_position, dummy_bone_offset) = if let Some(skeleton) =
+            self.npc_skeleton(skeleton_index)
         {
             (
-                spawn_skeleton(
+                self.spawn_skeleton(
                     commands,
                     model_entity,
                     &skeleton,
+                    SkeletonKey::Npc(skeleton_index),
                     skinned_mesh_inverse_bindposes_assets,
                 ),
                 if let Some(root_bone) = skeleton.bones.first() {
@@ -303,6 +479,7 @@ impl ModelLoader {
                 false,
                 &self.specular_image,
                 None,
+                &self.part_materials,
             );
             model_parts.append(&mut parts);
         }
@@ -351,6 +528,7 @@ impl ModelLoader {
                     false,
                     &self.specular_image,
                     None,
+                    &self.part_materials,
                 );
                 model_parts.append(&mut parts);
             }
@@ -371,6 +549,7 @@ impl ModelLoader {
                     false,
                     &self.specular_image,
                     None,
+                    &self.part_materials,
                 );
                 model_parts.append(&mut parts);
             }
@@ -433,6 +612,7 @@ impl ModelLoader {
             false,
             &self.specular_image,
             None,
+            &self.part_materials,
         );
 
         PersonalStoreModel {
@@ -491,6 +671,7 @@ impl ModelLoader {
                     false,
                     &self.specular_image,
                     None,
+                    &self.part_materials,
                 ),
             },
             asset_server.load(&self.field_item_motion_path),
@@ -690,10 +871,14 @@ impl ModelLoader {
     ) -> (CharacterModel, SkinnedMesh, DummyBoneOffset) {
         let skeleton = self.get_skeleton(character_info.gender);
         let dummy_bone_offset = skeleton.bones.len();
-        let skinned_mesh = spawn_skeleton(
+        let skinned_mesh = self.spawn_skeleton(
             commands,
             model_entity,
             skeleton,
+            match character_info.gender {
+                CharacterGender::Male => SkeletonKey::Male,
+                CharacterGender::Female => SkeletonKey::Female,
+            },
             skinned_mesh_inverse_bindposes_assets,
         );
         let mut model_parts = EnumMap::default();
@@ -778,6 +963,7 @@ impl ModelLoader {
             matches!(model_part, CharacterModelPart::Back),
             &self.specular_image,
             None,
+            &self.part_materials,
         );
 
         if matches!(model_part, CharacterModelPart::Weapon) {
@@ -905,15 +1091,16 @@ impl ModelLoader {
             })
             .unwrap(); // TODO: No panic on invalid vehicle
         let is_cart = matches!(body_item_data.vehicle_type, VehicleType::Cart);
-        let skeleton = match body_item_data.vehicle_type {
-            VehicleType::Cart => &self.skeleton_cart,
-            VehicleType::CastleGear => &self.skeleton_castle_gear,
+        let (skeleton, skeleton_key) = match body_item_data.vehicle_type {
+            VehicleType::Cart => (&self.skeleton_cart, SkeletonKey::Cart),
+            VehicleType::CastleGear => (&self.skeleton_castle_gear, SkeletonKey::CastleGear),
         };
         let dummy_bone_offset = skeleton.bones.len();
-        let skinned_mesh = spawn_skeleton(
+        let skinned_mesh = self.spawn_skeleton(
             commands,
             vehicle_model_entity,
             skeleton,
+            skeleton_key,
             skinned_mesh_inverse_bindposes_assets,
         );
         let mut model_parts = EnumMap::default();
@@ -945,6 +1132,7 @@ impl ModelLoader {
                         false,
                         &self.specular_image,
                         Some(skinned_mesh_parent_entity),
+                        &self.part_materials,
                     ),
                 );
 
@@ -1088,66 +1276,32 @@ fn transform_children(skeleton: &ZmdFile, bone_transforms: &mut Vec<Transform>, 
     }
 }
 
-fn spawn_skeleton(
-    commands: &mut Commands,
-    model_entity: Entity,
-    skeleton: &ZmdFile,
-    skinned_mesh_inverse_bindposes_assets: &mut Assets<SkinnedMeshInverseBindposes>,
-) -> SkinnedMesh {
-    let mut bind_pose = Vec::with_capacity(skeleton.bones.len());
-    let mut bone_entities = Vec::with_capacity(skeleton.bones.len());
+/// Parent-relative transform of every bone, followed by every dummy bone.
+fn skeleton_local_transforms(skeleton: &ZmdFile) -> Vec<Transform> {
+    skeleton
+        .bones
+        .iter()
+        .chain(skeleton.dummy_bones.iter())
+        .map(|bone| {
+            let position = Vec3::new(bone.position.x, bone.position.z, -bone.position.y) / 100.0;
+
+            let rotation = Quat::from_xyzw(
+                bone.rotation.x,
+                bone.rotation.z,
+                -bone.rotation.y,
+                bone.rotation.w,
+            );
+
+            Transform::default()
+                .with_translation(position)
+                .with_rotation(rotation)
+        })
+        .collect()
+}
+
+fn compute_inverse_bind_poses(skeleton: &ZmdFile) -> Vec<Mat4> {
+    let mut bind_pose = skeleton_local_transforms(skeleton);
     let dummy_bone_offset = skeleton.bones.len();
-
-    for bone in skeleton.bones.iter().chain(skeleton.dummy_bones.iter()) {
-        let position = Vec3::new(bone.position.x, bone.position.z, -bone.position.y) / 100.0;
-
-        let rotation = Quat::from_xyzw(
-            bone.rotation.x,
-            bone.rotation.z,
-            -bone.rotation.y,
-            bone.rotation.w,
-        );
-
-        let transform = Transform::default()
-            .with_translation(position)
-            .with_rotation(rotation);
-
-        bind_pose.push(transform);
-
-        bone_entities.push(
-            commands
-                .spawn((
-                    Visibility::default(),
-                    InheritedVisibility::default(),
-                    ViewVisibility::default(),
-                    transform,
-                    GlobalTransform::default(),
-                ))
-                .id(),
-        );
-    }
-
-    // CRITICAL VALIDATION: Ensure skeleton has bones
-    assert!(
-        !skeleton.bones.is_empty(),
-        "Skeleton has no bones! This will cause rendering errors."
-    );
-
-    assert_eq!(
-        bone_entities.len(),
-        skeleton.bones.len() + skeleton.dummy_bones.len(),
-        "Bone entity count mismatch: expected {}, got {}",
-        skeleton.bones.len() + skeleton.dummy_bones.len(),
-        bone_entities.len()
-    );
-
-    assert_eq!(
-        bind_pose.len(),
-        bone_entities.len(),
-        "Bind pose count mismatch: expected {}, got {}",
-        bone_entities.len(),
-        bind_pose.len()
-    );
 
     // Apply parent-child transform hierarchy to calculate bind pose for each bone
     transform_children(skeleton, &mut bind_pose, 0);
@@ -1173,41 +1327,7 @@ fn spawn_skeleton(
         }
     }
 
-    for (i, bone) in skeleton
-        .bones
-        .iter()
-        .chain(skeleton.dummy_bones.iter())
-        .enumerate()
-    {
-        if let Some(&bone_entity) = bone_entities.get(i) {
-            if bone.parent as usize == i {
-                commands.entity(model_entity).add_child(bone_entity);
-            } else if let Some(&parent_entity) = bone_entities.get(bone.parent as usize) {
-                commands.entity(parent_entity).add_child(bone_entity);
-            }
-        }
-    }
-
-    let inverse_bindposes = SkinnedMeshInverseBindposes::from(inverse_bind_pose);
-    let handle = skinned_mesh_inverse_bindposes_assets.add(inverse_bindposes);
-
-    // VERIFY: Asset was actually added (critical for preventing bind group mismatch)
-    if skinned_mesh_inverse_bindposes_assets.get(&handle).is_none() {
-        log::error!(
-           "[SKINNED_MESH_FIX] CRITICAL: Failed to add inverse bind poses asset to assets collection! This will cause a bind group mismatch!"
-        );
-        panic!("Failed to add inverse bind poses asset");
-    }
-
-    debug_assert!(
-        skinned_mesh_inverse_bindposes_assets.get(&handle).is_some(),
-        "Failed to add inverse bind poses asset"
-    );
-
-    SkinnedMesh {
-        inverse_bindposes: handle,
-        joints: bone_entities,
-    }
+    inverse_bind_pose
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1226,6 +1346,7 @@ fn spawn_model(
     force_alpha_mask: bool,
     specular_image: &Handle<Image>,
     skinned_mesh_parent: Option<Entity>,
+    part_materials: &PartMaterialCache,
 ) -> Vec<Entity> {
     let mut parts = Vec::new();
     let object = if let Some(object) = model_list.objects.get(model_id) {
@@ -1248,37 +1369,71 @@ fn spawn_model(
 
         // Create material using ExtendedMaterial<StandardMaterial, RoseObjectExtension>
         // Handle NULL texture paths for models
-        let texture_path = zsc_material.path.path().to_string_lossy().into_owned();
-        let texture_handle = if texture_path.is_empty() || texture_path == "NULL" {
+        let mut texture_path = zsc_material.path.path().to_string_lossy().into_owned();
+        if texture_path.is_empty() || texture_path == "NULL" {
             log::warn!("[SPAWN MODEL] NULL or empty texture path, using fallback");
-            asset_server.load::<Image>("ETC/SPECULAR_SPHEREMAP.DDS")
-        } else {
-            asset_server.load::<Image>(&texture_path)
-        };
-        let material = create_rose_object_material(
-            object_materials,
-            texture_handle,
-            None,                         // lightmap_texture
-            Some(specular_image.clone()), // specular_texture
-            Vec2::new(0.0, 0.0),          // lightmap_offset
-            1.0,                          // lightmap_scale
-            if zsc_material.alpha_enabled {
-                if let Some(threshold) = zsc_material.alpha_test {
-                    AlphaMode::Mask(threshold)
-                } else if force_alpha_mask {
-                    AlphaMode::Mask(0.5)
-                } else {
-                    AlphaMode::Blend
-                }
+            texture_path = "ETC/SPECULAR_SPHEREMAP.DDS".to_string();
+        }
+        // Still requested on every spawn (as before): a texture that failed to load is
+        // retried by the asset server, and a cached material holding this texture holds
+        // the very handle returned here.
+        let texture_handle = asset_server.load::<Image>(&texture_path);
+        let (alpha_mode, alpha_key) = if zsc_material.alpha_enabled {
+            if let Some(threshold) = zsc_material.alpha_test {
+                (
+                    AlphaMode::Mask(threshold),
+                    PartAlphaMode::Mask(threshold.to_bits()),
+                )
+            } else if force_alpha_mask {
+                (AlphaMode::Mask(0.5), PartAlphaMode::Mask(0.5f32.to_bits()))
             } else {
-                AlphaMode::Opaque
-            }, // alpha_mode
-            zsc_material.two_sided,       // two_sided
-        );
+                (AlphaMode::Blend, PartAlphaMode::Blend)
+            }
+        } else {
+            (AlphaMode::Opaque, PartAlphaMode::Opaque)
+        };
+
+        // Identical part materials are shared (one bind group, batchable draws) instead of
+        // created per part per spawn. Per-entity writers copy first: see
+        // `SharedModelPartMaterial`.
+        // The specular map only for materials flagged specular in the ZSC (the original
+        // client's sphere-map specular); others keep the standard reflectance.
+        let specular_texture = zsc_material
+            .specular_enabled
+            .then(|| specular_image.clone());
+        let key = PartMaterialKey {
+            texture_path,
+            specular_texture: specular_texture.as_ref().map(Handle::id),
+            alpha_mode: alpha_key,
+            two_sided: zsc_material.two_sided,
+        };
+        let material = {
+            let mut cache = lock_cache(part_materials);
+            let existing = cache
+                .get(&key)
+                .and_then(|id| object_materials.get_strong_handle(*id));
+            if let Some(material) = existing {
+                material
+            } else {
+                let material = create_rose_object_material(
+                    object_materials,
+                    texture_handle,
+                    None,                         // lightmap_texture
+                    specular_texture,             // specular_texture
+                    Vec2::new(0.0, 0.0),          // lightmap_offset
+                    1.0,                          // lightmap_scale
+                    alpha_mode,                   // alpha_mode
+                    zsc_material.two_sided,       // two_sided
+                );
+                cache.insert(key, material.id());
+                material
+            }
+        };
 
         let mut entity_commands = commands.spawn((
             Mesh3d(mesh),
             MeshMaterial3d(material),
+            SharedModelPartMaterial,
             Transform::default(),
             GlobalTransform::default(),
             Visibility::Inherited,

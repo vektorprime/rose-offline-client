@@ -213,11 +213,13 @@ Add to camera to enable volumetric rendering:
 ```rust
 pub struct VolumetricFog {
     pub ambient_color: Color,      // Default: WHITE
-    pub ambient_intensity: f32,    // Default: 0.1
+    pub ambient_intensity: f32,    // Default: 0.1 (this client uses 0.0, see below)
     pub jitter: f32,               // Random offset for TAA, default: 0.0
     pub step_count: u32,           // Raymarching steps, default: 64
 }
 ```
+
+The ambient term is added as `exp(-depth * (absorption + scattering)) * ambient_color * ambient_intensity`. It ignores `density_factor` and is strongest on surfaces close to the camera. This client sets `ambient_intensity: 0.0` so models do not get a white veil when the camera zooms in.
 
 ### VolumetricLight Component
 
@@ -641,12 +643,14 @@ transform.rotation = Quat::from_euler(
 
 ### Shadow State by Time
 
-| Time State | Sun Shadows | Moon Shadows |
-|------------|-------------|--------------|
-| Morning | Enabled | Disabled |
-| Day | Enabled | Disabled |
-| Evening | Disabled | Disabled |
-| Night | Disabled | Disabled |
+Current behaviour (2026-09-30): the system is driven by the live sun elevation, not by the named time state. Exactly one light casts shadows at a time, so night costs the same as day.
+
+| Sun position | Sun Shadows | Moon Shadows |
+|--------------|-------------|--------------|
+| Above the horizon | Enabled | Disabled |
+| At/below the horizon | Disabled | Enabled |
+
+The moon (`MOON_MAX_ILLUMINANCE` 2000 lux) and the night sky fill (`NIGHT_FILL_ILLUMINANCE` 800 lux, the same 2.5:1 key-to-fill ratio as day) fade in continuously via `moon_light_factor(sun_height)`. The sun fades via `sun_light_factor`. Both helpers are in `src/render/zone_lighting.rs`. This replaced a Morning/Day/Evening/Night step table (moon 500/0/800/3000 lux, never shadowed) that caused instant lighting jumps. The moon shares the sun's cascade layout (`default_cascade_shadow_config()`, kept in sync by `apply_shadow_quality_system`).
 
 ### Atmosphere Toggle System
 
@@ -726,7 +730,13 @@ impl Plugin for ZoneLightingPlugin {
 1. `zone_time_system` - Updates game time
 2. `apply_sky_settings_to_zone_time` - Applies manual time overrides
 3. `update_sun_position_system` - Rotates sun based on time
-4. `update_shadows_for_time_of_day_system` - Enables/disables shadows
+4. `update_shadows_for_time_of_day_system` - Enables/disables shadows. Runs its body only
+   when an input changed: `ZoneTime`, `DaylightSettings`, `GraphicsSettings` (shadow
+   quality), the sun's `GlobalTransform` (propagated in PostUpdate, so a sun move is
+   applied on the next frame), or a sun/moon `DirectionalLight` spawned or written by
+   another system. `update_sun_position_system` likewise reacts to `ZoneTime`,
+   `SkySettings`, `DaylightSettings`, a `CurrentZone` change and spawned/written sun or
+   fill lights (Automatic mode).
 5. `sync_zone_lighting_to_bevy_lights_system` - Syncs to Bevy lights
 6. `update_volumetric_fog_system` - Updates fog parameters
 
@@ -835,8 +845,8 @@ commands.spawn((
     Camera3d::default(),
     VolumetricFog {
         ambient_color: Color::WHITE,
-        ambient_intensity: 0.1,
-        step_count: 128,  // The client camera uses 128 steps (src/lib.rs:2021)
+        ambient_intensity: 0.0, // 0.1 veiled nearby models (see above)
+        step_count: 64,
         ..Default::default()
     },
 ));

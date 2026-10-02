@@ -25,6 +25,8 @@ The lighting system has been fully synchronized to ensure all world elements, in
 - **Balanced Intensities**:
     - `DirectionalLight` illuminance: **15,000 lux** (balanced for PBR).
     - `GlobalAmbientLight` brightness: **80.0 lux** base (Bevy's default), multiplied by the user's `ambient_light_brightness` graphics setting (default 1.0, giving 80.0 lux). Kept constant so day/night variation comes from sun + fill, preserving shadow contrast.
+- **Change detection**: `zone_time_system` writes `ZoneLighting` and `ZoneTime` through `bypass_change_detection()` and calls `set_changed()` only when a value moved past its epsilon (1e-4 colours/densities, 1e-3 `state_percent_complete`), a state switched, or the tick advanced. Writing `&mut res.field` through `ResMut` is itself a change, which used to flag both resources every frame. They now change roughly once a second (`ZoneTime`) or only during dawn/dusk lerps and ticks (`ZoneLighting`), so the fog volume, sun, shadow and cloud systems gated on them do real work only then. Any system that reads them must gate on every input it uses (see `update_shadows_for_time_of_day_system`), not on "ZoneTime changes every frame".
+- There is no render-world `ZoneLighting` uniform: one used to be extracted and uploaded every frame, but no pipeline bound it.
 
 ## 4. Dynamic Terrain Lighting & Sun Synchronization
 The terrain rendering system has been overhauled to ensure it remains perfectly in sync with the game's dynamic sun and time-of-day cycle.
@@ -33,9 +35,13 @@ The terrain rendering system has been overhauled to ensure it remains perfectly 
 Previously, the terrain used a hardcoded light direction and static colors, causing it to look disconnected from the rest of the world. The new pipeline ensures consistency:
 
 1.  **Sun Position**: The `update_sun_position_system` calculates the sun's rotation based on the current game time.
-2.  **Light Sync**: The `sync_zone_lighting_to_bevy_lights_system` extracts the actual `forward()` vector from the sun's transform and updates the `ZoneLighting.light_direction` resource.
-3.  **Material Update**: The `update_terrain_lighting_system` in `src/render/terrain_material.rs` monitors the `ZoneLighting` resource. When the sun moves or colors change (e.g., at sunset), it pushes the new light direction, light color, and ambient color into the `TerrainMaterial` uniforms.
-4.  **Shader Execution**: The terrain shader ([`terrain_material.wgsl`](../src/render/shaders/terrain_material.wgsl)) uses these dynamic uniforms to calculate diffuse and ambient lighting per-pixel.
+2.  **Light Sync**: The `sync_zone_lighting_to_bevy_lights_system` writes the sun transform's `back()` vector (the direction **toward** the sun) into `ZoneLighting.light_direction`. This matches the `ZoneLighting` default and the terrain shader's `max(dot(N, L), 0)`. Until 2026-09-30 it wrote `forward()` (the direction light travels), which lit terrain from the wrong side: flat ground got no sun by day and was lit from below at night.
+3.  **Material Update**: The `update_terrain_lighting_system` in `src/render/terrain_material.rs` mirrors the PBR lights with no time-of-day table:
+    - Sun: strength is `terrain_light_intensity × 0.5 × (Sky sun brightness / 5000) × sun_light_factor(sun_height)`, tinted by `character_diffuse_color`.
+    - Moon: a second light toward `StarrySkySettings.moon_direction`, with strength `MOON/SUN × moon_light_factor`, tinted by `MOON_COLOR`.
+
+    Both change continuously with sun elevation, so there are no jumps at Morning/Day/Evening/Night changes (this replaced a 2.0/2.5/2.0/1.0 step multiplier).
+4.  **Shader Execution**: The terrain shader ([`terrain_material.wgsl`](../src/render/shaders/terrain_material.wgsl)) reads a 5×vec4 storage buffer (sun dir, sun color, ambient, moon dir, moon color) and computes `ambient + sun·max(N·Lsun,0) + moon·max(N·Lmoon,0)` per pixel. It does not receive shadow maps or SSAO (`enable_prepass() = false`); `--new-terrain` does.
 
 ### Visual Impact
 - **Consistent Shadows**: The terrain's highlights and shading now perfectly match the direction of shadows cast by characters and buildings.

@@ -62,6 +62,7 @@ pub use underwater_effect::{CameraUnderwaterState, UnderwaterEffectPlugin, Under
 
 // Planar water reflections via a mirrored camera
 pub mod water_reflection;
+pub mod wgpu_settings;
 pub use water_reflection::{WaterReflectionCamera, WaterReflectionImage, WaterReflectionPlugin};
 
 // Procedural starry sky material

@@ -37,11 +37,13 @@ var tile_array_sampler: sampler;
 
 // wgpu 27 forbids mixing binding arrays with uniform buffers in one bind group.
 // Terrain lighting is therefore packed into a read-only storage buffer:
-// [0] = light_direction (vec4)
-// [1] = light_color (vec4)
+// [0] = sun direction (vec4, TOWARD the sun)
+// [1] = sun color (vec4, pre-scaled; black when the sun is down)
 // [2] = ambient_color (vec4)
+// [3] = moon direction (vec4, TOWARD the moon)
+// [4] = moon color (vec4, pre-scaled; black by day)
 @group(#{MATERIAL_BIND_GROUP}) @binding(2)
-var<storage, read> terrain_lighting: array<vec4<f32>, 3>;
+var<storage, read> terrain_lighting: array<vec4<f32>, 5>;
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
@@ -118,14 +120,18 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let light_direction = terrain_lighting[0];
     let light_color = terrain_lighting[1];
     let ambient_color = terrain_lighting[2];
+    let moon_direction = terrain_lighting[3];
+    let moon_color = terrain_lighting[4];
 
     let normal = normalize(in.world_normal);
     let light_dir = normalize(light_direction.xyz);
-    
-    // Calculate diffuse lighting from the scene's directional light
-    let diffuse_factor = max(dot(normal, light_dir), 0.0);
-    let diffuse_light = light_color.rgb * diffuse_factor;
-    
+    let moon_dir = normalize(moon_direction.xyz);
+
+    // Diffuse from the sun (day) and the moon (night); each is black when
+    // inactive, and both fade continuously with the sun's elevation.
+    let diffuse_light = light_color.rgb * max(dot(normal, light_dir), 0.0)
+        + moon_color.rgb * max(dot(normal, moon_dir), 0.0);
+
     // Combine with ambient light
     let lighting = ambient_color.rgb + diffuse_light;
     

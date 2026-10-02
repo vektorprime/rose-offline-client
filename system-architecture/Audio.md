@@ -97,11 +97,10 @@ Used for UI elements and Background Music. Global sounds are played directly thr
 
 ### `background_music_system`
 Manages zone-based BGM with day/night cycles and timed track transitions.
-- **Logic**: Monitors `CurrentZone` and `ZoneTime`. When the zone or time of day changes, it swaps between the zone's day and night tracks: the old track entity is despawned after `CROSSFADE_DURATION_MS` and the new track is spawned only then (no actual volume fade or overlap).
+- **Logic**: Monitors `CurrentZone` and `ZoneTime`. When the zone or time of day changes, it swaps between the zone's day and night tracks: the old track entity is despawned after `CROSSFADE_DURATION_SECS` of real time (`Time::delta_secs`, so the delay no longer depends on frame rate; it used to add 16 ms per frame) and the new track is spawned only then (no actual volume fade or overlap).
 
-Example: `src/systems/background_music_system.rs:10`
 ```rust
-const CROSSFADE_DURATION_MS: u64 = 2000;
+const CROSSFADE_DURATION_SECS: f32 = 2.0;
 ```
 
 ### `animation_sound_system`

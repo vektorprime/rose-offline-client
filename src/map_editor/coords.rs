@@ -39,6 +39,7 @@ pub fn write_him_file(
     for h in heights_cm {
         data.extend_from_slice(&h.to_le_bytes());
     }
+    crate::zone_loader::notify_zone_files_changed();
     let mut file = std::fs::File::create(path)?;
     file.write_all(&data)?;
     Ok(())
@@ -59,6 +60,7 @@ pub fn write_til_file(
         data.extend_from_slice(&[0u8; 3]);
         data.extend_from_slice(&tile.to_le_bytes());
     }
+    crate::zone_loader::notify_zone_files_changed();
     let mut file = std::fs::File::create(path)?;
     file.write_all(&data)?;
     Ok(())

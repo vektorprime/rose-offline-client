@@ -19,12 +19,23 @@
 #else
 #import bevy_pbr::forward_io::{VertexOutput, FragmentOutput}
 #import bevy_pbr::pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing}
+#import bevy_pbr::mesh_functions::get_tag
 #endif
 
 // Extension bindings from RoseObjectExtension
-// Lightmap parameters: x = offset_x, y = offset_y, z = scale, w = unused
+// Lightmap parameters: x, y = the part's cell (column, row) in the lightmap page,
+// z = scale (1 / parts per row),
+// w = parts per row of a shared lightmap page (0 = use x/y as the cell;
+// > 0 = the cell is given by the mesh's MeshTag, see below)
+// Only applied when the material has a lightmap (ROSE_OBJECT_LIGHTMAP).
 @group(#{MATERIAL_BIND_GROUP}) @binding(100)
 var<uniform> lightmap_params: vec4<f32>;
+
+// The original client blends lightmaps with MODULATE2X in gamma space
+// (color * lightmap * 2, so a mid-grey lightmap leaves the color unchanged).
+// Lightmaps are sampled as sRGB, i.e. linear, and (2 * lm)^2.2 = 2^2.2 * lm_linear,
+// so the linear-space equivalent scales the sampled lightmap by 2^2.2.
+const LIGHTMAP_MODULATE_2X_LINEAR: f32 = 4.594794;
 
 // Lightmap texture and sampler
 @group(#{MATERIAL_BIND_GROUP}) @binding(101)
@@ -83,37 +94,46 @@ fn fragment(
     // Without this, pixels that should be transparent are rendered as opaque squares
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
     
-    // Sample specular texture using primary UV
-    // Specular value controls the intensity of specular highlights (0.0 = matte, 1.0 = shiny)
-    // Default to 0.5 (Bevy's default reflectance) if texture sampling fails
-    var specular_value = 0.5;
+    // Specular only for ZSC materials with the specular flag (ROSE_OBJECT_SPECULAR,
+    // set when the material has a specular texture): the specular map's red channel
+    // drives the PBR reflectance (0.0 = matte, 1.0 = shiny). Every other material
+    // keeps the StandardMaterial reflectance; the unbound texture would be Bevy's
+    // white fallback (reflectance 1.0).
+    #ifdef ROSE_OBJECT_SPECULAR
     #ifdef VERTEX_UVS_A
     {
         let specular_sample = textureSample(specular_texture, specular_sampler, in.uv);
-        specular_value = specular_sample.r;
+        pbr_input.material.reflectance = vec3<f32>(specular_sample.r);
     }
     #endif
+    #endif
     
-    // Apply specular to PBR material reflectance before lighting
-    // This affects how strong the specular highlights appear
-    // Note: In Bevy 0.16, reflectance changed from f32 to vec3<f32>
-    // Apply specular to PBR material reflectance before lighting
-    // This affects how strong the specular highlights appear
-    // Note: In Bevy 0.16, reflectance changed from f32 to vec3<f32>
-    pbr_input.material.reflectance = vec3<f32>(specular_value);
-    
-    // Sample lightmap texture if UV_B is available
+    // Sample lightmap texture if the material has one and UV_B is available
     // Lightmap uses the second UV channel with offset/scale transformation
     var lightmap_color = vec3<f32>(1.0);
+    #ifdef ROSE_OBJECT_LIGHTMAP
     #ifdef VERTEX_UVS_B
     {
-        // Calculate lightmap UV: scale and offset from lightmap_params
-        let lightmap_uv = vec2<f32>(
-            in.uv_b.x * lightmap_params.z + lightmap_params.x,
-            in.uv_b.y * lightmap_params.z + lightmap_params.y
-        );
-        lightmap_color = textureSample(lightmap_texture, lightmap_sampler, lightmap_uv).rgb;
+        // Lightmap cell. Zone objects share one material per lightmap page
+        // (w = parts per row) and carry their cell index in MeshTag; the cell is
+        // (column, row) = (index % per_row, index / per_row).
+        var lightmap_cell = lightmap_params.xy;
+        let lightmap_parts_per_row = u32(lightmap_params.w);
+        if (lightmap_parts_per_row > 0u) {
+            let lightmap_cell_index = get_tag(in.instance_index);
+            lightmap_cell = vec2<f32>(
+                f32(lightmap_cell_index % lightmap_parts_per_row),
+                f32(lightmap_cell_index / lightmap_parts_per_row)
+            );
+        }
+
+        // Each part's UV_B spans one cell: page UV = (uv_b + cell) / parts per row,
+        // as in the original client's lightmap vertex shader.
+        let lightmap_uv = (in.uv_b + lightmap_cell) * lightmap_params.z;
+        lightmap_color = textureSample(lightmap_texture, lightmap_sampler, lightmap_uv).rgb
+            * LIGHTMAP_MODULATE_2X_LINEAR;
     }
+    #endif
     #endif
     
     // Apply standard Bevy PBR lighting

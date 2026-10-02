@@ -9,7 +9,7 @@ use std::cell::RefCell;
 
 /// Resource for configuring terrain enhancement settings.
 /// Controls how procedural noise is applied to terrain height.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct TerrainEnhancementSettings {
     /// Whether noise overlay is enabled
     pub noise_enabled: bool,
@@ -78,6 +78,7 @@ impl Default for TerrainEnhancementSettings {
 
 /// Internal noise generator that caches the Perlin noise instance.
 /// This is created once and reused for all noise queries.
+#[derive(Clone)]
 pub struct TerrainNoiseGenerator {
     noise: Perlin,
     settings: TerrainEnhancementSettings,
@@ -161,7 +162,8 @@ pub fn get_thread_local_noise(world_x: f32, world_z: f32) -> f32 {
 
 /// Global terrain noise generator resource.
 /// This is stored as a resource to avoid recreating the noise generator each frame.
-#[derive(Resource)]
+/// Cloned into the async zone load task, which builds terrain meshes with it.
+#[derive(Resource, Clone)]
 pub struct GlobalTerrainNoise {
     generator: TerrainNoiseGenerator,
 }

@@ -29,42 +29,10 @@ impl VsyncMode {
     }
 }
 
-/// MSAA anti-aliasing sample counts
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Reflect)]
-#[reflect(Debug, Clone, PartialEq)]
-pub enum MsaaSamples {
-    /// No MSAA (1 sample)
-    #[default]
-    X1,
-    /// 2x MSAA
-    X2,
-    /// 4x MSAA
-    X4,
-    /// 8x MSAA
-    X8,
-}
-
-impl MsaaSamples {
-    /// Returns the sample count for Bevy's Msaa resource
-    pub fn sample_count(&self) -> u32 {
-        match self {
-            MsaaSamples::X1 => 1,
-            MsaaSamples::X2 => 2,
-            MsaaSamples::X4 => 4,
-            MsaaSamples::X8 => 8,
-        }
-    }
-
-    /// Returns a display-friendly name for the UI
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            MsaaSamples::X1 => "Off",
-            MsaaSamples::X2 => "2x MSAA",
-            MsaaSamples::X4 => "4x MSAA",
-            MsaaSamples::X8 => "8x MSAA",
-        }
-    }
-}
+// NOTE: no MSAA setting. The main camera always uses deferred rendering
+// (DeferredPrepass), and Bevy's `check_msaa` forces `Msaa::Off` on deferred
+// cameras ("MSAA is incompatible with deferred rendering"). SMAA/FXAA are the
+// anti-aliasing options.
 
 /// Shadow quality presets that configure cascade settings
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Reflect)]
@@ -75,9 +43,9 @@ pub enum ShadowQuality {
     /// Low: 1 cascade, 1024 shadow map
     Low,
     /// Medium: 2 cascades, 2048 shadow map
-    #[default]
     Medium,
-    /// High: 3 cascades, 2048 shadow map (reduced from4 to avoid view uniform buffer overrun)
+    /// High: 3 cascades, 2048 shadow map (default; reduced from 4 to avoid view uniform buffer overrun)
+    #[default]
     High,
     /// Ultra: 4 cascades, 4096 shadow map
     Ultra,
@@ -128,17 +96,19 @@ impl ShadowQuality {
     }
 }
 
-/// Shadow filtering method
+/// Shadow filtering method.
+///
+/// Bevy's `ShadowFilteringMethod::Temporal` is intentionally not offered: it
+/// is a per-frame randomized filter meant to be resolved by TAA, and this
+/// client has no TAA, so it only produced shimmering shadow edges.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Reflect)]
 #[reflect(Debug, Clone, PartialEq)]
 pub enum GraphicsShadowFilteringMethod {
     /// Hardware 2x2 PCF (fastest, lowest quality)
     Hardware2x2,
-    /// Gaussian filtering (balanced)
+    /// Gaussian filtering (soft, stable; best quality without TAA)
     #[default]
     Gaussian,
-    /// Temporal filtering (slowest, highest quality)
-    Temporal,
 }
 
 impl GraphicsShadowFilteringMethod {
@@ -147,7 +117,6 @@ impl GraphicsShadowFilteringMethod {
         match self {
             GraphicsShadowFilteringMethod::Hardware2x2 => "Hardware 2x2",
             GraphicsShadowFilteringMethod::Gaussian => "Gaussian",
-            GraphicsShadowFilteringMethod::Temporal => "Temporal",
         }
     }
 }
@@ -197,7 +166,6 @@ impl TextureQuality {
 #[reflect(Debug, Clone, PartialEq)]
 pub enum TonemappingMode {
     /// No tonemapping
-    #[default]
     None,
     /// Reinhard simple
     Reinhard,
@@ -209,10 +177,14 @@ pub enum TonemappingMode {
     AgX,
     /// Somewhat boring display transform
     SomewhatBoringDisplayTransform,
-    /// TonyMcMapface (neutral)
+    /// TonyMcMapface (neutral) - default filmic curve for the HDR atmosphere pipeline
+    #[default]
     TonyMcMapface,
     /// Blender filmic
     BlenderFilmic,
+    /// Khronos PBR Neutral: near-identity below ~0.76 so base colors (the
+    /// painted textures) stay faithful and saturated; only highlights compress.
+    KhronosPbrNeutral,
 }
 
 impl TonemappingMode {
@@ -227,6 +199,7 @@ impl TonemappingMode {
             TonemappingMode::SomewhatBoringDisplayTransform => "Somewhat Boring",
             TonemappingMode::TonyMcMapface => "TonyMcMapface",
             TonemappingMode::BlenderFilmic => "Blender Filmic",
+            TonemappingMode::KhronosPbrNeutral => "Khronos PBR Neutral",
         }
     }
 }
@@ -277,7 +250,6 @@ impl SsaoQuality {
 #[reflect(Debug, Clone, PartialEq)]
 pub enum SmaaQuality {
     /// SMAA disabled
-    #[default]
     Disabled,
     /// Low quality
     Low,
@@ -285,7 +257,8 @@ pub enum SmaaQuality {
     Medium,
     /// High quality
     High,
-    /// Ultra quality
+    /// Ultra quality (default; the camera spawns without any MSAA)
+    #[default]
     Ultra,
 }
 
@@ -304,7 +277,7 @@ pub enum WaveQuality {
     High,
 }
 
-#[derive(Debug, Clone, Reflect)]
+#[derive(Debug, Clone, PartialEq, Reflect)]
 #[reflect(Debug, Clone)]
 pub struct SailingGraphicsSettings {
     pub wake_particles_enabled: bool,
@@ -339,15 +312,12 @@ impl SmaaQuality {
 
 /// Resource for storing graphics settings that can be modified at runtime.
 /// These settings control visual quality and performance tradeoffs.
-#[derive(Resource, Debug, Clone, Reflect)]
+#[derive(Resource, Debug, Clone, PartialEq, Reflect)]
 #[reflect(Resource, Default, Debug, Clone)]
 pub struct GraphicsSettings {
     // === Display Settings ===
     /// VSync mode: 0 = Off, 1 = On (FIFO), 2 = Mailbox
     pub vsync_mode: VsyncMode,
-
-    /// MSAA sample count (1, 2, 4, 8)
-    pub msaa_samples: MsaaSamples,
 
     /// View distance / draw distance in meters
     pub view_distance: f32,
@@ -361,23 +331,6 @@ pub struct GraphicsSettings {
 
     /// Shadow filtering method
     pub shadow_filtering: GraphicsShadowFilteringMethod,
-
-    // === Post-Processing Settings ===
-    /// Brightness adjustment (0.0 - 2.0, default 1.0)
-    /// Applied through color grading exposure
-    pub brightness: f32,
-
-    /// Contrast adjustment (0.0 - 2.0, default 1.0)
-    /// Applied through color grading contrast
-    pub contrast: f32,
-
-    /// Saturation adjustment (0.0 - 2.0, default 1.0)
-    /// Applied through color grading saturation
-    pub saturation: f32,
-
-    /// Gamma correction (0.5 - 2.5, default 1.0)
-    /// Applied through color grading gamma
-    pub gamma: f32,
 
     // === Effects Settings ===
     /// Bloom effect enabled
@@ -414,6 +367,16 @@ pub struct GraphicsSettings {
     /// SMAA quality level (alternative to FXAA)
     pub smaa_quality: SmaaQuality,
 
+    /// Auto Exposure enabled (histogram auto-exposure component on the camera)
+    pub auto_exposure_enabled: bool,
+
+    /// Auto Exposure target in EV: the log2 luminance (pre-tonemap) that a
+    /// daylight scene's average is driven to. 0.0 is Bevy's default
+    /// (average -> 1.0, very bright); -2.5 is photographic middle grey (0.18).
+    /// Default -1.3 (tuned in-game). Dark scenes adapt only partially below this, so night and
+    /// caves stay darker than day. Only used while Auto Exposure is enabled.
+    pub auto_exposure_target_ev: f32,
+
     // === Ambient Lighting Settings ===
     /// Ambient light brightness (0.0 - 2.0, default 1.0)
     /// This is a multiplier applied to the base ambient light brightness
@@ -436,26 +399,19 @@ impl Default for GraphicsSettings {
         Self {
             // Display - balanced defaults
             vsync_mode: VsyncMode::default(),
-            msaa_samples: MsaaSamples::X1,
             view_distance: 500.0,
 
-            // Shadows - medium quality
+            // Shadows - high quality (3 cascades, 2048, 200m)
             shadow_quality: ShadowQuality::default(),
-            shadow_max_distance: 150.0,
+            shadow_max_distance: 200.0,
             shadow_filtering: GraphicsShadowFilteringMethod::default(),
 
-            // Post-processing - neutral defaults
-            brightness: 1.0,
-            contrast: 1.0,
-            saturation: 1.0,
-            gamma: 1.0,
-
-            // Effects (default OFF for perf; enable via Graphics tab)
-            bloom_enabled: false,
+            // Effects (Bloom + SSAO default ON; disable via Graphics tab on weak hardware)
+            bloom_enabled: true,
             bloom_intensity: 0.15,
             motion_blur_enabled: false,
             motion_blur_intensity: 0.5,
-            ssao_enabled: false,
+            ssao_enabled: true,
             ssao_quality: SsaoQuality::default(),
             dof_enabled: false,
 
@@ -464,6 +420,8 @@ impl Default for GraphicsSettings {
             texture_quality: TextureQuality::default(),
             fxaa_enabled: false,
             smaa_quality: SmaaQuality::default(),
+            auto_exposure_enabled: true,
+            auto_exposure_target_ev: -1.3,
 
             // Ambient Lighting
             ambient_light_brightness: 1.0,
@@ -497,6 +455,7 @@ impl GraphicsSettings {
             texture_quality: TextureQuality::Low,
             fxaa_enabled: true,
             smaa_quality: SmaaQuality::Disabled,
+            auto_exposure_enabled: false,
             ambient_light_brightness: 1.0,
             ..Default::default()
         }
@@ -506,6 +465,7 @@ impl GraphicsSettings {
     /// Note: SSAO requires MSAA Off, so we use MSAA X1 and SSAO Low for better visual quality
     pub fn medium_preset() -> Self {
         Self {
+            shadow_quality: ShadowQuality::Medium,
             shadow_max_distance: 100.0,
             bloom_intensity: 0.1,
             ssao_quality: SsaoQuality::Low,
@@ -535,7 +495,9 @@ impl GraphicsSettings {
             view_distance: 1500.0,
             shadow_quality: ShadowQuality::Ultra,
             shadow_max_distance: 400.0,
-            shadow_filtering: GraphicsShadowFilteringMethod::Temporal,
+            // Gaussian, not Temporal: Temporal needs TAA (which this client
+            // lacks) and just shimmered.
+            shadow_filtering: GraphicsShadowFilteringMethod::Gaussian,
             bloom_intensity: 0.2,
             motion_blur_enabled: true,
             motion_blur_intensity: 0.3,

@@ -1,4 +1,4 @@
-use bevy::prelude::{AssetServer, Commands, Entity, Handle, Local, Query, Res};
+use bevy::prelude::{AssetServer, Commands, Entity, Handle, Local, Query, Res, Time};
 use rose_data::ZoneId;
 
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     resources::{CurrentZone, GameData, SoundSettings, ZoneTime, ZoneTimeState},
 };
 
-const CROSSFADE_DURATION_MS: u64 = 2000;
+const CROSSFADE_DURATION_SECS: f32 = 2.0;
 
 #[derive(Default)]
 pub enum BackgroundMusicState {
@@ -18,7 +18,7 @@ pub enum BackgroundMusicState {
     FadingOut {
         old_entity: Entity,
         new_source: Option<Handle<AudioSource>>,
-        timer_ms: u64,
+        elapsed_secs: f32,
     },
 }
 
@@ -39,6 +39,7 @@ pub fn background_music_system(
     game_data: Res<GameData>,
     zone_time: Res<ZoneTime>,
     sound_settings: Res<SoundSettings>,
+    time: Res<Time>,
     mut query_global_sounds: Query<&mut GlobalSound>,
 ) {
     if let Some(current_zone) = current_zone {
@@ -69,11 +70,12 @@ pub fn background_music_system(
         if let BackgroundMusicState::FadingOut {
             old_entity,
             new_source,
-            timer_ms,
+            elapsed_secs,
         } = &mut background_music.state
         {
-            *timer_ms += 16; // Approximate frame time
-            if *timer_ms >= CROSSFADE_DURATION_MS {
+            // Real frame delta, so the crossfade lasts its duration at any frame rate
+            *elapsed_secs += time.delta_secs();
+            if *elapsed_secs >= CROSSFADE_DURATION_SECS {
                 // Fade complete, despawn old entity
                 commands.entity(*old_entity).despawn();
                 background_music.state = if let Some(source) = new_source.take() {
@@ -111,7 +113,7 @@ pub fn background_music_system(
                             background_music.state = BackgroundMusicState::FadingOut {
                                 old_entity,
                                 new_source,
-                                timer_ms: 0,
+                                elapsed_secs: 0.0,
                             };
                         } else {
                             // No old music, just start new one
@@ -144,7 +146,7 @@ pub fn background_music_system(
                             background_music.state = BackgroundMusicState::FadingOut {
                                 old_entity,
                                 new_source,
-                                timer_ms: 0,
+                                elapsed_secs: 0.0,
                             };
                         } else {
                             // No old music, just start new one

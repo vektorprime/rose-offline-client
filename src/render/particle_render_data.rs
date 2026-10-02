@@ -20,6 +20,13 @@ pub struct ParticleRenderData {
     pub colors: Vec<Vec4>,
     pub sizes: Vec<Vec2>,
     pub textures: Vec<Vec4>,
+    /// Maximum number of live particles (the sequence's `num_particles`). The GPU
+    /// buffers and the mesh are sized for it, so uploads are padded to this length.
+    pub capacity: usize,
+    /// True while the GPU buffers hold no live particle (only zero-size padding), so an
+    /// empty sequence is cleared once instead of re-uploading zeros every frame. The
+    /// placeholder buffers created with the material are zero-size, hence the initial true.
+    pub gpu_buffers_empty: bool,
     pub blend_op: u8,
     pub src_blend_factor: u8,
     pub dst_blend_factor: u8,
@@ -39,6 +46,8 @@ impl ParticleRenderData {
             colors: Vec::with_capacity(capacity),
             sizes: Vec::with_capacity(capacity),
             textures: Vec::with_capacity(capacity),
+            capacity,
+            gpu_buffers_empty: true,
             blend_op,
             src_blend_factor,
             dst_blend_factor,

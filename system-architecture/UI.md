@@ -100,3 +100,4 @@ if let Ok(screen_pos) = camera.world_to_viewport(
     - `src/ui/dialog_loader.rs`: XML asset loading.
     - `src/ui/ui_character_select_name_tag_system.rs`: Character-select screen name tags; in-world name tags are rendered by `src/systems/name_tag_system.rs`.
     - `src/systems/chat_bubble_spawn_system.rs`: Chat bubble rendering (temporary egui overlays above entities); the chat interface itself is `src/ui/ui_chatbox_system.rs`.
+    - UI spritesheets are alpha-premultiplied once on load (`src/resources/ui_resources.rs`). `Rgba8UnormSrgb` images use a 256×256 lookup table (built once by running the generic `get_color_at`/`set_color_at` path over every channel/alpha byte pair, so the output is bit-identical); other formats use the per-pixel path.

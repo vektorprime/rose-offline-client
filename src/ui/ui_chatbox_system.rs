@@ -109,10 +109,15 @@ pub fn ui_chatbox_system(
         return;
     };
 
-    let local_time = chrono::Local::now();
-    let timestamp = local_time.format("%H:%M:%S");
+    // Read the clock only when messages arrived: chrono::Local::now() (a
+    // local-timezone lookup) used to run every frame. Sampled at the same point
+    // as before, so all messages of a frame share one timestamp.
+    let sample_timestamp = || chrono::Local::now().format("%H:%M:%S");
+    let mut frame_timestamp = (!chatbox_events.is_empty()).then(sample_timestamp);
 
     for event in chatbox_events.read() {
+        // `is_empty()` matches what `read()` yields; the fallback only guards that.
+        let timestamp = frame_timestamp.get_or_insert_with(sample_timestamp);
         if ui_state_chatbox.textbox_layout_job.sections.len() == MAX_CHATBOX_ENTRIES {
             ui_state_chatbox.textbox_layout_job.sections.remove(0);
             ui_state_chatbox.cleanup_layout_text_counter += 1;
@@ -173,14 +178,6 @@ pub fn ui_chatbox_system(
             },
         );
     }
-
-    let mut chatbox_style = (*egui_context.ctx_mut().unwrap().style()).clone();
-    chatbox_style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgba_unmultiplied(
-        chatbox_style.visuals.widgets.noninteractive.bg_fill.r(),
-        chatbox_style.visuals.widgets.noninteractive.bg_fill.g(),
-        chatbox_style.visuals.widgets.noninteractive.bg_fill.b(),
-        128,
-    );
 
     let style = egui_context.ctx_mut().unwrap().style();
     let frame_fill = style.visuals.window_fill();

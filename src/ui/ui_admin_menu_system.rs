@@ -41,11 +41,17 @@ pub struct UiStateAdminMenu {
     pub selected_item_type: ItemType,
     pub item_search_filter: String,
     filtered_items: Vec<u16>,
+    /// Set when an input of `filtered_items` changed (search text, Clear, tab,
+    /// popup opened). Replaces the old "refilter while empty" check, which
+    /// rescanned the whole item table every frame when a search had no results.
+    items_filter_dirty: bool,
 
     // Skill popup state
     pub show_skill_popup: bool,
     pub skill_search_filter: String,
     filtered_skills: Vec<SkillId>,
+    /// Same as `items_filter_dirty`, for `filtered_skills`.
+    skills_filter_dirty: bool,
 }
 
 impl Default for UiStateAdminMenu {
@@ -70,9 +76,11 @@ impl Default for UiStateAdminMenu {
             selected_item_type: ItemType::Face,
             item_search_filter: String::new(),
             filtered_items: Vec::new(),
+            items_filter_dirty: true,
             show_skill_popup: false,
             skill_search_filter: String::new(),
             filtered_skills: Vec::new(),
+            skills_filter_dirty: true,
         }
     }
 }
@@ -264,11 +272,13 @@ pub fn ui_admin_menu_system(
                 // Item spawner popup button
                 if ui.button("📦 Give Item (Popup)").clicked() {
                     ui_state_admin_menu.show_item_popup = true;
+                    ui_state_admin_menu.items_filter_dirty = true;
                 }
 
                 // Skill learn popup button
                 if ui.button("📜 Learn Skill (Popup)").clicked() {
                     ui_state_admin_menu.show_skill_popup = true;
+                    ui_state_admin_menu.skills_filter_dirty = true;
                 }
 
                 ui.separator();
@@ -409,19 +419,19 @@ fn render_searchable_popup(
                 };
                 if response.changed() {
                     match list {
-                        PopupList::Items => ui_state.filtered_items.clear(),
-                        PopupList::Skills => ui_state.filtered_skills.clear(),
+                        PopupList::Items => ui_state.items_filter_dirty = true,
+                        PopupList::Skills => ui_state.skills_filter_dirty = true,
                     }
                 }
                 if ui.button("Clear").clicked() {
                     match list {
                         PopupList::Items => {
                             ui_state.item_search_filter.clear();
-                            ui_state.filtered_items.clear();
+                            ui_state.items_filter_dirty = true;
                         }
                         PopupList::Skills => {
                             ui_state.skill_search_filter.clear();
-                            ui_state.filtered_skills.clear();
+                            ui_state.skills_filter_dirty = true;
                         }
                     }
                 }
@@ -429,16 +439,17 @@ fn render_searchable_popup(
 
             ui.separator();
 
-            // Update filtered list if needed
-            let filtered_is_empty = match list {
-                PopupList::Items => ui_state.filtered_items.is_empty(),
-                PopupList::Skills => ui_state.filtered_skills.is_empty(),
-            };
-            if filtered_is_empty {
-                match list {
-                    PopupList::Items => update_filtered_items(ui_state, game_data),
-                    PopupList::Skills => update_filtered_skills(ui_state, game_data),
+            // Update filtered list only when one of its inputs changed.
+            match list {
+                PopupList::Items if ui_state.items_filter_dirty => {
+                    update_filtered_items(ui_state, game_data);
+                    ui_state.items_filter_dirty = false;
                 }
+                PopupList::Skills if ui_state.skills_filter_dirty => {
+                    update_filtered_skills(ui_state, game_data);
+                    ui_state.skills_filter_dirty = false;
+                }
+                _ => {}
             }
 
             // Scrollable list
@@ -493,7 +504,7 @@ fn render_item_popup_tabs(
             let selected = ui_state.selected_item_type == item_type;
             if ui.selectable_label(selected, label).clicked() {
                 ui_state.selected_item_type = item_type;
-                ui_state.filtered_items.clear();
+                ui_state.items_filter_dirty = true;
             }
         }
     });
@@ -514,7 +525,7 @@ fn render_item_popup_tabs(
             let selected = ui_state.selected_item_type == item_type;
             if ui.selectable_label(selected, label).clicked() {
                 ui_state.selected_item_type = item_type;
-                ui_state.filtered_items.clear();
+                ui_state.items_filter_dirty = true;
             }
         }
     });

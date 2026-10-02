@@ -51,7 +51,7 @@ impl Plugin for StarrySkyMaterialPlugin {
 
 /// Resource for starry sky settings
 /// These control the appearance of the procedural stars
-#[derive(Resource, Clone, Debug)]
+#[derive(Resource, Clone, Debug, PartialEq)]
 pub struct StarrySkySettings {
     /// Star density (0.0 to 1.0) - controls how many stars are visible
     pub star_density: f32,
@@ -117,16 +117,18 @@ impl AsBindGroup for StarrySkyMaterial {
         StarrySkyMaterialKey
     }
 
-    fn as_bind_group(
+    /// Returns the bindings unprepared (instead of overriding `as_bind_group` and
+    /// returning `CreateBindGroupDirectly`) so Bevy's material allocator frees the
+    /// previous bind group when the material is modified. On Bevy 0.19.1 the
+    /// `CreateBindGroupDirectly` path never frees it, and this material is
+    /// modified ~30 times a second at night (twinkle time), so that path leaked.
+    fn unprepared_bind_group(
         &self,
-        layout_descriptor: &BindGroupLayoutDescriptor,
+        _layout: &BindGroupLayout,
         render_device: &RenderDevice,
-        pipeline_cache: &PipelineCache,
         _param: &mut (),
-    ) -> Result<PreparedBindGroup, AsBindGroupError> {
-        // Get the actual bind group layout from the pipeline cache
-        let layout = pipeline_cache.get_bind_group_layout(layout_descriptor);
-
+        _bindless: bool,
+    ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
         // Create uniform buffer with all material data
         let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
             label: Some("starry_sky_material_uniforms"),
@@ -143,28 +145,9 @@ impl AsBindGroup for StarrySkyMaterial {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let entries = vec![BindGroupEntry {
-            binding: 0,
-            resource: buffer.as_entire_binding(),
-        }];
-
-        let bind_group = render_device.create_bind_group("starry_sky_material", &layout, &entries);
-
-        Ok(PreparedBindGroup {
-            bindings: BindingResources(vec![]),
-            bind_group,
+        Ok(UnpreparedBindGroup {
+            bindings: BindingResources(vec![(0, OwnedBindingResource::Buffer(buffer))]),
         })
-    }
-
-    fn unprepared_bind_group(
-        &self,
-        _layout: &BindGroupLayout,
-        _render_device: &RenderDevice,
-        _param: &mut (),
-        _bindless: bool,
-    ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
-        // We override as_bind_group, so this should never be called
-        Err(AsBindGroupError::CreateBindGroupDirectly)
     }
 
     fn bind_group_layout_entries(

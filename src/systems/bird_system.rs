@@ -16,6 +16,14 @@ use rand::Rng;
 use crate::components::{Bird, BirdMesh, BirdSettings, BirdWingLeft, BirdWingRight, Zone};
 use crate::events::ZoneEvent;
 
+/// Wing child entities of a bird, stored at spawn so the flap animation can
+/// address them directly instead of scanning every bird's children each frame.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct BirdWings {
+    pub left: Entity,
+    pub right: Entity,
+}
+
 /// Plugin for bird systems
 pub struct BirdPlugin;
 
@@ -286,6 +294,10 @@ fn spawn_birds(
             ))
             .id();
         commands.entity(bird_entity).add_child(right_wing_entity);
+        commands.entity(bird_entity).insert(BirdWings {
+            left: left_wing_entity,
+            right: right_wing_entity,
+        });
 
         // Parent bird to zone entity so it inherits zone transform
         if zone_entity != Entity::PLACEHOLDER {
@@ -556,16 +568,11 @@ fn get_new_target(center: Vec3, radius: f32, min_alt: f32, max_alt: f32) -> Vec3
 pub fn update_bird_movement_system(
     time: Res<Time>,
     settings: Res<BirdSettings>,
-    mut bird_query: Query<(Entity, &mut Bird, &mut Transform), With<Bird>>,
-    mut left_wing_query: Query<
+    mut bird_query: Query<(&mut Bird, &mut Transform, Option<&BirdWings>)>,
+    mut wing_query: Query<
         &mut Transform,
-        (With<BirdWingLeft>, Without<Bird>, Without<BirdWingRight>),
+        (Or<(With<BirdWingLeft>, With<BirdWingRight>)>, Without<Bird>),
     >,
-    mut right_wing_query: Query<
-        &mut Transform,
-        (With<BirdWingRight>, Without<Bird>, Without<BirdWingLeft>),
-    >,
-    children_query: Query<&Children, With<Bird>>,
 ) {
     if !settings.enabled {
         return;
@@ -573,7 +580,7 @@ pub fn update_bird_movement_system(
 
     let dt = time.delta_secs();
 
-    for (bird_entity, mut bird, mut transform) in bird_query.iter_mut() {
+    for (mut bird, mut transform, wings) in bird_query.iter_mut() {
         // Move towards target
         let current_pos = transform.translation;
         let direction = bird.target_position - current_pos;
@@ -605,7 +612,8 @@ pub fn update_bird_movement_system(
             bird.flap_phase -= std::f32::consts::TAU;
         }
 
-        // Update bob animation
+        // Update bob phase (kept on the component; the bob offset itself was
+        // never applied to the transform, so it is not computed)
         bird.bob_phase += settings.bob_speed * dt;
         if bird.bob_phase > std::f32::consts::TAU {
             bird.bob_phase -= std::f32::consts::TAU;
@@ -615,31 +623,16 @@ pub fn update_bird_movement_system(
         // Wings flap up and down: positive angle = up, negative = down
         let flap_angle = (bird.flap_phase).sin() * 0.6; // ±34 degrees flap
 
-        // Calculate bob offset
-        let bob_offset = (bird.bob_phase.sin() * settings.bob_amplitude) * 0.1;
-
-        // Apply to child wings and body
-        if let Ok(children) = children_query.get(bird_entity) {
-            for child in children.iter() {
-                // Try to get left wing
-                if let Ok(mut wing_transform) = left_wing_query.get_mut(child) {
-                    // Left wing rotates around Z axis (positive = up)
-                    wing_transform.rotation = Quat::from_rotation_z(0.3 + flap_angle);
-                }
-                // Try to get right wing
-                if let Ok(mut wing_transform) = right_wing_query.get_mut(child) {
-                    // Right wing rotates around Z axis (negative = up, so we negate)
-                    wing_transform.rotation = Quat::from_rotation_z(-0.3 - flap_angle);
-                }
+        // Apply to the wing children recorded at spawn
+        if let Some(wings) = wings {
+            if let Ok(mut wing_transform) = wing_query.get_mut(wings.left) {
+                // Left wing rotates around Z axis (positive = up)
+                wing_transform.rotation = Quat::from_rotation_z(0.3 + flap_angle);
+            }
+            if let Ok(mut wing_transform) = wing_query.get_mut(wings.right) {
+                // Right wing rotates around Z axis (negative = up, so we negate)
+                wing_transform.rotation = Quat::from_rotation_z(-0.3 - flap_angle);
             }
         }
-
-        // Apply bob to bird body translation (small vertical oscillation)
-        // This is handled by modifying the bird's Y position slightly
-        let base_y = transform.translation.y;
-        // We don't want to permanently modify Y, so we use a small oscillation
-        // that gets applied each frame. The bob is subtle.
-        // Note: This creates a slight vertical wobble effect
-        let _bob_y = bob_offset; // Small vertical movement
     }
 }

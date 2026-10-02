@@ -398,6 +398,7 @@ impl IfoWriter {
             std::fs::create_dir_all(parent)?;
         }
 
+        crate::zone_loader::notify_zone_files_changed();
         let mut file = File::create(path)?;
         file.write_all(&self.buffer)?;
         file.sync_all()?;

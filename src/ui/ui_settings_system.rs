@@ -1,7 +1,8 @@
 use std::ops::RangeInclusive;
 
+use bevy::ecs::component::Mutable;
 use bevy::ecs::system::SystemParam;
-use bevy::prelude::{Color, Local, Query, Res, ResMut, Resource};
+use bevy::prelude::{Color, DetectChangesMut, Local, Query, Res, ResMut, Resource};
 use bevy_egui::{egui, EguiContexts};
 use bevy_post_process::dof::DepthOfFieldMode;
 
@@ -10,7 +11,7 @@ use crate::{
     components::{
         BirdSettings, DirtDashSettings, FishSettings, Season, SoundCategory, WindSwaySettings,
     },
-    graphics::GraphicsSettings,
+    graphics::{GraphicsSettings, SmaaQuality, TonemappingMode},
     render::{
         DaylightSettings, SkyMode, SkySettings, StarrySkySettings, VolumetricCloudSettings,
         ZoneLighting,
@@ -46,7 +47,7 @@ pub enum SkyDepthCompare {
 
 /// Resource for starry sky render settings that affect ghosting.
 /// These control the blend mode, depth testing, and other render pipeline settings.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct StarrySkyRenderSettings {
     /// Blend mode for the starry sky material
     pub blend_mode: SkyBlendMode,
@@ -80,36 +81,96 @@ impl Default for StarrySkyRenderSettings {
 
 /// Resource for storing post-processing settings that can be modified at runtime.
 /// These settings affect potential ghosting artifacts.
-#[derive(Resource, Debug, Clone)]
+///
+/// NOTE (2026-09-25): Bloom and SSAO controls were removed from this page.
+/// `GraphicsSettings` (Graphics tab + Bisect) is the single owner of those
+/// components; a second mirror here caused insert/remove churn on the camera
+/// (ViewTarget recreation stalls).
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct PostProcessingSettings {
-    /// Whether bloom effect is enabled
-    pub bloom_enabled: bool,
-    /// Bloom intensity (0.0 - 1.0)
-    pub bloom_intensity: f32,
-    /// Whether SSAO (Screen Space Ambient Occlusion) is enabled
-    pub ssao_enabled: bool,
     /// Whether depth of field is enabled
     pub dof_enabled: bool,
     /// Whether volumetric fog is enabled
     pub volumetric_fog_enabled: bool,
-    /// Whether color grading is enabled
-    pub color_grading_enabled: bool,
 }
 
 impl Default for PostProcessingSettings {
     fn default() -> Self {
         Self {
-            // NOTE: bloom/SSAO/DoF default OFF (mirrors GraphicsSettings).
-            // They are inserted on demand when the user enables them, which
-            // also skips their fullscreen passes entirely at startup.
-            bloom_enabled: false,
-            bloom_intensity: 0.5,
-            ssao_enabled: false,
             dof_enabled: false,
             volumetric_fog_enabled: true,
-            color_grading_enabled: false,
         }
     }
+}
+
+/// Snapshot of every flash/stall-bisect suspect, taken by ALL OFF and
+/// restored by RESTORE.
+#[derive(Debug, Clone, PartialEq)]
+struct BisectSnapshot {
+    smaa: SmaaQuality,
+    tonemapping: TonemappingMode,
+    bloom: bool,
+    ssao: bool,
+    auto_exposure: bool,
+    volumetric_fog: bool,
+    reflection: bool,
+}
+
+impl BisectSnapshot {
+    fn capture(
+        graphics: &GraphicsSettings,
+        post: &PostProcessingSettings,
+        water: &WaterSettings,
+    ) -> Self {
+        Self {
+            smaa: graphics.smaa_quality.clone(),
+            tonemapping: graphics.tonemapping,
+            bloom: graphics.bloom_enabled,
+            ssao: graphics.ssao_enabled,
+            auto_exposure: graphics.auto_exposure_enabled,
+            volumetric_fog: post.volumetric_fog_enabled,
+            reflection: water.reflection_enabled,
+        }
+    }
+
+    fn apply_off(
+        graphics: &mut GraphicsSettings,
+        post: &mut PostProcessingSettings,
+        water: &mut WaterSettings,
+    ) {
+        graphics.smaa_quality = SmaaQuality::Disabled;
+        graphics.tonemapping = TonemappingMode::None;
+        graphics.bloom_enabled = false;
+        graphics.ssao_enabled = false;
+        graphics.auto_exposure_enabled = false;
+        post.volumetric_fog_enabled = false;
+        water.reflection_enabled = false;
+    }
+
+    fn restore(
+        self,
+        graphics: &mut GraphicsSettings,
+        post: &mut PostProcessingSettings,
+        water: &mut WaterSettings,
+    ) {
+        graphics.smaa_quality = self.smaa;
+        graphics.tonemapping = self.tonemapping;
+        graphics.bloom_enabled = self.bloom;
+        graphics.ssao_enabled = self.ssao;
+        graphics.auto_exposure_enabled = self.auto_exposure;
+        post.volumetric_fog_enabled = self.volumetric_fog;
+        water.reflection_enabled = self.reflection;
+    }
+}
+
+/// State for the Bisect settings page: full snapshot for ALL OFF / RESTORE
+/// plus the saved pre-toggle qualities for the individual SMAA / Tonemapping
+/// rows.
+#[derive(Resource, Debug, Clone, Default, PartialEq)]
+pub struct FlashBisectState {
+    snapshot: Option<BisectSnapshot>,
+    saved_smaa: Option<SmaaQuality>,
+    saved_tonemapping: Option<TonemappingMode>,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -131,6 +192,7 @@ enum SettingsPage {
     PostProcessing,
     Graphics,
     Terrain,
+    Bisect,
 }
 
 pub struct UiStateSettings {
@@ -146,7 +208,7 @@ impl Default for UiStateSettings {
 }
 
 /// Resource for storing depth of field settings that can be modified at runtime.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct DepthOfFieldSettings {
     /// Whether depth of field effect is enabled
     pub enabled: bool,
@@ -208,6 +270,7 @@ pub struct SettingsSystemParams<'w, 's> {
     pub post_processing_settings: ResMut<'w, PostProcessingSettings>,
     pub graphics_settings: ResMut<'w, GraphicsSettings>,
     pub terrain_settings: ResMut<'w, TerrainEnhancementSettings>,
+    pub bisect_state: ResMut<'w, FlashBisectState>,
     pub zone_time: Option<Res<'w, ZoneTime>>,
 }
 
@@ -261,6 +324,21 @@ fn settings_combo<T: PartialEq + Clone>(
     ui.end_row();
 }
 
+/// Runs `edit` on a copy of the resource and writes it back only if a value
+/// actually changed. Handing `&mut ResMut<T>` to a page is a DerefMut that
+/// flags the resource changed every frame the page is visible, which re-ran
+/// every `is_changed()` consumer (graphics apply systems, texture-quality scan,
+/// sky/ZoneTime overwrite, cloud/star materials) while the window was open.
+fn edit_if_changed<T: Resource<Mutability = Mutable> + Clone + PartialEq, R>(
+    resource: &mut ResMut<T>,
+    edit: impl FnOnce(&mut T) -> R,
+) -> R {
+    let mut value = (**resource).clone();
+    let result = edit(&mut value);
+    resource.set_if_neq(value);
+    result
+}
+
 pub fn ui_settings_system(mut params: SettingsSystemParams) {
     let SettingsSystemParams {
         mut egui_context,
@@ -286,6 +364,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
         mut post_processing_settings,
         mut graphics_settings,
         mut terrain_settings,
+        mut bisect_state,
         zone_time,
     } = params;
 
@@ -343,63 +422,180 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                     SettingsPage::Terrain,
                     "Terrain",
                 );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::Bisect,
+                    "Bisect",
+                );
             });
 
             ui.separator();
 
+            // Every page edits a copy (edit_if_changed): the resources are
+            // flagged changed only when a widget/clamp/button altered a value.
             match ui_state_settings.page {
                 SettingsPage::Sound => {
-                    render_sound_page(ui, &mut sound_settings, &mut query_sounds);
+                    edit_if_changed(&mut sound_settings, |sound| {
+                        render_sound_page(ui, sound, &mut query_sounds)
+                    });
                 }
                 SettingsPage::Blood => {
-                    render_blood_page(ui, &mut blood_effect_config);
+                    edit_if_changed(&mut blood_effect_config, |blood| render_blood_page(ui, blood));
                 }
                 SettingsPage::Sky => {
-                    render_sky_page(ui, &mut sky_settings, &mut daylight_settings);
+                    edit_if_changed(&mut sky_settings, |sky| {
+                        edit_if_changed(&mut daylight_settings, |daylight| {
+                            render_sky_page(ui, sky, daylight)
+                        })
+                    });
                 }
                 SettingsPage::Stars => {
-                    render_stars_page(ui, &mut starry_sky_settings);
+                    edit_if_changed(&mut starry_sky_settings, |stars| render_stars_page(ui, stars));
                 }
                 SettingsPage::Clouds => {
-                    render_clouds_page(ui, &mut volumetric_cloud_settings);
+                    edit_if_changed(&mut volumetric_cloud_settings, |clouds| {
+                        render_clouds_page(ui, clouds)
+                    });
                 }
                 SettingsPage::StarrySkyRender => {
-                    render_starry_sky_render_page(ui, &mut starry_sky_render_settings);
+                    edit_if_changed(&mut starry_sky_render_settings, |render| {
+                        render_starry_sky_render_page(ui, render)
+                    });
                 }
                 SettingsPage::DepthOfField => {
-                    render_depth_of_field_page(ui, &mut dof_settings);
+                    edit_if_changed(&mut dof_settings, |dof| render_depth_of_field_page(ui, dof));
                 }
                 SettingsPage::VolumetricFog => {
-                    render_volumetric_fog_page(ui, &mut zone_lighting);
+                    edit_if_changed(&mut zone_lighting, |lighting| {
+                        render_volumetric_fog_page(ui, lighting)
+                    });
                 }
                 SettingsPage::Water => {
-                    render_water_page(ui, &mut water_settings);
+                    edit_if_changed(&mut water_settings, |water| render_water_page(ui, water));
                 }
                 SettingsPage::Fish => {
-                    render_fish_page(ui, &mut fish_settings);
+                    edit_if_changed(&mut fish_settings, |fish| render_fish_page(ui, fish));
                 }
                 SettingsPage::Birds => {
-                    render_birds_page(ui, &mut bird_settings);
+                    edit_if_changed(&mut bird_settings, |birds| render_birds_page(ui, birds));
                 }
                 SettingsPage::Seasons => {
-                    render_seasons_page(ui, &mut season_settings, &mut summer_settings);
+                    edit_if_changed(&mut season_settings, |season| {
+                        edit_if_changed(&mut summer_settings, |summer| {
+                            render_seasons_page(ui, season, summer)
+                        })
+                    });
                 }
                 SettingsPage::DirtDash => {
-                    render_dirt_dash_page(ui, &mut dirt_dash_settings);
+                    edit_if_changed(&mut dirt_dash_settings, |dirt_dash| {
+                        render_dirt_dash_page(ui, dirt_dash)
+                    });
                 }
-                SettingsPage::WindSway => {
-                    render_wind_sway_page(ui, &mut wind_sway_settings);
-                }
+                SettingsPage::WindSway => match wind_sway_settings.as_mut() {
+                    Some(wind_sway) => {
+                        edit_if_changed(wind_sway, |wind_sway| {
+                            render_wind_sway_page(ui, Some(wind_sway))
+                        });
+                    }
+                    None => render_wind_sway_page(ui, None),
+                },
                 SettingsPage::PostProcessing => {
-                    render_post_processing_page(ui, &mut post_processing_settings);
+                    edit_if_changed(&mut post_processing_settings, |post| {
+                        render_post_processing_page(ui, post)
+                    });
                 }
                 SettingsPage::Graphics => {
-                    render_graphics_page(ui, &mut graphics_settings, &zone_time);
+                    edit_if_changed(&mut graphics_settings, |graphics| {
+                        render_graphics_page(ui, graphics, &zone_time)
+                    });
                 }
                 SettingsPage::Terrain => {
-                    render_terrain_page(ui, &mut terrain_settings);
+                    edit_if_changed(&mut terrain_settings, |terrain| render_terrain_page(ui, terrain));
+                }
+                SettingsPage::Bisect => {
+                    edit_if_changed(&mut graphics_settings, |graphics| {
+                        edit_if_changed(&mut post_processing_settings, |post| {
+                            edit_if_changed(&mut water_settings, |water| {
+                                edit_if_changed(&mut bisect_state, |bisect| {
+                                    render_bisect_page(ui, graphics, post, water, bisect)
+                                })
+                            })
+                        })
+                    });
                 }
             }
+        });
+}
+
+fn render_bisect_page(
+    ui: &mut egui::Ui,
+    graphics: &mut GraphicsSettings,
+    post: &mut PostProcessingSettings,
+    water: &mut WaterSettings,
+    bisect: &mut FlashBisectState,
+) {
+    ui.label("Flash/stall bisect: kill every suspect, then re-enable one at a time.");
+    ui.horizontal(|ui| {
+        if ui.button("ALL SUSPECTS OFF").clicked() {
+            bisect.snapshot = Some(BisectSnapshot::capture(graphics, post, water));
+            BisectSnapshot::apply_off(graphics, post, water);
+        }
+        let can_restore = bisect.snapshot.is_some();
+        if ui
+            .add_enabled(can_restore, egui::Button::new("RESTORE"))
+            .clicked()
+        {
+            if let Some(snapshot) = bisect.snapshot.take() {
+                snapshot.restore(graphics, post, water);
+            }
+        }
+    });
+    ui.separator();
+    egui::Grid::new("bisect_suspects")
+        .num_columns(2)
+        .show(ui, |ui| {
+            // SMAA: off means Disabled; on restores the pre-toggle quality.
+            let mut smaa_on = !matches!(graphics.smaa_quality, SmaaQuality::Disabled);
+            if settings_checkbox(ui, "SMAA:", &mut smaa_on, "Enabled").changed() {
+                if smaa_on {
+                    graphics.smaa_quality =
+                        bisect.saved_smaa.take().unwrap_or_default();
+                } else {
+                    bisect.saved_smaa = Some(graphics.smaa_quality.clone());
+                    graphics.smaa_quality = SmaaQuality::Disabled;
+                }
+            }
+            // Tonemapping: off means None; on restores the pre-toggle curve.
+            let mut tm_on = !matches!(graphics.tonemapping, TonemappingMode::None);
+            if settings_checkbox(ui, "Tonemapping:", &mut tm_on, "Enabled").changed() {
+                if tm_on {
+                    graphics.tonemapping =
+                        bisect.saved_tonemapping.take().unwrap_or_default();
+                } else {
+                    bisect.saved_tonemapping = Some(graphics.tonemapping);
+                    graphics.tonemapping = TonemappingMode::None;
+                }
+            }
+            settings_checkbox(ui, "Bloom:", &mut graphics.bloom_enabled, "Enabled");
+            settings_checkbox(ui, "SSAO:", &mut graphics.ssao_enabled, "Enabled");
+            settings_checkbox(
+                ui,
+                "Auto Exposure:",
+                &mut graphics.auto_exposure_enabled,
+                "Enabled",
+            );
+            settings_checkbox(
+                ui,
+                "Volumetric Fog:",
+                &mut post.volumetric_fog_enabled,
+                "Enabled",
+            );
+            settings_checkbox(
+                ui,
+                "Water Reflection:",
+                &mut water.reflection_enabled,
+                "Enabled",
+            );
         });
 }
 
@@ -983,11 +1179,8 @@ fn render_dirt_dash_page(ui: &mut egui::Ui, dirt_dash_settings: &mut DirtDashSet
     ui.label("Tip: Dust particles float near the player when running. Low gravity + low velocity = hovering smoke effect.");
 }
 
-fn render_wind_sway_page(
-    ui: &mut egui::Ui,
-    wind_sway_settings: &mut Option<ResMut<'_, WindSwaySettings>>,
-) {
-    if let Some(settings) = wind_sway_settings.as_mut() {
+fn render_wind_sway_page(ui: &mut egui::Ui, wind_sway_settings: Option<&mut WindSwaySettings>) {
+    if let Some(settings) = wind_sway_settings {
         egui::Grid::new("wind_sway_settings")
             .num_columns(2)
             .show(ui, |ui| {
@@ -1001,6 +1194,7 @@ fn render_wind_sway_page(
             });
 
         ui.separator();
+        ui.label("Global Intensity scales the wind-driven sway (1.0 = default, 0 = no sway).");
         ui.label("Tip: Wind sway applies to grass, leaves, bushes, and trees. Amplitude is in radians (0.1 ≈ 5.7°, 0.5 ≈ 28.6°).");
         ui.label("If no sway is visible, enable 'Debug Log Count' to check if entities have the WindSway component.");
     } else {
@@ -1016,25 +1210,11 @@ fn render_post_processing_page(
     egui::Grid::new("post_processing_settings")
         .num_columns(2)
         .show(ui, |ui| {
-            ui.label("🔍 GHOSTING DEBUG");
-            ui.label("Toggle effects to isolate ghosting cause");
-            ui.end_row();
-
-            ui.separator();
-            ui.end_row();
-
-            settings_checkbox(ui, "Bloom:", &mut post_processing_settings.bloom_enabled, "Enabled");
-            settings_slider(ui, "Bloom Intensity:", &mut post_processing_settings.bloom_intensity, 0.0..=1.0, None);
-            settings_checkbox(ui, "SSAO:", &mut post_processing_settings.ssao_enabled, "Enabled");
-            settings_checkbox(ui, "Depth of Field:", &mut post_processing_settings.dof_enabled, "Enabled");
             settings_checkbox(ui, "Volumetric Fog:", &mut post_processing_settings.volumetric_fog_enabled, "Enabled");
-            settings_checkbox(ui, "Color Grading:", &mut post_processing_settings.color_grading_enabled, "Enabled");
         });
 
     ui.separator();
-    ui.label("TIP: Disable effects one by one to find ghosting cause.");
-    ui.label("Bloom is most likely to cause trails with bright HDR content.");
-    ui.label("SSAO without TAA can cause noise/flickering.");
+    ui.label("Bloom, SSAO, Depth of Field, Motion Blur and Tonemapping live on the Graphics tab (single owner; mirrors here caused camera component churn and stalls). Color grading (brightness/contrast/saturation/gamma) was removed 2026-09-25: its exposure path caused the white film.");
 }
 
 fn render_graphics_page(
@@ -1042,7 +1222,7 @@ fn render_graphics_page(
     graphics_settings: &mut GraphicsSettings,
     zone_time: &Option<Res<'_, ZoneTime>>,
 ) {
-    use crate::graphics::{GraphicsShadowFilteringMethod, MsaaSamples, ShadowQuality, SsaoQuality, TextureQuality, TonemappingMode, VsyncMode};
+    use crate::graphics::{GraphicsShadowFilteringMethod, ShadowQuality, SmaaQuality, SsaoQuality, TextureQuality, TonemappingMode, VsyncMode};
 
     // === Display Section ===
     ui.collapsing("Display", |ui| {
@@ -1061,17 +1241,20 @@ fn render_graphics_page(
                         (VsyncMode::Mailbox, "Mailbox (Triple Buffer)"),
                     ],
                 );
+                // No MSAA option: the deferred renderer cannot use it (Bevy
+                // forces Msaa::Off). SMAA is the anti-aliasing.
                 settings_combo(
                     ui,
-                    "msaa",
-                    "Anti-Aliasing:",
-                    graphics_settings.msaa_samples.display_name(),
-                    &mut graphics_settings.msaa_samples,
+                    "smaa_quality",
+                    "SMAA (post AA):",
+                    graphics_settings.smaa_quality.display_name(),
+                    &mut graphics_settings.smaa_quality,
                     &[
-                        (MsaaSamples::X1, "Off"),
-                        (MsaaSamples::X2, "2x MSAA"),
-                        (MsaaSamples::X4, "4x MSAA"),
-                        (MsaaSamples::X8, "8x MSAA"),
+                        (SmaaQuality::Disabled, "Off"),
+                        (SmaaQuality::Low, "Low"),
+                        (SmaaQuality::Medium, "Medium"),
+                        (SmaaQuality::High, "High"),
+                        (SmaaQuality::Ultra, "Ultra"),
                     ],
                 );
                 settings_slider(ui, "View Distance:", &mut graphics_settings.view_distance, 100.0..=2000.0, Some("m"));
@@ -1110,21 +1293,16 @@ fn render_graphics_page(
                             "Hardware 2x2",
                         ),
                         (GraphicsShadowFilteringMethod::Gaussian, "Gaussian"),
-                        (GraphicsShadowFilteringMethod::Temporal, "Temporal"),
                     ],
                 );
             });
     });
 
-    // === Image Adjustments Section ===
-    ui.collapsing("Image Adjustments", |ui| {
-        egui::Grid::new("graphics_image")
+    // === Tonemapping Section ===
+    ui.collapsing("Tonemapping", |ui| {
+        egui::Grid::new("graphics_tonemapping")
             .num_columns(2)
             .show(ui, |ui| {
-                settings_slider(ui, "Brightness:", &mut graphics_settings.brightness, 0.0..=2.0, None);
-                settings_slider(ui, "Contrast:", &mut graphics_settings.contrast, 0.0..=2.0, None);
-                settings_slider(ui, "Saturation:", &mut graphics_settings.saturation, 0.0..=2.0, None);
-                settings_slider(ui, "Gamma:", &mut graphics_settings.gamma, 0.5..=2.5, None);
                 settings_combo(
                     ui,
                     "tonemapping",
@@ -1146,6 +1324,10 @@ fn render_graphics_page(
                         ),
                         (TonemappingMode::TonyMcMapface, "TonyMcMapface"),
                         (TonemappingMode::BlenderFilmic, "Blender Filmic"),
+                        (
+                            TonemappingMode::KhronosPbrNeutral,
+                            "Khronos PBR Neutral",
+                        ),
                     ],
                 );
             });
@@ -1176,6 +1358,9 @@ fn render_graphics_page(
                     ],
                 );
                 settings_checkbox(ui, "Depth of Field:", &mut graphics_settings.dof_enabled, "Enabled");
+                settings_checkbox(ui, "Auto Exposure:", &mut graphics_settings.auto_exposure_enabled, "Enabled");
+                settings_slider(ui, "Exposure Target:", &mut graphics_settings.auto_exposure_target_ev, -4.0..=1.0, Some("EV"))
+                    .on_hover_text("Scene brightness Auto Exposure aims for in daylight. Lower = darker. 0 = Bevy default (very bright), -2.5 = photographic mid-grey. Night and caves stay darker than day. Requires Auto Exposure.");
             });
     });
 

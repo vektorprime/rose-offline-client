@@ -40,11 +40,25 @@ pub struct QueryCharacter<'w> {
     equipment: &'w Equipment,
 }
 
-#[derive(Default)]
 pub struct UiStateDebugSkillList {
     filter_name: String,
     filter_castable: bool,
     filtered_skills: Vec<SkillId>,
+    /// Set when an input of `filtered_skills` changed (name filter, castable) and
+    /// on first show. Replaces the old "refilter while empty" check, which
+    /// rescanned the whole skill table every frame when a filter matched nothing.
+    filter_dirty: bool,
+}
+
+impl Default for UiStateDebugSkillList {
+    fn default() -> Self {
+        Self {
+            filter_name: String::new(),
+            filter_castable: false,
+            filtered_skills: Vec::new(),
+            filter_dirty: true,
+        }
+    }
 }
 
 pub fn ui_debug_skill_list_system(
@@ -72,8 +86,6 @@ pub fn ui_debug_skill_list_system(
         .default_height(300.0)
         .open(&mut ui_state_debug_windows.skill_list_open)
         .show(egui_context.ctx_mut().unwrap(), |ui| {
-            let mut filter_changed = false;
-
             egui::Grid::new("skill_list_controls_grid")
                 .num_columns(2)
                 .show(ui, |ui| {
@@ -82,7 +94,7 @@ pub fn ui_debug_skill_list_system(
                         .text_edit_singleline(&mut ui_state_debug_skill_list.filter_name)
                         .changed()
                     {
-                        filter_changed = true;
+                        ui_state_debug_skill_list.filter_dirty = true;
                     }
                     ui.end_row();
 
@@ -91,18 +103,14 @@ pub fn ui_debug_skill_list_system(
                         .checkbox(&mut ui_state_debug_skill_list.filter_castable, "Castable")
                         .changed()
                     {
-                        filter_changed = true;
+                        ui_state_debug_skill_list.filter_dirty = true;
                     }
                     ui.end_row();
                 });
 
-            if ui_state_debug_skill_list.filter_name.is_empty()
-                && ui_state_debug_skill_list.filtered_skills.is_empty()
-            {
-                filter_changed = true;
-            }
-
-            if filter_changed {
+            // Refilter only when one of the inputs changed
+            if ui_state_debug_skill_list.filter_dirty {
+                ui_state_debug_skill_list.filter_dirty = false;
                 let filter_name_re = if !ui_state_debug_skill_list.filter_name.is_empty() {
                     Some(
                         Regex::new(&format!(

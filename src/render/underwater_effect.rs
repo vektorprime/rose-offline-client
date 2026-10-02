@@ -6,6 +6,7 @@
 //! - Procedural caustics effect
 
 use bevy::{
+    anti_alias::{fxaa::fxaa, smaa::smaa},
     asset::{load_internal_asset, weak_handle, Handle},
     core_pipeline::{
         Core3d, Core3dSystems, FullscreenShader,
@@ -209,7 +210,8 @@ pub struct UnderwaterEffectUniformOffset(u32);
 // Render pass system (Bevy 0.19: render graph nodes are plain systems)
 // =============================================================================
 
-/// Fullscreen underwater effect pass, ordered after tonemapping in PostProcess.
+/// Fullscreen underwater effect pass, ordered after tonemapping and before
+/// FXAA/SMAA in PostProcess. Skipped (no ping-pong flip) when not underwater.
 pub fn underwater_effect(
     view: ViewQuery<(
         &ExtractedCamera,
@@ -223,8 +225,15 @@ pub fn underwater_effect(
     underwater_uniform_buffers: Res<UnderwaterEffectUniformBuffers>,
     mut ctx: RenderContext,
 ) {
-    let (_camera, view_target, pipeline_id, _underwater_state, uniform_offset) =
+    let (_camera, view_target, pipeline_id, underwater_state, uniform_offset) =
         view.into_inner();
+
+    // Dry camera: skip the pass entirely instead of a full-screen pass-through
+    // copy. Must return BEFORE post_process_write(): every call flips the
+    // shared main-texture ping-pong index.
+    if !underwater_state.is_underwater {
+        return;
+    }
 
     // Get the pipeline
     let Some(pipeline) = pipeline_cache.get_render_pipeline(**pipeline_id) else {
@@ -325,9 +334,19 @@ impl Plugin for UnderwaterEffectPlugin {
             )
             .add_systems(
                 Core3d,
+                // MUST be totally ordered against every other pass that calls
+                // post_process_write(). Bevy 0.19 render passes are systems
+                // with read-only access, so unordered ones run in parallel:
+                // their ping-pong flips happen in thread order while their
+                // command buffers are submitted in schedule order. With only
+                // `.after(tonemapping)` this raced SMAA and randomly put the
+                // pre-tonemap HDR frame on screen (white flash). AA goes last
+                // so it also smooths the underwater tint/caustics.
                 underwater_effect
                     .in_set(Core3dSystems::PostProcess)
-                    .after(tonemapping),
+                    .after(tonemapping)
+                    .before(fxaa)
+                    .before(smaa),
             );
     }
 

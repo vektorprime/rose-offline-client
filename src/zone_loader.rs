@@ -1,7 +1,10 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
-    sync::{mpsc, Arc, OnceLock},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc, Arc, OnceLock,
+    },
     time::{Duration, Instant},
 };
 
@@ -195,26 +198,29 @@ use anyhow::Result;
 use bevy::log::info_span;
 use bevy::{
     asset::RenderAssetUsages,
-    asset::{Asset, Assets, LoadState},
+    asset::{Asset, Assets},
     camera::primitives::Aabb,
     camera::visibility::{InheritedVisibility, RenderLayers, ViewVisibility},
-    ecs::system::SystemParam,
+    ecs::{
+        change_detection::{DetectChanges, Tick},
+        system::SystemParam,
+    },
     image::ImageLoaderSettings,
     light::{NotShadowCaster, NotShadowReceiver},
-    math::{Quat, Vec2, Vec3},
+    math::{Quat, Vec2, Vec3, Vec4},
     mesh::{Indices, Mesh, PrimitiveTopology},
     pbr::{ExtendedMaterial, StandardMaterial},
     prelude::{
         AssetServer, Color, Commands, Entity, GlobalTransform, Handle, Image, Local, Mesh3d,
-        MeshMaterial3d, MessageReader, MessageWriter, Res, ResMut, Resource, Transform,
+        MeshMaterial3d, MessageReader, MessageWriter, Res, ResMut, Resource, State, Transform,
         UntypedHandle, Visibility, With,
     },
     reflect::TypePath,
     material::AlphaMode,
-    tasks::AsyncComputeTaskPool,
+    tasks::{AsyncComputeTaskPool, Task},
 };
 use bevy_rapier3d::prelude::{
-    AsyncCollider, Collider, CollisionGroups, ComputedColliderShape, RigidBody,
+    Collider, CollisionGroups, RigidBody,
 };
 use log::{info, warn};
 use thiserror::Error;
@@ -245,8 +251,8 @@ use crate::{
         ParticleMaterial, RoseEffectExtension, RoseObjectExtension, TerrainMaterial, WaterMaterial,
         MESH_ATTRIBUTE_UV_1,
     },
-    resources::{CurrentZone, DebugInspector, GameData, SpecularTexture},
-    vfs_asset_io::clear_vfs_file_cache,
+    resources::{AppState, CurrentZone, DebugInspector, GameData, SpecularTexture},
+    systems::SharedMeshCollider,
     VfsResource,
 };
 
@@ -265,6 +271,19 @@ pub struct ZoneLoaderBlock {
     pub lit_cnst: Option<LitFile>,
     pub lit_deco: Option<LitFile>,
     pub new_terrain_mesh: Option<Vec<u8>>,
+    /// Terrain mesh, bounds and collider, built on the async load task (`load_zone`)
+    /// so spawning only spawns them. Moved out by `spawn_zone`.
+    pub terrain_geometry: Option<TerrainBlockGeometry>,
+}
+
+/// A terrain block's render mesh, local-space bounds and physics collider.
+pub struct TerrainBlockGeometry {
+    /// Built by `build_new_terrain_geometry` (`--new-terrain`) rather than
+    /// `build_terrain_geometry`; spawning only uses geometry of the variant it spawns.
+    pub new_terrain: bool,
+    pub mesh: Mesh,
+    pub aabb: Aabb,
+    pub collider: Collider,
 }
 
 pub struct ZoneNpc {
@@ -457,51 +476,44 @@ pub struct SpawnZoneParams<'w, 's> {
     pub water_spawned_events: MessageWriter<'w, WaterSpawnedEvent>,
     pub terrain_noise: Res<'w, crate::terrain::GlobalTerrainNoise>,
     pub effect_cache: Res<'w, EffectCache>,
+    pub app_state: Res<'w, State<AppState>>,
 }
 
-pub struct CachedZone {
-    pub data_handle: Handle<ZoneLoaderAsset>,
-    pub spawned_entity: Option<Entity>,
-}
-
-pub enum LoadingZoneState {
-    Loading,
-    Spawned,
-}
-
+/// A zone load started by `zone_loader_system`, waiting for its async task.
 pub struct LoadingZone {
-    pub state: LoadingZoneState,
-    pub handle: Handle<ZoneLoaderAsset>,
-    pub despawn_other_zones: bool,
-    /// Zone assets that are loading - CRITICAL: Must be cleared after loading to prevent memory leak
-    pub zone_assets: Vec<UntypedHandle>,
-    pub loading_via_async_task: bool, // Track if loading via async task vs AssetServer
-    pub zone_id: Option<ZoneId>,      // Track zone_id for async-loaded zones
-    pub loading_start_time: Instant,  // Track when loading started
-    /// Track if assets have been cleared to prevent duplicate cleanup
-    pub assets_cleared: bool,
+    pub zone_id: ZoneId,
+    pub loading_start_time: Instant,
+    pub load_key: ZoneLoadKey,
 }
 
-impl LoadingZone {
-    /// Clear asset handles to prevent memory leak
-    /// Call this once zone is fully loaded
-    pub fn clear_asset_handles(&mut self) {
-        if !self.assets_cleared {
-            let count = self.zone_assets.len();
-            if count > 0 {
-                log::info!(
-                    "[MEMORY FIX] Clearing {} zone asset handles to prevent memory leak",
-                    count
-                );
-                self.zone_assets.clear();
-                self.zone_assets.shrink_to_fit();
-                self.assets_cleared = true;
-            }
+/// Everything a zone load reads besides the zone's files. Loading the same zone
+/// again with an equal key (and unchanged files) gives the same `ZoneLoaderAsset`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ZoneLoadKey {
+    zone_id: ZoneId,
+    use_new_terrain: bool,
+    /// Last change of the `GlobalTerrainNoise` that terrain meshes are built with.
+    terrain_noise_changed: Tick,
+    /// See `notify_zone_files_changed`.
+    files_generation: u64,
+}
+
+impl ZoneLoadKey {
+    fn new(zone_id: ZoneId, params: &SpawnZoneParams<'_, '_>) -> Self {
+        Self {
+            zone_id,
+            use_new_terrain: params.render_config.use_new_terrain,
+            terrain_noise_changed: params.terrain_noise.last_changed(),
+            files_generation: ZONE_FILES_GENERATION.load(Ordering::Relaxed),
         }
     }
 }
 
-#[derive(Default)]
-pub struct ZoneLoaderCache {
-    pub cache: Vec<Option<CachedZone>>,
+static ZONE_FILES_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Call before writing zone files (HIM/TIL/IFO...) to disk. Files on disk take
+/// priority over the VFS, so this stops `zone_loader_system` from reusing a zone
+/// that was loaded before the write.
+pub fn notify_zone_files_changed() {
+    ZONE_FILES_GENERATION.fetch_add(1, Ordering::Relaxed);
 }

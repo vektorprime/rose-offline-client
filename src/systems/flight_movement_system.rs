@@ -6,6 +6,73 @@ use crate::systems::OrbitCamera;
 use crate::zone_loader::ZoneLoaderAsset;
 use rose_game_common::messages::client::ClientMessage;
 
+/// Minimum time between MoveCollision reports (20 Hz). The server validates each
+/// report against the previous one assuming ~100 ms between them; reporting every
+/// rendered frame only built up a backlog on the server, which processes one
+/// client message per tick.
+const MOVE_COLLISION_REPORT_INTERVAL_SECS: f64 = 0.05;
+
+/// Report early once the position moved this far (cm) since the last report, so
+/// each step stays below the server's speed-hack warning distance (run speed *
+/// 0.15) even at full flight speed.
+const MOVE_COLLISION_REPORT_DISTANCE_CM: f32 = 40.0;
+
+/// An unsent report older than this is dropped instead of flushed (e.g. when a
+/// loading screen paused the systems), as it no longer describes the player.
+const MOVE_COLLISION_UNSENT_MAX_AGE_SECS: f64 = 0.25;
+
+/// Rate limiter for `ClientMessage::MoveCollision` reports that are produced
+/// every frame (flight, blocked movement). The newest suppressed report is kept
+/// and sent once the reports stop, so the server still receives the exact
+/// final position.
+#[derive(Default)]
+pub struct MoveCollisionThrottle {
+    last_sent: Option<(f64, Vec3)>,
+    unsent: Option<(f64, Vec3)>,
+}
+
+impl MoveCollisionThrottle {
+    /// Records this frame's report at time `now` (seconds). Returns the position
+    /// to send now, or keeps it as the newest unsent report.
+    pub fn report(&mut self, now: f64, position: Vec3) -> Option<Vec3> {
+        let is_due = self.last_sent.map_or(true, |(sent_time, sent_position)| {
+            now - sent_time >= MOVE_COLLISION_REPORT_INTERVAL_SECS
+                || position.distance(sent_position) >= MOVE_COLLISION_REPORT_DISTANCE_CM
+        });
+
+        if is_due {
+            self.last_sent = Some((now, position));
+            self.unsent = None;
+            Some(position)
+        } else {
+            self.unsent = Some((now, position));
+            None
+        }
+    }
+
+    /// Takes the newest unsent report once the reports stopped (landing,
+    /// unblocking), so the final position still reaches the server.
+    pub fn take_unsent(&mut self, now: f64) -> Option<Vec3> {
+        let (report_time, position) = self.unsent.take()?;
+        if now - report_time > MOVE_COLLISION_UNSENT_MAX_AGE_SECS {
+            return None;
+        }
+
+        self.last_sent = Some((now, position));
+        Some(position)
+    }
+}
+
+/// Sends a MoveCollision report, if there is one and we are connected.
+pub fn send_move_collision(game_connection: Option<&GameConnection>, position: Option<Vec3>) {
+    if let (Some(game_connection), Some(position)) = (game_connection, position) {
+        game_connection
+            .client_message_tx
+            .send(ClientMessage::MoveCollision { position })
+            .ok();
+    }
+}
+
 /// Server-authoritative flight movement system.
 ///
 /// The character flies forward in the direction the camera is facing,
@@ -34,6 +101,7 @@ pub fn flight_movement_system(
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     mut commands: Commands,
     game_connection: Option<Res<GameConnection>>,
+    mut move_collision_throttle: Local<MoveCollisionThrottle>,
     mut query: Query<
         (Entity, &mut FlightState, &mut FacingDirection, &mut Position),
         With<PlayerCharacter>,
@@ -41,6 +109,8 @@ pub fn flight_movement_system(
 ) {
     // Minimum height above terrain (in cm)
     let min_height_above_terrain = 100.0; // 1 meter above terrain
+    let now = time.elapsed_secs_f64();
+    let game_connection = game_connection.as_deref();
 
     // Get terrain height function
     let get_terrain_height = |x: f32, y: f32| -> f32 {
@@ -55,6 +125,8 @@ pub fn flight_movement_system(
     for (entity, mut flight_state, mut facing, mut position) in query.iter_mut() {
         // Only process if flying
         if !flight_state.is_flying {
+            // Flight just ended: report the final flight position if throttled.
+            send_move_collision(game_connection, move_collision_throttle.take_unsent(now));
             continue;
         }
 
@@ -119,14 +191,10 @@ pub fn flight_movement_system(
             position.position = intended_position;
             commands.entity(entity).insert(NextCommand::with_stop());
 
-            if let Some(game_connection) = game_connection.as_ref() {
-                game_connection
-                    .client_message_tx
-                    .send(ClientMessage::MoveCollision {
-                        position: intended_position,
-                    })
-                    .ok();
-            }
+            send_move_collision(
+                game_connection,
+                move_collision_throttle.report(now, intended_position),
+            );
         } else {
             // Not thrusting - decelerate and hover in place (no descent)
             flight_state.current_speed = (flight_state.current_speed
@@ -148,14 +216,10 @@ pub fn flight_movement_system(
                 position.position = intended_position;
                 commands.entity(entity).insert(NextCommand::with_stop());
 
-                if let Some(game_connection) = game_connection.as_ref() {
-                    game_connection
-                        .client_message_tx
-                        .send(ClientMessage::MoveCollision {
-                            position: intended_position,
-                        })
-                        .ok();
-                }
+                send_move_collision(
+                    game_connection,
+                    move_collision_throttle.report(now, intended_position),
+                );
             }
 
             // No descent - player hovers in place when not thrusting
@@ -169,14 +233,10 @@ pub fn flight_movement_system(
             // server entity away (which could later trigger a
             // teleport-rejection snap-back).
             if flight_state.current_speed <= 0.0 {
-                if let Some(game_connection) = game_connection.as_ref() {
-                    game_connection
-                        .client_message_tx
-                        .send(ClientMessage::MoveCollision {
-                            position: position.position,
-                        })
-                        .ok();
-                }
+                send_move_collision(
+                    game_connection,
+                    move_collision_throttle.report(now, position.position),
+                );
             }
         }
     }

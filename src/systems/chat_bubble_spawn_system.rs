@@ -5,8 +5,8 @@ use bevy::{
     image::ImageSampler,
     log::warn,
     prelude::{
-        Assets, ChildOf, Color, Commands, Entity, GlobalTransform, Image, Local, MessageReader,
-        Query, Res, ResMut, Transform, Vec2, Vec3, Visibility, With,
+        Alpha, Assets, ChildOf, Color, Commands, Entity, GlobalTransform, Image, Local,
+        MessageReader, Query, Res, ResMut, Transform, Vec2, Vec3, Visibility, With,
     },
     render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
@@ -24,6 +24,8 @@ use crate::{
     events::ChatBubbleEvent,
     render::WorldUiRect,
 };
+
+use super::chat_bubble_update_system::ChatBubbleBaseAlpha;
 
 const CHAT_BUBBLE_PADDING: f32 = 8.0;
 const CHAT_BUBBLE_BACKGROUND_COLOR: Color = Color::srgba(1.0, 1.0, 1.0, 1.0);
@@ -121,6 +123,11 @@ pub fn chat_bubble_spawn_system(
     let mut pending_to_process = std::mem::take(&mut pending_cache.pending);
     pending_to_process.extend(new_pending);
 
+    // CPU-side egui font atlas, copied at most once per run (it is several MB):
+    // every galley processed below was laid out before this point, and egui only
+    // appends glyphs to the atlas mid-frame, so one copy covers all bubbles.
+    let mut font_atlas: Option<egui::epaint::ColorImage> = None;
+
     for pending in pending_to_process.into_iter() {
         let PendingChatBubble {
             target_entity,
@@ -151,14 +158,16 @@ pub fn chat_bubble_spawn_system(
 
         // Read the CPU-side egui font atlas directly.
         // This is immediately available after layout and does not depend on render-pass texture uploads.
-        let font_source_texture = egui_context
-            .ctx_mut()
-            .ok()
-            .and_then(|ctx| ctx.fonts_mut(|fonts| Some(fonts.image())))
-            .unwrap_or_else(|| {
-                // Fallback: create a 1x1 transparent image if fonts are not available
-                egui::epaint::ColorImage::filled([1, 1], egui::Color32::TRANSPARENT)
-            });
+        let font_source_texture = font_atlas.get_or_insert_with(|| {
+            egui_context
+                .ctx_mut()
+                .ok()
+                .and_then(|ctx| ctx.fonts_mut(|fonts| Some(fonts.image())))
+                .unwrap_or_else(|| {
+                    // Fallback: create a 1x1 transparent image if fonts are not available
+                    egui::epaint::ColorImage::filled([1, 1], egui::Color32::TRANSPARENT)
+                })
+        });
 
         let text_size = Vec2::new(
             (max_pos.x - min_pos.x) + CHAT_BUBBLE_PADDING * 2.0,
@@ -316,6 +325,7 @@ pub fn chat_bubble_spawn_system(
 
         commands.spawn((
             ChatBubbleBackground,
+            ChatBubbleBaseAlpha(CHAT_BUBBLE_BACKGROUND_COLOR.alpha()),
             NoFrustumCulling,
             WorldUiRect {
                 image: bg_image_handle,
@@ -338,6 +348,7 @@ pub fn chat_bubble_spawn_system(
 
         commands.spawn((
             ChatBubbleText,
+            ChatBubbleBaseAlpha(color.alpha()),
             NoFrustumCulling,
             WorldUiRect {
                 image: text_image_handle,

@@ -591,7 +591,7 @@ pub fn game_connection_system(
                 status_effects,
             }) => {
                 let status_effects = StatusEffects {
-                    active: status_effects,
+                    active: *status_effects,
                     ..Default::default()
                 };
                 let ability_values = game_data
@@ -645,7 +645,7 @@ pub fn game_connection_system(
                 status_effects,
             }) => {
                 let status_effects = StatusEffects {
-                    active: status_effects,
+                    active: *status_effects,
                     ..Default::default()
                 };
                 let ability_values = game_data
@@ -890,7 +890,10 @@ pub fn game_connection_system(
                         if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
                             entity_mut.insert(NextCommand::with_stop());
                         }
-                        if was_attacking {
+                        // Only the player's own rejected attack is reported: the server
+                        // stops any attacking entity (other players, bots, monsters),
+                        // which is not the player's concern.
+                        if was_attacking && is_player {
                             log::info!(
                                 "[ATTACK] Server stopped attack for {:?}, target likely invalid/dead",
                                 entity
@@ -1491,7 +1494,7 @@ pub fn game_connection_system(
                         if let Some(mut status_effects_regen) =
                             entity_mut.get_mut::<StatusEffectsRegen>()
                         {
-                            status_effects_regen.regens = regen_effects;
+                            status_effects_regen.regens = *regen_effects;
                         }
 
                         if let Some(updated_hp) = updated_hp {
@@ -2396,7 +2399,7 @@ pub fn game_connection_system(
                                         .iter_mut()
                                         .find(|x| x.get_character_id() == member_info.character_id)
                                     {
-                                        *party_member = PartyMemberInfo::Online(member_info);
+                                        *party_member = PartyMemberInfo::Online(*member_info);
                                     }
                                 }
                             }

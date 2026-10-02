@@ -6,7 +6,7 @@
 use bevy::prelude::{Resource, Vec4};
 
 /// Resource for storing water rendering settings that can be modified at runtime.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, PartialEq)]
 pub struct WaterSettings {
     // === Existing settings (kept for compatibility) ===
     /// Foam intensity (0.0-1.0) - controls how visible foam effects are on wave crests

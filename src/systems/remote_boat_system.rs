@@ -37,7 +37,13 @@ pub fn remote_boat_sync_system(
         let is_sailing = matches!(move_mode, MoveMode::Sail);
 
         if !is_sailing {
-            if let Some(mut boat_state) = boat_state {
+            // Tear down once, on the transition out of sailing. The BoatState stays
+            // on the entity, so repeating this every frame would re-insert
+            // Visibility on every model part and re-show the weapons that
+            // vehicle_model_system hides while driving.
+            if let Some(mut boat_state) = boat_state
+                .filter(|boat_state| boat_state.active || boat_state.model_root_entity.is_some())
+            {
                 if let Some(model_root_entity) = boat_state.model_root_entity.take() {
                     commands.entity(model_root_entity).despawn();
                 }

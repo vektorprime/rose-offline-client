@@ -141,3 +141,23 @@ In Bevy 0.16:
 - `insert_state::<S>(value)` - Initializes state to a specific value (does NOT require `FromWorld` trait)
 
 When you need to set a specific initial state value, use `insert_state()`, not `init_state()`.
+
+---
+
+## Zone Data Never Freed; Same-Zone Reloads Re-Read Everything (Fixed 2026-09-30)
+
+### Problem
+Every zone load (including same-zone respawn/teleport) re-read and re-parsed the whole zone, and every `ZoneLoaderAsset` ever loaded (terrain meshes and colliders included) stayed in memory.
+
+### Root Cause
+- `zone_loader_system`'s `Local<ZoneLoaderCache>` was never filled, so the cache never hit. For the zone that is already spawned, `zone_loaded_from_vfs_system` skips the spawn anyway, so the reload was pure waste.
+- `lib.rs` creates `Assets<ZoneLoaderAsset>` with `init_resource`, not `init_asset`, so Bevy never processes handle drops for it, and the second cache held strong handles to every zone.
+
+### Fix
+`ZoneReuseState` answers a `LoadZoneEvent` for the current, unchanged zone (key: zone id, `use_new_terrain`, terrain noise change tick, map-editor file generation via `notify_zone_files_changed()`) with `ZoneLoadedFromVfsEvent(id, CurrentZone.handle)`. `free_unreferenced_zone_assets` removes a loader-added zone asset once the loader holds its last strong handle.
+
+### Files Modified
+- `src/zone_loader.rs`, `src/zone_loader/systems.rs`, `src/map_editor/coords.rs`, `src/map_editor/save/ifo_export.rs`
+
+### Lesson Learned
+`Assets<T>` inserted with `init_resource` gets no automatic cleanup: dropping handles frees nothing. Any data the map editor writes to disk must call `notify_zone_files_changed()` so cached zone data is not reused.

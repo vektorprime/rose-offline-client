@@ -144,7 +144,8 @@ impl Plugin for SavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SaveStatus>()
             .add_message::<SaveZoneEvent>()
-            .add_systems(Update, save_zone_system);
+            // Only acts on messages, which only the editor menu writes.
+            .add_systems(Update, save_zone_system.run_if(on_message::<SaveZoneEvent>));
 
         log::info!("[SavePlugin] Save system initialized");
     }

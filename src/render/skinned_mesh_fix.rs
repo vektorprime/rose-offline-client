@@ -35,16 +35,20 @@ fn add_skinned_mesh_to_skinning_targets(
     asset_server: Res<AssetServer>,
 ) {
     for (entity, skinning_target, mesh3d) in query.iter() {
+        // Get the mesh first: a lock-free lookup that rules out every pending,
+        // loading or failed mesh without touching the asset server. A failed
+        // mesh keeps its marker on purpose: a later load() of the same path
+        // retries it (Bevy re-requests Failed assets), and it must still be
+        // skinned if that retry succeeds.
+        let Some(mesh) = meshes.get(&mesh3d.0) else {
+            continue;
+        };
+
         // Check if mesh is loaded
         let load_state = asset_server.get_load_state(&mesh3d.0);
         if !matches!(load_state, Some(LoadState::Loaded)) {
             continue;
         }
-
-        // Get the mesh
-        let Some(mesh) = meshes.get(&mesh3d.0) else {
-            continue;
-        };
 
         // Check if mesh has joint attributes
         let has_joint_indices = mesh.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some();

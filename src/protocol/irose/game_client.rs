@@ -247,35 +247,35 @@ impl GameClient {
                     .ok();
             }
             Some(ServerPackets::SpawnEntityNpc) => {
-                server_message!(
-                    PacketServerSpawnEntityNpc,
-                    SpawnEntityNpc {
-                        entity_id,
-                        npc,
-                        direction,
-                        position,
-                        team,
-                        health,
-                        spawn_command_state,
-                        move_mode,
-                        status_effects
-                    }
-                );
+                let message = PacketServerSpawnEntityNpc::try_from(packet)?;
+                self.server_message_tx
+                    .send(ServerMessage::SpawnEntityNpc {
+                        entity_id: message.entity_id,
+                        npc: message.npc,
+                        direction: message.direction,
+                        position: message.position,
+                        team: message.team,
+                        health: message.health,
+                        spawn_command_state: message.spawn_command_state,
+                        move_mode: message.move_mode,
+                        status_effects: Box::new(message.status_effects),
+                    })
+                    .ok();
             }
             Some(ServerPackets::SpawnEntityMonster) => {
-                server_message!(
-                    PacketServerSpawnEntityMonster,
-                    SpawnEntityMonster {
-                        entity_id,
-                        npc,
-                        position,
-                        team,
-                        health,
-                        spawn_command_state,
-                        move_mode,
-                        status_effects
-                    }
-                );
+                let message = PacketServerSpawnEntityMonster::try_from(packet)?;
+                self.server_message_tx
+                    .send(ServerMessage::SpawnEntityMonster {
+                        entity_id: message.entity_id,
+                        npc: message.npc,
+                        position: message.position,
+                        team: message.team,
+                        health: message.health,
+                        spawn_command_state: message.spawn_command_state,
+                        move_mode: message.move_mode,
+                        status_effects: Box::new(message.status_effects),
+                    })
+                    .ok();
             }
             Some(ServerPackets::SpawnEntityItemDrop) => {
                 server_message!(
@@ -442,9 +442,9 @@ impl GameClient {
                 self.server_message_tx
                     .send(ServerMessage::UpdateStatusEffects {
                         entity_id: message.entity_id,
-                        status_effects: message.status_effects,
+                        status_effects: Box::new(message.status_effects),
                         updated_values: message.updated_values,
-                        regen_effects: message.regen_effects.regens,
+                        regen_effects: Box::new(message.regen_effects.regens),
                     })
                     .ok();
             }
@@ -800,10 +800,12 @@ impl GameClient {
                 self.server_message_tx.send(message).ok();
             }
             Some(ServerPackets::PartyMemberUpdateInfo) => {
-                server_message!(
-                    PacketServerPartyMemberUpdateInfo,
-                    PartyMemberUpdateInfo { member_info }
-                );
+                let message = PacketServerPartyMemberUpdateInfo::try_from(packet)?;
+                self.server_message_tx
+                    .send(ServerMessage::PartyMemberUpdateInfo {
+                        member_info: Box::new(message.member_info),
+                    })
+                    .ok();
             }
             Some(ServerPackets::PartyMemberRewardItem) => {
                 let message = PacketServerPartyMemberRewardItem::try_from(packet)?;

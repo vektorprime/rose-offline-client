@@ -115,6 +115,15 @@ fn fbm(p: vec3<f32>, octaves: f32) -> f32 {
 
 /// Create cumulus cloud density with puffy, irregular shape
 fn cloud_density(local_pos: vec3<f32>, world_pos: vec3<f32>, cloud_origin: vec3<f32>) -> f32 {
+    // Flatten the underside of each puff so silhouettes read as cumulus
+    // (rounded top, nearly flat bottom) instead of plain circles.
+    // underside multiplies the final density, so when it is 0 the density
+    // is 0 (and the fragment discards): skip all the noise work.
+    let underside = smoothstep(-0.60, -0.10, local_pos.y);
+    if (underside <= 0.0) {
+        return 0.0;
+    }
+
     let drift_offset = cloud_drift_speed() * cloud_time();
     let animated_pos = local_pos + drift_offset;
 
@@ -134,6 +143,21 @@ fn cloud_density(local_pos: vec3<f32>, world_pos: vec3<f32>, cloud_origin: vec3<
 
     // Discard if outside sphere (raised cutoff so puffs aren't clipped)
     if (radius > 1.45) {
+        return 0.0;
+    }
+
+    // IMPORTANT:
+    // We are shading a sphere surface mesh (not true raymarched volume).
+    // Surface fragments are near radius ~1.0, so center-weighted radial falloff
+    // would zero out density and make clouds disappear.
+    // Use a shell-preserving term that keeps density high near the surface.
+    let shell_outer = mix(1.30, 1.42, seed2);
+    let shell_inner = mix(0.75, 0.88, seed) + fbm(direction * 2.0, 2.0) * 0.08;
+    let shell_density = smoothstep(shell_outer, shell_inner, radius);
+
+    // shell_density multiplies the final density, so when it is 0 the
+    // density is 0 (and the fragment discards): skip the remaining fbm calls.
+    if (shell_density <= 0.0) {
         return 0.0;
     }
 
@@ -161,17 +185,8 @@ fn cloud_density(local_pos: vec3<f32>, world_pos: vec3<f32>, cloud_origin: vec3<
     // Higher noise = more cloud density at that point
     let noise_threshold = mix(0.34, 0.56, seed);
     let shape_density = smoothstep(noise_threshold - 0.22, noise_threshold + 0.40, combined_noise);
-    
-    // IMPORTANT:
-    // We are shading a sphere surface mesh (not true raymarched volume).
-    // Surface fragments are near radius ~1.0, so center-weighted radial falloff
-    // would zero out density and make clouds disappear.
-    // Use a shell-preserving term that keeps density high near the surface.
-    let shell_outer = mix(1.30, 1.42, seed2);
-    let shell_inner = mix(0.75, 0.88, seed) + fbm(direction * 2.0, 2.0) * 0.08;
-    let shell_density = smoothstep(shell_outer, shell_inner, radius);
 
-    // Combine shape and shell term
+    // Combine shape and shell term (shell_density computed above)
     let base_density = shape_density * shell_density;
     
     // Add internal volumetric variation
@@ -180,9 +195,7 @@ fn cloud_density(local_pos: vec3<f32>, world_pos: vec3<f32>, cloud_origin: vec3<
     
     let density = base_density * (0.7 + 0.6 * internal_factor);
 
-    // Flatten the underside of each puff so silhouettes read as cumulus
-    // (rounded top, nearly flat bottom) instead of plain circles.
-    let underside = smoothstep(-0.60, -0.10, local_pos.y);
+    // (underside computed at the top of the function)
 
     // Gentle billowing so puffs swell and shrink slowly.
     let breathe = 0.90 + 0.10 * sin(cloud_time() * 0.13 + seed * 6.28318);

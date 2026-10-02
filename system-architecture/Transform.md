@@ -526,6 +526,8 @@ let left_wing_entity = commands
 commands.entity(bird_entity).add_child(left_wing_entity);
 ```
 
+The wing ids are also stored on the bird as `BirdWings { left, right }` (`src/systems/bird_system.rs`), so the flap animation writes both wing transforms directly instead of scanning every bird's `Children` each frame.
+
 ---
 
 ## Custom Extensions

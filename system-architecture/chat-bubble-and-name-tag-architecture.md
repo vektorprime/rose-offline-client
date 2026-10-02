@@ -80,7 +80,8 @@ Both systems use `egui` for high-quality text layout:
 - **`name_tag_system`**: Automatically detects new entities with `ClientEntityName` and generates name tags. It caches textures by name to avoid redundant work.
 
 ### 3. Update and Cleanup
-- **`chat_bubble_update_system`**: Ticks down the `remaining_time`. In the last 20% of the bubble's life, it linearly fades the alpha of the `WorldUiRect` color.
+- **`chat_bubble_update_system`**: Ticks down the `remaining_time`. In the last 20% of the bubble's life, it linearly fades the alpha of the `WorldUiRect` color, computed each frame from the rect's unfaded alpha (`ChatBubbleBaseAlpha`, inserted by the spawn system). It used to multiply the already-faded alpha again every frame, so bubbles vanished almost immediately.
+- **World UI bind groups** (`src/render/world_ui.rs`, `ImageBindGroups`): one bind group per image drawn this frame; entries for images not drawn are dropped (each bubble/name tag image used to keep its bind group and GPU texture alive for the session), and an entry is rebuilt when its image's GPU texture view changes.
 - **`chat_bubble_cleanup_system`**: Uses `RemovedComponents<ClientEntityName>` to detect when a character is despawned and immediately removes its associated chat bubbles.
 
 ---
@@ -109,6 +110,7 @@ Tags and bubbles are hidden when terrain or a zone object (building, wall, decor
 - **File:** `src/systems/world_ui_occlusion_system.rs`, registered in `Update` after `name_tag_visibility_system` (separate `add_systems` call — the main tuple is at Bevy's 20-system limit).
 - **Method:** Rapier `cast_ray` from the main camera to the tag root's `GlobalTransform` anchor. Only `COLLISION_GROUP_ZONE_OBJECT | COLLISION_GROUP_ZONE_TERRAIN` occlude; characters, NPCs, monsters, item drops and water never do. Ray membership uses `COLLISION_FILTER_INSPECTABLE`, which every terrain/object collider filter accepts.
 - **Staggering:** each tag is re-checked once every 4 frames (`entity.index_u32() % 4`); newly spawned tags (no `OcclusionState` yet) are checked immediately so they never flash through walls.
+- **Skipped when it cannot matter:** a focused name tag is always shown and an unfocused tag whose type is not `show_all` is always hidden, so only chat bubbles and unfocused `show_all` tags raycast. For the others the ray is skipped and any stored `OcclusionState` is removed, so the tag is re-checked immediately (never with a stale result) once occlusion matters again.
 - **State:** `OcclusionState { occluded }` component (`src/components/occlusion.rs`) on the tag/bubble root; root `Visibility` is written only on change. Hidden roots also disappear from the water reflection (extraction respects visibility).
 - **Policy:** hovered/selected targets keep their name tag visible even behind occluders; chat bubbles always occlude.
 

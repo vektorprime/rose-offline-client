@@ -8,8 +8,10 @@ use bevy::{
 use std::collections::HashMap;
 use bevy_rapier3d::geometry::ShapeCastOptions;
 use bevy_rapier3d::plugin::context::systemparams::{RapierContext, ReadRapierContext};
-use bevy_rapier3d::prelude::{Collider, CollisionGroups, Group, QueryFilter};
-use bevy_rapier3d::rapier::prelude::Shape;
+// Query shapes are plain parry balls on the stack: the same shape that
+// `Collider::ball` wraps, without its per-call `Arc` allocation.
+use bevy_rapier3d::parry::shape::Ball;
+use bevy_rapier3d::prelude::{CollisionGroups, Group, QueryFilter};
 
 use rose_game_common::messages::client::ClientMessage;
 
@@ -29,6 +31,8 @@ use crate::{
     zone_content::docks::Dock,
     zone_loader::ZoneLoaderAsset,
 };
+
+use super::flight_movement_system::{send_move_collision, MoveCollisionThrottle};
 
 /// Sailing collision tuning.
 ///
@@ -74,12 +78,12 @@ fn find_object_top_height(rapier_context: &RapierContext, feet_position: Vec3) -
             & !COLLISION_GROUP_ITEM_DROP,
     );
 
-    let gate_ball = Collider::ball(0.35);
+    let gate_ball = Ball::new(0.35);
     let mut intersecting_objects = Vec::new();
     rapier_context.intersect_shape(
         feet_position,
         Quat::default(),
-        <&dyn Shape>::from(&gate_ball),
+        &gate_ball,
         QueryFilter::new().groups(object_groups),
         |hit_entity| {
             intersecting_objects.push(hit_entity);
@@ -265,20 +269,27 @@ pub fn collision_height_only_system(
         let fall_distance = time.delta().as_secs_f32() * 9.81;
         let old_y = transform.translation.y;
 
-        // Update X/Z from position
-        transform.translation.x = position.x / 100.0;
-        transform.translation.z = -position.y / 100.0;
-
-        if old_y - target_y > fall_distance {
+        let new_y = if old_y - target_y > fall_distance {
             // Falling
-            transform.translation.y = old_y - fall_distance;
+            old_y - fall_distance
         } else {
             // On ground
-            transform.translation.y = target_y;
+            target_y
+        };
+
+        // Update X/Z from position. Write only on difference: every write through
+        // Mut flags Changed<Transform>/Changed<Position>, which re-propagated the
+        // GlobalTransform of every stationary NPC, player and item drop each frame.
+        let new_translation = Vec3::new(position.x / 100.0, new_y, -position.y / 100.0);
+        if transform.translation != new_translation {
+            transform.translation = new_translation;
         }
 
         // Update position height
-        position.z = transform.translation.y * 100.0;
+        let new_z = new_y * 100.0;
+        if position.z != new_z {
+            position.z = new_z;
+        }
     }
 }
 
@@ -355,6 +366,7 @@ pub fn collision_player_system(
     time: Res<Time>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     mut top_cache: Local<ObjectTopCache>,
+    mut move_collision_throttle: Local<MoveCollisionThrottle>,
 ) {
     let Ok(rapier_context) = rapier_context.single() else {
         return;
@@ -379,11 +391,17 @@ pub fn collision_player_system(
     let frame = cache.frame;
     let cache_entries = &mut cache.entries;
 
+    // MoveCollision reports are rate limited; the newest suppressed one is sent
+    // on the first frame without a collision so the server ends at the exact
+    // blocked position.
+    let now = time.elapsed_secs_f64();
+
     let mut entity_count = 0;
     for (entity, mut position, mut transform, flight_state, mut boat_state) in
         query_collision_entity.iter_mut()
     {
         entity_count += 1;
+        let mut reported_move_collision = false;
         // Check if player is flying - if so, skip ground collision and use position directly
         let is_flying = flight_state.map_or(false, |fs| fs.is_flying);
         let is_sailing = boat_state.as_ref().map_or(false, |bs| bs.active);
@@ -397,6 +415,10 @@ pub fn collision_player_system(
             transform.translation.x = position.x / 100.0;
             transform.translation.y = position.z / 100.0; // Use position.z for height
             transform.translation.z = -position.y / 100.0;
+            send_move_collision(
+                game_connection.as_deref(),
+                move_collision_throttle.take_unsent(now),
+            );
             continue; // Skip ground collision when flying
         }
 
@@ -426,13 +448,13 @@ pub fn collision_player_system(
             if translation_delta.length() > 0.00001 {
                 let cast_origin = transform.translation + Vec3::new(0.0, 1.2, 0.0);
                 let cast_direction = translation_delta.normalize();
-                let ball_collider = Collider::ball(collider_radius);
+                let ball_collider = Ball::new(collider_radius);
 
                 if let Some((_, distance)) = rapier_context.cast_shape(
                     cast_origin + cast_direction * collider_radius,
                     Quat::default(),
                     cast_direction,
-                    <&dyn Shape>::from(&ball_collider),
+                    &ball_collider,
                     ShapeCastOptions {
                         max_time_of_impact: translation_delta.length(),
                         target_distance: 0.0,
@@ -463,14 +485,11 @@ pub fn collision_player_system(
                     }
 
                     // Send collision position to server for validation
-                    if let Some(game_connection) = game_connection.as_ref() {
-                        game_connection
-                            .client_message_tx
-                            .send(ClientMessage::MoveCollision {
-                                position: collision_position,
-                            })
-                            .ok();
-                    }
+                    reported_move_collision = true;
+                    send_move_collision(
+                        game_connection.as_deref(),
+                        move_collision_throttle.report(now, collision_position),
+                    );
                 }
             }
 
@@ -541,14 +560,18 @@ pub fn collision_player_system(
                     commands.entity(entity).insert(NextCommand::with_stop());
                 }
 
-                if let Some(game_connection) = game_connection.as_ref() {
-                    game_connection
-                        .client_message_tx
-                        .send(ClientMessage::MoveCollision {
-                            position: blocked_position,
-                        })
-                        .ok();
-                }
+                reported_move_collision = true;
+                send_move_collision(
+                    game_connection.as_deref(),
+                    move_collision_throttle.report(now, blocked_position),
+                );
+            }
+
+            if !reported_move_collision {
+                send_move_collision(
+                    game_connection.as_deref(),
+                    move_collision_throttle.take_unsent(now),
+                );
             }
 
             // Sync transform from server-authoritative position
@@ -569,13 +592,13 @@ pub fn collision_player_system(
         if translation_delta.length() > 0.00001 {
             let cast_origin = transform.translation + Vec3::new(0.0, 1.2, 0.0);
             let cast_direction = translation_delta.normalize();
-            let ball_collider = Collider::ball(collider_radius);
+            let ball_collider = Ball::new(collider_radius);
 
             if let Some((_, distance)) = rapier_context.cast_shape(
                 cast_origin + cast_direction * collider_radius,
                 Quat::default(),
                 cast_direction,
-                <&dyn Shape>::from(&ball_collider),
+                &ball_collider,
                 ShapeCastOptions {
                     max_time_of_impact: translation_delta.length(),
                     target_distance: 0.0,
@@ -603,15 +626,19 @@ pub fn collision_player_system(
                 }
 
                 // Send collision position to server for validation
-                if let Some(game_connection) = game_connection.as_ref() {
-                    game_connection
-                        .client_message_tx
-                        .send(ClientMessage::MoveCollision {
-                            position: collision_position,
-                        })
-                        .ok();
-                }
+                reported_move_collision = true;
+                send_move_collision(
+                    game_connection.as_deref(),
+                    move_collision_throttle.report(now, collision_position),
+                );
             }
+        }
+
+        if !reported_move_collision {
+            send_move_collision(
+                game_connection.as_deref(),
+                move_collision_throttle.take_unsent(now),
+            );
         }
 
         // === GROUND DETECTION RAYCAST ===
@@ -683,7 +710,7 @@ pub fn collision_player_system(
         // The transform Y is updated for visual smoothness, but Position remains unchanged
 
         // Check if we are now colliding with any warp / event object
-        let ball_collider = Collider::ball(1.0);
+        let ball_collider = Ball::new(1.0);
         rapier_context.intersect_shape(
             Vec3::new(
                 position.x / 100.0,
@@ -691,7 +718,7 @@ pub fn collision_player_system(
                 -position.y / 100.0,
             ),
             Quat::default(),
-            <&dyn Shape>::from(&ball_collider),
+            &ball_collider,
             QueryFilter::new().groups(CollisionGroups::new(
                 Group::all(),
                 COLLISION_GROUP_ZONE_EVENT_OBJECT | COLLISION_GROUP_ZONE_WARP_OBJECT,
@@ -713,6 +740,13 @@ pub fn collision_player_system(
                     }
                 } else if let Ok(mut hit_warp_object) = query_warp_object.get_mut(hit_entity) {
                     if time.elapsed().as_secs_f64() - hit_warp_object.last_collision > 5.0 {
+                        // A throttled collision report must reach the server before
+                        // the warp, as it would have without throttling.
+                        send_move_collision(
+                            game_connection.as_deref(),
+                            move_collision_throttle.take_unsent(now),
+                        );
+
                         if let Some(game_connection) = game_connection.as_ref() {
                             game_connection
                                 .client_message_tx

@@ -938,16 +938,14 @@ Related ordering constraints (all in `src/lib.rs`):
 
 ### ApplyDeferred
 
-Commands are applied at specific points in the schedule:
-
-```rust
-// src/lib.rs
-app.add_systems(PostUpdate, ApplyDeferred);
-app.add_systems(
-    PostUpdate,
-    (ApplyDeferred,).in_set(GameStages::DebugRenderPreFlush),
-);
-```
+`src/lib.rs` adds no manual `ApplyDeferred` systems. Commands are applied at the sync
+points Bevy inserts automatically between ordered systems (`auto_insert_apply_deferred`)
+and at the end of each schedule. Two manual ones used to sit in PostUpdate (one
+unordered, one in an otherwise empty `GameStages::DebugRenderPreFlush` set after
+`CheckVisibility`); each was an exclusive system that stopped every worker thread, and
+neither ordered anything, so they were removed together with the empty `DebugRender*`
+sets. If a system needs another system's commands applied, order it `.after()` that
+system and Bevy inserts the flush.
 
 ---
 

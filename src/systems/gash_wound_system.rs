@@ -28,7 +28,7 @@ use bevy::{
 use rose_game_common::components::{AbilityValues, HealthPoints};
 
 use crate::{
-    components::{BloodOverlay, CharacterModel, Dead, GashWounds, ModelHeight, WoundVisual},
+    components::{BloodOverlay, CharacterModel, Dead, GashWounds, ModelHeight},
     events::BloodEffectEvent,
     resources::{BloodEffectConfig, BloodOverlayAtlas},
     systems::{
@@ -225,10 +225,19 @@ pub fn wound_spawn_system(
                 let variant_count = atlas.blood_stains.len().max(1);
                 let stain_variant = rand::random::<usize>() % variant_count;
 
+                // A stain is only added below the per-entity cap (checked the same way
+                // in both branches below); skip the projection when it would be discarded.
+                let has_room = overlay_opt
+                    .as_deref()
+                    .map_or(0, |overlay| overlay.stain_count())
+                    < config.max_wounds_per_entity;
+
                 // Try accurate UV projection first (Fix #2)
                 // For entities with CharacterModel, use project_world_to_uv() which
                 // does proper triangle-ray intersection with skinned mesh vertex transformation.
-                let projection_result = if let Some(character_model) = character_model_opt {
+                let projection_result = if !has_room {
+                    None
+                } else if let Some(character_model) = character_model_opt {
                     // Convert wound_position to world space if we have a global transform
                     let world_pos = if let Some(gt) = global_transform_opt {
                         gt.transform_point(*wound_position)
@@ -373,35 +382,18 @@ fn resolve_material_entity(
     None
 }
 
-/// System that cleans up wound visuals when their parent entity despawns.
-///
-/// This prevents orphaned wound entities from remaining in the scene.
-pub fn wound_cleanup_system(
-    mut commands: Commands,
-    query_wound_visuals: Query<(Entity, &WoundVisual)>,
-    query_parents: Query<(), Without<Dead>>,
-) {
-    for (wound_entity, wound_visual) in query_wound_visuals.iter() {
-        // If parent entity no longer exists, clean up the wound
-        if query_parents.get(wound_visual.parent_entity).is_err() {
-            commands.entity(wound_entity).despawn();
-        }
-    }
-}
-
 /// Plugin that registers all gash wound systems.
+///
+/// (A `wound_cleanup_system` used to iterate `WoundVisual` entities every
+/// frame, but nothing ever spawns them: wounds are painted into the UV-space
+/// blood overlay instead.)
 pub struct GashWoundPlugin;
 
 impl Plugin for GashWoundPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PostUpdate,
-            (
-                wound_visibility_system,
-                wound_spawn_system,
-                wound_cleanup_system,
-            )
-                .chain(),
+            (wound_visibility_system, wound_spawn_system).chain(),
         );
     }
 }
