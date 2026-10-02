@@ -1,20 +1,24 @@
 //! Bird spawning and flying behavior system
 //!
 //! This system handles:
-//! - Spawning birds when a zone is loaded (count relative to zone size)
+//! - Spawning a flock for each loaded zone (count relative to zone size)
+//! - Applying Birds settings edits to the living flock immediately
 //! - Bird flying AI (picking targets, moving towards them)
 //! - Bird animation (wing flapping with rotating wings, vertical bobbing)
 //! - Keeping birds within roam bounds
 //! - Birds face their flight direction
 
 use bevy::pbr::{MeshMaterial3d, StandardMaterial};
-use bevy::render::render_resource::Face;
 use bevy::{asset::RenderAssetUsages, prelude::*};
 use bevy_mesh::{Indices, Mesh, PrimitiveTopology};
 use rand::Rng;
 
 use crate::components::{Bird, BirdMesh, BirdSettings, BirdWingLeft, BirdWingRight, Zone};
-use crate::events::ZoneEvent;
+use crate::zone_loader::zone_loaded_from_vfs_system;
+
+/// Zone size in world units (64x64 blocks of 160 units), used for the bird
+/// count and roam radius.
+const ZONE_SIZE: f32 = 10240.0;
 
 /// Wing child entities of a bird, stored at spawn so the flap animation can
 /// address them directly instead of scanning every bird's children each frame.
@@ -36,86 +40,220 @@ impl Plugin for BirdPlugin {
             .register_type::<BirdSettings>()
             // Add resources
             .init_resource::<BirdSettings>()
-            // Add systems
+            // Add systems. After zone_loaded_from_vfs_system (and the command
+            // flush after it): a zone swap is seen in the frame it happens, and
+            // birds are never parented to a zone that is being despawned.
             .add_systems(
                 Update,
-                (spawn_birds_on_zone_system, update_bird_movement_system).chain(),
+                (
+                    spawn_birds_on_zone_system.after(zone_loaded_from_vfs_system),
+                    update_bird_movement_system,
+                )
+                    .chain(),
             );
     }
 }
 
-/// Spawns birds when a zone is loaded
+/// Meshes and materials shared by every bird. Built once and kept, so the
+/// flocks of later zones and birds added from the settings reuse them.
+struct BirdAssets {
+    body_mesh: Handle<Mesh>,
+    left_wing_mesh: Handle<Mesh>,
+    right_wing_mesh: Handle<Mesh>,
+    materials: Vec<Handle<StandardMaterial>>,
+}
+
+impl BirdAssets {
+    fn new(meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) -> Self {
+        // Bird colors for variety - made more vibrant for visibility
+        let bird_colors = [
+            Color::srgb(0.6, 0.4, 0.2),  // Brighter brown
+            Color::srgb(0.5, 0.5, 0.6),  // Lighter gray
+            Color::srgb(0.2, 0.2, 0.25), // Dark but visible
+            Color::srgb(0.7, 0.5, 0.3),  // Light brown
+            Color::srgb(0.6, 0.6, 0.7),  // Light gray
+            Color::srgb(0.8, 0.7, 0.5),  // Tan
+            Color::srgb(0.4, 0.3, 0.2),  // Dark brown
+        ];
+
+        Self {
+            body_mesh: create_bird_body_mesh(meshes),
+            left_wing_mesh: create_bird_wing_mesh(meshes, false),
+            right_wing_mesh: create_bird_wing_mesh(meshes, true),
+            materials: bird_colors
+                .iter()
+                .map(|&color| {
+                    materials.add(StandardMaterial {
+                        base_color: color,
+                        unlit: true, // Birds don't need complex lighting for distance viewing
+                        cull_mode: None,
+                        ..default()
+                    })
+                })
+                .collect(),
+        }
+    }
+}
+
+/// State of [`spawn_birds_on_zone_system`]: the living flock.
+#[derive(Default)]
+pub struct BirdFlock {
+    /// Zone entity the living birds are parented to; `None` while there are none.
+    zone_entity: Option<Entity>,
+    /// Settings the living birds reflect (meaningful while `zone_entity` is set).
+    settings: BirdSettings,
+    /// Built on the first spawn.
+    assets: Option<BirdAssets>,
+}
+
+/// Keeps one flock of birds in the loaded zone, in line with `BirdSettings`.
 ///
-/// Uses a `Local<bool>` guard (same pattern as the ocean zone-content spawners)
-/// so repeated `ZoneEvent::Loaded` events for an already-loaded zone do not
-/// spawn additional flocks. Without this guard, every respawn/teleport into an
-/// already-loaded zone leaked a new flock of bird entities and their meshes.
-/// The guard is reset when the zone entity is gone (zone unloaded), so re-entry
-/// after a real unload respawns the birds.
+/// - A new zone entity (first load, zone change) gets a new flock. The previous
+///   zone's birds are its children and were despawned with it. A repeated
+///   `ZoneEvent::Loaded` for the zone on screen (respawn, same-zone teleport)
+///   keeps its zone entity, so it does not add a second flock.
+/// - Disabling birds despawns the flock; enabling spawns one in the current zone.
+/// - Other edits apply to the living flock in place (bird count, speed, altitude,
+///   roam radius), so dragging a slider never respawns the flock and makes the
+///   birds jump. Flap and bob speeds are read every frame by
+///   [`update_bird_movement_system`].
 pub fn spawn_birds_on_zone_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     settings: Res<BirdSettings>,
-    mut zone_events: MessageReader<ZoneEvent>,
-    zone_query: Query<(Entity, &Zone)>,
-    mut spawned: Local<bool>,
+    zone_query: Query<Entity, With<Zone>>,
+    mut bird_query: Query<(Entity, &mut Bird)>,
+    mut flock: Local<BirdFlock>,
 ) {
-    if !settings.enabled {
+    let flock = &mut *flock;
+
+    // There is at most one zone: zone_loaded_from_vfs_system despawns the old
+    // zone in the same command flush that spawns the new one.
+    let zone_entity = zone_query.iter().next().filter(|_| settings.enabled);
+
+    if zone_entity != flock.zone_entity {
+        // Only finds birds when birds were disabled: a replaced zone already
+        // took its birds with it.
+        let mut despawned = 0;
+        for (bird_entity, _) in bird_query.iter() {
+            commands.entity(bird_entity).despawn();
+            despawned += 1;
+        }
+        if despawned > 0 {
+            log::info!("[BIRD] Despawned {} birds", despawned);
+        }
+        flock.zone_entity = None;
+
+        if let Some(zone_entity) = zone_entity {
+            let bird_count = calculate_bird_count(ZONE_SIZE, &settings);
+            log::info!(
+                "[BIRD] Spawning {} birds parented to zone entity {:?} (roam radius {})",
+                bird_count,
+                zone_entity,
+                bird_roam_radius(&settings)
+            );
+            let assets = flock
+                .assets
+                .get_or_insert_with(|| BirdAssets::new(&mut meshes, &mut materials));
+            spawn_birds(&mut commands, assets, &settings, zone_entity, bird_count);
+            flock.zone_entity = Some(zone_entity);
+            flock.settings = settings.clone();
+        }
         return;
     }
 
-    let mut event_count = 0;
-    let mut zone_loaded = false;
-    for event in zone_events.read() {
-        // Only handle Loaded events
-        let ZoneEvent::Loaded(_) = event;
-        event_count += 1;
-        zone_loaded = true;
+    // Same zone: only settings edits matter. set_if_neq in the settings window
+    // flags real edits only; the comparison skips anything else.
+    let Some(zone_entity) = zone_entity else {
+        return;
+    };
+    if !settings.is_changed() || flock.settings == *settings {
+        return;
     }
 
-    let zone_entity = zone_query.iter().next().map(|(entity, _)| entity);
-
-    match (zone_loaded, *spawned, zone_entity) {
-        // Zone was unloaded: reset the guard so a future load respawns.
-        (false, true, None) => *spawned = false,
-        // Already spawned: do nothing.
-        (_, true, _) => {}
-        // Spawn on the Loaded event, or on the fallback path if it was missed.
-        (_, false, Some(zone_entity)) => {
-            log::info!(
-                "[BIRD] Zone loaded, spawning birds parented to zone entity {:?}",
-                zone_entity
-            );
-
-            // Calculate zone size for relative bird count
-            // Default zone size is based on 64x64 blocks with grid_size * grid_per_patch * 16.0 per block
-            // Typical values: grid_size=1.0, grid_per_patch=1.0, so ~160 units per block, ~10240 units per zone
-            let zone_size = 10240.0; // Default zone size in units
-            let bird_count = calculate_bird_count(zone_size, &settings);
-
-            spawn_birds(
-                &mut commands,
-                &mut meshes,
-                &mut materials,
-                &settings,
-                Vec3::ZERO, // Use zero since birds are parented to zone (zone-local coordinates)
-                zone_entity,
-                zone_size,
-                bird_count,
-            );
-            *spawned = true;
-        }
-        // No zone entity yet, nothing to parent to.
-        (_, false, None) => {}
-    }
-
-    if event_count > 0 {
-        log::info!(
-            "[BIRD] Processed {} ZoneEvent::Loaded event(s) this frame",
-            event_count
+    // Bird count: add the missing birds or despawn the extra ones.
+    let bird_count = calculate_bird_count(ZONE_SIZE, &settings);
+    let alive_count = bird_query.iter().count();
+    if bird_count > alive_count {
+        let assets = flock
+            .assets
+            .get_or_insert_with(|| BirdAssets::new(&mut meshes, &mut materials));
+        spawn_birds(
+            &mut commands,
+            assets,
+            &settings,
+            zone_entity,
+            bird_count - alive_count,
         );
+    } else {
+        for (bird_entity, _) in bird_query.iter().take(alive_count - bird_count) {
+            commands.entity(bird_entity).despawn();
+        }
     }
+
+    // Speed range, altitude band and roam radius: adjust the living birds.
+    let (old_min_speed, old_max_speed) = bird_speed_range(&flock.settings);
+    let (min_speed, max_speed) = bird_speed_range(&settings);
+    let speed_changed = (old_min_speed, old_max_speed) != (min_speed, max_speed);
+    let roam_radius = bird_roam_radius(&settings);
+    let (min_altitude, max_altitude) = bird_altitude_range(&settings);
+    let area_changed = roam_radius != bird_roam_radius(&flock.settings)
+        || (min_altitude, max_altitude) != bird_altitude_range(&flock.settings);
+
+    if speed_changed || area_changed {
+        let mut rng = rand::thread_rng();
+        for (_, mut bird) in bird_query.iter_mut() {
+            if speed_changed {
+                // Keep each bird's place within the range (random if the old
+                // range was a single value).
+                let t = if old_max_speed > old_min_speed {
+                    ((bird.speed - old_min_speed) / (old_max_speed - old_min_speed)).clamp(0.0, 1.0)
+                } else {
+                    rng.gen::<f32>()
+                };
+                bird.speed = min_speed + t * (max_speed - min_speed);
+            }
+
+            if area_changed {
+                // Move the current target into the new roam area and altitude
+                // band: the bird flies there instead of jumping.
+                bird.roam_radius = roam_radius;
+                let center = bird.roam_center;
+                let target = bird.target_position;
+                let horizontal = Vec2::new(target.x - center.x, target.z - center.z)
+                    .clamp_length_max(roam_radius);
+                bird.target_position = Vec3::new(
+                    center.x + horizontal.x,
+                    center.y + (target.y - center.y).clamp(min_altitude, max_altitude),
+                    center.z + horizontal.y,
+                );
+            }
+        }
+    }
+
+    flock.settings = settings.clone();
+}
+
+/// Roam radius around the zone center.
+fn bird_roam_radius(settings: &BirdSettings) -> f32 {
+    ZONE_SIZE * settings.roam_radius_multiplier * 0.5
+}
+
+/// (min, max) flight altitude, ordered even if the settings are not.
+fn bird_altitude_range(settings: &BirdSettings) -> (f32, f32) {
+    (
+        settings.min_altitude.min(settings.max_altitude),
+        settings.max_altitude.max(settings.min_altitude),
+    )
+}
+
+/// (min, max) flight speed, ordered even if the settings are not.
+fn bird_speed_range(settings: &BirdSettings) -> (f32, f32) {
+    (
+        settings.min_speed.min(settings.max_speed),
+        settings.max_speed.max(settings.min_speed),
+    )
 }
 
 /// Calculate bird count based on zone size
@@ -127,96 +265,49 @@ fn calculate_bird_count(zone_size: f32, settings: &BirdSettings) -> usize {
     // Calculate bird count based on area
     let calculated_count = (area_in_1000_units * settings.birds_per_1000_units) as usize;
 
-    // Clamp to min/max
-    calculated_count.clamp(settings.min_birds_per_zone, settings.max_birds_per_zone)
+    // Clamp to min/max (ordered: `Ord::clamp` panics when min > max)
+    let min_count = settings.min_birds_per_zone;
+    let max_count = settings.max_birds_per_zone.max(min_count);
+    calculated_count.clamp(min_count, max_count)
 }
 
-/// Spawns a flock of birds around a center point
+/// Spawns `bird_count` birds roaming around the zone center, parented to the
+/// zone entity (so they use zone-local coordinates and go away with the zone).
 fn spawn_birds(
     commands: &mut Commands,
-    meshes: &mut ResMut<Assets<Mesh>>,
-    materials: &mut ResMut<Assets<StandardMaterial>>,
+    assets: &BirdAssets,
     settings: &BirdSettings,
-    zone_center: Vec3,
     zone_entity: Entity,
-    zone_size: f32,
     bird_count: usize,
 ) {
     let mut rng = rand::thread_rng();
 
-    // Calculate roam radius based on zone size
-    let roam_radius = zone_size * settings.roam_radius_multiplier * 0.5;
+    // Zone-local origin: birds are children of the zone entity
+    let roam_center = Vec3::ZERO;
+    let roam_radius = bird_roam_radius(settings);
+    // Inclusive ranges below: min == max is a valid setting, and an empty
+    // exclusive range panics in gen_range
+    let (min_altitude, max_altitude) = bird_altitude_range(settings);
+    let (min_speed, max_speed) = bird_speed_range(settings);
 
-    log::info!(
-        "[BIRD] Spawning {} birds at zone center {:?} with roam radius {} (zone_size={})",
-        bird_count,
-        zone_center,
-        roam_radius,
-        zone_size
-    );
-
-    // Create bird mesh parts
-    let body_mesh = create_bird_body_mesh(meshes);
-    let left_wing_mesh = create_bird_wing_mesh(meshes, false);
-    let right_wing_mesh = create_bird_wing_mesh(meshes, true);
-
-    // Bird colors for variety - made more vibrant for visibility
-    let bird_colors = [
-        Color::srgb(0.6, 0.4, 0.2),  // Brighter brown
-        Color::srgb(0.5, 0.5, 0.6),  // Lighter gray
-        Color::srgb(0.2, 0.2, 0.25), // Dark but visible
-        Color::srgb(0.7, 0.5, 0.3),  // Light brown
-        Color::srgb(0.6, 0.6, 0.7),  // Light gray
-        Color::srgb(0.8, 0.7, 0.5),  // Tan
-        Color::srgb(0.4, 0.3, 0.2),  // Dark brown
-    ];
-
-    // Create materials for each color
-    let bird_materials: Vec<Handle<StandardMaterial>> = bird_colors
-        .iter()
-        .map(|&color| {
-            materials.add(StandardMaterial {
-                base_color: color,
-                unlit: true, // Birds don't need complex lighting for distance viewing
-                cull_mode: None,
-                ..default()
-            })
-        })
-        .collect();
-
-    for i in 0..bird_count {
+    for _ in 0..bird_count {
         // Random position within roam radius
         let angle = rng.gen::<f32>() * std::f32::consts::TAU;
         let distance = rng.gen::<f32>() * roam_radius;
+        let altitude = rng.gen_range(min_altitude..=max_altitude);
+        let position =
+            roam_center + Vec3::new(angle.cos() * distance, altitude, angle.sin() * distance);
 
-        // Clamp min/max to prevent crash if settings are invalid
-        let min_alt = settings.min_altitude.min(settings.max_altitude);
-        let max_alt = settings.max_altitude.max(settings.min_altitude);
-        let altitude = rng.gen_range(min_alt..max_alt);
-
-        let x = zone_center.x + angle.cos() * distance;
-        let z = zone_center.z + angle.sin() * distance;
-        let y = zone_center.y + altitude;
-
-        // Clamp min/max to prevent crash
-        let min_spd = settings.min_speed.min(settings.max_speed);
-        let max_spd = settings.max_speed.max(settings.min_speed);
-        let speed = rng.gen_range(min_spd..max_spd);
+        let speed = rng.gen_range(min_speed..=max_speed);
         let initial_phase = rng.gen::<f32>() * std::f32::consts::TAU;
 
         // Random color material
-        let material_idx = rng.gen_range(0..bird_materials.len());
-        let material = bird_materials[material_idx].clone();
+        let material = assets.materials[rng.gen_range(0..assets.materials.len())].clone();
 
-        let target_position = get_new_target(
-            zone_center,
-            roam_radius,
-            settings.min_altitude,
-            settings.max_altitude,
-        );
+        let target_position = get_new_target(roam_center, roam_radius, min_altitude, max_altitude);
 
         // Initial rotation facing the target
-        let direction = target_position - Vec3::new(x, y, z);
+        let direction = target_position - position;
         let initial_rotation = if direction.length() > 0.01 {
             let look_direction = direction.normalize();
             // Bird body faces +Z (forward), so we need to rotate to face movement direction
@@ -231,12 +322,12 @@ fn spawn_birds(
                 Bird {
                     speed,
                     target_position,
-                    roam_center: zone_center,
+                    roam_center,
                     roam_radius,
                     flap_phase: initial_phase,
                     bob_phase: initial_phase * 0.5,
                 },
-                Transform::from_xyz(x, y, z)
+                Transform::from_translation(position)
                     .with_rotation(initial_rotation)
                     .with_scale(Vec3::splat(1.5)), // Scale for visibility
                 GlobalTransform::default(),
@@ -251,7 +342,7 @@ fn spawn_birds(
         let body_entity = commands
             .spawn((
                 BirdMesh,
-                Mesh3d(body_mesh.clone()),
+                Mesh3d(assets.body_mesh.clone()),
                 MeshMaterial3d(material.clone()),
                 Transform::default(),
                 GlobalTransform::default(),
@@ -267,7 +358,7 @@ fn spawn_birds(
         let left_wing_entity = commands
             .spawn((
                 BirdWingLeft,
-                Mesh3d(left_wing_mesh.clone()),
+                Mesh3d(assets.left_wing_mesh.clone()),
                 MeshMaterial3d(material.clone()),
                 Transform::from_rotation(Quat::from_rotation_z(0.3)), // Slightly spread
                 GlobalTransform::default(),
@@ -283,7 +374,7 @@ fn spawn_birds(
         let right_wing_entity = commands
             .spawn((
                 BirdWingRight,
-                Mesh3d(right_wing_mesh.clone()),
+                Mesh3d(assets.right_wing_mesh.clone()),
                 MeshMaterial3d(material),
                 Transform::from_rotation(Quat::from_rotation_z(-0.3)), // Slightly spread
                 GlobalTransform::default(),
@@ -300,23 +391,12 @@ fn spawn_birds(
         });
 
         // Parent bird to zone entity so it inherits zone transform
-        if zone_entity != Entity::PLACEHOLDER {
-            commands.entity(zone_entity).add_child(bird_entity);
-        }
-
-        if i < 3 {
-            // log::info!(
-            //     "[BIRD DEBUG] Spawned bird {} at position {:?} with speed {}, parented to zone {:?}",
-            //     i, Vec3::new(x, y, z), speed, zone_entity
-            // );
-        }
+        commands.entity(zone_entity).add_child(bird_entity);
     }
-
-    log::info!("[BIRD] Spawned {} birds total", bird_count);
 }
 
 /// Creates the bird body mesh (torso, head, tail)
-fn create_bird_body_mesh(meshes: &mut ResMut<Assets<Mesh>>) -> Handle<Mesh> {
+fn create_bird_body_mesh(meshes: &mut Assets<Mesh>) -> Handle<Mesh> {
     // Bird body oriented along Z axis:
     // - Nose/beak at +Z
     // - Tail at -Z
@@ -462,7 +542,7 @@ fn create_bird_body_mesh(meshes: &mut ResMut<Assets<Mesh>>) -> Handle<Mesh> {
 /// Creates a bird wing mesh (left by default, right when mirrored).
 /// Left wing extends in -X direction from body center, the right wing is the
 /// exact mirror (negated X positions/normals, flipped UV X and triangle winding).
-fn create_bird_wing_mesh(meshes: &mut ResMut<Assets<Mesh>>, right_side: bool) -> Handle<Mesh> {
+fn create_bird_wing_mesh(meshes: &mut Assets<Mesh>, right_side: bool) -> Handle<Mesh> {
     // Wing pivots at body center (0,0,0) for flapping animation
     let vertices: Vec<[f32; 3]> = vec![
         // Wing root (attaches to body)
@@ -554,8 +634,9 @@ fn get_new_target(center: Vec3, radius: f32, min_alt: f32, max_alt: f32) -> Vec3
     let mut rng = rand::thread_rng();
     let angle = rng.gen::<f32>() * std::f32::consts::TAU;
     let distance = rng.gen::<f32>() * radius;
-    // Clamp min/max to prevent crash
-    let altitude = rng.gen_range(min_alt.min(max_alt)..max_alt.max(min_alt));
+    // Ordered, inclusive range: min == max is a valid setting, and gen_range
+    // panics on an empty (exclusive) range
+    let altitude = rng.gen_range(min_alt.min(max_alt)..=max_alt.max(min_alt));
 
     Vec3::new(
         center.x + angle.cos() * distance,

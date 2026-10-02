@@ -513,7 +513,7 @@ commands.spawn((
 ### Parent-Child Hierarchies
 
 ```rust
-// src/systems/bird_system.rs:257-269
+// src/systems/bird_system.rs:357-371
 // Spawn left wing as child (rotates around body center)
 let left_wing_entity = commands
     .spawn((
@@ -562,7 +562,7 @@ let rotation = Quat::from_axis_angle(Vec3::Y, angle - std::f32::consts::PI / 2.0
 Slerp for smooth interpolation:
 
 ```rust
-// src/systems/bird_system.rs:595
+// src/systems/bird_system.rs:687
 transform.rotation = transform.rotation.slerp(target_rotation, 2.0 * dt);
 ```
 
@@ -900,8 +900,8 @@ commands.entity(child_entity).insert((new_local, ChildOf(new_parent_entity)));
 | `orbit_camera_system.rs` | `src/systems/orbit_camera_system.rs:265-276` | Orbit camera using dolly CameraRig |
 | `weather_system.rs` | `src/systems/season/weather_system.rs:125-148` | Billboard particle rotation |
 | `weather_system.rs` | `src/systems/season/weather_system.rs:144` | Billboard with particle spin rotation composition |
-| `bird_system.rs` | `src/systems/bird_system.rs:256-269` | Parent-child wing hierarchy |
-| `bird_system.rs` | `src/systems/bird_system.rs:595` | Smooth rotation with slerp |
+| `bird_system.rs` | `src/systems/bird_system.rs:357-371` | Parent-child wing hierarchy |
+| `bird_system.rs` | `src/systems/bird_system.rs:687` | Smooth rotation with slerp |
 | `damage_digit_render_system.rs` | `src/systems/damage_digit_render_system.rs:100` | Extract scale/rotation/translation |
 | `chat_bubble_spawn_system.rs` | `src/systems/chat_bubble_spawn_system.rs:309-310` | Entity spawning with transform |
 | `facing_direction.rs` | `src/components/facing_direction.rs` | FacingDirection component definition |

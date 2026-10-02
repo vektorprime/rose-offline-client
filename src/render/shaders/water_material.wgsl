@@ -1,24 +1,42 @@
 //! Water material shader for ROSE Online
 //!
-//! Supports animated water with:
-//! - Fully procedural wave/color generation (no texture dependencies)
-//! - Additive blending for water transparency effect
-//! - Fresnel effect for angle-dependent reflectivity
-//! - Specular sun highlights
-//! - Procedural wave normals for dynamic surface detail
-//! - Foam effects on wave crests
-//! - Subsurface scattering approximation
-//! - Pseudo-refraction via UV distortion
-//! - Depth-based color gradient (shallow to deep water)
-//! - Bottom visibility in shallow water
-//! - Caustics effects
-//! - Planar reflection: samples the mirrored reflection camera's render target
+//! Physically based water surface drawn in the main HDR pass with
+//! premultiplied alpha over the opaque scene (the lake bed):
+//!   out = reflection * F + (1 - F) * (in-scattered body light) + glint + ...
+//!   alpha = 1 - (1 - F) * T   (T = transmittance down to the bed and back)
+//! so the bed shows through by exactly (1 - F) * T.
 //!
-//! Note: This shader uses its own lighting uniforms instead of zone_lighting
-//! because custom materials only have access to bind groups 0-2.
+//! - Waves: 2-8 directional waves (4 octaves) with analytic slopes, noise
+//!   wave-group envelopes and a noise warp on the short octaves (no regular
+//!   stripes or glitter lattice); octaves smaller than a few pixels are faded
+//!   out and their slope variance moves into the glint roughness, so distant
+//!   water does not shimmer.
+//! - Fresnel: Schlick with F0 = 0.02 (water IOR 1.33), scaled by the
+//!   Fresnel Strength setting (0.5 = physical).
+//! - Reflection: the mirrored camera's texture, offset by where the
+//!   wave-tilted reflection ray lands (exact for distant scenery). Pixels the
+//!   reflection camera left empty (alpha 0: sky, no atmosphere on that camera)
+//!   and disabled reflections use an analytic sky lit by the view's
+//!   directional lights, blended toward the starry sky's night color by the
+//!   night factor.
+//! - Sun/moon glint: GGX from the brightest directional light.
+//! - Absorption along the refracted path through a procedural depth field
+//!   (terrain is not in the depth prepass); objects/characters that are in
+//!   the depth prepass get their exact depth, a soft contact edge and foam.
+//! - Caustics on the visible bed, light scattered through wave crests,
+//!   whitecaps (only with steep waves).
+//! - Underside (camera underwater): Snell's window with total internal
+//!   reflection.
+//!
+//! All lighting comes from Bevy's `lights` uniform and is scaled by
+//! `view.exposure`, like the PBR materials, so the water follows the scene's
+//! sun, moon, sky fill and ambient at every time of day.
 
 #import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_world, mesh_position_local_to_clip}
-#import bevy_pbr::mesh_view_bindings::{view, globals}
+#import bevy_pbr::mesh_view_bindings::{view, globals, lights}
+#ifdef DEPTH_PREPASS
+#import bevy_pbr::prepass_utils::prepass_depth
+#endif
 
 // Vertex input structure
 struct Vertex {
@@ -37,624 +55,451 @@ struct VertexOutput {
 }
 
 // Water material bind group (group 2 - material bindings)
-// All per-material values are packed into a read-only storage buffer:
-// [0] light_direction (vec4)
-// [1] ambient_color (vec4)
-// [2] diffuse_color (vec4)
-// [3] settings_1: foam_intensity, foam_threshold, sss_intensity, refraction_strength
-// [4] settings_2: wave_speed, fresnel_strength, specular_intensity, wave_amplitude
-// [5] fog_color (vec4)
-// [6] fog_params: density, min_density, max_density, wave_frequency
-// [7] depth_1: min_depth, max_depth, shallow_threshold, bottom_visibility
-// [8] deep_color (vec4)
-// [9] shallow_color (vec4)
-// [10] depth_scale: x, y, wave_layers (as float), caustics_intensity
-// [11] caustics: scale, speed, water_surface_y, padding
-// [12] reflection_plane: normal xyz, distance (water surface y)
-// [13] reflection_params: enabled, padding
+// All per-material values are packed into a read-only storage buffer
+// (see WaterMaterial::unprepared_bind_group):
+// [0] waves: wave_amplitude, wave_frequency, wave_speed, wave_layers
+// [1] surface: fresnel_strength, specular_intensity, sss_intensity, refraction_strength
+// [2] foam/caustics: foam_intensity, foam_threshold, caustics_intensity, caustics_scale
+// [3] depth: min_depth, max_depth, shallow_threshold, bottom_visibility
+// [4] deep_color
+// [5] shallow_color
+// [6] depth_gradient_scale.xy, caustics_speed, water_surface_y
+// [7] reflection: enabled, debug_show_reflection, status, sky night factor
 @group(#{MATERIAL_BIND_GROUP}) @binding(0)
-var<storage, read> water_material_data: array<vec4<f32>, 14>;
+var<storage, read> water_material_data: array<vec4<f32>, 8>;
 
-// Planar reflection render target (rendered by the mirrored reflection camera)
+// Planar reflection render target (rendered by the mirrored reflection camera;
+// linear HDR, exposure-scaled like the main view, alpha 0 where nothing rendered)
 @group(#{MATERIAL_BIND_GROUP}) @binding(1)
 var reflection_texture: texture_2d<f32>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(2)
 var reflection_sampler: sampler;
 
-fn light_direction_value() -> vec3<f32> {
-    return water_material_data[0].xyz;
-}
+const PI: f32 = 3.141592653589793;
+const WATER_IOR: f32 = 1.333;
+// Reflectance at normal incidence: ((1.333 - 1) / (1.333 + 1))^2
+const WATER_F0: f32 = 0.02;
+// The deep/shallow settings colors are artist colors; the diffuse reflectance
+// of a real water body is far lower (a few percent).
+const BODY_ALBEDO_SCALE: f32 = 0.2;
+const FOAM_ALBEDO: f32 = 0.8;
+// Reflectance assumed for the lake bed lit by caustics.
+const BED_ALBEDO: f32 = 0.3;
+// RMS slope of the capillary ripples below the smallest modelled wave.
+const MICRO_SLOPE_RMS: f32 = 0.045;
+// Caps HDR glints so bloom and auto exposure stay sane.
+const GLINT_MAX: f32 = 40.0;
+// Vertical optical depth of a clear atmosphere (Rayleigh per RGB, Mie).
+const SKY_RAYLEIGH: vec3<f32> = vec3<f32>(0.047, 0.108, 0.265);
+const SKY_MIE: f32 = 0.03;
+const SKY_MIE_G: f32 = 0.76;
+// Brings the single-scattering sky up to the brightness of Bevy's
+// multiple-scattering atmosphere in the main view.
+const SKY_MULTISCATTER: f32 = 2.5;
+// Average of the starry sky sphere's night background (starry_sky.wgsl
+// nebula, not exposure-scaled), which covers the atmosphere at night.
+const NIGHT_SKY: vec3<f32> = vec3<f32>(0.018, 0.012, 0.033);
 
-fn ambient_color_value() -> vec3<f32> {
-    return water_material_data[1].rgb;
-}
-
-fn diffuse_color_value() -> vec3<f32> {
-    return water_material_data[2].rgb;
-}
-
-fn foam_intensity_value() -> f32 {
-    return water_material_data[3].x;
-}
-
-fn foam_threshold_value() -> f32 {
-    return water_material_data[3].y;
-}
-
-fn sss_intensity_value() -> f32 {
-    return water_material_data[3].z;
-}
-
-fn refraction_strength_value() -> f32 {
-    return water_material_data[3].w;
-}
-
-fn wave_speed_value() -> f32 {
-    return water_material_data[4].x;
-}
-
-fn fresnel_strength_value() -> f32 {
-    return water_material_data[4].y;
-}
-
-fn specular_intensity_value() -> f32 {
-    return water_material_data[4].z;
-}
+// === MATERIAL DATA ACCESSORS ===
 
 fn wave_amplitude_value() -> f32 {
-    return water_material_data[4].w;
-}
-
-fn fog_color_value() -> vec3<f32> {
-    return water_material_data[5].rgb;
-}
-
-fn fog_density_value() -> f32 {
-    return water_material_data[6].x;
-}
-
-fn fog_min_density_value() -> f32 {
-    return water_material_data[6].y;
-}
-
-fn fog_max_density_value() -> f32 {
-    return water_material_data[6].z;
+    return water_material_data[0].x;
 }
 
 fn wave_frequency_value() -> f32 {
-    return water_material_data[6].w;
+    return water_material_data[0].y;
 }
 
-// === NEW DEPTH-RELATED ACCESSORS ===
-
-fn min_depth_value() -> f32 {
-    return water_material_data[7].x;
-}
-
-fn max_depth_value() -> f32 {
-    return water_material_data[7].y;
-}
-
-fn shallow_threshold_value() -> f32 {
-    return water_material_data[7].z;
-}
-
-fn bottom_visibility_value() -> f32 {
-    return water_material_data[7].w;
-}
-
-fn deep_color_value() -> vec4<f32> {
-    return water_material_data[8];
-}
-
-fn shallow_color_value() -> vec4<f32> {
-    return water_material_data[9];
-}
-
-fn depth_scale_x_value() -> f32 {
-    return water_material_data[10].x;
-}
-
-fn depth_scale_y_value() -> f32 {
-    return water_material_data[10].y;
+fn wave_speed_value() -> f32 {
+    return water_material_data[0].z;
 }
 
 fn wave_layers_value() -> f32 {
-    return water_material_data[10].z;
+    return water_material_data[0].w;
+}
+
+fn fresnel_strength_value() -> f32 {
+    return water_material_data[1].x;
+}
+
+fn specular_intensity_value() -> f32 {
+    return water_material_data[1].y;
+}
+
+fn sss_intensity_value() -> f32 {
+    return water_material_data[1].z;
+}
+
+// refraction_strength drives the reflection distortion; 0.2 (the slider
+// maximum) is physically correct for distant scenery, the default 0.05 keeps
+// a quarter of that so nearby reflections stay readable.
+fn reflection_distortion_value() -> f32 {
+    return water_material_data[1].w * 5.0;
+}
+
+fn foam_intensity_value() -> f32 {
+    return water_material_data[2].x;
+}
+
+fn foam_threshold_value() -> f32 {
+    return water_material_data[2].y;
 }
 
 fn caustics_intensity_value() -> f32 {
-    return water_material_data[10].w;
+    return water_material_data[2].z;
 }
 
 fn caustics_scale_value() -> f32 {
-    return water_material_data[11].x;
+    return water_material_data[2].w;
+}
+
+fn min_depth_value() -> f32 {
+    return water_material_data[3].x;
+}
+
+fn max_depth_value() -> f32 {
+    return water_material_data[3].y;
+}
+
+fn shallow_threshold_value() -> f32 {
+    return water_material_data[3].z;
+}
+
+fn bottom_visibility_value() -> f32 {
+    return water_material_data[3].w;
+}
+
+fn deep_color_value() -> vec3<f32> {
+    return water_material_data[4].rgb;
+}
+
+fn shallow_color_value() -> vec3<f32> {
+    return water_material_data[5].rgb;
+}
+
+fn depth_gradient_scale_value() -> vec2<f32> {
+    return water_material_data[6].xy;
 }
 
 fn caustics_speed_value() -> f32 {
-    return water_material_data[11].y;
-}
-
-fn water_surface_y_value() -> f32 {
-    return water_material_data[11].z;
-}
-
-fn reflection_plane_value() -> vec4<f32> {
-    return water_material_data[12];
+    return water_material_data[6].z;
 }
 
 fn reflection_enabled_value() -> f32 {
-    return water_material_data[13].x;
+    return water_material_data[7].x;
 }
 
 fn debug_show_reflection_value() -> f32 {
-    return water_material_data[13].y;
+    return water_material_data[7].y;
 }
 
 fn reflection_status_value() -> f32 {
-    return water_material_data[13].z;
+    return water_material_data[7].z;
 }
 
-// Fresnel-Schlick approximation for angle-dependent reflectivity
-// F0 is the reflectance at normal incidence (0.02 for water)
-fn fresnel_schlick(cos_theta: f32, F0: f32) -> f32 {
-    return F0 + (1.0 - F0) * pow(1.0 - cos_theta, 5.0);
+// StarrySkySettings::night_factor: how much the starry sky sphere covers the
+// atmosphere (0 = day, 1 = night).
+fn sky_night_factor_value() -> f32 {
+    return water_material_data[7].w;
 }
 
-// === PROCEDURAL WAVE FUNCTIONS ===
-// These create dynamic wave patterns that modify the surface normal
-// for more realistic lighting without requiring additional textures
+// === NOISE ===
 
-// Simple wave function combining multiple sine waves at different frequencies
-// Creates a natural-looking wave pattern
-fn wave_height(position: vec2<f32>, time: f32) -> f32 {
-    // Primary wave - large slow waves
-    let wave1 = sin(position.x * 2.0 + time * 1.0) * 0.5;
-    // Secondary wave - medium cross-waves
-    let wave2 = sin(position.y * 3.0 + time * 1.3) * 0.3;
-    // Tertiary wave - diagonal ripples
-    let wave3 = sin((position.x + position.y) * 1.5 + time * 0.7) * 0.2;
-    // Small detail waves
-    let wave4 = sin(position.x * 8.0 + position.y * 6.0 + time * 2.5) * 0.1;
-    
-    return wave1 + wave2 + wave3 + wave4;
+fn hash12(p: vec2<f32>) -> f32 {
+    var p3 = fract(vec3<f32>(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
 }
 
-// Calculate the normal vector from wave height using finite differences
-// This gives us the surface slope which affects lighting
-// `h` must be wave_height(position, time); the caller computes it once and
-// also reuses it for foam.
-fn calculate_wave_normal(position: vec2<f32>, time: f32, h: f32) -> vec3<f32> {
-    let eps = 0.1; // Small offset for gradient calculation
-    let hx = wave_height(position + vec2<f32>(eps, 0.0), time);
-    let hz = wave_height(position + vec2<f32>(0.0, eps), time);
-    
-    // Calculate gradient (slope in x and z directions)
-    // The normal points perpendicular to the surface
-    let dx = (hx - h) / eps;
-    let dz = (hz - h) / eps;
-    
-    // Construct normal: (-dx, 1, -dz) normalized
-    // The y component is 1 because the surface is primarily horizontal
-    return normalize(vec3<f32>(-dx * 0.15, 1.0, -dz * 0.15));
-}
-
-// Blend the procedural wave normal with the base normal
-// wave_strength controls how much the waves affect lighting (0.0 = flat, 1.0 = full waves)
-fn blend_normals(base_normal: vec3<f32>, wave_normal: vec3<f32>, wave_strength: f32) -> vec3<f32> {
-    // Linear interpolation between base and wave-influenced normal
-    // We keep the base normal's general direction but add wave detail
-    let blended = mix(base_normal, wave_normal, wave_strength);
-    return normalize(blended);
-}
-
-// === DEPTH-BASED WATER COLOR FUNCTIONS ===
-// These functions generate procedural water color based on depth
-// allowing for realistic shallow-to-deep water transitions
-
-// Calculate procedural depth at a given world position
-// Uses noise-based variation to create natural depth patterns
-fn calculate_procedural_depth(world_pos_xz: vec2<f32>, time: f32) -> f32 {
-    // Get depth scale from settings
-    let depth_scale = vec2<f32>(depth_scale_x_value(), depth_scale_y_value());
-    
-    // Base depth variation using layered sine waves
-    var depth_variation = 0.0;
-    var amplitude = 0.5;
-    var frequency = 1.0;
-    
-    // Number of layers from settings
-    let layers = wave_layers_value();
-    
-    for (var i = 0; i < 4; i++) {
-        if (f32(i) >= layers) {
-            break;
-        }
-        
-        // Each layer adds detail at different scales
-        // Use dot() to combine vec2 sine result into a scalar
-        let wave_vec = sin(world_pos_xz * frequency + time * 0.2 + f32(i) * 1.57);
-        let wave = dot(wave_vec, vec2<f32>(1.0, 1.0)) * 0.5;
-        depth_variation = depth_variation + wave * amplitude;
-        
-        frequency = frequency * 2.0;
-        amplitude = amplitude * 0.5;
-    }
-    
-    // Normalize variation to 0-1 range and map to depth range
-    let normalized_variation = (depth_variation + 1.0) * 0.5;
-    let min_depth = min_depth_value();
-    let max_depth = max_depth_value();
-    
-    return min_depth + normalized_variation * (max_depth - min_depth);
-}
-
-// Generate procedural water color based on depth
-// Blends between shallow and deep colors with procedural variation
-fn generate_procedural_water_color(depth: f32, world_pos_xz: vec2<f32>, time: f32) -> vec4<f32> {
-    // Get shallow and deep colors from settings
-    let shallow_color = shallow_color_value();
-    let deep_color = deep_color_value();
-    
-    // Calculate depth factor (0.0 = shallow, 1.0 = deep)
-    let min_depth = min_depth_value();
-    let max_depth = max_depth_value();
-    let depth_factor = saturate((depth - min_depth) / (max_depth - min_depth + 0.001));
-    
-    // Base color interpolation between shallow and deep
-    var base_color = mix(shallow_color, deep_color, depth_factor);
-    
-    // Add procedural variation based on position and time
-    // This creates natural color variation across the water surface
-    let variation_scale = 0.5;
-    let noise1 = sin(world_pos_xz.x * variation_scale + time * 0.1);
-    let noise2 = sin(world_pos_xz.y * variation_scale + time * 0.12);
-    let noise3 = sin((world_pos_xz.x + world_pos_xz.y) * variation_scale * 0.5 + time * 0.08);
-    
-    // Combine noise for subtle color variation
-    let color_variation = (noise1 + noise2 + noise3) * 0.33;
-    
-    // Apply variation primarily to RGB, keep alpha based on depth
-    base_color = vec4<f32>(base_color.rgb + color_variation * 0.1, base_color.a);
-    
-    // Adjust alpha based on depth (shallower = more transparent)
-    let alpha_factor = mix(0.3, 0.95, depth_factor);
-    base_color.a = shallow_color.a * alpha_factor;
-    
-    return base_color;
-}
-
-// Calculate bottom visibility based on depth
-// Returns 1.0 for fully visible bottom (shallow), 0.0 for no visibility (deep)
-fn calculate_bottom_visibility(depth: f32) -> f32 {
-    let shallow_threshold = shallow_threshold_value();
-    let visibility = bottom_visibility_value();
-    
-    // Bottom is only visible in shallow water
-    let visibility_factor = saturate(1.0 - (depth / shallow_threshold));
-    
-    return visibility_factor * visibility;
-}
-
-// === PHASE 3: WATER QUALITY IMPROVEMENTS ===
-
-// === ORGANIC FOAM NOISE FUNCTIONS ===
-// These create smooth, irregular patterns without cell-like structures
-
-// Enhanced hash function for better randomness distribution
-// Creates pseudo-random values from 2D coordinates
-fn hash(p: vec2<f32>) -> f32 {
-    let p3 = fract(vec3<f32>(p.xyx) * 0.1031);
-    let p3_dot = p3 + dot(p3, p3.yzx + 33.33);
-    return fract((p3_dot.x + p3_dot.y) * p3_dot.z);
-}
-
-// Hash returning vec2 for gradient calculations
-fn hash2(p: vec2<f32>) -> vec2<f32> {
-    let p3 = fract(vec3<f32>(p.xyx) * vec3<f32>(0.1031, 0.1030, 0.0973));
-    let p3_dot = p3 + dot(p3, p3.yzx + 33.33);
-    return fract(vec2<f32>((p3_dot.x + p3_dot.y) * p3_dot.z, (p3_dot.x + p3_dot.z) * p3_dot.y));
-}
-
-// Gradient noise (Perlin-like) - creates smooth, organic patterns
-// Unlike Voronoi, this doesn't create cell edges or circular patterns
-fn gradient_noise(p: vec2<f32>) -> f32 {
+// Smooth value noise in [0, 1].
+fn value_noise(p: vec2<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
-    // Smoothstep interpolation for smooth curves
     let u = f * f * (3.0 - 2.0 * f);
-    
-    // Sample 4 corners and interpolate
-    let a = hash(i);
-    let b = hash(i + vec2<f32>(1.0, 0.0));
-    let c = hash(i + vec2<f32>(0.0, 1.0));
-    let d = hash(i + vec2<f32>(1.0, 1.0));
-    
-    return mix(
-        mix(a, b, u.x),
-        mix(c, d, u.x),
-        u.y
+    let a = hash12(i);
+    let b = hash12(i + vec2<f32>(1.0, 0.0));
+    let c = hash12(i + vec2<f32>(0.0, 1.0));
+    let d = hash12(i + vec2<f32>(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// === OPTICS ===
+
+// Schlick Fresnel for the air/water interface. `cos_theta` is measured on the
+// air side (for light leaving the water, pass the transmitted angle).
+fn fresnel_schlick(cos_theta: f32) -> f32 {
+    let m = 1.0 - saturate(cos_theta);
+    let m2 = m * m;
+    return WATER_F0 + (1.0 - WATER_F0) * m2 * m2 * m;
+}
+
+// === WAVES ===
+
+struct WaveSample {
+    // d(height)/d(x, z)
+    slope: vec2<f32>,
+    // Height-weighted crest value, normalized to roughly -1..1 at the end
+    crest: f32,
+    crest_weight: f32,
+    // Slope variance of octaves faded out by the pixel footprint
+    lost_slope_var: f32,
+}
+
+// One directional deep-water wave. `steepness` is its mean peak slope (A * k),
+// so every wavelength contributes the same slope and none dominates the
+// normal; `envelope` is the local wave-group strength (mean ~1).
+fn add_wave(
+    acc: ptr<function, WaveSample>,
+    p: vec2<f32>,
+    time: f32,
+    footprint: f32,
+    dir: vec2<f32>,
+    wavelength: f32,
+    phase: f32,
+    steepness: f32,
+    envelope: f32,
+) {
+    let k = 6.2831853 / wavelength;
+    // Deep-water dispersion: longer waves travel faster.
+    let omega = sqrt(9.81 * k);
+    let theta = k * dot(dir, p) - omega * time + phase;
+    // Fade octaves with fewer than ~2-6 pixels per wavelength: they would
+    // alias into shimmer. Their slopes become glint roughness instead.
+    let fade = smoothstep(2.0, 6.0, wavelength / footprint);
+    let local_steepness = steepness * envelope;
+    (*acc).slope += dir * (local_steepness * fade * cos(theta));
+    let height = steepness / k;
+    (*acc).crest += height * envelope * fade * sin(theta);
+    // Normalized by the mean height, so crests grow inside wave groups.
+    (*acc).crest_weight += height;
+    (*acc).lost_slope_var += (1.0 - fade * fade) * local_steepness * local_steepness * 0.5;
+}
+
+fn sample_waves(position: vec2<f32>, time: f32, footprint: f32) -> WaveSample {
+    var acc = WaveSample(vec2<f32>(0.0), 0.0, 0.0, 0.0);
+    // wave_frequency 2.0 = the wavelengths below; lower = longer swell.
+    let length_scale = 2.0 / max(wave_frequency_value(), 0.05);
+    // wave_amplitude 0.5 = slope 0.06 per wave (light breeze, RMS ~0.12 for 8).
+    let steepness = min(0.12 * max(wave_amplitude_value(), 0.0), 0.16);
+    let layers = wave_layers_value();
+    // Slow, large domain warp bends the long crests.
+    let p = position + 0.6 * vec2<f32>(
+        sin(position.y * 0.071 + time * 0.13),
+        sin(position.x * 0.083 - time * 0.11),
     );
-}
-
-// Domain warping for organic distortion
-// Distorts the noise coordinates to break up regular patterns
-fn warp_noise(p: vec2<f32>, time: f32) -> f32 {
-    // First warp layer - subtle distortion
-    let warp1 = vec2<f32>(
-        gradient_noise(p + vec2<f32>(time * 0.1, 0.0)),
-        gradient_noise(p + vec2<f32>(0.0, time * 0.12))
-    );
-    
-    // Apply first warp
-    let warped_p = p + warp1 * 0.4;
-    
-    // Second warp layer for more complexity
-    let warp2 = vec2<f32>(
-        gradient_noise(warped_p * 1.5 + vec2<f32>(time * 0.08, time * 0.05)),
-        gradient_noise(warped_p * 1.5 + vec2<f32>(time * 0.05, time * 0.08))
-    );
-    
-    // Apply second warp
-    let final_p = warped_p + warp2 * 0.2;
-    
-    // Multiple octaves for natural detail
-    let n1 = gradient_noise(final_p * 2.0);
-    let n2 = gradient_noise(final_p * 4.0) * 0.5;
-    let n3 = gradient_noise(final_p * 8.0) * 0.25;
-    
-    return (n1 + n2 + n3) / 1.75;
-}
-
-// Organic foam noise - combines warped noise with turbulence
-// Creates irregular, patchy patterns without cells or circles
-fn organic_foam_noise(p: vec2<f32>, time: f32) -> f32 {
-    // Base warped noise for organic shapes
-    let base = warp_noise(p, time);
-    
-    // Add turbulence at different scales
-    let turb1 = gradient_noise(p * 3.0 + time * 0.2);
-    let turb2 = gradient_noise(p * 6.0 - time * 0.15);
-    
-    // Combine for complex, non-repeating patterns
-    return base * 0.6 + turb1 * 0.25 + turb2 * 0.15;
-}
-
-// Fractal Brownian Motion (FBM) for more complex noise patterns
-// Layers multiple octaves of noise at different frequencies
-fn fbm(p: vec2<f32>, time: f32) -> f32 {
-    var value = 0.0;
-    var amplitude = 0.5;
-    var freq = 1.0;
-    var pos = p;
-    
-    // Accumulate 4 octaves of noise
-    for (var i = 0; i < 4; i++) {
-        value += amplitude * gradient_noise(pos * freq + time * 0.1);
-        freq *= 2.0;
-        amplitude *= 0.5;
+    // Short octaves get a noise warp of about a meter that bends their crests,
+    // so sun glitter does not line up in a lattice.
+    let drift = vec2<f32>(time * 0.05, time * 0.03);
+    let short_warp = vec2<f32>(
+        value_noise(p * 0.31 + drift),
+        value_noise(p * 0.31 + vec2<f32>(7.7, 3.1) - drift),
+    ) - 0.5;
+    let p_short = p + short_warp * 1.6;
+    // Wave groups: each octave's steepness varies (mean ~1) over patches about
+    // seven wavelengths wide, so crests do not form endless parallel stripes.
+    let inv_scale = 1.0 / length_scale;
+    let group0 = 0.4 + 1.2 * value_noise(p * (inv_scale / 37.0) + vec2<f32>(3.7, 9.2) + drift * 0.2);
+    // Directions are spread around a fixed wind direction (0.8, 0.6). The
+    // longest octaves are a bit gentler (as in real wave spectra), which keeps
+    // distant water from turning into regular stripes of reflected sky.
+    add_wave(&acc, p, time, footprint, vec2<f32>(0.800, 0.600), 6.3 * length_scale, 0.0, steepness * 0.7, group0);
+    add_wave(&acc, p, time, footprint, vec2<f32>(0.311, 0.950), 4.4 * length_scale, 1.7, steepness * 0.7, group0);
+    if (layers > 1.5) {
+        let group1 = 0.4 + 1.2 * value_noise(p * (inv_scale / 13.7) + vec2<f32>(11.3, 2.9) - drift * 0.4);
+        add_wave(&acc, p_short, time, footprint, vec2<f32>(0.979, 0.206), 2.3 * length_scale, 4.1, steepness * 0.85, group1);
+        add_wave(&acc, p_short, time, footprint, vec2<f32>(-0.290, 0.957), 1.6 * length_scale, 2.9, steepness * 0.85, group1);
     }
-    
-    return value;
-}
-
-// === FOAM EFFECTS (ORGANIC) ===
-// Foam appears on wave crests and creates organic white patterns
-// Uses gradient noise with domain warping - no cells or circles
-fn calculate_foam(wave_height_val: f32, time: f32, uv: vec2<f32>, world_pos_xz: vec2<f32>, foam_threshold: f32) -> f32 {
-    // Calculate foam factor based on wave height using smoothstep for soft edges
-    let foam_factor = smoothstep(foam_threshold, foam_threshold + 0.3, wave_height_val);
-
-    // The result is foam_factor times finite factors, then clamped to [0, 1],
-    // so it is exactly 0.0 when foam_factor is 0: skip the noise work.
-    if (foam_factor <= 0.0) {
-        return 0.0;
+    if (layers > 2.5) {
+        let group2 = 0.4 + 1.2 * value_noise(p * (inv_scale / 5.0) + vec2<f32>(5.1, 17.6) + drift);
+        add_wave(&acc, p_short, time, footprint, vec2<f32>(0.617, 0.787), 0.83 * length_scale, 0.6, steepness, group2);
+        add_wave(&acc, p_short, time, footprint, vec2<f32>(0.950, -0.311), 0.59 * length_scale, 5.2, steepness, group2);
     }
-
-    // Use world position for foam patterns so they stay in place
-    // Scale for appropriate pattern size
-    let world_noise_scale = 0.08;
-    let base_p = world_pos_xz * world_noise_scale;
-    
-    // Get organic foam pattern using warped noise
-    let organic_pattern = organic_foam_noise(base_p, time);
-    
-    // Add fine detail using gradient noise at higher frequency
-    let detail_scale = 0.3;
-    let detail = gradient_noise(world_pos_xz * detail_scale + time * 0.2);
-    
-    // Combine patterns - organic base with detail overlay
-    let combined = organic_pattern * 0.75 + detail * 0.25;
-    
-    // Create irregular foam patches using smooth threshold
-    // The smoothstep creates soft, blobby transitions
-    let foam_mask = smoothstep(0.35, 0.65, combined);
-    
-    // Add variation based on wave height for dynamic foam
-    let height_variation = smoothstep(0.0, 0.4, wave_height_val);
-    
-    // Combine foam factor with organic mask
-    let foam = foam_factor * foam_mask * (0.6 + 0.4 * height_variation);
-    
-    // Subtle animation for living foam effect
-    let animated_foam = foam * (0.9 + 0.1 * sin(time * 0.8 + combined * 3.0));
-    
-    return clamp(animated_foam, 0.0, 1.0);
-}
-
-// === WATER EDGE SPLASH EFFECT (ORGANIC) ===
-// Creates foam/splash effect where water meets terrain
-// Uses organic noise patterns instead of cells
-fn calculate_edge_splash(world_pos: vec3<f32>, time: f32, uv: vec2<f32>) -> f32 {
-    // Use world position XZ for detecting shore proximity
-    let shore_noise = gradient_noise(world_pos.xz * 0.3);
-    
-    // Effective shore height varies based on terrain
-    let base_shore_height = 0.5;
-    let shore_height = base_shore_height + shore_noise * 1.5;
-    
-    // Calculate distance from water surface to effective shore height
-    let dist_to_shore = abs(world_pos.y - shore_height);
-    
-    // Create splash effect that decreases with distance from shore
-    let splash_range = 3.0;
-    let edge_factor = smoothstep(splash_range, 0.0, dist_to_shore);
-
-    // Every term of the splash is multiplied by edge_factor (and finite
-    // factors), then clamped to [0, 1], so it is exactly 0.0 when
-    // edge_factor is 0: skip the noise work.
-    if (edge_factor <= 0.0) {
-        return 0.0;
+    if (layers > 3.5) {
+        let group3 = 0.4 + 1.2 * value_noise(p * (inv_scale / 1.9) + vec2<f32>(23.9, 6.4) - drift);
+        add_wave(&acc, p_short, time, footprint, vec2<f32>(-0.730, 0.684), 0.31 * length_scale, 3.3, steepness, group3);
+        add_wave(&acc, p_short, time, footprint, vec2<f32>(0.998, -0.055), 0.22 * length_scale, 1.1, steepness, group3);
     }
-
-    // Use organic foam noise for irregular splash patterns
-    let splash_pattern = organic_foam_noise(world_pos.xz * 0.1, time);
-    
-    // Add animated wave surge effect
-    let wave_surge = sin(time * 2.0 + world_pos.x * 0.5) * 0.5 + 0.5;
-    
-    // Create breaking wave effect
-    let breaking_wave = smoothstep(0.3, 0.7, wave_surge) * edge_factor;
-    
-    // Animated splash intensity
-    let splash_animation = 0.5 + 0.5 * sin(time * 2.5 + splash_pattern * 4.0);
-    
-    // Combine edge factor with organic foam pattern
-    let splash = (edge_factor * splash_pattern * 0.6 + breaking_wave * 0.4) * splash_animation;
-    
-    return clamp(splash, 0.0, 1.0);
+    acc.crest = acc.crest / max(acc.crest_weight, 1.0e-4);
+    return acc;
 }
 
-// === SUBSURFACE SCATTERING (SSS) APPROXIMATION ===
-// Simulates light penetrating and scattering through water
-// This gives water a glowing appearance when viewed at certain angles
-fn calculate_sss(view_dir: vec3<f32>, light_dir: vec3<f32>, normal: vec3<f32>, sss_intensity: f32) -> vec3<f32> {
-    // SSS is strongest when looking through water toward the light
-    // VdotN determines the viewing angle relative to the surface
-    let VdotN = dot(view_dir, normal);
-    
-    // LdotN determines how much light hits the surface
-    let LdotN = dot(light_dir, normal);
-    
-    // SSS factor: strongest when view and light are on opposite sides
-    // This simulates light passing through the water volume
-    let sss_factor = pow(max(0.0, -VdotN * LdotN), 2.0);
-    
-    // SSS color (cyan/turquoise tint typical of water light scattering)
-    // This color mimics how water absorbs red light and scatters blue/green
-    let sss_color = vec3<f32>(0.0, 0.8, 0.7);
-    
-    // Return SSS contribution with intensity scaling
-    return sss_color * sss_factor * sss_intensity;
+// === LIGHTS ===
+
+struct WaterLighting {
+    // Irradiance entering the water (lux): every directional light (sun, moon,
+    // sky fill) through the flat surface, plus ambient.
+    e_down: vec3<f32>,
+    // Brightest directional light (the sun by day, the moon by night): color
+    // premultiplied by illuminance, and the direction toward it.
+    key_color: vec3<f32>,
+    key_dir: vec3<f32>,
 }
 
-// === PSEUDO-REFRACTION EFFECT ===
-// Since we can't access the opaque render texture directly, create a pseudo-refraction
-// effect by distorting UV coordinates based on wave normals
-fn apply_refraction(uv: vec2<f32>, normal: vec3<f32>, time: f32, refraction_strength: f32) -> vec2<f32> {
-    // Distort UVs based on wave normal XZ components
-    // The normal's X and Z components indicate surface tilt
-    // Scale by refraction_strength (default 0.05 gives subtle distortion)
-    let base_distortion = refraction_strength * 0.6; // Scale factor for visible effect
-    let distortion = normal.xz * base_distortion;
-    
-    // Add time-based animation for flowing water effect
-    let animated_distortion = distortion + vec2<f32>(
-        sin(time * 0.5 + uv.y * 3.0) * refraction_strength * 0.3,
-        cos(time * 0.3 + uv.x * 3.0) * refraction_strength * 0.3
-    );
-    
-    return uv + animated_distortion;
-}
-
-// === ZONE FOG APPLICATION ===
-// Apply exponential fog from zone lighting to integrate water with the scene
-fn apply_zone_fog(fragment_color: vec3<f32>, world_position: vec4<f32>) -> vec3<f32> {
-    // Calculate view-space Z distance for fog
-    // view.position is camera position, so we compute distance from camera
-    let camera_to_fragment = world_position.xyz - view.world_position.xyz;
-    let view_z = length(camera_to_fragment);
-    
-    // Get fog parameters from storage buffer (synced with zone lighting)
-    let fog_density = fog_density_value();
-    let fog_min_density = fog_min_density_value();
-    let fog_max_density = fog_max_density_value();
-    let fog_color = fog_color_value();
-    
-    // Calculate exponential fog amount
-    // Using the same formula as zone_lighting.wgsl for consistency
-    var fog_amount: f32 = clamp(1.0 - exp2(-fog_density * fog_density * view_z * view_z * 1.442695), 0.0, 1.0);
-    
-    // Clamp fog amount between min and max density
-    fog_amount = clamp(fog_amount, fog_min_density, fog_max_density);
-    
-    // Blend fragment color with fog color
-    return mix(fragment_color, fog_color, fog_amount);
-}
-
-// === PLANAR REFLECTION SAMPLING ===
-// The reflection camera's view-projection is exactly the main camera's
-// view-projection composed with the plane reflection. A water fragment at
-// `world_pos` (which lies on the reflection plane) therefore projects to the
-// same screen position in both cameras, and the mirrored scene point visible
-// at that fragment appears in the reflection texture at the fragment's own
-// screen position. This mirrors the approach of Bevy's official `mirror`
-// example (screen-space texture sampling).
-fn sample_water_reflection(world_pos: vec3<f32>, wave_normal: vec3<f32>, time: f32) -> vec3<f32> {
-    if (reflection_enabled_value() < 0.5) {
-        return vec3<f32>(0.0);
-    }
-
-    // Project the fragment position through the main camera's clip_from_world
-    // to get its screen position (which is where the reflection texture shows
-    // the mirrored scene for this fragment).
-    let clip = view.clip_from_world * vec4<f32>(world_pos, 1.0);
-    let ndc = clip.xy / clip.w;
-    let uv = vec2<f32>(0.5 * ndc.x + 0.5, 0.5 - 0.5 * ndc.y);
-
-    // Subtle wave distortion of the reflected image for a living surface.
-    let distorted_uv = uv
-        + wave_normal.xz * 0.008
-        + vec2<f32>(sin(time * 0.6) * 0.001, cos(time * 0.4) * 0.001);
-
-    // Fade out at the edges of the render target to hide seams.
-    let edge_fade = smoothstep(0.0, 0.06, distorted_uv.x)
-        * (1.0 - smoothstep(0.94, 1.0, distorted_uv.x))
-        * smoothstep(0.0, 0.06, distorted_uv.y)
-        * (1.0 - smoothstep(0.94, 1.0, distorted_uv.y));
-
-    let reflected_color =
-        textureSample(reflection_texture, reflection_sampler, distorted_uv).rgb * edge_fade;
-
-    // DEBUG: encode the reflection camera status as a color:
-    // - red: camera disabled
-    // - orange: camera active but no entities visible (frustum/culling issue)
-    // - magenta: camera active but suspiciously few visible entities
-    //   (broken frustum culling almost everything)
-    // - otherwise: show the raw reflection texture sample
-    if (debug_show_reflection_value() > 0.5) {
-        let status = reflection_status_value();
-        if (status < 0.5) {
-            return vec3<f32>(1.0, 0.0, 0.0);
+fn gather_lights() -> WaterLighting {
+    var out: WaterLighting;
+    // Bevy shades ambient as albedo * ambient_color, i.e. irradiance pi * ambient.
+    out.e_down = lights.ambient_color.rgb * PI;
+    out.key_color = vec3<f32>(0.0);
+    out.key_dir = vec3<f32>(0.0, 1.0, 0.0);
+    var key_luminance = 0.0;
+    for (var i = 0u; i < lights.n_directional_lights; i = i + 1u) {
+        let color = lights.directional_lights[i].color.rgb;
+        let to_light = lights.directional_lights[i].direction_to_light;
+        let cos_l = max(to_light.y, 0.0);
+        out.e_down += color * cos_l * (1.0 - fresnel_schlick(cos_l));
+        let luminance = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
+        if (luminance > key_luminance) {
+            key_luminance = luminance;
+            out.key_color = color;
+            out.key_dir = to_light;
         }
-        if (status < 1.5) {
-            return vec3<f32>(1.0, 0.5, 0.0);
-        }
-        if (status < 2.5) {
-            return vec3<f32>(1.0, 0.0, 1.0);
-        }
-        return reflected_color;
     }
+    return out;
+}
 
-    return reflected_color;
+// === SKY ===
+
+// Relative air mass along a ray with the given zenith cosine (~1 at the
+// zenith, ~40 at the horizon).
+fn air_mass(cos_zenith: f32) -> f32 {
+    let c = max(cos_zenith, 0.0);
+    return 1.0 / (c + 0.025 * exp(-11.0 * c));
+}
+
+// Cheap single-scattering clear sky lit by the view's directional lights, in
+// the same exposure-scaled units as the scene. Bevy's atmosphere (main view)
+// is lit by the same lights, so this tracks its brightness and color through
+// the day, at sunset and under the moon.
+fn sky_radiance(dir: vec3<f32>) -> vec3<f32> {
+    let extinction = SKY_RAYLEIGH + vec3<f32>(SKY_MIE);
+    let in_scatter = 1.0 - exp(-extinction * air_mass(dir.y));
+    var radiance = vec3<f32>(0.0);
+    for (var i = 0u; i < lights.n_directional_lights; i = i + 1u) {
+        let to_light = lights.directional_lights[i].direction_to_light;
+        // Light reaching the scattering layer: reddens and fades as it sets.
+        let light_transmittance = exp(-extinction * air_mass(to_light.y) * 0.5)
+            * smoothstep(-0.1, 0.05, to_light.y);
+        let mu = dot(dir, to_light);
+        let rayleigh_phase = 0.0596831 * (1.0 + mu * mu);
+        let g2 = SKY_MIE_G * SKY_MIE_G;
+        let mie_base = max(1.0 + g2 - 2.0 * SKY_MIE_G * mu, 1.0e-4);
+        let mie_phase = 0.0795775 * (1.0 - g2) / (mie_base * sqrt(mie_base));
+        let phase = (SKY_RAYLEIGH * rayleigh_phase + vec3<f32>(SKY_MIE * mie_phase)) / extinction;
+        radiance += lights.directional_lights[i].color.rgb * light_transmittance * phase;
+    }
+    return radiance * in_scatter * (SKY_MULTISCATTER * view.exposure);
+}
+
+// === PLANAR REFLECTION ===
+
+// The reflection camera is the main camera mirrored across the water plane,
+// so a fragment's own screen position shows what a flat mirror reflects
+// there. A wave-tilted reflection ray R lands where the main camera would see
+// the mirrored direction (R.x, -R.y, R.z); the offset between the two
+// projections is exact for distant scenery and slightly overstated for near
+// objects (scaled by the distortion setting).
+// `atmosphere` fills pixels the reflection camera left empty (the starry sky
+// sphere, when visible, is in the texture itself); `visible_sky` (atmosphere
+// blended with the night sky) is used where the offset leaves the texture.
+fn planar_reflection(
+    frag_coord: vec2<f32>,
+    V: vec3<f32>,
+    R: vec3<f32>,
+    atmosphere: vec3<f32>,
+    visible_sky: vec3<f32>,
+) -> vec3<f32> {
+    let uv_frag = (frag_coord - view.viewport.xy) / view.viewport.zw;
+    let flat_clip = view.clip_from_world * vec4<f32>(-V, 0.0);
+    let wave_clip = view.clip_from_world * vec4<f32>(R.x, -R.y, R.z, 0.0);
+    var offset = vec2<f32>(0.0);
+    if (flat_clip.w > 1.0e-4 && wave_clip.w > 1.0e-4) {
+        let ndc_offset = wave_clip.xy / wave_clip.w - flat_clip.xy / flat_clip.w;
+        offset = clamp(
+            vec2<f32>(ndc_offset.x, -ndc_offset.y) * (0.5 * reflection_distortion_value()),
+            vec2<f32>(-0.08),
+            vec2<f32>(0.08),
+        );
+    }
+    let uv = uv_frag + offset;
+    // Fade to the analytic sky where the distortion leaves the texture.
+    let outside = max(max(-uv.x, uv.x - 1.0), max(-uv.y, uv.y - 1.0));
+    let inside_weight = 1.0 - saturate(outside / 0.02);
+    let texel = textureSampleLevel(
+        reflection_texture,
+        reflection_sampler,
+        clamp(uv, vec2<f32>(0.0005), vec2<f32>(0.9995)),
+        0.0,
+    );
+    // Alpha 0 = nothing rendered (sky); clouds, the starry sky and other
+    // blended geometry composite over the atmosphere by their coverage.
+    let scene = texel.rgb + (1.0 - saturate(texel.a)) * atmosphere;
+    return mix(visible_sky, scene, inside_weight);
+}
+
+// === DEPTH ===
+
+// Smooth procedural water depth (m) between min_depth and max_depth, biased to
+// the shallow end: most ROSE water is rivers and lakes, and the real bed depth
+// is unknown here (terrain does not write the depth prepass).
+fn procedural_depth(xz: vec2<f32>) -> f32 {
+    let p = xz * depth_gradient_scale_value();
+    let n = value_noise(p) * 0.65 + value_noise(p * 2.07 + vec2<f32>(17.3, 41.9)) * 0.35;
+    let shaped = smoothstep(0.2, 0.8, n);
+    return mix(min_depth_value(), max_depth_value(), shaped * shaped * shaped);
+}
+
+// Distance along the view ray from the water surface to the depth-prepass
+// geometry behind it (objects, characters, boats). Huge when nothing in the
+// prepass is there (sky, terrain).
+fn prepass_thickness(frag_coord: vec4<f32>, world_pos: vec3<f32>) -> f32 {
+#ifdef DEPTH_PREPASS
+    let depth = prepass_depth(frag_coord, 0u);
+    if (depth <= 0.0) {
+        return 1.0e6;
+    }
+    // View-space z depends only on the depth for a perspective projection.
+    let scene_view = view.view_from_clip * vec4<f32>(0.0, 0.0, depth, 1.0);
+    let scene_z = scene_view.z / scene_view.w;
+    let water_z = (view.view_from_world * vec4<f32>(world_pos, 1.0)).z;
+    let ray_per_z = length(world_pos - view.world_position) / max(-water_z, 1.0e-4);
+    return max(water_z - scene_z, 0.0) * ray_per_z;
+#else
+    return 1.0e6;
+#endif
+}
+
+// === EFFECTS ===
+
+// Two drifting layers of ridged value noise; their product leaves thin bright
+// filaments like the focused light on a shallow bed.
+fn caustics_pattern(p: vec2<f32>, t: f32) -> f32 {
+    let a = 1.0 - abs(value_noise(p + vec2<f32>(t * 0.31, t * 0.17)) * 2.0 - 1.0);
+    // Second layer rotated ~37 degrees so the ridges do not follow the noise grid.
+    let q = vec2<f32>(p.x * 0.799 - p.y * 0.602, p.x * 0.602 + p.y * 0.799) * 1.37;
+    let b = 1.0 - abs(value_noise(q + vec2<f32>(5.3 - t * 0.23, 1.9 + t * 0.29)) * 2.0 - 1.0);
+    return pow(a * b, 6.0) * 2.0;
+}
+
+// Camera below the surface looking up: Snell's window. Inside the window the
+// above-water scene (already in the target) shows through; beyond the
+// critical angle (~48.6 degrees) the surface is a mirror of the dim water body.
+fn underside_color(N: vec3<f32>, V: vec3<f32>, lighting: WaterLighting) -> vec4<f32> {
+    let cos_i = saturate(dot(V, -N));
+    let sin_t2 = WATER_IOR * WATER_IOR * (1.0 - cos_i * cos_i);
+    var reflectance = 1.0;
+    if (sin_t2 < 1.0) {
+        reflectance = fresnel_schlick(sqrt(1.0 - sin_t2));
+    }
+    let inside = deep_color_value() * BODY_ALBEDO_SCALE * lighting.e_down / PI * view.exposure;
+    return vec4<f32>(inside * reflectance, reflectance);
 }
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
-    
+
     let world_from_local = get_world_from_local(vertex.instance_index);
-    
+
     out.clip_position = mesh_position_local_to_clip(
         world_from_local,
         vec4<f32>(vertex.position, 1.0),
@@ -668,208 +513,178 @@ fn vertex(vertex: Vertex) -> VertexOutput {
         vec4<f32>(vertex.normal, 0.0),
     ).xyz;
     out.uv0 = vertex.uv0;
-    
+
     return out;
 }
 
 @fragment
-fn fragment(in: VertexOutput, @builtin(front_facing) is_front_facing: bool) -> @location(0) vec4<f32> {
-    // === PROCEDURAL WAVE NORMALS (calculate early for refraction) ===
-    // Calculate wave normal based on world position for consistent wave patterns
-    // Use wave_speed from settings to control animation speed
-    let wave_time = globals.time * 2.0 * wave_speed_value();
-    
-    // Use world position XZ for wave calculation (water is on XZ plane)
-    let wave_pos = in.world_position.xz * 0.5; // Scale down for larger waves
-    
-    // Wave height at this position (shared by the wave normal and foam)
-    let current_wave_height = wave_height(wave_pos, wave_time);
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    let world_pos = in.world_position.xyz;
+    // World meters per pixel, for wave filtering. Derivatives need uniform
+    // control flow, so this comes first.
+    let footprint = max(length(fwidth(world_pos.xz)), 1.0e-4);
 
-    // Calculate procedural wave normal
-    let wave_normal = calculate_wave_normal(wave_pos, wave_time, current_wave_height);
-    
-    // Get base normal from mesh and normalize
-    var base_normal = normalize(in.world_normal);
-    
-    // Flip normal when viewing from below (back-facing fragments)
-    // This ensures correct lighting when camera is underwater
-    if (!is_front_facing) {
-        base_normal = -base_normal;
+    let time = globals.time * wave_speed_value();
+    let waves = sample_waves(world_pos.xz, time, footprint);
+    // Water planes are horizontal: the wave normal is built around +Y.
+    var N = normalize(vec3<f32>(-waves.slope.x, 1.0, -waves.slope.y));
+    let V = normalize(view.world_position - world_pos);
+    let lighting = gather_lights();
+    let exposure = view.exposure;
+
+    // Camera below the plane (the material is double-sided).
+    if (V.y < 0.0) {
+        return underside_color(N, V, lighting);
     }
-    
-    // Blend wave normal with base normal
-    // wave_strength of 0.3 gives visible waves without being too extreme
-    let N = blend_normals(base_normal, wave_normal, 0.3);
-    
-    // === PHASE 3: PSEUDO-REFRACTION ===
-    // Apply UV distortion based on wave normal for a refraction-like effect
-    let refracted_uv = apply_refraction(in.uv0, wave_normal, wave_time, refraction_strength_value());
-    
-    // === DEPTH-BASED PROCEDURAL WATER COLOR ===
-    // Calculate procedural depth at this position
-    let depth = calculate_procedural_depth(in.world_position.xz, wave_time);
-    
-    // Generate procedural water color based on depth
-    let procedural_water_color = generate_procedural_water_color(depth, in.world_position.xz, wave_time);
-    
-    // Calculate bottom visibility for shallow water
-    let bottom_vis = calculate_bottom_visibility(depth);
-    
-    // === PROCEDURAL WAVE TEXTURE GENERATION ===
-    // Generate procedural wave pattern using layered sine functions
-    // This creates dynamic surface detail without relying on textures
-    var procedural_wave = vec3<f32>(0.5); // Base gray
-    
-    // Layer 1: Large slow waves
-    let wave1 = sin(in.world_position.xz * 0.5 + wave_time * 0.5);
-    procedural_wave = procedural_wave + vec3<f32>(wave1, 0.0) * 0.3;
-    
-    // Layer 2: Medium cross-waves
-    let wave2 = sin(in.world_position.xz * vec2<f32>(1.0, 0.7) + wave_time * 0.7);
-    procedural_wave = procedural_wave + vec3<f32>(wave2, 0.0) * 0.2;
-    
-    // Layer 3: Diagonal ripples
-    let wave3 = sin((in.world_position.x + in.world_position.z) * 0.6 + wave_time * 0.4);
-    procedural_wave = procedural_wave + vec3<f32>(wave3) * 0.15;
-    
-    // Layer 4: Fine detail waves
-    let wave4 = sin(in.world_position.xz * 3.0 + wave_time * 1.5);
-    procedural_wave = procedural_wave + vec3<f32>(wave4, 0.0) * 0.1;
-    
-    // Apply depth-based color tint to procedural wave
-    // Deep water is darker blue, shallow water is lighter turquoise
-    let depth_tint = mix(shallow_color_value().rgb, deep_color_value().rgb, saturate((depth - min_depth_value()) / (max_depth_value() - min_depth_value() + 0.001)));
-    procedural_wave = procedural_wave * depth_tint * 1.5;
-    
-    // Additional small-scale ripple detail from refracted UVs.
-    // This keeps the shader fully procedural while preserving rich surface motion.
-    let micro_ripple = sin(refracted_uv * 25.0 + vec2<f32>(wave_time * 0.9, -wave_time * 0.7));
-    procedural_wave = procedural_wave + vec3<f32>(micro_ripple, 0.0) * 0.08;
 
-    // Simulated bottom tint contribution for shallow water.
-    let bottom_tint = vec3<f32>(0.18, 0.20, 0.12);
-    let shallow_scatter = mix(procedural_water_color.rgb, bottom_tint, bottom_vis * 0.35);
+    // Keep the normal facing the viewer at grazing angles (a back-facing
+    // micro-normal would produce black or sparkling pixels).
+    N = normalize(N + V * max(0.05 - dot(N, V), 0.0));
+    let n_dot_v = max(dot(N, V), 1.0e-3);
 
-    // Fully procedural base color: depth-gradient water mixed with dynamic wave detail.
-    let water_base = mix(shallow_scatter, procedural_wave, 0.45);
-    let water_color = vec4<f32>(water_base, procedural_water_color.a);
-    
-    // === LIGHTING (using material storage buffer instead of zone_lighting) ===
-    let light_dir = normalize(light_direction_value());
-    
-    // Apply ambient and diffuse lighting to water
-    let diffuse = max(dot(N, light_dir), 0.0);
-    let ambient_light = ambient_color_value();
-    let diffuse_light = diffuse_color_value() * diffuse;
-    let lighting = saturate(ambient_light + diffuse_light);
-    
-    // Apply lighting to water color
-    let lit_water_color = water_color.rgb * lighting;
-    
-    // === FRESNEL EFFECT (IMPROVED - MORE REFLECTION) ===
-    // Calculate view direction (from fragment to camera)
-    // view.world_position is camera position in world space
-    let view_dir = normalize(view.world_position.xyz - in.world_position.xyz);
-    let VdotN = max(dot(view_dir, N), 0.0);
-    
-    // Fresnel effect: more reflective at grazing angles
-    // F0 = 0.2 for significantly increased base reflection (was 0.02, then 0.1)
-    // This makes water much more reflective at all angles
-    let base_fresnel = fresnel_schlick(VdotN, 0.2);
-    
-    // Apply fresnel_strength from settings with a boost multiplier
-    // reflection_boost increased to 2.0 for more prominent reflections
-    let reflection_boost = 2.0;
-    let fresnel = base_fresnel * fresnel_strength_value() * reflection_boost;
-    
-    // === SPECULAR SUN HIGHLIGHTS ===
-    // Calculate specular highlight using Blinn-Phong half vector
-    // The wave normal creates dynamic specular highlights
-    let half_vec = normalize(light_dir + view_dir);
-    let spec = pow(max(dot(N, half_vec), 0.0), 256.0);
-    
-    // Add specular highlight to color (bright sun reflection)
-    // Use specular_intensity from settings with boost for more visible highlights
-    let specular_boost = 1.3;
-    let specular_color = vec3<f32>(spec * specular_intensity_value() * specular_boost);
-    
-    // === PHASE 3: SUBSURFACE SCATTERING ===
-    // Calculate SSS for light passing through water
-    let sss_contribution = calculate_sss(view_dir, light_dir, N, sss_intensity_value());
-    
-    // === PHASE 3: FOAM EFFECTS (IMPROVED) ===
-    // Wave height for foam: current_wave_height (computed above with the wave normal)
+    // === REFLECTION ===
+    let fresnel = saturate(fresnel_schlick(n_dot_v) * fresnel_strength_value() * 2.0);
+    // Reflected ray, kept above the horizon (below it, it would hit the water again).
+    var R = reflect(-V, N);
+    R.y = max(R.y, 0.01);
+    R = normalize(R);
+    let atmosphere = sky_radiance(R);
+    // At night the starry sky sphere covers the atmosphere in the main view.
+    let visible_sky = mix(atmosphere, NIGHT_SKY, saturate(sky_night_factor_value()));
+    var reflected = visible_sky;
+    // Status 0 = reflection camera disabled this frame: its texture is stale.
+    if (reflection_enabled_value() > 0.5 && reflection_status_value() > 0.5) {
+        reflected = planar_reflection(in.clip_position.xy, V, R, atmosphere, visible_sky);
+    }
 
-    // Calculate foam factor using improved Voronoi-based noise
-    // Pass world position XZ for stable, natural foam patterns
-    let foam_factor = calculate_foam(current_wave_height, wave_time, in.uv0, in.world_position.xz, foam_threshold_value());
-    
-    // === WATER EDGE SPLASH EFFECT (IMPROVED) ===
-    // Calculate splash/foam where water meets terrain using full world position
-    let edge_splash = calculate_edge_splash(in.world_position.xyz, wave_time, in.uv0);
-    
-    // Combine foam from waves and edge splash
-    let total_foam = foam_factor + edge_splash * 0.5;
-    
-    // Foam color (white with slight blue tint for more natural look)
-    let foam_color = vec3<f32>(0.95, 0.97, 1.0);
-    
-    // === SKY REFLECTION COLOR (IMPROVED) ===
-    // Enhanced sky color approximation for more vivid reflections
-    // Uses fresnel to blend sky color into water at grazing angles
-    let sky_color = vec3<f32>(0.35, 0.55, 0.95); // More saturated blue sky
-    let horizon_color = vec3<f32>(0.65, 0.75, 0.92); // Lighter at horizon
-    let sun_reflection_color = vec3<f32>(1.0, 0.95, 0.85); // Warm sun tint
-    let sky_reflection = mix(horizon_color, sky_color, VdotN);
-    
-    // === COMBINE ALL EFFECTS ===
-    // Start with lit water color
-    var final_color = lit_water_color;
-
-    // Real planar reflection (mirrored scene) blended by fresnel.
-    // Falls back to the procedural sky tint when reflections are disabled.
-    let reflection_color = sample_water_reflection(in.world_position.xyz, wave_normal, wave_time);
-
-    // DEBUG: show the raw reflection sample (or the status color)
+    // DEBUG: raw reflection texture, or the reflection camera status as a color:
+    // red = disabled, orange = no entities visible, magenta = suspiciously few.
     if (debug_show_reflection_value() > 0.5) {
-        return vec4<f32>(reflection_color, 1.0);
+        let uv_frag = (in.clip_position.xy - view.viewport.xy) / view.viewport.zw;
+        var debug_color = textureSampleLevel(reflection_texture, reflection_sampler, uv_frag, 0.0).rgb;
+        let status = reflection_status_value();
+        if (status < 0.5) {
+            debug_color = vec3<f32>(1.0, 0.0, 0.0);
+        } else if (status < 1.5) {
+            debug_color = vec3<f32>(1.0, 0.5, 0.0);
+        } else if (status < 2.5) {
+            debug_color = vec3<f32>(1.0, 0.0, 1.0);
+        }
+        return vec4<f32>(debug_color, 1.0);
     }
 
-    let reflection_light = mix(sky_reflection, reflection_color, reflection_enabled_value());
-    // Strong blend: at least 50% reflection everywhere (clearly visible even
-    // looking straight down at the water), up to ~100% at grazing angles.
-    let reflection_blend = max(saturate(fresnel), 0.5);
-    final_color = mix(final_color, reflection_light, reflection_blend);
-    
-    // Add specular highlights
-    final_color = final_color + specular_color;
-    
-    // Add subsurface scattering contribution
-    final_color = final_color + sss_contribution;
-    
-    // Blend in foam on wave crests and edges (total_foam combines both)
-    // Use foam_intensity from settings
-    final_color = mix(final_color, foam_color, total_foam * foam_intensity_value());
-    
-    // === APPLY ZONE FOG ===
-    // Apply fog from zone lighting to integrate water with the scene
-    final_color = apply_zone_fog(final_color, in.world_position);
-    
-    // === DEPTH-BASED ALPHA ===
-    // Use procedural water color's alpha which varies with depth
-    // Shallower water is more transparent, deeper water is more opaque
-    let base_alpha = procedural_water_color.a;
-    
-    // Ensure minimum opacity based on depth (deeper = more opaque)
-    let depth_factor = saturate((depth - min_depth_value()) / (max_depth_value() - min_depth_value() + 0.001));
-    let min_alpha = mix(0.3, 0.85, depth_factor); // Shallow: 0.3, Deep: 0.85
-    let clamped_base_alpha = max(base_alpha, min_alpha);
-    
-    // Increase alpha at grazing angles (Fresnel makes water more opaque at low angles)
-    // Also increase alpha where there's foam
-    let final_alpha = mix(clamped_base_alpha, 1.0, fresnel * 0.5) + total_foam * 0.2;
-    
-    // Final color with additive blending (handled by blend state in material)
-    // Fog is provided via material storage buffer
-    return vec4<f32>(final_color, saturate(final_alpha));
+    // === TRANSMISSION AND ABSORPTION ===
+    // Refracted view ray into the water (never total internal reflection from air).
+    let refracted = refract(-V, N, 1.0 / WATER_IOR);
+    let cos_t = max(-refracted.y, 0.05);
+    // Exact depth of a prepass object behind the surface if it is shallower
+    // than the procedural field (rocks, pillars, boat hulls, wading legs).
+    let thickness = prepass_thickness(in.clip_position, world_pos);
+    let object_depth = thickness * V.y;
+    let depth = min(procedural_depth(world_pos.xz), object_depth);
+    let path = depth / cos_t;
+    // Bottom visibility is the transmittance at shallow_threshold depth
+    // (straight down), which fixes the absorption coefficient.
+    let sigma = -log(clamp(bottom_visibility_value(), 0.01, 0.99))
+        / max(shallow_threshold_value(), 0.1);
+    // Red is absorbed fastest, blue slightly slower than green.
+    let extinction = sigma * vec3<f32>(2.2, 1.0, 0.85);
+    let transmittance = exp(-extinction * path);
+    let bed_transmittance = transmittance.g;
+
+    // Light scattered back up by the water body: more of the body color the
+    // longer the path, lit by everything that enters the surface.
+    let body_albedo = mix(shallow_color_value(), deep_color_value(), 1.0 - bed_transmittance)
+        * BODY_ALBEDO_SCALE;
+    let body = (vec3<f32>(1.0) - transmittance) * body_albedo * lighting.e_down / PI * exposure;
+
+    // Share of the bed (the opaque scene behind the surface) that stays visible.
+    let bed_weight = (1.0 - fresnel) * bed_transmittance;
+
+    // === CAUSTICS on the visible bed ===
+    let key_dir = lighting.key_dir;
+    var caustic_light = vec3<f32>(0.0);
+    if (bed_weight > 0.02 && caustics_intensity_value() > 0.0 && key_dir.y > 0.0) {
+        // Where the refracted ray meets the bed: caustics stay put on the bed
+        // and show parallax against the surface.
+        let bed_xz = world_pos.xz + refracted.xz / cos_t * depth;
+        let pattern = caustics_pattern(
+            bed_xz * (caustics_scale_value() * 10.0),
+            globals.time * caustics_speed_value(),
+        );
+        let light_to_bed = exp(-extinction * depth / max(key_dir.y, 0.1));
+        caustic_light = lighting.key_color * light_to_bed
+            * (key_dir.y * BED_ALBEDO / PI * pattern * caustics_intensity_value() * 2.0 * exposure * bed_weight);
+    }
+
+    // === SUN / MOON GLINT (GGX) ===
+    var glint = vec3<f32>(0.0);
+    let n_dot_l = dot(N, key_dir);
+    if (n_dot_l > 0.0 && key_dir.y > -0.05) {
+        let H = normalize(key_dir + V);
+        let n_dot_h = saturate(dot(N, H));
+        let v_dot_h = saturate(dot(V, H));
+        // Micro ripples plus the octaves filtered out at this distance.
+        let alpha2 = clamp(
+            2.0 * (MICRO_SLOPE_RMS * MICRO_SLOPE_RMS + waves.lost_slope_var),
+            1.0e-4,
+            0.5,
+        );
+        let d_base = n_dot_h * n_dot_h * (alpha2 - 1.0) + 1.0;
+        let distribution = alpha2 / (PI * d_base * d_base);
+        // Height-correlated Smith visibility.
+        let vis_v = n_dot_l * sqrt(n_dot_v * n_dot_v * (1.0 - alpha2) + alpha2);
+        let vis_l = n_dot_v * sqrt(n_dot_l * n_dot_l * (1.0 - alpha2) + alpha2);
+        let visibility = 0.5 / max(vis_v + vis_l, 1.0e-4);
+        let specular = distribution * visibility * fresnel_schlick(v_dot_h) * n_dot_l;
+        glint = min(
+            lighting.key_color * (specular * specular_intensity_value() * 2.0 * exposure),
+            vec3<f32>(GLINT_MAX),
+        );
+    }
+
+    // === LIGHT THROUGH WAVE CRESTS ===
+    // Looking toward a low sun/moon, light passes through the thin crests and
+    // tints them with the shallow water color.
+    var crest_scatter = vec3<f32>(0.0);
+    let view_h = -V.xz;
+    let light_h = key_dir.xz;
+    let h_lengths = length(view_h) * length(light_h);
+    if (sss_intensity_value() > 0.0 && h_lengths > 1.0e-4) {
+        let toward_light = saturate(dot(view_h, light_h) / h_lengths);
+        let crest = saturate(waves.crest * 0.5 + 0.5);
+        let amount = pow(toward_light, 4.0) * crest * crest * (1.0 - n_dot_v)
+            * smoothstep(-0.05, 0.15, key_dir.y);
+        crest_scatter = shallow_color_value() * lighting.key_color
+            * (amount * sss_intensity_value() * 0.5 / PI * exposure * (1.0 - fresnel));
+    }
+
+    // === FOAM ===
+    // Whitecaps need wind: they only appear with steep waves (ocean settings).
+    let crest01 = saturate(waves.crest * 0.5 + 0.5);
+    let whitecap = smoothstep(foam_threshold_value(), foam_threshold_value() + 0.15, crest01)
+        * smoothstep(0.4, 1.2, wave_amplitude_value());
+    // Where a prepass object breaks the surface.
+    let contact = 1.0 - smoothstep(0.0, 0.35, object_depth);
+    var foam_cover = 0.0;
+    if (whitecap + contact > 0.0 && foam_intensity_value() > 0.0) {
+        let breakup = value_noise(world_pos.xz * 1.7 + vec2<f32>(time * 0.21, -time * 0.17)) * 0.6
+            + value_noise(world_pos.xz * 4.3 - vec2<f32>(time * 0.13, time * 0.29)) * 0.4;
+        foam_cover = saturate(
+            (whitecap * smoothstep(0.45, 0.75, breakup)
+                + contact * smoothstep(0.3, 0.6, breakup + contact * 0.3))
+                * foam_intensity_value() * 1.5,
+        );
+    }
+    let foam = FOAM_ALBEDO * lighting.e_down / PI * exposure;
+
+    // === COMBINE (premultiplied alpha) ===
+    var color = fresnel * reflected + (1.0 - fresnel) * body + caustic_light + crest_scatter + glint;
+    var alpha = 1.0 - bed_weight;
+    color = mix(color, foam, foam_cover);
+    alpha = mix(alpha, 1.0, foam_cover);
+
+    // Soft edge where a prepass object meets the surface (no hard cut line).
+    let contact_edge = smoothstep(0.0, 0.06, thickness);
+    return vec4<f32>(color * contact_edge, saturate(alpha) * contact_edge);
 }

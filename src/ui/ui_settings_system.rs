@@ -1004,23 +1004,37 @@ fn render_water_page(ui: &mut egui::Ui, water_settings: &mut WaterSettings) {
     egui::Grid::new("water_settings")
         .num_columns(2)
         .show(ui, |ui| {
-            settings_slider(ui, "Foam Intensity:", &mut water_settings.foam_intensity, 0.0..=1.0, None);
-            settings_slider(ui, "Foam Threshold:", &mut water_settings.foam_threshold, 0.0..=1.0, None);
-            settings_slider(ui, "SSS Intensity:", &mut water_settings.sss_intensity, 0.0..=1.0, None);
-            settings_slider(ui, "Refraction Strength:", &mut water_settings.refraction_strength, 0.0..=0.2, None);
+            settings_slider(ui, "Foam Intensity:", &mut water_settings.foam_intensity, 0.0..=1.0, None)
+                .on_hover_text("Whitecaps (steep waves only) and foam where objects or characters break the surface.");
+            settings_slider(ui, "Foam Threshold:", &mut water_settings.foam_threshold, 0.0..=1.0, None)
+                .on_hover_text("Crest height above which whitecaps form. Higher = calmer water.");
+            settings_slider(ui, "Crest Glow:", &mut water_settings.sss_intensity, 0.0..=1.0, None)
+                .on_hover_text("Sun or moon light shining through wave crests when looking toward it.");
+            settings_slider(ui, "Reflection Distortion:", &mut water_settings.refraction_strength, 0.0..=0.2, None)
+                .on_hover_text("How much the waves bend the reflection. 0.2 = physically correct for distant scenery.");
             settings_slider(ui, "Wave Speed:", &mut water_settings.wave_speed, 0.1..=5.0, None);
-            settings_slider(ui, "Fresnel Strength:", &mut water_settings.fresnel_strength, 0.0..=1.0, None);
-            settings_slider(ui, "Specular Intensity:", &mut water_settings.specular_intensity, 0.0..=1.0, None);
+            settings_slider(ui, "Fresnel Strength:", &mut water_settings.fresnel_strength, 0.0..=1.0, None)
+                .on_hover_text("Reflectivity. 0.5 = real water (IOR 1.33): see-through looking down, mirror-like at grazing angles.");
+            settings_slider(ui, "Specular Intensity:", &mut water_settings.specular_intensity, 0.0..=1.0, None)
+                .on_hover_text("Sun and moon glint brightness. 0.5 = physically based.");
 
-            // === NEW DEPTH SETTINGS ===
-            settings_slider(ui, "Min Depth:", &mut water_settings.min_depth, 0.1..=5.0, Some("m"));
-            settings_slider(ui, "Max Depth:", &mut water_settings.max_depth, 1.0..=40.0, Some("m"));
-            settings_slider(ui, "Shallow Threshold:", &mut water_settings.shallow_threshold, 0.5..=10.0, Some("m"));
-            settings_slider(ui, "Bottom Visibility:", &mut water_settings.bottom_visibility, 0.0..=1.0, None);
-            settings_slider(ui, "Wave Amplitude:", &mut water_settings.wave_amplitude, 0.1..=2.0, None);
-            settings_slider(ui, "Wave Frequency:", &mut water_settings.wave_frequency, 0.5..=5.0, None);
-            settings_slider(ui, "Wave Layers:", &mut water_settings.wave_layers, 1..=4, None);
-            settings_slider(ui, "Caustics Intensity:", &mut water_settings.caustics_intensity, 0.0..=1.0, None);
+            // === DEPTH / CLARITY SETTINGS ===
+            settings_slider(ui, "Min Depth:", &mut water_settings.min_depth, 0.1..=5.0, Some("m"))
+                .on_hover_text("Shallowest point of the procedural water depth (the real lake bed depth is not known to the shader).");
+            settings_slider(ui, "Max Depth:", &mut water_settings.max_depth, 1.0..=40.0, Some("m"))
+                .on_hover_text("Deepest point of the procedural water depth. Also how far below the surface the camera counts as underwater.");
+            settings_slider(ui, "Clarity Depth:", &mut water_settings.shallow_threshold, 0.5..=10.0, Some("m"))
+                .on_hover_text("At this depth (looking straight down) the bottom shows through by 'Bottom Visibility'.");
+            settings_slider(ui, "Bottom Visibility:", &mut water_settings.bottom_visibility, 0.0..=1.0, None)
+                .on_hover_text("How much of the bottom is visible at the clarity depth. Lower = murkier water.");
+            settings_slider(ui, "Wave Amplitude:", &mut water_settings.wave_amplitude, 0.1..=2.0, None)
+                .on_hover_text("Wave steepness. Whitecaps start to form above ~0.5.");
+            settings_slider(ui, "Wave Frequency:", &mut water_settings.wave_frequency, 0.5..=5.0, None)
+                .on_hover_text("Lower = longer swell, higher = short choppy waves.");
+            settings_slider(ui, "Wave Layers:", &mut water_settings.wave_layers, 1..=4, None)
+                .on_hover_text("Wave octaves; each layer adds finer ripples.");
+            settings_slider(ui, "Caustics Intensity:", &mut water_settings.caustics_intensity, 0.0..=1.0, None)
+                .on_hover_text("Dancing light patterns on the visible bottom.");
             settings_slider(ui, "Caustics Scale:", &mut water_settings.caustics_scale, 0.01..=1.0, None);
             settings_slider(ui, "Caustics Speed:", &mut water_settings.caustics_speed, 0.1..=2.0, None);
 
@@ -1031,7 +1045,7 @@ fn render_water_page(ui: &mut egui::Ui, water_settings: &mut WaterSettings) {
         });
 
     ui.separator();
-    ui.label("Tip: Depth settings control shallow-to-deep water color transition. Wave settings control surface detail. Reflections render the scene from a mirrored camera (higher resolution = higher cost).");
+    ui.label("Tip: Water is lit by the scene's sun, moon and ambient light. Depth settings control how clear the water is and its shallow-to-deep color. Wave settings control surface detail. Reflections render the scene from a mirrored camera (higher resolution = higher cost); without them the water reflects an estimated sky.");
 }
 
 fn render_fish_page(ui: &mut egui::Ui, fish_settings: &mut FishSettings) {

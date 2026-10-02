@@ -1,3 +1,4 @@
+mod chat_feedback;
 mod dialog_loader;
 mod drag_and_drop_slot;
 mod tooltips;
@@ -76,6 +77,10 @@ pub struct UiStateWindows {
 }
 
 use bevy::prelude::Resource;
+pub use chat_feedback::{
+    attack_refusal, bank_has_space_for, inventory_has_space_for, is_cast_skill_type,
+    skill_on_cooldown, skill_use_refusal, ChatFeedback, ChatFeedbackThrottle, SkillCaster,
+};
 pub use dialog_loader::{load_dialog_sprites_system, DialogInstance, DialogLoader};
 pub use drag_and_drop_slot::{DragAndDropId, DragAndDropSlot};
 pub use tooltips::{

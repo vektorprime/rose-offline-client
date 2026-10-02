@@ -443,8 +443,9 @@ pub fn collision_height_only_system(
 ```
 
 Notes on the current implementation:
-- The downward ray starts 1.0m above the entity with `max_fall_distance = 100.0` and its query filter matches zone objects via `COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_INSPECTABLE`, excluding entity-class groups (player/NPC/character/item-drop)
-- After the ground/collision height is found, `find_object_top_height` (same file, `:55-122`) raycasts upward through any zone object intersecting the entity's feet (e.g. spawning underneath castle steps) and lifts the entity to the top of the object
+- The downward ray starts 1.0m above the entity with `max_fall_distance = 100.0` and its query filter matches zone objects via `COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_COLLIDABLE`, excluding entity-class groups (player/NPC/character/item-drop)
+- After the ground/collision height is found, `find_object_top_height` (same file, `:59`) raycasts upward through any zone object intersecting the entity's feet (e.g. spawning underneath castle steps) and lifts the entity to the top of the object. It uses the same `MOVEABLE | COLLIDABLE` membership (terrain and water excluded)
+- `COLLIDABLE` keeps NOT_MOVEABLE objects with a collision shape (castle steps, buildings, tree trunks) standable. Neither query uses `COLLISION_FILTER_INSPECTABLE`: every zone object part accepts it, so it would also lift entities onto parts without a ZSC collision shape and onto walk-through grass (see [Zone Objects](#zone-objects-shared-trimesh)). The original client skips no-collision objects for foot height as well
 - X/Z translation is synced from `Position` before the Y/gravity adjustment (`:216-217`)
 
 ### Player Collision System
@@ -473,17 +474,30 @@ if is_flying {
 
 ## Collider Creation
 
-### Zone Objects (Async)
+### Zone Objects (Shared Trimesh)
 
-From `src/zone_loader/spawning/objects.rs:237-241`:
+From `src/zone_loader/spawning/objects.rs:243-311`:
 
 ```rust
 ColliderParent::new(object_entity),
-AsyncCollider(ComputedColliderShape::TriMesh(
-    bevy_rapier3d::prelude::TriMeshFlags::FIX_INTERNAL_EDGES,
-)),
+// Shape built once per mesh and shared (see SharedMeshCollider).
+SharedMeshCollider(bevy_rapier3d::prelude::TriMeshFlags::FIX_INTERNAL_EDGES),
 CollisionGroups::new(collision_group, collision_filter),
 ```
+
+`shared_mesh_collider_system` turns `SharedMeshCollider` into a `Collider` once the mesh loads (one trimesh per mesh + flags, shared by every part using it).
+
+Every part gets a collider; its filter decides which queries see it:
+
+| Part | Filter |
+|------|--------|
+| No ZSC collision shape | `INSPECTABLE` only |
+| Grass-kind vegetation (`WindSway::for_mesh_path(..).is_grass`: grass, bush, shrub, plant meshes) | `INSPECTABLE` only, even with a ZSC collision shape |
+| Collision shape, not `HEIGHT_ONLY`, not an event/warp object | `+ COLLIDABLE + PHYSICS_TOY` |
+| Collision shape, not `NOT_PICKABLE`, not a warp object | `+ CLICKABLE` |
+| Collision shape, not `NOT_MOVEABLE`, not a warp object | `+ MOVEABLE` |
+
+`INSPECTABLE` alone is accepted only by map editor selection, the debug inspector (`P`) and name-tag occlusion. Wall casts (player, sailing, NPC chase steering: `COLLIDABLE`), ground rays (`MOVEABLE`, `MOVEABLE | COLLIDABLE`), the orbit camera (`MOVEABLE | COLLIDABLE`) and click-to-move (`CLICKABLE`) ignore such parts, so characters walk through grass on the terrain. Wind sway (`wind_sway_system`) only writes the part's `Transform` and does not depend on the collider.
 
 **TriMeshFlags**:
 - `FIX_INTERNAL_EDGES`: Fixes non-manifold edges for better collision

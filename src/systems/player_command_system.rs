@@ -2,28 +2,35 @@ use std::time::Duration;
 
 use bevy::{
     math::Vec3Swizzles,
-    prelude::{Entity, MessageReader, MessageWriter, Query, Res, With},
+    prelude::{Entity, Local, MessageReader, MessageWriter, Query, Res, With},
 };
 
 use rose_data::{
-    AmmoIndex, EquipmentIndex, ItemClass, ItemType, SkillBasicCommand, SkillCooldown,
+    AbilityType, AmmoIndex, EquipmentIndex, Item, ItemClass, ItemType, SkillBasicCommand,
     SkillTargetFilter, SkillType, VehiclePartIndex,
 };
 use rose_game_common::{
     components::{
-        CharacterInfo, HealthPoints, Hotbar, HotbarSlot, Inventory, ItemDrop, SkillList, Team,
+        AbilityValues, CharacterInfo, Equipment, ExperiencePoints, GuildMembership, HealthPoints,
+        Hotbar, HotbarSlot, Inventory, ItemDrop, ItemSlot, Level, ManaPoints, MoveMode, MoveSpeed,
+        SkillList, SkillPoints, Stamina, StatPoints, Team, UnionMembership,
     },
     messages::client::ClientMessage,
 };
 
 use crate::{
+    bundles::ability_values_get_value,
     components::{
         Bank, Clan, ClientEntity, ClientEntityType, Command, ConsumableCooldownGroup, Cooldowns,
         PartyInfo, PlayerCharacter, Position,
     },
     events::{ChatboxEvent, PlayerCommandEvent, QuestScrollEvent},
     resources::{GameConnection, GameData, SelectedTarget},
-    ui::UiStateInventory,
+    ui::{
+        attack_refusal, bank_has_space_for, inventory_has_space_for, is_cast_skill_type,
+        skill_on_cooldown, skill_use_refusal, ChatFeedback, ChatFeedbackThrottle, SkillCaster,
+        UiStateInventory,
+    },
 };
 
 fn is_valid_skill_target(
@@ -144,7 +151,29 @@ pub fn player_command_system(
         &Command,
         &Team,
     )>,
-    mut chatbox_events: MessageWriter<ChatboxEvent>,
+    query_player_stats: Query<
+        (
+            &AbilityValues,
+            &CharacterInfo,
+            &Equipment,
+            &ExperiencePoints,
+            &HealthPoints,
+            &Level,
+            &ManaPoints,
+            &MoveMode,
+            &MoveSpeed,
+            &SkillPoints,
+            &Stamina,
+            &StatPoints,
+            &UnionMembership,
+            Option<&GuildMembership>,
+        ),
+        With<PlayerCharacter>,
+    >,
+    (mut chatbox_events, mut chat_feedback): (
+        MessageWriter<ChatboxEvent>,
+        Local<ChatFeedbackThrottle>,
+    ),
     mut quest_scroll_events: MessageWriter<QuestScrollEvent>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
@@ -167,6 +196,27 @@ pub fn player_command_system(
         player_clan,
         player_party_info,
     ) = query_player_result.unwrap();
+
+    // Resource checks below mirror the server's refusals (skill_use_requirements_met, attack,
+    // store / bank / equipment transactions). Those are silent on the server, so a refused
+    // request is reported in chat and not sent. Without these components no check is made and
+    // the request goes to the server as before.
+    let player_stats = query_player_stats.single().ok();
+    let player_equipment = player_stats.map(|stats| stats.2);
+    let player_move_mode = player_stats.map(|stats| stats.7);
+    let skill_caster = player_stats.map(|stats| SkillCaster {
+        ability_values: stats.0,
+        equipment: stats.2,
+        experience_points: stats.3,
+        health_points: stats.4,
+        inventory: player_inventory,
+        mana_points: stats.6,
+        move_mode: stats.7,
+        stamina: stats.10,
+    });
+    let attack_check = player_equipment
+        .zip(player_move_mode)
+        .and_then(|(equipment, move_mode)| attack_refusal(&game_data, equipment, move_mode));
 
     for event in player_command_events.read() {
         let mut event = event.clone();
@@ -198,18 +248,22 @@ pub fn player_command_system(
                     .get_skill(skill_slot)
                     .and_then(|skill_id| game_data.skills.get_skill(skill_id))
                 {
-                    let has_skill_cooldown = match &skill_data.cooldown {
-                        SkillCooldown::Skill { .. } => {
-                            player_cooldowns.has_skill_cooldown(skill_data.id)
-                        }
-                        SkillCooldown::Group { group, .. } => {
-                            player_cooldowns.has_skill_group_cooldown(group.get())
-                        }
-                    };
-
-                    if has_skill_cooldown || player_cooldowns.has_global_cooldown() {
-                        chatbox_events.write(ChatboxEvent::System("Waiting...".to_string()));
+                    if skill_on_cooldown(player_cooldowns, skill_data) {
+                        chat_feedback.send(
+                            &mut chatbox_events,
+                            ChatFeedback::Waiting.message(&game_data),
+                        );
                         continue;
+                    }
+
+                    if is_cast_skill_type(skill_data.skill_type) {
+                        if let Some(refusal) = skill_caster
+                            .as_ref()
+                            .and_then(|caster| skill_use_refusal(&game_data, caster, skill_data))
+                        {
+                            chat_feedback.send(&mut chatbox_events, refusal.message(&game_data));
+                            continue;
+                        }
                     }
 
                     match skill_data.skill_type {
@@ -277,6 +331,11 @@ pub fn player_command_system(
                                                 chatbox_events.write(ChatboxEvent::System(
                                                     "Invalid target".to_string(),
                                                 ));
+                                            } else if let Some(refusal) = attack_check {
+                                                chat_feedback.send(
+                                                    &mut chatbox_events,
+                                                    refusal.message(&game_data),
+                                                );
                                             } else if let Some(game_connection) = game_connection.as_ref()
                                             {
                                                 game_connection
@@ -497,9 +556,49 @@ pub fn player_command_system(
                                 })
                                 .is_some()
                             {
-                                chatbox_events
-                                    .write(ChatboxEvent::System("Waiting...".to_string()));
+                                chat_feedback.send(
+                                    &mut chatbox_events,
+                                    ChatFeedback::Waiting.message(&game_data),
+                                );
                                 continue;
+                            }
+
+                            // Server use_item_system: the item's ability requirement. Planet
+                            // requirements (warp scrolls) are left to the server, which knows
+                            // the planet of the current zone.
+                            if let (
+                                Some((require_ability_type, require_ability_value)),
+                                Some(stats),
+                            ) = (consumable_item_data.ability_requirement, player_stats)
+                            {
+                                let ability_value = ability_values_get_value(
+                                    require_ability_type,
+                                    stats.0,
+                                    Some(stats.1),
+                                    Some(stats.3),
+                                    stats.13,
+                                    Some(stats.4),
+                                    Some(player_inventory),
+                                    Some(stats.5),
+                                    Some(stats.6),
+                                    Some(stats.8),
+                                    Some(stats.9),
+                                    Some(stats.10),
+                                    Some(stats.11),
+                                    Some(player_team),
+                                    Some(stats.12),
+                                )
+                                .unwrap_or(0);
+
+                                if !matches!(require_ability_type, AbilityType::CurrentPlanet)
+                                    && ability_value < require_ability_value
+                                {
+                                    chat_feedback.send(
+                                        &mut chatbox_events,
+                                        ChatFeedback::ItemRequirements.message(&game_data),
+                                    );
+                                    continue;
+                                }
                             }
 
                             // Check if consumable requires a target
@@ -549,6 +648,37 @@ pub fn player_command_system(
                                             continue;
                                         }
                                     }
+
+                                    // A scroll whose skill the server casts (use_item_system)
+                                    // goes through the same cast checks as a normal skill.
+                                    let casts_skill = skill_data.skill_type.is_self_skill()
+                                        || matches!(
+                                            skill_data.skill_type,
+                                            SkillType::Immediate | SkillType::AreaTarget
+                                        )
+                                        || (skill_data.skill_type.is_target_skill()
+                                            && use_item_target.is_some());
+                                    if casts_skill {
+                                        if skill_on_cooldown(player_cooldowns, skill_data) {
+                                            chat_feedback.send(
+                                                &mut chatbox_events,
+                                                ChatFeedback::Waiting.message(&game_data),
+                                            );
+                                            continue;
+                                        }
+
+                                        if let Some(refusal) =
+                                            skill_caster.as_ref().and_then(|caster| {
+                                                skill_use_refusal(&game_data, caster, skill_data)
+                                            })
+                                        {
+                                            chat_feedback.send(
+                                                &mut chatbox_events,
+                                                refusal.message(&game_data),
+                                            );
+                                            continue;
+                                        }
+                                    }
                                 }
                             }
 
@@ -565,6 +695,12 @@ pub fn player_command_system(
                     } else if item.get_item_type().is_equipment_item() {
                         // TODO: Equip item
                     }
+                } else if matches!(item_slot, ItemSlot::Inventory(..)) {
+                    // A hotbar slot whose stack has been used up.
+                    chat_feedback.send(
+                        &mut chatbox_events,
+                        ChatFeedback::ItemUsedUp.message(&game_data),
+                    );
                 }
             }
             PlayerCommandEvent::EquipAmmo(item_slot) => {
@@ -624,6 +760,34 @@ pub fn player_command_system(
                     };
 
                     if let Some(equipment_index) = equipment_index {
+                        // A two-handed weapon moves the equipped sub weapon into the inventory;
+                        // the server refuses the swap when it does not fit.
+                        let sub_weapon_does_not_fit =
+                            matches!(equipment_index, EquipmentIndex::Weapon)
+                                && game_data
+                                    .items
+                                    .get_base_item(item.get_item_reference())
+                                    .map_or(false, |item_data| {
+                                        item_data.class.is_two_handed_weapon()
+                                    })
+                                && player_equipment
+                                    .and_then(|equipment| {
+                                        equipment.get_equipment_item(EquipmentIndex::SubWeapon)
+                                    })
+                                    .map_or(false, |sub_weapon| {
+                                        !inventory_has_space_for(
+                                            player_inventory,
+                                            Item::Equipment(sub_weapon.clone()),
+                                        )
+                                    });
+                        if sub_weapon_does_not_fit {
+                            chat_feedback.send(
+                                &mut chatbox_events,
+                                ChatFeedback::EquipmentSpace.message(&game_data),
+                            );
+                            continue;
+                        }
+
                         if let Some(game_connection) = game_connection.as_ref() {
                             game_connection
                                 .client_message_tx
@@ -674,6 +838,21 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::UnequipAmmo(ammo_index) => {
+                // Unequipped items go back into the inventory; the server keeps them equipped
+                // when they do not fit.
+                let unequipped_item = player_equipment
+                    .and_then(|equipment| equipment.get_ammo_item(ammo_index))
+                    .map(|ammo_item| Item::Stackable(ammo_item.clone()));
+                if unequipped_item.map_or(false, |item| {
+                    !inventory_has_space_for(player_inventory, item)
+                }) {
+                    chat_feedback.send(
+                        &mut chatbox_events,
+                        ChatFeedback::InventoryFull.message(&game_data),
+                    );
+                    continue;
+                }
+
                 if let Some(game_connection) = game_connection.as_ref() {
                     game_connection
                         .client_message_tx
@@ -685,6 +864,19 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::UnequipEquipment(equipment_index) => {
+                let unequipped_item = player_equipment
+                    .and_then(|equipment| equipment.get_equipment_item(equipment_index))
+                    .map(|equipment_item| Item::Equipment(equipment_item.clone()));
+                if unequipped_item.map_or(false, |item| {
+                    !inventory_has_space_for(player_inventory, item)
+                }) {
+                    chat_feedback.send(
+                        &mut chatbox_events,
+                        ChatFeedback::InventoryFull.message(&game_data),
+                    );
+                    continue;
+                }
+
                 if let Some(game_connection) = game_connection.as_ref() {
                     game_connection
                         .client_message_tx
@@ -696,6 +888,19 @@ pub fn player_command_system(
                 }
             }
             PlayerCommandEvent::UnequipVehicle(vehicle_part_index) => {
+                let unequipped_item = player_equipment
+                    .and_then(|equipment| equipment.get_vehicle_item(vehicle_part_index))
+                    .map(|vehicle_item| Item::Equipment(vehicle_item.clone()));
+                if unequipped_item.map_or(false, |item| {
+                    !inventory_has_space_for(player_inventory, item)
+                }) {
+                    chat_feedback.send(
+                        &mut chatbox_events,
+                        ChatFeedback::InventoryFull.message(&game_data),
+                    );
+                    continue;
+                }
+
                 if let Some(game_connection) = game_connection.as_ref() {
                     game_connection
                         .client_message_tx
@@ -751,6 +956,8 @@ pub fn player_command_system(
                         if target_dead {
                             chatbox_events
                                 .write(ChatboxEvent::System("Invalid target".to_string()));
+                        } else if let Some(refusal) = attack_check {
+                            chat_feedback.send(&mut chatbox_events, refusal.message(&game_data));
                         } else if let Some(game_connection) = game_connection.as_ref() {
                             game_connection
                                 .client_message_tx
@@ -800,6 +1007,15 @@ pub fn player_command_system(
             }
             PlayerCommandEvent::BankDepositItem(item_slot) => {
                 if let Some(item) = player_inventory.get_item(item_slot) {
+                    // The server drops a deposit that does not fit without a reply.
+                    if player_bank.map_or(false, |bank| !bank_has_space_for(bank, item)) {
+                        chat_feedback.send(
+                            &mut chatbox_events,
+                            ChatFeedback::StorageFull.message(&game_data),
+                        );
+                        continue;
+                    }
+
                     // TODO: if item.get_quantity() > 1, show number input dialog for quantity
                     if let Some(game_connection) = game_connection.as_ref() {
                         game_connection
@@ -818,6 +1034,15 @@ pub fn player_command_system(
                     .and_then(|bank| bank.slots.get(bank_slot))
                     .and_then(|x| x.as_ref())
                 {
+                    // The server drops a withdrawal that does not fit without a reply.
+                    if !inventory_has_space_for(player_inventory, item.clone()) {
+                        chat_feedback.send(
+                            &mut chatbox_events,
+                            ChatFeedback::InventoryFull.message(&game_data),
+                        );
+                        continue;
+                    }
+
                     // TODO: if item.get_quantity() > 1, show number input dialog for quantity
                     if let Some(game_connection) = game_connection.as_ref() {
                         game_connection

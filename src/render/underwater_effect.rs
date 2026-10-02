@@ -1,102 +1,28 @@
-//! Underwater rendering effect for Rose Online client
+//! Underwater camera state and water volume tracking.
 //!
-//! This module implements underwater post-processing effects including:
-//! - Volumetric fog using Beer-Lambert law
-//! - Depth-based color absorption (red absorbed fastest, blue penetrates)
-//! - Procedural caustics effect
+//! The underwater screen effect (fullscreen fog/tint/caustics post-process)
+//! was removed; this module only keeps the CPU-side state other systems rely
+//! on:
+//! - [`UnderwaterVolumes`]: world-space water volumes built from
+//!   [`WaterSpawnedEvent`]s (boats, sailing and water reflections read it).
+//! - [`CameraUnderwaterState`]: whether the camera is below a water surface
+//!   (the water reflection camera is disabled while submerged).
+//!
+//! The module path is kept so the many `underwater_effect::UnderwaterVolumes`
+//! imports keep working.
 
-use bevy::{
-    anti_alias::{fxaa::fxaa, smaa::smaa},
-    asset::{load_internal_asset, weak_handle, Handle},
-    core_pipeline::{
-        Core3d, Core3dSystems, FullscreenShader,
-        tonemapping::tonemapping,
-    },
-    prelude::*,
-    render::{
-        camera::ExtractedCamera,
-        extract_component::{ExtractComponent, ExtractComponentPlugin},
-        extract_resource::{ExtractResource, ExtractResourcePlugin},
-        render_resource::{
-            binding_types::{sampler, texture_2d, uniform_buffer},
-            BindGroupEntries, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntries,
-            CachedRenderPipelineId, ColorTargetState, ColorWrites, DynamicUniformBuffer,
-            FilterMode, FragmentState, MipmapFilterMode, Operations, PipelineCache, RenderPassColorAttachment,
-            RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerBindingType,
-            SamplerDescriptor, ShaderStages, ShaderType, SpecializedRenderPipeline,
-            SpecializedRenderPipelines, TextureFormat, TextureSampleType,
-        },
-        renderer::{RenderContext, RenderDevice, RenderQueue, ViewQuery},
-        view::{ExtractedView, ViewTarget},
-        Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
-    },
-    time::Time,
-    transform::components::GlobalTransform,
-    utils::default,
-};
-use bevy_camera::Camera;
-use bevy_shader::Shader;
+use bevy::prelude::*;
 
 use crate::{components::WaterSpawnedEvent, resources::WaterSettings};
 
-/// Shader handle for the underwater effect shader
-pub const UNDERWATER_EFFECT_SHADER_HANDLE: Handle<Shader> =
-    weak_handle!("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
-
 // =============================================================================
-// Main World Components and Resources
+// Components and Resources
 // =============================================================================
 
-/// Resource for underwater effect settings
-#[derive(Resource, Clone, Reflect, ExtractResource)]
-#[reflect(Resource, Default)]
-pub struct UnderwaterSettings {
-    /// Fog density for underwater effect (higher = denser fog)
-    pub fog_density: f32,
-    /// Base fog color when underwater (RGBA)
-    pub fog_color: Vec4,
-    /// Maximum visibility distance underwater
-    pub max_visibility: f32,
-    /// Light absorption coefficients per channel (R, G, B)
-    /// Based on real-world water absorption:
-    /// Red: ~0.5 m^-1, Green: ~0.05 m^-1, Blue: ~0.01 m^-1
-    pub absorption_coefficients: Vec3,
-    /// Caustics intensity (0.0 = off, 1.0 = full)
-    pub caustics_intensity: f32,
-    /// Caustics pattern scale
-    pub caustics_scale: f32,
-    /// Caustics animation speed
-    pub caustics_speed: f32,
-    /// Whether underwater effects are enabled
-    pub enabled: bool,
-}
-
-impl Default for UnderwaterSettings {
-    fn default() -> Self {
-        Self {
-            // Exponential fog density - tuned for underwater visibility
-            fog_density: 0.015,
-            // Deep blue-green underwater color
-            fog_color: Vec4::new(0.05, 0.15, 0.25, 1.0),
-            // Maximum visibility ~100 meters underwater
-            max_visibility: 100.0,
-            // Realistic water absorption coefficients
-            // Red is absorbed fastest, blue penetrates deepest
-            absorption_coefficients: Vec3::new(0.5, 0.05, 0.01),
-            // Caustics settings
-            caustics_intensity: 0.3,
-            caustics_scale: 0.1,
-            caustics_speed: 0.5,
-            enabled: true,
-        }
-    }
-}
-
-/// Component to track camera underwater state
-/// Uses ExtractComponent derive to automatically extract to render world when underwater
-#[derive(Component, Default, Reflect, Clone, ExtractComponent)]
+/// Tracks whether a camera is underwater. Updated by [`detect_underwater_camera`]
+/// for every camera that carries it (the main game camera).
+#[derive(Component, Default, Reflect, Clone)]
 #[reflect(Component, Default, Clone)]
-#[extract_component_filter(With<Camera>)]
 pub struct CameraUnderwaterState {
     /// Whether the camera is currently underwater
     pub is_underwater: bool,
@@ -122,304 +48,26 @@ pub struct UnderwaterVolumes {
 }
 
 // =============================================================================
-// Render World Resources and Pipeline
-// =============================================================================
-
-/// GPU pipeline data for the underwater effect
-#[derive(Resource)]
-pub struct UnderwaterEffectPipeline {
-    /// Bind group layout descriptor for the underwater effect
-    bind_group_layout: BindGroupLayoutDescriptor,
-    /// Sampler for reading the source texture
-    source_sampler: Sampler,
-    /// Fullscreen shader for vertex state
-    fullscreen_shader: FullscreenShader,
-}
-
-/// A key that uniquely identifies an underwater effect pipeline
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct UnderwaterEffectPipelineKey {
-    /// The format of the source and destination textures
-    texture_format: TextureFormat,
-}
-
-/// Component attached to cameras in the render world storing the pipeline ID
-#[derive(Component, Deref, DerefMut)]
-pub struct UnderwaterEffectPipelineId(CachedRenderPipelineId);
-
-/// The on-GPU version of the underwater settings
-#[derive(ShaderType)]
-pub struct UnderwaterEffectUniform {
-    /// Whether camera is underwater (0.0 or 1.0)
-    is_underwater: f32,
-    /// Water surface Y coordinate
-    water_surface_y: f32,
-    /// Camera depth below the selected water surface
-    depth_below_surface: f32,
-    /// Fog density
-    fog_density: f32,
-    /// Maximum visibility distance
-    max_visibility: f32,
-    /// Fog color (RGBA)
-    fog_color: Vec4,
-    /// Light absorption coefficients (RGB)
-    absorption: Vec3,
-    /// Caustics intensity
-    caustics_intensity: f32,
-    /// Caustics scale
-    caustics_scale: f32,
-    /// Caustics speed
-    caustics_speed: f32,
-    /// Time for animation
-    time: f32,
-    /// Padding for alignment
-    _padding: Vec3,
-}
-
-impl Default for UnderwaterEffectUniform {
-    fn default() -> Self {
-        Self {
-            is_underwater: 0.0,
-            water_surface_y: 0.0,
-            depth_below_surface: 0.0,
-            fog_density: 0.015,
-            max_visibility: 100.0,
-            fog_color: Vec4::new(0.05, 0.15, 0.25, 1.0),
-            absorption: Vec3::new(0.5, 0.05, 0.01),
-            caustics_intensity: 0.3,
-            caustics_scale: 0.1,
-            caustics_speed: 0.5,
-            time: 0.0,
-            _padding: Vec3::ZERO,
-        }
-    }
-}
-
-/// Resource storing uniform buffers for underwater effects
-#[derive(Resource, Deref, DerefMut, Default)]
-pub struct UnderwaterEffectUniformBuffers {
-    #[deref]
-    buffer: DynamicUniformBuffer<UnderwaterEffectUniform>,
-}
-
-/// Component storing the uniform buffer offset for a view
-#[derive(Component, Deref, DerefMut)]
-pub struct UnderwaterEffectUniformOffset(u32);
-
-// =============================================================================
-// Render pass system (Bevy 0.19: render graph nodes are plain systems)
-// =============================================================================
-
-/// Fullscreen underwater effect pass, ordered after tonemapping and before
-/// FXAA/SMAA in PostProcess. Skipped (no ping-pong flip) when not underwater.
-pub fn underwater_effect(
-    view: ViewQuery<(
-        &ExtractedCamera,
-        &ViewTarget,
-        &UnderwaterEffectPipelineId,
-        &CameraUnderwaterState,
-        &UnderwaterEffectUniformOffset,
-    )>,
-    pipeline_cache: Res<PipelineCache>,
-    underwater_pipeline: Res<UnderwaterEffectPipeline>,
-    underwater_uniform_buffers: Res<UnderwaterEffectUniformBuffers>,
-    mut ctx: RenderContext,
-) {
-    let (_camera, view_target, pipeline_id, underwater_state, uniform_offset) =
-        view.into_inner();
-
-    // Dry camera: skip the pass entirely instead of a full-screen pass-through
-    // copy. Must return BEFORE post_process_write(): every call flips the
-    // shared main-texture ping-pong index.
-    if !underwater_state.is_underwater {
-        return;
-    }
-
-    // Get the pipeline
-    let Some(pipeline) = pipeline_cache.get_render_pipeline(**pipeline_id) else {
-        return;
-    };
-
-    // Get the uniform buffer binding
-    let Some(uniform_buffer_binding) = underwater_uniform_buffers.buffer.binding() else {
-        return;
-    };
-
-    // Use post_process_write for full-screen pass
-    let post_process = view_target.post_process_write();
-
-    let pass_descriptor = RenderPassDescriptor {
-        label: Some("underwater_effect pass"),
-        color_attachments: &[Some(RenderPassColorAttachment {
-            view: post_process.destination,
-            resolve_target: None,
-            ops: Operations::default(),
-            depth_slice: None,
-        })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        };
-
-    // Create bind group with source texture, sampler, and uniforms
-    let bind_group_layout =
-        pipeline_cache.get_bind_group_layout(&underwater_pipeline.bind_group_layout);
-    let bind_group = ctx.render_device().create_bind_group(
-        "underwater_effect bind group",
-        &bind_group_layout,
-        &BindGroupEntries::sequential((
-            post_process.source,
-            &underwater_pipeline.source_sampler,
-            uniform_buffer_binding,
-        )),
-    );
-
-    let mut render_pass = ctx
-        .command_encoder()
-        .begin_render_pass(&pass_descriptor);
-
-    render_pass.set_pipeline(pipeline);
-    render_pass.set_bind_group(0, &bind_group, &[**uniform_offset]);
-    render_pass.draw(0..3, 0..1);
-}
-
-// =============================================================================
 // Plugin
 // =============================================================================
 
-/// Plugin that adds underwater rendering effects
-pub struct UnderwaterEffectPlugin;
+/// Plugin that tracks water volumes and the camera's underwater state.
+pub struct UnderwaterStatePlugin;
 
-impl Plugin for UnderwaterEffectPlugin {
+impl Plugin for UnderwaterStatePlugin {
     fn build(&self, app: &mut App) {
-        load_internal_asset!(
-            app,
-            UNDERWATER_EFFECT_SHADER_HANDLE,
-            "shaders/underwater_effect.wgsl",
-            Shader::from_wgsl
-        );
-
-        // Register types and extract resources to render world
-        app.register_type::<UnderwaterSettings>()
-            .register_type::<CameraUnderwaterState>()
-            .init_resource::<UnderwaterSettings>()
+        app.register_type::<CameraUnderwaterState>()
             .init_resource::<UnderwaterVolumes>()
-            .add_plugins((
-                ExtractResourcePlugin::<UnderwaterSettings>::default(),
-                ExtractComponentPlugin::<CameraUnderwaterState>::default(),
-            ));
-
-        // Track water volumes and detect underwater camera state.
-        app.add_systems(
-            Update,
-            (track_underwater_volumes, detect_underwater_camera).chain(),
-        );
-
-        // Setup render app
-        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
-            return;
-        };
-
-        render_app
-            .init_resource::<SpecializedRenderPipelines<UnderwaterEffectPipeline>>()
-            .init_resource::<UnderwaterEffectUniformBuffers>()
             .add_systems(
-                Render,
+                Update,
                 (
-                    prepare_underwater_effect_pipelines,
-                    prepare_underwater_effect_uniforms,
+                    // After the zone spawn so its commands (zone root with its
+                    // Transform) are applied when the spawn messages are read.
+                    track_underwater_volumes.after(crate::zone_loader::zone_loaded_from_vfs_system),
+                    detect_underwater_camera,
                 )
-                    .in_set(RenderSystems::Prepare),
-            )
-            .add_systems(
-                Core3d,
-                // MUST be totally ordered against every other pass that calls
-                // post_process_write(). Bevy 0.19 render passes are systems
-                // with read-only access, so unordered ones run in parallel:
-                // their ping-pong flips happen in thread order while their
-                // command buffers are submitted in schedule order. With only
-                // `.after(tonemapping)` this raced SMAA and randomly put the
-                // pre-tonemap HDR frame on screen (white flash). AA goes last
-                // so it also smooths the underwater tint/caustics.
-                underwater_effect
-                    .in_set(Core3dSystems::PostProcess)
-                    .after(tonemapping)
-                    .before(fxaa)
-                    .before(smaa),
+                    .chain(),
             );
-    }
-
-    fn finish(&self, app: &mut App) {
-        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
-            return;
-        };
-        render_app.init_resource::<UnderwaterEffectPipeline>();
-    }
-}
-
-impl FromWorld for UnderwaterEffectPipeline {
-    fn from_world(world: &mut World) -> Self {
-        let render_device = world.resource::<RenderDevice>();
-        let fullscreen_shader = world.resource::<FullscreenShader>().clone();
-
-        // Create bind group layout descriptor
-        let bind_group_layout = BindGroupLayoutDescriptor::new(
-            "underwater_effect bind group layout",
-            &BindGroupLayoutEntries::sequential(
-                ShaderStages::FRAGMENT,
-                (
-                    // Source texture
-                    texture_2d(TextureSampleType::Float { filterable: true }),
-                    // Source sampler
-                    sampler(SamplerBindingType::Filtering),
-                    // Uniform buffer
-                    uniform_buffer::<UnderwaterEffectUniform>(true),
-                ),
-            ),
-        );
-
-        // Create sampler
-        let source_sampler = render_device.create_sampler(&SamplerDescriptor {
-            mipmap_filter: MipmapFilterMode::Linear,
-            min_filter: FilterMode::Linear,
-            mag_filter: FilterMode::Linear,
-            ..default()
-        });
-
-        UnderwaterEffectPipeline {
-            bind_group_layout,
-            source_sampler,
-            fullscreen_shader,
-        }
-    }
-}
-
-impl SpecializedRenderPipeline for UnderwaterEffectPipeline {
-    type Key = UnderwaterEffectPipelineKey;
-
-    fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
-        RenderPipelineDescriptor {
-            label: Some("underwater_effect".into()),
-            layout: vec![self.bind_group_layout.clone()],
-            vertex: self.fullscreen_shader.to_vertex_state(),
-            fragment: Some(FragmentState {
-                shader: UNDERWATER_EFFECT_SHADER_HANDLE,
-                shader_defs: vec![],
-                entry_point: Some("fragment_main".into()),
-                targets: vec![Some(ColorTargetState {
-                    format: key.texture_format,
-                    blend: None,
-                    write_mask: ColorWrites::ALL,
-                })],
-            }),
-            primitive: default(),
-            depth_stencil: None,
-            multisample: default(),
-            // No push constants / immediates used.
-            immediate_size: 0,
-            zero_initialize_workgroup_memory: false,
-        }
     }
 }
 
@@ -432,16 +80,7 @@ pub fn detect_underwater_camera(
     mut camera_query: Query<(&GlobalTransform, &mut CameraUnderwaterState), With<Camera>>,
     water_settings: Res<WaterSettings>,
     underwater_volumes: Res<UnderwaterVolumes>,
-    underwater_settings: Res<UnderwaterSettings>,
 ) {
-    // Skip if underwater effects are disabled. NOTE: leaves a stale
-    // CameraUnderwaterState if disabled mid-dive (is_underwater stays true, which
-    // also keeps water reflections off). Accepted: toggling mid-dive is rare and the
-    // next enable recomputes immediately.
-    if !underwater_settings.enabled {
-        return;
-    }
-
     for (transform, mut underwater_state) in camera_query.iter_mut() {
         let camera_position = transform.translation();
 
@@ -475,7 +114,7 @@ pub fn detect_underwater_camera(
         }
 
         // Fallback for maps where no water spawn events were observed.
-        if !found_volume {
+        if !found_volume && underwater_volumes.volumes.is_empty() {
             let fallback_depth = water_settings.water_surface_y - camera_position.y;
             if fallback_depth >= 0.0 && fallback_depth <= volume_depth_limit {
                 selected_depth = fallback_depth;
@@ -484,8 +123,7 @@ pub fn detect_underwater_camera(
             }
         }
 
-        // Write-only-on-change: previously every camera was dirtied every frame,
-        // forcing the underwater fullscreen node to re-prepare even when dry.
+        // Write only on change so the state is not flagged changed every frame.
         let new_depth = if found_volume {
             selected_depth.max(0.0)
         } else {
@@ -504,20 +142,41 @@ pub fn detect_underwater_camera(
 }
 
 /// Tracks water planes from spawn events and stores world-space water volumes.
+///
+/// Volumes whose water entity no longer exists (despawned with its zone) are
+/// dropped. They used to accumulate across zone loads, and because every zone
+/// sits at the same world offset, a previous zone's lake could mark the camera
+/// as underwater (or move the reflection plane) in the next zone.
 pub fn track_underwater_volumes(
     mut water_spawned_events: MessageReader<WaterSpawnedEvent>,
-    zone_transforms: Query<&GlobalTransform>,
+    transforms: Query<&GlobalTransform>,
+    zone_transforms: Query<&Transform>,
     mut underwater_volumes: ResMut<UnderwaterVolumes>,
     mut water_settings: ResMut<WaterSettings>,
 ) {
-    let mut got_event = false;
+    let mut volumes_changed = false;
+
+    // Read-only check first: `ResMut` deref would flag the resource changed.
+    if underwater_volumes
+        .volumes
+        .iter()
+        .any(|volume| !transforms.contains(volume.water_entity))
+    {
+        underwater_volumes
+            .volumes
+            .retain(|volume| transforms.contains(volume.water_entity));
+        volumes_changed = true;
+    }
 
     for event in water_spawned_events.read() {
-        got_event = true;
+        volumes_changed = true;
 
+        // The zone root has no parent, so its local Transform is its world
+        // placement. Its GlobalTransform is still identity in the spawn frame
+        // (propagation runs in PostUpdate).
         let zone_translation = zone_transforms
             .get(event.zone_entity)
-            .map(|t| t.translation())
+            .map(|t| t.translation)
             .unwrap_or(Vec3::ZERO);
 
         let world_center = event.water_center + zone_translation;
@@ -539,81 +198,13 @@ pub fn track_underwater_volumes(
         }
     }
 
-    if got_event {
+    if volumes_changed {
         if let Some(first_volume) = underwater_volumes.volumes.first() {
             // Keep legacy/global water surface in sync for systems that still read this value.
-            water_settings.water_surface_y = first_volume.surface_y;
+            // Compared first: a WaterSettings change re-prepares every water material.
+            if water_settings.water_surface_y != first_volume.surface_y {
+                water_settings.water_surface_y = first_volume.surface_y;
+            }
         }
     }
-}
-
-/// Prepares underwater effect pipelines for views that need them
-pub fn prepare_underwater_effect_pipelines(
-    mut commands: Commands,
-    pipeline_cache: Res<PipelineCache>,
-    mut pipelines: ResMut<SpecializedRenderPipelines<UnderwaterEffectPipeline>>,
-    underwater_pipeline: Res<UnderwaterEffectPipeline>,
-    views: Query<(Entity, &ExtractedView), With<CameraUnderwaterState>>,
-) {
-    for (entity, view) in views.iter() {
-        let pipeline_id = pipelines.specialize(
-            &pipeline_cache,
-            &underwater_pipeline,
-            UnderwaterEffectPipelineKey {
-                // Bevy 0.19: source the format from the view instead of the
-                // deprecated ViewTarget::TEXTURE_FORMAT_HDR / TextureFormat::bevy_default().
-                texture_format: view.target_format,
-            },
-        );
-
-        commands
-            .entity(entity)
-            .insert(UnderwaterEffectPipelineId(pipeline_id));
-    }
-}
-
-/// Prepares and uploads underwater effect uniforms to the GPU
-pub fn prepare_underwater_effect_uniforms(
-    mut commands: Commands,
-    mut uniform_buffers: ResMut<UnderwaterEffectUniformBuffers>,
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
-    time: Res<Time>,
-    underwater_settings: Res<UnderwaterSettings>,
-    views: Query<(Entity, &CameraUnderwaterState)>,
-) {
-    uniform_buffers.clear();
-
-    let current_time = time.elapsed_secs();
-
-    for (view_entity, underwater_state) in views.iter() {
-        let uniform = UnderwaterEffectUniform {
-            is_underwater: if underwater_state.is_underwater {
-                1.0
-            } else {
-                0.0
-            },
-            water_surface_y: underwater_state.water_surface_y,
-            depth_below_surface: underwater_state.depth_below_surface,
-            fog_density: underwater_settings.fog_density,
-            max_visibility: underwater_settings.max_visibility,
-            fog_color: underwater_settings.fog_color,
-            absorption: underwater_settings.absorption_coefficients,
-            caustics_intensity: underwater_settings.caustics_intensity,
-            caustics_scale: underwater_settings.caustics_scale,
-            caustics_speed: underwater_settings.caustics_speed,
-            time: current_time,
-            _padding: Vec3::ZERO,
-        };
-
-        let offset = uniform_buffers.buffer.push(&uniform);
-        commands
-            .entity(view_entity)
-            .insert(UnderwaterEffectUniformOffset(offset));
-    }
-
-    // Upload to GPU
-    uniform_buffers
-        .buffer
-        .write_buffer(&render_device, &render_queue);
 }

@@ -443,12 +443,10 @@ fn place_model_at_position(
             ViewVisibility::default(),
         ));
 
-        // Insert individually so the compiler identifies the exact failing component
-        part_cmd.insert(bevy::camera::visibility::NoFrustumCulling);
-        part_cmd.insert(bevy::camera::primitives::Aabb::from_min_max(
-            Vec3::splat(-100000.0),
-            Vec3::splat(100000.0),
-        ));
+        // Insert individually so the compiler identifies the exact failing component.
+        // No explicit Aabb: like zone-loaded parts, Bevy's calculate_bounds derives
+        // tight bounds from the mesh, so placed parts are culled in the main, shadow
+        // and reflection views.
         part_cmd.insert(RenderLayers::layer(0));
         part_cmd.insert(ColliderParent::new(object_entity));
         part_cmd.insert(AsyncCollider(ComputedColliderShape::TriMesh(

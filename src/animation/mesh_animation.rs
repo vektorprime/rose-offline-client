@@ -3,6 +3,7 @@ use bevy::{
     pbr::{ExtendedMaterial, MeshMaterial3d},
     prelude::{
         AssetServer, Assets, Component, Deref, DerefMut, Entity, Handle, Query, Res, ResMut,
+        ViewVisibility,
     },
     reflect::Reflect,
     time::Time,
@@ -35,11 +36,17 @@ impl MeshAnimation {
 /// objects) and writes the frame state into its `RoseEffectExtension` material, whose
 /// shader morphs the mesh. Each such entity owns its material, so the per-entity
 /// animation state never reaches another entity.
+///
+/// Every material write re-prepares the material (new bind group), so entities that
+/// no view drew last frame (outside every camera and shadow frustum) keep advancing
+/// but skip the write once their material holds a frame; the frame they come back
+/// into view writes the current state again.
 pub fn mesh_animation_system(
     mut query: Query<(
         &mut MeshAnimation,
         Entity,
         Option<&MeshMaterial3d<ExtendedMaterial<bevy::pbr::StandardMaterial, RoseEffectExtension>>>,
+        Option<&ViewVisibility>,
     )>,
     mut effect_mesh_materials: ResMut<
         Assets<ExtendedMaterial<bevy::pbr::StandardMaterial, RoseEffectExtension>>,
@@ -48,7 +55,7 @@ pub fn mesh_animation_system(
     asset_server: Res<AssetServer>,
     time: Res<Time>,
 ) {
-    for (mut mesh_animation, entity, material_component) in query.iter_mut() {
+    for (mut mesh_animation, entity, material_component, view_visibility) in query.iter_mut() {
         if mesh_animation.completed() {
             continue;
         }
@@ -75,6 +82,13 @@ pub fn mesh_animation_system(
                 // Only update if there's an animation texture present
                 if material.extension.animation_texture.is_some() {
                     let uniform = &material.extension.animation_state;
+                    // ViewVisibility is last frame's result here (visibility is
+                    // checked after transform propagation). The first write always
+                    // happens, so a mesh never shows its unanimated base shape.
+                    let drawn = view_visibility.is_none_or(|visibility| visibility.get());
+                    if !drawn && uniform.flags == zmo_asset.flags {
+                        continue;
+                    }
                     let current_frame = anim_state.current_frame_index() as u32 & 0xFFFF;
                     let next_frame = anim_state.next_frame_index() as u32 & 0xFFFF;
                     let current_next_frame = current_frame | (next_frame << 16);

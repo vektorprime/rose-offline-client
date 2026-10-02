@@ -6,7 +6,7 @@ use bevy::{
         With, Without,
     },
 };
-use bevy_camera::primitives::Aabb;
+use bevy_camera::primitives::MeshAabb;
 use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 use bevy_rapier3d::prelude::{Collider, CollisionGroups};
 use log::info;
@@ -28,7 +28,8 @@ pub fn character_model_add_collider_system(
         ),
         (Without<ColliderEntity>, Without<PersonalStore>),
     >,
-    query_aabb: Query<Option<&Aabb>, With<SkinnedMesh>>,
+    query_part_mesh: Query<&Mesh3d, With<SkinnedMesh>>,
+    meshes: Res<Assets<Mesh>>,
     inverse_bindposes: Res<Assets<SkinnedMeshInverseBindposes>>,
 ) {
     // Add colliders to character models without one
@@ -71,7 +72,13 @@ pub fn character_model_add_collider_system(
             )
         {
             parts_found += 1;
-            match query_aabb.get(*part_entity) {
+            // Bind-pose bounds straight from the mesh: the part's Aabb component
+            // follows the animated pose (DynamicSkinnedMeshBounds), which would make
+            // the collider size depend on the pose at creation time.
+            let bind_pose_aabb = query_part_mesh
+                .get(*part_entity)
+                .map(|mesh3d| meshes.get(&mesh3d.0).and_then(|mesh| mesh.compute_aabb()));
+            match bind_pose_aabb {
                 Ok(Some(aabb)) => {
                     aabb_data_count += 1;
                     min = Some(min.map_or_else(|| aabb.min(), |min| min.min(aabb.min())));

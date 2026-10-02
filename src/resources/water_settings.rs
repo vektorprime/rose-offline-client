@@ -1,60 +1,73 @@
 //! Water rendering settings resource
 //!
 //! This resource stores configurable parameters for water rendering,
-//! allowing real-time adjustment through the settings UI.
+//! allowing real-time adjustment through the settings UI. Every water
+//! material copies it (see `apply_water_settings`); the shader is
+//! `src/render/shaders/water_material.wgsl`.
 
 use bevy::prelude::{Resource, Vec4};
 
 /// Resource for storing water rendering settings that can be modified at runtime.
 #[derive(Resource, Debug, Clone, PartialEq)]
 pub struct WaterSettings {
-    // === Existing settings (kept for compatibility) ===
-    /// Foam intensity (0.0-1.0) - controls how visible foam effects are on wave crests
+    /// Foam intensity (0.0-1.0) - whitecaps on high wave crests and foam
+    /// where objects/characters break the surface
     pub foam_intensity: f32,
-    /// Foam threshold (0.0-1.0) - wave height at which foam starts appearing
+    /// Foam threshold (0.0-1.0) - normalized crest height above which
+    /// whitecaps appear (higher = calmer water)
     pub foam_threshold: f32,
-    /// Subsurface scattering intensity (0.0-1.0) - light scattering through water
+    /// Subsurface scattering intensity (0.0-1.0) - sunlight glowing through
+    /// wave crests when looking toward the sun or moon
     pub sss_intensity: f32,
-    /// Refraction strength (0.0-0.2) - UV distortion amount for pseudo-refraction
+    /// Reflection distortion (0.0-0.2) - how strongly the wave normals bend
+    /// the reflected image (0.2 = physically correct for distant scenery)
     pub refraction_strength: f32,
     /// Wave speed multiplier (0.1-5.0) - how fast waves animate
     pub wave_speed: f32,
-    /// Fresnel strength (0.0-1.0) - angle-dependent reflectivity
+    /// Fresnel strength (0.0-1.0) - reflectivity scale; 0.5 is physically
+    /// based water (IOR 1.33)
     pub fresnel_strength: f32,
-    /// Specular intensity (0.0-1.0) - sun highlight brightness
+    /// Specular intensity (0.0-1.0) - sun/moon glint brightness; 0.5 is
+    /// physically based
     pub specular_intensity: f32,
-    /// Y coordinate of the water surface in world space
-    /// Used for underwater detection and effects
+    /// Y coordinate of the water surface in world space (first water volume)
+    /// Used for underwater detection and as the fallback reflection plane
     pub water_surface_y: f32,
 
-    // === New depth-related settings ===
+    // === Depth / optics settings ===
+    // The real lake bed depth is unknown to the shader (terrain is not in the
+    // depth prepass), so the water uses a smooth procedural depth field
+    // between min_depth and max_depth (biased toward the shallow end).
     /// Minimum water depth in meters (shallow areas)
     pub min_depth: f32,
-    /// Maximum water depth in meters (deep areas)
+    /// Maximum water depth in meters (deep areas). Also the depth below the
+    /// surface down to which the camera counts as underwater.
     pub max_depth: f32,
-    /// Depth below which the bottom becomes visible (meters)
+    /// Clarity reference depth (meters): the bottom shows through with
+    /// `bottom_visibility` at this depth (looking straight down)
     pub shallow_threshold: f32,
-    /// Color of deep water (RGBA)
+    /// Color of deep water (RGB = in-scattered body color, alpha unused)
     pub deep_color: Vec4,
-    /// Color of shallow water (RGBA)
+    /// Color of shallow water (RGB = in-scattered body color, alpha unused)
     pub shallow_color: Vec4,
-    /// How much the bottom shows through in shallow water (0.0-1.0)
+    /// How much of the bottom shows through at `shallow_threshold` depth
+    /// (0.0-1.0); sets the water's absorption
     pub bottom_visibility: f32,
-    /// Scale for depth variation pattern (XZ)
+    /// Spatial frequency of the procedural depth field (XZ, 1/m)
     pub depth_gradient_scale: [f32; 2],
 
-    // === New wave settings ===
-    /// Height of waves (amplitude)
+    // === Wave settings ===
+    /// Wave steepness scale (0.5 = gentle breeze ripples)
     pub wave_amplitude: f32,
-    /// How many waves per unit distance (frequency)
+    /// Wave frequency (2.0 = default wavelengths; lower = longer swell)
     pub wave_frequency: f32,
-    /// Number of wave layers for complexity (1-4)
+    /// Number of wave octaves (1-4); each adds shorter ripples
     pub wave_layers: u32,
 
-    // === New caustics settings ===
+    // === Caustics settings (light patterns on the visible bottom) ===
     /// Caustics intensity (0.0-1.0)
     pub caustics_intensity: f32,
-    /// Caustics pattern scale
+    /// Caustics pattern scale (larger = smaller cells)
     pub caustics_scale: f32,
     /// Caustics animation speed
     pub caustics_speed: f32,
@@ -72,7 +85,6 @@ pub struct WaterSettings {
 impl Default for WaterSettings {
     fn default() -> Self {
         Self {
-            // Existing settings
             foam_intensity: 0.5,
             foam_threshold: 0.8,
             sss_intensity: 1.0,
@@ -84,9 +96,9 @@ impl Default for WaterSettings {
 
             // Depth settings
             min_depth: 0.5,                               // Shallow water at edges
-            max_depth: 30.0,                              // Deep water in center (ocean floor is 20 m)
-            shallow_threshold: 2.0,                       // Bottom visible below 2m depth
-            deep_color: Vec4::new(0.0, 0.2, 0.4, 0.9),    // Deep blue
+            max_depth: 30.0,        // Deep water in center (ocean floor is 20 m)
+            shallow_threshold: 2.0, // 60% of the bottom visible at 2 m depth
+            deep_color: Vec4::new(0.0, 0.2, 0.4, 0.9), // Deep blue
             shallow_color: Vec4::new(0.3, 0.6, 0.7, 0.5), // Light turquoise
             bottom_visibility: 0.6,
             depth_gradient_scale: [0.02, 0.02],
@@ -94,7 +106,9 @@ impl Default for WaterSettings {
             // Wave settings
             wave_amplitude: 0.5,
             wave_frequency: 2.0,
-            wave_layers: 3,
+            // 4 octaves: the shortest (~0.2 m) ripples give close-up detail;
+            // the shader fades octaves that are too small for the pixel.
+            wave_layers: 4,
 
             // Caustics settings
             caustics_intensity: 0.3,

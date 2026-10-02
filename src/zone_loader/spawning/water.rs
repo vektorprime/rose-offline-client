@@ -23,8 +23,11 @@ pub(super) fn spawn_water(
     let uv_x = (end.x - start.x) / (water_size / 100.0);
     let uv_y = (end.z - start.z) / (water_size / 100.0);
 
-    // Calculate water center and half extents for fish spawning
-    let water_center = (start + end) * 0.5;
+    // Calculate water center and half extents for fish spawning. The quad is
+    // built at start.y (all four corners), so the center uses that height too:
+    // it becomes the volume's surface (reflection plane, underwater test).
+    let mut water_center = (start + end) * 0.5;
+    water_center.y = start.y;
     let water_half_extents =
         Vec2::new((end.x - start.x).abs() * 0.5, (end.z - start.z).abs() * 0.5);
 

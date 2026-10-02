@@ -118,6 +118,22 @@ async fn load_zms_mesh(
                         VertexAttributeValues::Uint16x4(zms.bone_indices),
                     );
                 }
+
+                // Per-joint bind-pose bounds: with DynamicSkinnedMeshBounds (added with
+                // SkinnedMesh) Bevy keeps the entity's Aabb around the animated pose,
+                // not the bind pose (flying NPCs, lying, jumping), for frustum and GPU
+                // occlusion culling. Meshes without skinning data simply have none.
+                if mesh.attribute(Mesh::ATTRIBUTE_JOINT_INDEX).is_some()
+                    && mesh.attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT).is_some()
+                {
+                    if let Err(error) = mesh.generate_skinned_mesh_bounds() {
+                        log::debug!(
+                            "[ZMS] No skinned mesh bounds for {:?}: {}",
+                            load_context.path(),
+                            error
+                        );
+                    }
+                }
             }
 
             if !zms.uv1.is_empty() {

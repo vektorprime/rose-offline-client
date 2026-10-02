@@ -50,6 +50,16 @@ UI visibility and state are tracked through various dedicated resources:
     - **Zone Lighting Debugger**: `ui_debug_zone_lighting_system`.
     - **Render Debugger**: `ui_debug_render_system`.
 
+### Chat feedback for refused actions
+`src/ui/chat_feedback.rs` writes a `ChatboxEvent::System` line when an action is refused for lack of a resource, using the original client's LIST_STRING.STL text where one exists (`game_string`, English fallback). Its checks mirror rose-offline's silent refusals, and the refused request is not sent:
+- **Skills** (`player_command_system`, covers hotbar keys, hotbar/skill-list double-clicks and scrolls): cooldown (`skill_on_cooldown`), then for CastSkill types `skill_use_refusal` = server `skill_use_requirements_met` (driving, `use_ability` MP/HP/stamina/Zuly/XP/fuel/stats with save-mana rate, required weapon class).
+- **Attacks**: `attack_refusal` = server attack cancel (broken weapon, empty ammo slot for bow/crossbow/gun/launcher, broken cart engine or cart weapon while driving).
+- **Items / equipment / bank** (`player_command_system`): used-up hotbar item, consumable ability requirement, unequip or two-handed swap without inventory space, bank deposit without storage space (`bank_has_space_for`, server bank holds at most 90 slots), withdrawal without inventory space (`inventory_has_space_for` = server `Inventory::try_add_item` on a clone).
+- **Stores**: NPC store OK simulates `npc_store_do_transaction` (Zuly + inventory space; the message box stays), personal store buy checks Zuly then space; the inventory's drop-Zuly button with 0 Zuly; the character window's stat "+" buttons without enough stat points.
+- **Server replies** (`game_connection_system`): `NpcStoreTransactionError`, the player's `CancelCastingSkill` reason, and ammo shot away (`UpdateAmmo` clearing a still-equipped stack; unequipping clears it earlier via `UpdateInventory`).
+
+Each system keeps a `Local<ChatFeedbackThrottle>` (grouped with its `MessageWriter<ChatboxEvent>` in a tuple parameter to stay within the 16-parameter limit) so the same line appears at most once per second.
+
 ## 8. World UI Rendering
 Elements that must appear in the 3D world are rendered using specialized techniques:
 - **Name Tags**: Uses `world_to_viewport` to project 3D positions into 2D screen space, then renders an egui `Tooltip` at that location (`src/ui/ui_character_select_name_tag_system.rs:19`).

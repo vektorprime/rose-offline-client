@@ -1,5 +1,6 @@
 use bevy::{
     asset::LoadState,
+    camera::visibility::DynamicSkinnedMeshBounds,
     mesh::{skinning::SkinnedMesh, Mesh3d},
     prelude::*,
 };
@@ -57,7 +58,13 @@ fn add_skinned_mesh_to_skinning_targets(
         if has_joint_indices && has_joint_weights {
             // Mesh has joint attributes - clone SkinnedMesh from parent
             if let Ok(parent_skinned_mesh) = parent_query.get(skinning_target.skinned_mesh_parent) {
-                commands.entity(entity).insert(parent_skinned_mesh.clone());
+                // DynamicSkinnedMeshBounds: Bevy recomputes the Aabb from the joints
+                // every frame (from the ZMS loader's skinned mesh bounds), so frustum
+                // and GPU occlusion culling follow the animated pose instead of the
+                // bind pose. Collider sizing reads the bind-pose mesh bounds instead.
+                commands
+                    .entity(entity)
+                    .insert((parent_skinned_mesh.clone(), DynamicSkinnedMeshBounds));
             } else {
                 log::error!(
                     "[SKINNING_FIX] Cannot add SkinnedMesh to entity {:?} - parent {:?} has no SkinnedMesh component!",

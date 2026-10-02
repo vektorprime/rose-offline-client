@@ -513,11 +513,10 @@ fn spawn_editor_water_plane(
             Visibility::Visible,
             bevy::camera::visibility::InheritedVisibility::default(),
             bevy::camera::visibility::ViewVisibility::default(),
-            bevy::camera::primitives::Aabb::from_min_max(
-                Vec3::splat(-100000.0),
-                Vec3::splat(100000.0),
-            ),
-            bevy::camera::visibility::RenderLayers::layer(0),
+            // No explicit Aabb: calculate_bounds derives it from the quad.
+            // Layer 1 like zone water: the reflection camera (layer 0) must never
+            // render water into the reflection texture the water samples.
+            bevy::camera::visibility::RenderLayers::layer(1),
             bevy::light::NotShadowCaster,
             bevy::light::NotShadowReceiver,
         ))

@@ -7,13 +7,17 @@ use bevy::{
 };
 use bevy_egui::{egui, EguiContexts};
 use rose_data::{Item, StackableItem};
-use rose_game_common::{components::Money, messages::client::ClientMessage};
+use rose_game_common::{
+    components::{Inventory, Money},
+    messages::client::ClientMessage,
+};
 
 use crate::{
     components::{ClientEntity, PersonalStore, PlayerCharacter, Position},
-    events::{MessageBoxEvent, NumberInputDialogEvent, PersonalStoreEvent},
+    events::{ChatboxEvent, MessageBoxEvent, NumberInputDialogEvent, PersonalStoreEvent},
     resources::{GameConnection, GameData, UiResources},
     ui::{
+        chat_feedback::{inventory_has_space_for, ChatFeedback, ChatFeedbackThrottle},
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
         ui_add_item_tooltip,
         widgets::{DataBindings, Dialog},
@@ -128,13 +132,17 @@ pub fn ui_personal_store_system(
     mut personal_store_events: MessageReader<PersonalStoreEvent>,
     mut number_input_dialog_events: MessageWriter<NumberInputDialogEvent>,
     query_personal_store: Query<(&ClientEntity, &PersonalStore, &Position), With<PersonalStore>>,
-    query_player: Query<&Position, With<PlayerCharacter>>,
+    query_player: Query<(&Position, &Inventory), With<PlayerCharacter>>,
     query_player_tooltip: Query<PlayerTooltipQuery, With<PlayerCharacter>>,
     ui_resources: Res<UiResources>,
     dialog_assets: Res<Assets<Dialog>>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
-    mut message_box_events: MessageWriter<MessageBoxEvent>,
+    (mut message_box_events, mut chatbox_events, mut chat_feedback): (
+        MessageWriter<MessageBoxEvent>,
+        MessageWriter<ChatboxEvent>,
+        Local<ChatFeedbackThrottle>,
+    ),
 ) {
     let ui_state = &mut *ui_state;
 
@@ -185,6 +193,31 @@ pub fn ui_personal_store_system(
                     .store_owner
                     .and_then(|entity| query_personal_store.get(entity).ok())
                 {
+                    // The server (personal_store_buy_item) checks the Zuly, then the inventory
+                    // space, and answers either with a bare "Transaction failed".
+                    let unit_price = ui_state
+                        .store_sell_items
+                        .get(*slot_index)
+                        .and_then(|slot| slot.as_ref())
+                        .map(|(_, price)| *price);
+                    if let (Some(unit_price), Ok((_, player_inventory))) =
+                        (unit_price, query_player.single())
+                    {
+                        let total_price = unit_price.0 * item.get_quantity() as i64;
+                        let refusal = if player_inventory.money.0 < total_price {
+                            Some(ChatFeedback::NotEnoughMoney)
+                        } else if !inventory_has_space_for(player_inventory, item.clone()) {
+                            Some(ChatFeedback::InventoryFull)
+                        } else {
+                            None
+                        };
+
+                        if let Some(refusal) = refusal {
+                            chat_feedback.send(&mut chatbox_events, refusal.message(&game_data));
+                            continue;
+                        }
+                    }
+
                     if let Some(game_connection) = &game_connection {
                         game_connection
                             .client_message_tx
@@ -328,7 +361,7 @@ pub fn ui_personal_store_system(
         };
 
     // Ensure player still in distance of personal store
-    if let Ok(player_position) = query_player.single() {
+    if let Ok((player_position, _)) = query_player.single() {
         if player_position
             .position
             .xy()

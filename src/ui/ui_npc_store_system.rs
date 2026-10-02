@@ -9,7 +9,7 @@ use bevy_egui::{egui, EguiContexts};
 
 use rose_data::{Item, NpcData, NpcStoreTabData, NpcStoreTabId};
 use rose_game_common::{
-    components::{AbilityValues, Inventory, InventoryPageType, ItemSlot, Npc, INVENTORY_PAGE_SIZE},
+    components::{AbilityValues, Inventory, ItemSlot, Npc},
     messages::{
         client::{ClientMessage, NpcStoreBuyItem},
         ClientEntityId,
@@ -18,11 +18,12 @@ use rose_game_common::{
 
 use crate::{
     components::{PlayerCharacter, Position},
-    events::{MessageBoxEvent, NpcStoreEvent, NumberInputDialogEvent},
+    events::{ChatboxEvent, MessageBoxEvent, NpcStoreEvent, NumberInputDialogEvent},
     resources::{
         ClientEntityList, GameConnection, GameData, UiResources, UiSpriteSheetType, WorldRates,
     },
     ui::{
+        chat_feedback::{ChatFeedback, ChatFeedbackThrottle},
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
         ui_add_item_tooltip,
         ui_drag_and_drop_system::UiStateDragAndDrop,
@@ -405,6 +406,99 @@ fn ui_add_sell_item_slot(
     item_price
 }
 
+/// Why the server's `npc_store_do_transaction` would refuse the pending transaction. It sells
+/// first, then adds every bought item to the inventory, then settles the Zuly.
+struct TransactionShortfall {
+    not_enough_money: bool,
+    inventory_full: bool,
+}
+
+fn npc_store_transaction_shortfall(
+    npc_data: &NpcData,
+    buy_list: &[Option<PendingBuyItem>; NUM_BUY_ITEMS],
+    sell_list: &[Option<PendingSellItem>; NUM_SELL_ITEMS],
+    player: &(&AbilityValues, &Inventory, &Position, &PlayerCharacter),
+    game_data: &GameData,
+    world_rates: Option<&Res<WorldRates>>,
+) -> TransactionShortfall {
+    let (ability_values, inventory, ..) = *player;
+    let mut inventory = inventory.clone();
+    let mut total_sell_value = 0i64;
+    let mut total_buy_cost = 0i64;
+    let mut inventory_full = false;
+
+    for pending_sell_item in sell_list.iter().flatten() {
+        let sell_quantity = inventory
+            .get_item(pending_sell_item.item_slot)
+            .map_or(0, |item| item.get_quantity() as usize)
+            .min(pending_sell_item.quantity);
+        if let Some(sell_item) =
+            inventory.try_take_quantity(pending_sell_item.item_slot, sell_quantity as u32)
+        {
+            let item_price = game_data
+                .ability_value_calculator
+                .calculate_npc_store_item_sell_price(
+                    &game_data.items,
+                    &sell_item,
+                    ability_values.get_npc_store_sell_rate(),
+                    world_rates.map_or(0, |x| x.world_price_rate),
+                    world_rates.map_or(0, |x| x.item_price_rate),
+                    world_rates.map_or(0, |x| x.town_price_rate),
+                )
+                .unwrap_or(0) as i64;
+            total_sell_value += item_price * sell_item.get_quantity() as i64;
+        }
+    }
+
+    for pending_buy_item in buy_list.iter().flatten() {
+        let Some(item_reference) = npc_data
+            .store_tabs
+            .get(pending_buy_item.store_tab_index)
+            .and_then(|x| x.as_ref())
+            .and_then(|store_tab| game_data.npcs.get_store_tab(*store_tab))
+            .and_then(|store_tab| {
+                store_tab
+                    .items
+                    .get(&(pending_buy_item.store_tab_slot as u16))
+                    .copied()
+            })
+        else {
+            continue;
+        };
+        let Some(item_data) = game_data.items.get_base_item(item_reference) else {
+            continue;
+        };
+
+        let item_price = game_data
+            .ability_value_calculator
+            .calculate_npc_store_item_buy_price(
+                &game_data.items,
+                item_reference,
+                ability_values.get_npc_store_buy_rate(),
+                world_rates.map_or(100, |x| x.item_price_rate),
+                world_rates.map_or(100, |x| x.town_price_rate),
+            )
+            .unwrap_or(0) as i64;
+        let buy_quantity = if item_reference.item_type.is_stackable_item() {
+            pending_buy_item.quantity
+        } else {
+            1
+        };
+
+        if let Some(item) = Item::from_item_data(item_data, buy_quantity as u32) {
+            if inventory.try_add_item(item).is_err() {
+                inventory_full = true;
+            }
+        }
+        total_buy_cost += item_price * buy_quantity as i64;
+    }
+
+    TransactionShortfall {
+        not_enough_money: inventory.money.0 + total_sell_value < total_buy_cost,
+        inventory_full,
+    }
+}
+
 pub fn ui_npc_store_system(
     mut egui_context: EguiContexts,
     mut ui_state: Local<UiNpcStoreState>,
@@ -421,7 +515,12 @@ pub fn ui_npc_store_system(
     ui_resources: Res<UiResources>,
     world_rates: Option<Res<WorldRates>>,
     mut number_input_dialog_events: MessageWriter<NumberInputDialogEvent>,
-    mut message_box_events: MessageWriter<MessageBoxEvent>,
+    // Grouped to stay within Bevy's 16 system parameter limit.
+    (mut message_box_events, mut chatbox_events, mut chat_feedback): (
+        MessageWriter<MessageBoxEvent>,
+        MessageWriter<ChatboxEvent>,
+        Local<ChatFeedbackThrottle>,
+    ),
 ) {
     let ui_state = &mut *ui_state;
     let store_dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_npc_store) {
@@ -596,8 +695,6 @@ pub fn ui_npc_store_system(
             );
         });
 
-    let mut transaction_cost = 0;
-
     transaction_dialog
         .window("NPC Transaction")
         .default_pos([
@@ -635,7 +732,6 @@ pub fn ui_npc_store_system(
                         );
                     }
                     ui.add_label_at(egui::pos2(39.0, 139.0), format!("{}", buy_item_price));
-                    transaction_cost += buy_item_price;
 
                     let mut sell_item_value = 0;
                     for i in 0..NUM_SELL_ITEMS {
@@ -656,33 +752,43 @@ pub fn ui_npc_store_system(
                         );
                     }
                     ui.add_label_at(egui::pos2(39.0, 272.0), format!("{}", sell_item_value));
-                    transaction_cost -= sell_item_value;
                 },
             );
         });
 
     if response_ok.map_or(false, |x| x.clicked()) {
-        let can_afford_transaction =
-            player.map_or(true, |player| transaction_cost <= player.1.money.0);
-
-        // Check inventory space for buy items
-        let has_inventory_space = player.map_or(true, |player| {
-            let inventory = &player.1;
-            let num_buy_items = ui_state.buy_list.iter().filter(|x| x.is_some()).count();
-
-            // Count empty slots in inventory (only check Consumables, Materials pages for store items)
-            let mut empty_slots = 0;
-            for page_type in [InventoryPageType::Consumables, InventoryPageType::Materials] {
-                for slot_index in 0..INVENTORY_PAGE_SIZE {
-                    let item_slot = ItemSlot::Inventory(page_type, slot_index);
-                    if inventory.get_item(item_slot).is_none() {
-                        empty_slots += 1;
-                    }
-                }
-            }
-
-            empty_slots >= num_buy_items
+        // Simulate the server's transaction: it answers a refusal with an error the player
+        // only sees after the round trip (and reports a full inventory as "NPC not found").
+        let shortfall = player.as_ref().map(|player| {
+            npc_store_transaction_shortfall(
+                npc_data,
+                &ui_state.buy_list,
+                &ui_state.sell_list,
+                player,
+                &game_data,
+                world_rates.as_ref(),
+            )
         });
+        let can_afford_transaction = shortfall
+            .as_ref()
+            .map_or(true, |shortfall| !shortfall.not_enough_money);
+        let has_inventory_space = shortfall
+            .as_ref()
+            .map_or(true, |shortfall| !shortfall.inventory_full);
+
+        if !can_afford_transaction {
+            chat_feedback.send(
+                &mut chatbox_events,
+                ChatFeedback::NotEnoughMoney.message(&game_data),
+            );
+        }
+
+        if !has_inventory_space {
+            chat_feedback.send(
+                &mut chatbox_events,
+                ChatFeedback::InventoryFull.message(&game_data),
+            );
+        }
 
         if can_afford_transaction && has_inventory_space {
             let mut buy_items = Vec::new();

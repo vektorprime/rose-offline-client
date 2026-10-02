@@ -70,7 +70,8 @@ impl Default for WindEffectEmitter {
 }
 
 /// Component for vegetation wind sway effect (grass, leaves, etc.)
-/// Applies a subtle swaying motion to simulate wind
+/// Applies a subtle swaying motion to simulate wind. Only the part's own
+/// `Transform` is driven; sway does not depend on (or need) a collider.
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct WindSway {
@@ -113,6 +114,38 @@ impl WindSway {
             sway_axis: Vec3::X,
             is_grass: false,
             base_rotation: Quat::IDENTITY,
+        }
+    }
+
+    /// Sway kind of a zone object part, picked from its mesh path; `None` for
+    /// parts that stay still (tree trunks, buildings, rocks, ...).
+    /// - grass, bushes, shrubs, plants: grass sway (`is_grass`)
+    /// - leaves, foliage, canopies, tree tops: leaf sway
+    ///
+    /// The zone loader also makes grass-kind parts walk-through (`spawn_object`),
+    /// so both decisions use this one classification.
+    pub fn for_mesh_path(mesh_path: &str) -> Option<Self> {
+        let path = mesh_path.to_lowercase();
+        if path.contains("grass") {
+            Some(Self::for_grass())
+        } else if path.contains("leaf")
+            || path.contains("leaves")
+            || path.contains("foliage")
+            || path.contains("canopy")
+        {
+            Some(Self::for_tree_leaves())
+        } else if path.contains("bush") || path.contains("shrub") || path.contains("plant") {
+            Some(Self::for_grass())
+        } else if path.contains("tree") {
+            // TREE004.ZMS is the top / leaves (sways), TREE004B.ZMS the trunk (static).
+            let is_trunk = path.ends_with("b.zms")
+                || path.ends_with('b')
+                || path
+                    .rsplit_once('.')
+                    .is_some_and(|(name, _extension)| name.ends_with('b'));
+            (!is_trunk).then(Self::for_tree_leaves)
+        } else {
+            None
         }
     }
 

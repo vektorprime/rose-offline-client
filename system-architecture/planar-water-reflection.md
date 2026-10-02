@@ -1,18 +1,22 @@
-# Planar Water Reflections Architecture
+# Planar Water Reflections and Water Shading Architecture
 
 ## Overview
 
-The client renders **real planar reflections** of the 3D environment (terrain, objects, clouds, name tags) onto water surfaces using the *mirrored camera* technique from the official Bevy `mirror` example (Bevy 0.18.1, see `bevy-collection/bevy-0.18.1/examples/3d/mirror.rs`).
+The client renders **real planar reflections** of the 3D environment (terrain, objects, characters, clouds) onto water surfaces using the *mirrored camera* technique from the official Bevy `mirror` example (see `bevy-collection/bevy-0.18.1/examples/3d/mirror.rs`; the technique is unchanged in 0.19.1).
 
-A dedicated reflection camera mirrors the main camera's transform across the water plane and renders the scene into an off-screen texture. The water material's fragment shader samples that texture using each fragment's own screen-space UV — no plane-reflection math in the shader is needed, because the reflected scene maps 1:1 to the mirrored camera's view.
+A dedicated reflection camera mirrors the main camera's transform across the water plane and renders the scene into an off-screen texture. The water material's fragment shader samples that texture at each fragment's own screen-space UV (plus a wave distortion offset) — no plane-reflection math in the shader is needed, because the reflected scene maps 1:1 to the mirrored camera's view.
+
+The water surface itself is shaded physically (Fresnel, absorption, glints) with the scene's real lights; see *Water Shading* below.
 
 ## Design Goals
 
-1. **Correct reflections**: mirrored, not upside-down; culling matches what the main camera would see mirrored
+1. **Correct reflections**: mirrored, not upside-down; nothing below the water surface in the reflection (oblique near clip plane)
 2. **No recursion**: water must never render into its own reflection (handled with `RenderLayers`)
-3. **Performance**: reflection pass gated by distance to water; half-resolution render target; camera disabled when irrelevant
-4. **Debuggability**: on-water debug view showing the raw reflection texture plus a camera status encoding (colors)
-5. **Settings integration**: enable/disable, resolution scale, debug view toggle in the settings UI
+3. **No world UI in the reflection**: name tags / chat bubbles are skipped for the reflection view (`NoWorldUi`)
+4. **Performance**: reflection pass gated by distance to water and by water being in view; half-resolution render target
+5. **Never sample a stale texture**: the water materials get a status (0 = camera disabled) and fall back to an analytic sky
+6. **Debuggability**: on-water debug view showing the raw reflection texture plus a camera status encoding (colors)
+7. **Settings integration**: enable/disable, resolution scale, debug view toggle in the settings UI
 
 ---
 
@@ -24,8 +28,9 @@ flowchart TB
         MainCam[Main Camera<br/>Camera3d, RenderLayers [0,1]]
         WaterMesh[Water Mesh<br/>RenderLayers layer(1)]
         Env[Environment<br/>terrain/objects: Mesh3d + RenderLayers layer(0)]
-        WaterMat[WaterMaterial<br/>reflection_texture + reflection_status]
+        WaterMat[WaterMaterial<br/>settings + reflection_texture + reflection_status + sky_night_factor]
         Settings[WaterSettings<br/>reflection_enabled, reflection_scale, debug_show_reflection]
+        Volumes[UnderwaterVolumes<br/>world-space water rectangles]
     end
 
     subgraph WaterReflectionPlugin src/render/water_reflection.rs
@@ -36,24 +41,25 @@ flowchart TB
     end
 
     subgraph Render Target
-        Img[Image<br/>Rgba16Float, linear HDR, half resolution]
+        Img[Image<br/>Rgba16Float, linear HDR, half resolution<br/>alpha 0 = sky]
     end
 
     subgraph GPU Shader src/render/shaders/water_material.wgsl
-        Sample[sample_water_reflection<br/>clip_from_world * world_pos -> UV -> sample]
-        Blend[blend = max(fresnel, 0.5)<br/>mix water color with reflection]
-        Debug[debug status colors<br/>red/orange/magenta]
+        Sample[planar_reflection<br/>frag UV + wave offset, sky where alpha 0]
+        Sky[sky_radiance<br/>analytic sky from view lights]
+        Blend[Schlick Fresnel F0 0.02<br/>premultiplied alpha]
     end
 
     MainCam --> SyncCam
-    SyncCam --> MainCam
-    SyncCam --> Env
-    Env --> Img
+    Volumes --> SyncCam
     SyncCam --> Img
+    Env --> Img
     Manage --> Img
     SyncTex --> Img
+    SyncCam -->|status| WaterMat
     Img --> WaterMat
     WaterMat --> Sample
+    Sky --> Sample
     Sample --> Blend
     Settings --> SyncCam
     Settings --> Manage
@@ -67,13 +73,15 @@ flowchart TB
 
 | File | Responsibility |
 |---|---|
-| `src/render/water_reflection.rs` | Plugin, reflection camera, render target lifecycle, per-frame camera sync |
-| `src/render/water_material.rs` | `WaterMaterial` bind groups: reflection texture/sampler, 14-vec4 storage buffer |
-| `src/render/shaders/water_material.wgsl` | `sample_water_reflection()`, fresnel blending, debug status colors |
-| `src/resources/water_settings.rs` | `WaterSettings` — `reflection_enabled` (default true), `reflection_scale` (0.5), `debug_show_reflection` |
-| `src/ui/ui_settings_system.rs` | Water settings page: Reflections checkbox, Resolution slider, Debug Show Reflection toggle |
-| `src/zone_loader/spawning/water.rs` | Water planes spawned on `RenderLayers::layer(1)` |
-| `src/lib.rs` | `WaterReflectionPlugin` registration; main camera uses `RenderLayers::from_layers(&[0, 1])`; `EguiGlobalSettings { auto_create_primary_context: false }` |
+| `src/render/water_reflection.rs` | Plugin, reflection camera, render target lifecycle, per-frame camera sync, status push |
+| `src/render/water_material.rs` | `WaterMaterial` (settings, reflection texture, status), premultiplied blending, 8-vec4 storage buffer |
+| `src/render/shaders/water_material.wgsl` | Waves, Fresnel, reflection sampling, analytic sky, absorption, glints, caustics, foam, underside |
+| `src/render/underwater_effect.rs` | `UnderwaterStatePlugin`: `UnderwaterVolumes` + `CameraUnderwaterState` (no screen effect) |
+| `src/render/world_ui.rs` | `NoWorldUi` camera marker; world UI skips such views |
+| `src/resources/water_settings.rs` | `WaterSettings` — shading settings plus `reflection_enabled` (default true), `reflection_scale` (0.5), `debug_show_reflection` |
+| `src/ui/ui_settings_system.rs` | Water settings page (`render_water_page`) |
+| `src/zone_loader/spawning/water.rs` | Water planes spawned on `RenderLayers::layer(1)`; volume center at the plane's height |
+| `src/lib.rs` | `WaterReflectionPlugin` / `UnderwaterStatePlugin` registration; main camera uses `RenderLayers::from_layers(&[0, 1])`; `apply_water_settings` copies `WaterSettings` into every water material; `EguiGlobalSettings { auto_create_primary_context: false }` |
 
 ---
 
@@ -84,20 +92,25 @@ Spawned in `PostStartup` (after the main camera and its egui context exist):
 ```rust
 Camera3d::default(),
 Msaa::Off,
+Hdr,
+Tonemapping::None,
 Camera {
     order: -1,
     is_active: false,          // enabled per-frame by the sync system
     invert_culling: true,      // mirrored geometry faces the mirrored camera
-    clear_color: ClearColorConfig::Custom(Color::BLACK),
+    clear_color: ClearColorConfig::Custom(Color::NONE), // alpha 0 marks sky
     ..Default::default()
 },
 RenderTarget::Image(handle.into()),       // off-screen texture
 Projection::Perspective(PerspectiveProjection::default()),
 RenderLayers::layer(0),                    // never renders water (layer 1)
+NoWorldUi,                                 // no name tags / chat bubbles
 WaterReflectionCamera,                     // marker used by Without<> filters
 ```
 
-Render target: `Rgba16Float` (linear HDR, untonemapped). The reflection camera carries `Hdr` + `Tonemapping::None`. The water draws the reflection into the main HDR pass, where the main camera's Auto Exposure and tonemapping apply once to the whole frame. Reflections therefore match the scene's brightness at every time of day. Until 2026-09-30 this was an LDR `Bgra8UnormSrgb` target (as in Bevy's `mirror` example) with its own fixed-exposure TonyMcMapface, so reflections were tonemapped twice and never auto-exposed. Target size = window size × `reflection_scale` (default 0.5).
+Render target: `Rgba16Float` (linear HDR, untonemapped). The water draws the reflection into the main HDR pass, where the main camera's Auto Exposure and tonemapping apply once to the whole frame, so reflections match the scene's brightness at every time of day. Target size = window size × `reflection_scale` (default 0.5).
+
+**Sky**: the reflection camera has no atmosphere (`AtmosphereSettings` is deliberately not added: it previously caused a wgpu bind-group panic, and the mirrored camera sits below the ground the atmosphere model assumes). The target is cleared to transparent black, so pixels where nothing rendered keep alpha 0. Opaque geometry writes alpha 1, blended geometry (clouds) accumulates coverage, additive effects leave alpha unchanged. The shader composites `rgb + (1 - a) * sky`.
 
 **Why a second `Camera3d` is safe**: every game system that called `.single()` on `With<Camera3d>` queries got a `Without<WaterReflectionCamera>` filter. Without those filters the reflection camera breaks camera-follow logic, input, minimap, lights, audio, etc.
 
@@ -107,29 +120,34 @@ Render target: `Rgba16Float` (linear HDR, untonemapped). The reflection camera c
 
 Runs in `PostUpdate` **before** `TransformSystems::Propagate` so the engine propagates the new transform to `GlobalTransform` in the same frame. Each frame it:
 
-1. **Mirrors the transform** across the water plane (`y = surface_y`):
+1. **Picks the mirror plane**: the surface of the nearest water volume (XZ distance to its rectangle; ties, e.g. the camera above overlapping planes, go to the highest surface below the camera). Falls back to `WaterSettings::water_surface_y` (the first volume) when there are no volumes.
+2. **Mirrors the transform** across that plane (`y = surface_y`):
 
    ```rust
    let plane_offset = Mat4::from_translation(Vec3::Y * surface_y);
    let reflect = Mat4::from_mat3a(reflection_matrix(Vec3::Y));
    let mirror_matrix = plane_offset * reflect * plane_offset.inverse();
    let mirrored_transform = Transform::from_matrix(mirror_matrix * main_transform.to_matrix());
-   if *transform != mirrored_transform {
-       *transform = mirrored_transform;
-   }
    ```
 
-   The transform and `camera.is_active` are written only on difference, so a still main camera does not re-flag (and re-propagate) the reflection camera every frame.
+   The transform and `camera.is_active` are written only on difference.
+3. **Builds the projection**: the main perspective with a halved far plane (`max(far * 0.5, 2000) + 500`) and, while the camera is above the plane, the **oblique near clip plane** (see below). Written only when far/fov/near/clip plane differ (aspect is re-derived by Bevy's `camera_system` from the target).
+4. **Writes the frustum directly** (see *The Frustum Trap* below).
+5. **Gates the camera**: `camera.is_active` is true only when reflections are enabled in settings, a water volume exists, the camera is not underwater, the nearest water volume is ≤ 300 m away, **and a water plane intersects the main camera's frustum** (AABB vs frustum built from this frame's main transform, far plane ignored, same test as `check_visibility`; water spawned this frame counts as visible). With no water fragment on screen the reflection texture is never sampled, so the whole second scene render and its shadow cascades are skipped.
+6. **Pushes the status** into every water material whose status differs (`push_reflection_status`): 0 when the camera is off for any reason except "no water in view" (that case leaves the status unchanged, since no water is drawn), otherwise 1-3 from the visible entity count. Checking every frame (read-only scan) also covers materials created by a zone load, which start at 0.
+7. **Mirrors the `EnvironmentMapLight`** onto the reflection camera (when present) so the reflected scene is lit identically.
 
-2. **Copies the projection**: `*projection = Projection::Perspective(main_perspective.clone())`.
-3. **Writes the frustum directly** (see *The Frustum Trap* below).
-4. **Gates the camera**: `camera.is_active` is true only when reflections are enabled in settings, a water volume exists, the camera is not underwater, the nearest water volume is ≤ 300 m away, **and a water plane intersects the main camera's frustum** (AABB vs frustum built from this frame's main transform, far plane ignored, same test as `check_visibility`; water spawned this frame counts as visible). With no water fragment on screen the reflection texture is never sampled, so the whole second scene render and its shadow cascades are skipped. The gate runs before transform propagation, so the frame water enters the view the camera renders first (order −1) and the water never samples a stale reflection. The debug status is not updated while culled this way.
-5. **Mirrors the `EnvironmentMapLight`** onto the reflection camera (when present) so the reflected scene is lit identically.
-6. **Pushes status + logs** (see *Diagnostics*).
+`sync_reflection_textures` keeps a `WaterMaterialRegistry` of water material ids. It drops ids whose material no longer exists before scanning, so the per-frame scans do not grow over a session.
 
-`sync_reflection_textures` keeps a `WaterMaterialRegistry` of water material ids. It drops ids whose material no longer exists before scanning (every zone load replaces the water materials; asset ids are generational, so a removed id never matches a new material), so the per-frame scans do not grow over a session.
+---
 
-The mirrored camera *position* is logged as `refl_pos` — it should always be `(x, 2*surface_y - y, z)` relative to the main camera.
+## Oblique Near Clip Plane
+
+`near_clip_plane = (view_from_world(main) * -Y).normalize().extend(surface_y - camera_y)` — the same construction as Bevy's `mirror` example. Bevy's `adjust_perspective_matrix_for_clip_plane` (Lengyel) replaces the projection's near plane with the water plane, so everything below the surface (lake bed, wading characters' legs, sunken objects) is clipped from the reflection.
+
+It is only applied while the camera is above the plane (`surface_y - camera_y < -0.01`): the plane must face away from the camera or the projection degenerates.
+
+Verified numerically against Bevy 0.19.1's math (perspective_infinite_reverse_rh + adjust + `from_clip_from_world_custom_far`): above-water points keep their clip depth (no extra clipping out to 4000 m), below-water points get NDC z > 1, and the frustum's near half-space (`row3 + row2`) stays loose, so CPU culling is unaffected. (It was disabled earlier only while the frustum trap below was being debugged.)
 
 ---
 
@@ -137,7 +155,7 @@ The mirrored camera *position* is logged as `refl_pos` — it should always be `
 
 The reflection camera's transform is the composition `mirror_matrix * main_camera_matrix`. `reflection_matrix(Vec3::Y)` from `bevy::math` builds the standard planar reflection matrix (determinant −1). `plane_offset * reflect * plane_offset.inverse()` shifts the reflection plane to `y = surface_y`.
 
-`Transform::from_matrix` decomposes this correctly: glam's `to_scale_rotation_translation` detects the negative determinant and returns scale `(-1,-1,-1)` with a compensating rotation, so `to_matrix()` reproduces the exact reflection. The view matrix is therefore `T⁻¹·R` — a valid (mirrored, left-handed) view, and the extracted frustum is a valid frustum.
+`Transform::from_matrix` decomposes this correctly: glam's `to_scale_rotation_translation` detects the negative determinant and returns scale `(-1,-1,-1)` with a compensating rotation, so `to_matrix()` reproduces the exact reflection.
 
 ---
 
@@ -146,16 +164,12 @@ The reflection camera's transform is the composition `mirror_matrix * main_camer
 The reflection camera's `Frustum` component **is written manually every frame**:
 
 ```rust
-*frustum = main_perspective.compute_frustum(&GlobalTransform::from(*transform));
+*frustum = reflection_perspective.compute_frustum(&GlobalTransform::from(*transform));
 ```
 
 Why: Bevy's `update_frusta` recomputes a camera's frustum only when its `GlobalTransform` or `Projection` is change-detected. If that never fires for the reflection camera, the `Frustum` keeps its degenerate default (all-zero half-spaces), and `check_visibility` then culls **everything** except `NoFrustumCulling` entities.
 
-Symptom: only clouds and name tags appeared in the reflection (both are `NoFrustumCulling`), the debug status stayed magenta (status 2, < 300 visible entities), and all frustum sphere tests failed. Terrain/objects (normal `Mesh3d` with `Aabb`) were culled even though the frustum math itself was correct.
-
-Verification steps used during debugging:
-- Logged `near_plane` and `p0` half-spaces — a valid frustum has `near_plane.normal` ≈ the camera's forward direction and the camera position inside `p0`.
-- Counted `VisibleEntities` per visibility class (`refl_visible_entities`, `refl_visible_mesh3d`) — after the fix, hundreds of terrain meshes are visible.
+Symptom: only clouds and name tags appeared in the reflection (both are `NoFrustumCulling`), the debug status stayed magenta (status 2, < 300 visible entities).
 
 ---
 
@@ -169,32 +183,37 @@ Verification steps used during debugging:
 | Fish | 1 | excluded from reflections (perf; also fish are under the surface) |
 | Terrain, objects, characters | 0 | appear in reflections |
 
-Clouds (`cloud_material.rs:602`, `volumetric_cloud.rs:458`), name tags and chat bubbles (`name_tag_system.rs`, `chat_bubble_spawn_system.rs`) use `NoFrustumCulling` and therefore render in the reflection regardless of the frustum.
+Clouds (`cloud_material.rs`, `volumetric_cloud.rs`) use `NoFrustumCulling` and render in the reflection regardless of the frustum. Name tags and chat bubbles are **not** drawn in the reflection: world UI is a custom render pipeline that queues per view, and it skips views whose camera has `NoWorldUi`.
 
 ---
 
-## Shader Side (`water_material.wgsl`)
+## Water Shading (`water_material.wgsl`)
 
-### Screen-space sampling
+All lighting comes from Bevy's `lights` uniform (every directional light: sun, sky fill, moon; plus ambient) and is scaled by `view.exposure`, like the PBR materials. The water therefore follows the day/night cycle exactly; nothing in the shader is a constant emissive color. Output is **premultiplied alpha** (`AlphaMode::Premultiplied`, blend `PREMULTIPLIED_ALPHA_BLENDING`):
 
-`sample_water_reflection()` (line ~589) projects each water fragment through the **main camera's** `view.clip_from_world`:
-
-```wgsl
-let clip = view.clip_from_world * vec4<f32>(world_pos, 1.0);
-let ndc = clip.xy / clip.w;
-let uv = vec2<f32>(0.5 * ndc.x + 0.5, 0.5 - 0.5 * ndc.y);
+```
+color = F * reflection + (1 - F) * body + caustics + crest glow + glint   (foam mixed on top)
+alpha = 1 - (1 - F) * T
 ```
 
-Because the reflection camera's view-projection is exactly the main camera's composed with the plane reflection, a fragment on the water plane maps to the same UV in both — no plane reflection in the shader is required. A small wave-based UV distortion (0.008 scale) plus an edge fade keep the surface living and hide render-target seams.
+so the opaque scene behind the surface (lake bed) shows through by exactly `(1 - F) * T`, and reflections/glints are not diluted in clear water.
 
-### Blending
+| Part | Implementation |
+|---|---|
+| Waves | Up to 8 directional deep-water waves (2 per `wave_layers` octave, wavelengths 6.3 m → 0.22 m at `wave_frequency` 2.0, longest octaves slightly gentler) with analytic slopes, a slow domain warp, per-octave noise wave-group envelopes (no endless parallel stripes) and a ~1 m noise warp on the short octaves (no glitter lattice). Each wave fades out below ~2-6 pixels per wavelength (`fwidth` footprint); its slope variance is added to the glint roughness. |
+| Fresnel | Schlick, F0 = 0.02 (IOR 1.33), × `fresnel_strength * 2` (0.5 = physical). |
+| Reflection | Fragment UV + offset between the projections of `-V` and the mirrored wave-reflected ray `(R.x, -R.y, R.z)` (exact for distant scenery), × `refraction_strength * 5` (0.2 = physical, default 0.05 = a quarter), clamped to 0.08. Fades to the analytic sky where the offset leaves the texture. Used only when `reflection_enabled` and status ≥ 1. |
+| Analytic sky | Single-scattering Rayleigh + Mie sky lit by each directional light (air mass, light reddening/fade at the horizon), × 2.5 to match Bevy's multi-scattering atmosphere. Fills alpha-0 reflection pixels (the starry sky sphere is in the texture itself when visible). When the reflection is off/stale it is blended toward the starry sky's night background by `WaterMaterial::sky_night_factor` (`StarrySkySettings::night_factor`, quantized to 1/32 and synced by `sync_water_sky_night_factor` in `water_material.rs`), because at night the starry sphere covers the atmosphere in the main view. |
+| Body / absorption | Refracted path length through a smooth procedural depth field (`min_depth`..`max_depth`, biased shallow, scale `depth_gradient_scale`), or the exact depth of a depth-prepass object behind the surface if shallower. Absorption σ = −ln(`bottom_visibility`) / `shallow_threshold` (bottom visibility at the clarity depth), red ×2.2, blue ×0.85. Body = (1 − T) × mix(shallow, deep color) × 0.2 × E/π. |
+| Glint | GGX + height-correlated Smith from the **brightest** directional light (sun by day, moon by night), × `specular_intensity * 2`, capped at 40. |
+| Caustics | Ridged-noise pattern on the bed point under the refracted ray, lit by the key light through the water, weighted by the visible bed. |
+| Crest glow | Key light through wave crests when looking toward a low sun/moon (`sss_intensity`). |
+| Foam | Whitecaps above `foam_threshold` only with steep waves (`wave_amplitude` > ~0.5), plus contact foam where a depth-prepass object is < 0.35 m below the surface; lit like a diffuse surface. Soft fade where an object meets the surface. |
+| Underside | Camera below the plane: Snell's window (TIR beyond ~48.6°). |
 
-```wgsl
-let reflection_blend = max(saturate(fresnel), 0.5);
-final_color = mix(final_color, reflection_light, reflection_blend);
-```
+**Depth prepass**: the main camera has `DepthPrepass`, so the water pipeline gets the `DEPTH_PREPASS` def and `prepass_depth()`. The **terrain does not write the prepass** (`TerrainMaterial::enable_prepass() == false`), so the real lake-bed depth and terrain shorelines are unknown to the shader; only objects/characters/boats get exact thickness and contact foam.
 
-At least 50% reflection everywhere (clearly visible even looking straight down), rising to ~100% at grazing angles. `fresnel` combines `fresnel_schlick(VdotN, 0.2)` with a `fresnel_strength` setting and a 2.0 boost multiplier. When reflections are disabled, `sample_water_reflection` returns black and the fallback procedural sky tint is used instead.
+**Fog**: the water no longer applies the zone fog itself (terrain and objects do not either); it was graying distant water against unfogged shores.
 
 ### Debug status colors
 
@@ -202,24 +221,27 @@ With `debug_show_reflection` on, the water shows either the raw reflection sampl
 
 | Status | Meaning |
 |---|---|
-| Red (status 0) | camera disabled |
+| Red (status 0) | camera disabled (setting, underwater, > 300 m, no water) |
 | Orange (status 1) | camera active but 0 visible entities |
 | Magenta (status 2) | active but < 300 visible entities (suspicious, broken frustum) |
 | raw sample (status 3) | active with a normal entity count |
-
-Status is pushed from the sync system into `WaterMaterial::reflection_status` (only on change) and read by the shader through the material storage buffer.
 
 ---
 
 ## Material Bindings (`water_material.rs`)
 
-- Bind group 1: `reflection_texture` (`Handle<Image>`)
-- Bind group 2: reflection sampler
-- Storage buffer grown to **14 vec4s**:
-  - `[12]` — reflection plane (normal + water surface y)
-  - `[13]` — reflection params (enabled flag, status)
+- Binding 0: read-only storage buffer, 8 vec4s:
+  - `[0]` wave_amplitude, wave_frequency, wave_speed, wave_layers
+  - `[1]` fresnel_strength, specular_intensity, sss_intensity, refraction_strength
+  - `[2]` foam_intensity, foam_threshold, caustics_intensity, caustics_scale
+  - `[3]` min_depth, max_depth, shallow_threshold, bottom_visibility
+  - `[4]` deep_color, `[5]` shallow_color
+  - `[6]` depth_gradient_scale.xy, caustics_speed, water_surface_y
+  - `[7]` reflection enabled, debug_show_reflection, status, sky night factor
+- Binding 1: `reflection_texture` (`Handle<Image>`; fallback image until the target exists)
+- Binding 2: reflection sampler (clamp, linear)
 
-`AsBindGroup::Param` uses `RenderAssets<GpuImage>` so the bind group resolves the texture in the render world; a fallback image covers the frame before the first render.
+Returned from `unprepared_bind_group` so Bevy's allocator frees the old bind group when the material changes (status transitions, settings edits).
 
 ---
 
@@ -227,8 +249,9 @@ Status is pushed from the sync system into `WaterMaterial::reflection_status` (o
 
 - **`.single()` camera queries**: ~20 systems (input, minimap, lights, audio, clouds, weather, debug UI, map editor, model/zone viewers, etc.) got `Without<WaterReflectionCamera>` filters — required, or the second `Camera3d` panics/breaks them.
 - **Egui**: `EguiGlobalSettings { auto_create_primary_context: false }` — prevents the reflection camera from stealing the primary egui context (`MultipleEntities` panic).
-- **Atmosphere**: intentionally **not** cloned onto the reflection camera. It caused a fatal wgpu bind-group panic (24 vs 27 bindings) because the matching render-world atmosphere textures are not prepared for this camera.
+- **Atmosphere**: intentionally **not** enabled on the reflection camera (see *Reflection Camera Setup*).
 - **EnvironmentMapLight**: mirrored (cloned) onto the reflection camera so lighting matches.
+- **Underwater state**: `UnderwaterStatePlugin` (`underwater_effect.rs`) tracks volumes and `CameraUnderwaterState`; there is no underwater screen effect. Volumes of despawned water entities are dropped (they used to survive zone changes, and since every zone sits at the same world offset they could flag the camera as underwater or move the mirror plane in the next zone).
 
 ---
 
@@ -239,18 +262,17 @@ Periodic log (every 150 frames):
 ```
 [WATER REFLECTION] cam=... surface_y=... volumes=... underwater=... settings_enabled=...
   active=... water_dist=... refl_pos=... refl_visible_entities=... refl_visible_mesh3d=...
-[WATER REFLECTION DBG] gt_pos=... fwd=... | near_plane=... p0=... | hits cam/up100/down100/surf50=...
 ```
 
+- `surface_y` — the mirror plane actually used (nearest volume).
 - `refl_visible_mesh3d` — how many terrain/object meshes the reflection camera sees (the real indicator of working culling).
-- Frustum sphere-hit probes at the main camera position, ±100 m vertical, and 50 m above the surface — a valid frustum contains the camera and points along `fwd`.
-- `[WATER REFLECTION] status changed to N` on transitions of the debug status.
+- `[WATER REFLECTION] status changed to N` on transitions of the status.
 
 ---
 
 ## Known Issues & Future Work
 
-1. **Oblique near clip plane disabled**: the Lengyel clip plane (from the mirror example) that would hide the lake bed from reflections is currently disabled (`// DEBUG TEST` in `sync_reflection_camera`) because its sign made the derived frustum cull everything. It must be re-enabled and sign-corrected now that the frustum is written manually.
-2. **Debug threshold** (300 visible entities) is a heuristic; re-verify when the oblique plane is back.
-3. **Performance**: the reflection pass renders the whole scene again while water is on screen (gated by the 300 m distance check and the main-frustum water test). Future: reduce to a low-res texture with blur.
-4. **HDR target** (`Rgba16Float`, done 2026-09-30): exposure and tonemapping are now consistent with the main view. It costs twice the memory of the old 8-bit target at `reflection_scale` size.
+1. **One mirror plane**: water at other heights in view reflects about the nearest volume's plane.
+2. **No terrain depth**: shoreline softening/foam and real lake-bed depth need the terrain in the depth prepass (custom terrain prepass shader).
+3. **Debug threshold** (300 visible entities) is a heuristic.
+4. **Performance**: the reflection pass renders the whole scene again while water is on screen (gated by the 300 m distance check and the main-frustum water test).

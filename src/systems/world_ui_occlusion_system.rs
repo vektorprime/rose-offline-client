@@ -1,4 +1,6 @@
+use bevy::camera::primitives::{Frustum, Sphere};
 use bevy::ecs::world::EntityWorldMut;
+use bevy::math::Vec3A;
 use bevy::prelude::{
     Camera3d, Commands, Entity, GlobalTransform, Local, Or, Query, Res, State, Visibility, With,
     Without,
@@ -25,17 +27,29 @@ const OCCLUSION_STAGGER_FRAMES: u64 = 4;
 /// reported as occluded by that wall.
 const OCCLUSION_EPSILON: f32 = 0.05;
 
+/// Radius around a tag anchor, at its distance from the camera, that must touch the
+/// camera frustum before the tag's line of sight is ray-cast. Tags are drawn at a
+/// fixed pixel size, so their world-space reach grows with distance: 0.25 m per
+/// metre is ~300 px at 1080p and the 45 degree FOV, more than a name tag with its
+/// health bar, and also covers a frame of camera turn (the frustum is last frame's).
+const TAG_VIEW_RADIUS_BASE: f32 = 2.0;
+const TAG_VIEW_RADIUS_PER_METER: f32 = 0.25;
+
 /// Hides name tags and chat bubbles when terrain or a zone object (building, wall,
 /// decoration) blocks the line of sight between the camera and the tag anchor.
 ///
 /// Characters, NPCs, monsters, item drops and water never occlude tags. Hovered or
 /// selected targets keep their name tag visible even behind occluders.
+///
+/// Tags outside the camera view skip the ray cast (most tags around the player are
+/// off screen): their stored result is dropped, so the first frame they are back in
+/// view checks them again immediately.
 pub fn world_ui_occlusion_system(
     mut commands: Commands,
     app_state: Res<State<AppState>>,
     rapier_context: ReadRapierContext,
     query_camera: Query<
-        &GlobalTransform,
+        (&GlobalTransform, &Frustum),
         (With<Camera3d>, Without<crate::render::WaterReflectionCamera>),
     >,
     mut query_tags: Query<
@@ -62,7 +76,7 @@ pub fn world_ui_occlusion_system(
         return;
     };
 
-    let Ok(camera_transform) = query_camera.single() else {
+    let Ok((camera_transform, camera_frustum)) = query_camera.single() else {
         return;
     };
 
@@ -101,13 +115,35 @@ pub fn world_ui_occlusion_system(
 
         let mut occluded = occlusion_state.is_some_and(|state| state.occluded);
 
-        if occlusion_matters {
+        let anchor = global_transform.translation();
+        let in_view = || {
+            let radius =
+                TAG_VIEW_RADIUS_BASE + TAG_VIEW_RADIUS_PER_METER * anchor.distance(camera_position);
+            camera_frustum.intersects_sphere(
+                &Sphere {
+                    center: Vec3A::from(anchor),
+                    radius,
+                },
+                false,
+            )
+        };
+
+        if occlusion_matters && !in_view() {
+            // Not drawn: skip the ray, and forget the stale result so the tag is
+            // checked immediately when it comes back into view.
+            if occlusion_state.is_some() {
+                commands
+                    .entity(entity)
+                    .queue_silenced(|mut tag_entity: EntityWorldMut| {
+                        tag_entity.remove::<OcclusionState>();
+                    });
+            }
+        } else if occlusion_matters {
             let should_check = occlusion_state.is_none()
                 || (u64::from(entity.index_u32()) % OCCLUSION_STAGGER_FRAMES
                     == frame_index % OCCLUSION_STAGGER_FRAMES);
 
             if should_check {
-                let anchor = global_transform.translation();
                 let delta = anchor - camera_position;
                 let distance = delta.length();
 

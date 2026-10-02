@@ -2,11 +2,12 @@ use std::ops::RangeInclusive;
 
 use bevy::{
     asset::{AssetServer, Assets, Handle, LoadState, RenderAssetUsages},
+    camera::{primitives::Aabb, visibility::NoAutoAabb},
     log::{debug, error, info, warn},
     math::{Quat, Vec2, Vec3, Vec4},
     prelude::{
         Commands, Component, Entity, GlobalTransform, Mesh3d, MeshMaterial3d, Query, Res, ResMut,
-        Resource, Time, Transform,
+        Resource, Time, Transform, ViewVisibility,
     },
     material::AlphaMode,
     render::{
@@ -565,26 +566,36 @@ where
 /// only modified when a buffer has to be replaced or a blend/billboard value changes.
 /// A sequence that runs out of particles is cleared once (all zero-size), like the
 /// original client, which only drew live particles.
+///
+/// A sequence no view drew last frame (its particle `Aabb` outside every camera
+/// frustum, see `update_particle_aabb_system`) uploads like an empty one: cleared
+/// once, then skipped. Its particles keep simulating; the frame after it comes back
+/// into view uploads them again, and the cleared buffers mean it never shows the
+/// stale particles from when it left the view.
 pub fn particle_storage_buffer_update_system(
     mut commands: Commands,
     mut query: Query<(
         Entity,
         &mut ParticleRenderData,
         Option<&MeshMaterial3d<ParticleMaterial>>,
+        Option<&ViewVisibility>,
     )>,
     mut materials: ResMut<Assets<ParticleMaterial>>,
     mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
     mut meshes: ResMut<Assets<Mesh>>,
     default_texture: Res<DefaultParticleTexture>,
 ) {
-    for (entity, mut render_data, material_handle) in query.iter_mut() {
+    for (entity, mut render_data, material_handle, view_visibility) in query.iter_mut() {
         let particle_count = render_data.positions.len();
+        // ViewVisibility is last frame's result (this runs in Update).
+        let drawn = view_visibility.is_none_or(|visibility| visibility.get());
+        let upload_count = if drawn { particle_count } else { 0 };
 
         // No live particles: upload all-zero buffers once so the particles that died
         // stop drawing (untouched buffers would keep showing the last frame's particles),
         // then skip while the sequence stays empty. A sequence without a material is left
         // alone until it has particles.
-        if particle_count == 0 && (render_data.gpu_buffers_empty || material_handle.is_none()) {
+        if upload_count == 0 && (render_data.gpu_buffers_empty || material_handle.is_none()) {
             continue;
         }
 
@@ -624,7 +635,7 @@ pub fn particle_storage_buffer_update_system(
         // past the live count are well defined, and the byte length never changes, so
         // Bevy writes into the existing GPU buffers and the material's bind group stays
         // valid without re-preparing the material.
-        let padded_len = render_data.capacity.max(particle_count);
+        let padded_len = render_data.capacity.max(upload_count);
 
         // Update or create mesh + material components
         if let Some(existing_material_handle) = material_handle {
@@ -646,25 +657,25 @@ pub fn particle_storage_buffer_update_system(
             let positions = upload_particle_buffer(
                 &mut storage_buffers,
                 &mat.positions,
-                padded(&render_data.positions, padded_len),
+                padded(&render_data.positions[..upload_count], padded_len),
             );
             let sizes = upload_particle_buffer(
                 &mut storage_buffers,
                 &mat.sizes,
-                padded(&render_data.sizes, padded_len),
+                padded(&render_data.sizes[..upload_count], padded_len),
             );
             let colors = upload_particle_buffer(
                 &mut storage_buffers,
                 &mat.colors,
-                padded(&render_data.colors, padded_len),
+                padded(&render_data.colors[..upload_count], padded_len),
             );
             let textures = upload_particle_buffer(
                 &mut storage_buffers,
                 &mat.textures,
-                padded(&render_data.textures, padded_len),
+                padded(&render_data.textures[..upload_count], padded_len),
             );
 
-            let uploaded_empty = particle_count == 0;
+            let uploaded_empty = upload_count == 0;
             if render_data.gpu_buffers_empty != uploaded_empty {
                 render_data.gpu_buffers_empty = uploaded_empty;
             }
@@ -740,9 +751,13 @@ pub fn particle_storage_buffer_update_system(
             let material_handle = materials.add(material);
             let mesh_handle = meshes.add(mesh);
 
-            commands
-                .entity(entity)
-                .insert((Mesh3d(mesh_handle), MeshMaterial3d(material_handle)));
+            // The mesh has no positions: the Aabb comes from update_particle_aabb_system.
+            commands.entity(entity).insert((
+                Mesh3d(mesh_handle),
+                MeshMaterial3d(material_handle),
+                Aabb::default(),
+                NoAutoAabb,
+            ));
 
             debug!(
                 "✓ [Particle {:?}] Created with {} particles",

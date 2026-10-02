@@ -34,10 +34,10 @@ A GPU-driven particle system that bypasses traditional CPU-side mesh updates.
 - **Reference**: `src/render/particle_material.rs`
 
 ### WaterMaterial
-A fully procedural water rendering solution that does not rely on external textures for its core appearance.
-- **Features**: Supports animated waves, foam intensity, refraction, and subsurface scattering (SSS).
-- **Underwater Effects**: Integrated with `UnderwaterEffectPlugin` to provide volumetric fog and color blending when the camera is submerged.
-- **Reference**: `src/render/water_material.rs`
+A fully procedural, physically based water surface that does not rely on external textures.
+- **Features**: Filtered multi-octave wave normals, Schlick Fresnel (IOR 1.33), planar reflection with wave distortion and an analytic-sky fallback, GGX sun/moon glints, absorption along the refracted path, caustics, crest glow, whitecaps and contact foam, Snell's window from below. Lit by Bevy's `lights` uniform and `view.exposure` (same units as PBR), drawn with premultiplied alpha. See [planar-water-reflection.md](planar-water-reflection.md).
+- **Underwater**: there is no underwater screen effect (removed); `UnderwaterStatePlugin` only tracks `CameraUnderwaterState`/`UnderwaterVolumes`.
+- **Reference**: `src/render/water_material.rs`, `src/render/shaders/water_material.wgsl`
 
 ### DamageDigitMaterial
 Specialized material for rendering high-performance 3D text for combat feedback.
@@ -68,7 +68,7 @@ The following extensions allow the `StandardMaterial` to be augmented with ROSE-
 
 Terrain and water are **not** `StandardMaterial` extensions — they use standalone custom `Material` implementations:
 - **TerrainMaterial** (`src/render/terrain_material.rs`): up to 100 tile textures in a texture binding array, selected per-vertex via `TERRAIN_MESH_ATTRIBUTE_TILE_INFO` (two layers + rotation), with lightmap support via UV0. One instance per zone, shared by every block (created in `spawn_zone`).
-- **WaterMaterial** (`src/render/water_material.rs`): fully procedural shading with a custom `AsBindGroup` that packs per-material values into a storage buffer.
+- **WaterMaterial** (`src/render/water_material.rs`): fully procedural shading with a custom `AsBindGroup` that packs the `WaterSettings` and the reflection status into an 8-vec4 storage buffer (plus the reflection texture and sampler).
 
 ## Post-Processing Effects
 
@@ -96,7 +96,7 @@ Not implemented:
 Render-graph nodes are plain systems in the `Core3d` schedule (multi-threaded executor). `RenderContext`/`ViewQuery` are read-only, so **unordered passes run in parallel**. Command buffers are submitted in schedule (topological) order, but `ViewTarget::post_process_write()` flips the shared main-texture ping-pong index in *thread* order. Two unordered passes that both call `post_process_write()` therefore randomly read a texture that has not been written yet this frame. With tonemapping on, the pre-tonemap HDR frame reaches the screen (white flash). With tonemapping off, a stale frame reaches it (3D view appears to crawl while egui stays live).
 
 Rules:
-- Every custom pass that calls `post_process_write()` must be totally ordered against the others. `underwater_effect` is `.after(tonemapping).before(fxaa).before(smaa)` and returns before flipping when not underwater (`src/render/underwater_effect.rs`).
+- Every custom pass that calls `post_process_write()` must be totally ordered against the others, and must return before flipping when it has nothing to draw. (The former `underwater_effect` pass, which was the first race found, has been removed; no custom pass of ours calls `post_process_write()` now.)
 - Bevy leaves `fxaa` and `smaa` mutually unordered, so `apply_fxaa_system` only inserts `Fxaa` while SMAA is Disabled.
 - `bevy_egui::render::egui_pass` is pinned after `Core3dSystems::PostProcess` (`src/lib.rs`, next to the `EguiPlugin` setup). By default it is only `.after(EarlyPostProcess)`.
 
@@ -106,6 +106,35 @@ Rules:
 - A custom material that overrides `as_bind_group` and returns `CreateBindGroupDirectly` from `unprepared_bind_group` **leaks its previous bind group on every modification**: `prepare_asset` inserts a new allocator slot without freeing the old one (`bevy_pbr` `material.rs`). Return the bindings from `unprepared_bind_group` instead (`OwnedBindingResource::Buffer/TextureView/Sampler`); that path frees the old slot. Cloud, starry sky, volumetric cloud and water materials do this. `TerrainMaterial` must stay on the direct path (texture-view array), so it is shared per zone and only written on change.
 - A repainted `Image` (same descriptor, `COPY_DST`) is written into the existing GPU texture, so materials that bind it need no re-prepare.
 - `sync_volumetric_fog_step_count` (`zone_lighting.rs`, PostUpdate) runs `VolumetricFog` at 1 step while every `FogVolume` has zero density (output is identical, only the ambient term remains) and at 64 otherwise. The camera's `VolumetricFog::ambient_intensity` is 0: Bevy adds that ambient as `exp(-depth * (absorption + scattering)) * ambient` regardless of density, which put a white veil on nearby models that grew as the camera zoomed in.
+
+## Culling (frustum, occlusion, shadow cascades)
+
+How Bevy 0.19.1 decides what is drawn (verified in `bevy_camera-0.19.1/src/visibility/mod.rs`, `bevy_pbr-0.19.1/src/render/mesh_preprocess.wgsl`, `bevy_light-0.19.1/src/lib.rs`):
+
+- **CPU frustum culling** (`check_visibility_cpu_culling`, PostUpdate): tests each entity's local `Aabb` (as an OBB through its `GlobalTransform`) against the camera `Frustum`. The near plane is tested, the **far plane is not**. An entity with no `Aabb` (and no `Sphere`) is never culled. `NoFrustumCulling` skips the test.
+- **`calculate_bounds`** adds an `Aabb` from the mesh vertex positions to every `Mesh3d` without `NoFrustumCulling`/`NoAutoAabb`, once the mesh is loaded, and recomputes it only when the mesh handle or asset changes. It knows nothing about vertex shaders.
+- **GPU culling** (`mesh_preprocess.wgsl`, every camera without `NoIndirectDrawing`): frustum test again with the same `Aabb` (5 planes, far skipped; no `Aabb` = infinite box). With `OcclusionCulling` on the view, the `Aabb` is also tested against the depth pyramid, **for every mesh, `NoFrustumCulling` included, transparent phases included**. With no `Aabb` the infinite box projects to NaN and the result depends on the driver and backend. Rule: every `Mesh3d` must have a finite `Aabb` that encloses what its shader draws.
+- **Projection**: `PerspectiveProjection` is infinite reverse-Z. `far` does not clip anything and is not used by either culling path, so the View Distance slider (`apply_view_distance_system`, which only sets `far`) and the reflection camera's halved `far` have no effect on culling or depth precision. The sky radius (4000) vs `far` does not matter.
+- **Shadow cascades** (`check_dir_light_mesh_visibility`): casters are culled per cascade with the same `Aabb` (near plane off, far plane on). `NoFrustumCulling` or a missing `Aabb` puts a mesh in every cascade; `NotShadowCaster` removes it from all of them.
+- **Occlusion culling on the main camera** (`DepthPrepass` + `DeferredPrepass` + `OcclusionCulling`): Bevy 0.19.1 runs early/late *prepass* and early/late *deferred prepass* (`bevy_core_pipeline-0.19.1/src/deferred/node.rs`), so forward and deferred materials both take part (the `OcclusionCulling` doc comment calling deferred "unspecified" is older than this). Last frame's visible meshes are drawn in the early phase, the pyramid is built from that depth, everything culled early is re-tested in the late phase. Transparent meshes that write depth (volumetric clouds) end up in the next frame's early pyramid, which only costs extra late-phase work. The water reflection camera has no `DepthPrepass`/`OcclusionCulling`: frustum culling only (CPU and GPU culling both use its extracted `Frustum` component, written from the mirrored transform).
+
+Bounds of the special cases:
+
+| Entity | Bounds |
+| :--- | :--- |
+| Starry sky sphere (`spawn_starry_sky_and_moon`) | `NoFrustumCulling` + explicit `Aabb` of the sphere + `NotShadowCaster`. The sphere follows the camera, so the camera is always inside the box: the box can never be occluded and is never frustum culled. |
+| GPU particles (`effect_loader::spawn_particle`) | `Aabb` + `NoAutoAabb`; `update_particle_aabb_system` (`render/culling_bounds.rs`) rebuilds it from the world-space particle positions ± quad size, moved into the entity's local space with this frame's transform, with slack so it is not rewritten every frame. `NotShadowCaster`. |
+| Morph-animated meshes (zone animated objects `spawn_animated_object`, effect meshes with a mesh animation) | `NoAutoAabb`; `update_mesh_animation_aabb_system` sets mesh bounds ∪ `ZmoAssetAnimationTexture::position_bounds` (every animated position of every frame, plus the origin when some vertex row has no position data, because the shader reads zeros there). |
+| Skinned model parts | `DynamicSkinnedMeshBounds` (inserted with `SkinnedMesh` in `skinned_mesh_fix.rs`); the ZMS loader generates `Mesh::skinned_mesh_bounds`, so Bevy recomputes the `Aabb` from the joints every frame (flying NPCs whose bind pose is on the floor, lying, jumping). The character/NPC collider systems size colliders from the mesh's bind-pose bounds, not from the `Aabb`. |
+| Terrain blocks, water planes | explicit `Aabb` from the generated vertices at spawn (water ±0.5 m); `calculate_bounds` replaces it if the mesh asset is edited. |
+| Name tags, chat bubbles (`WorldUiRect`) | not meshes; `NoFrustumCulling` on them is a no-op. `queue_world_ui_meshes` culls rects in screen space. |
+| Everything else (zone object parts incl. map-editor placed/duplicated parts, damage digits, blood decals, weather, fish, birds, dirt dash, wind particles, volumetric clouds) | `calculate_bounds` from the real mesh; transforms do the animation. |
+
+CPU work skipped for meshes no view drew last frame (`ViewVisibility` read in Update/early PostUpdate is last frame's result, which includes shadow cascades):
+
+- `particle_storage_buffer_update_system`: an undrawn sequence uploads like an empty one (cleared once, then skipped); simulation continues. Coming back into view, the cleared buffers show nothing for one frame, never stale particles.
+- `mesh_animation_system`: the animation advances, but the material write (a full material re-prepare) is skipped once the material holds a frame.
+- `world_ui_occlusion_system`: no line-of-sight ray for tags whose anchor (with a distance-scaled margin) is outside the main camera frustum; their stored result is dropped so they are re-checked the frame they return.
 
 ## Code Examples
 
@@ -128,16 +157,17 @@ pub struct ParticleMaterial {
 
 ### Water Material Custom AsBindGroup
 ```rust
-// src/render/water_material.rs:193
-fn as_bind_group(
+// src/render/water_material.rs
+fn unprepared_bind_group(
     &self,
-    layout_descriptor: &BindGroupLayoutDescriptor,
+    _layout: &BindGroupLayout,
     render_device: &RenderDevice,
-    pipeline_cache: &PipelineCache,
     (image_assets, fallback_image): &mut SystemParamItem<'_, '_, Self::Param>,
-) -> Result<PreparedBindGroup, AsBindGroupError> {
-    // Packs per-material values into a single storage buffer for efficiency
-    let water_material_data = [ ... ]; 
+    _bindless: bool,
+) -> Result<UnpreparedBindGroup, AsBindGroupError> {
+    // Packs per-material values into a single storage buffer (8 vec4s)
+    let water_material_data: [Vec4; WATER_MATERIAL_DATA_LEN] = [ ... ];
+    // Returned unprepared so Bevy's allocator frees the old bind group on change.
     // ...
 }
 ```

@@ -3,11 +3,11 @@ use bevy::{
     ecs::query::QueryEntityError,
     math::{Quat, Vec3, Vec3A},
     prelude::{
-        AssetServer, Assets, Commands, Entity, GlobalTransform, Query, Res, Transform, With,
-        Without,
+        AssetServer, Assets, Commands, Entity, GlobalTransform, Mesh, Mesh3d, Query, Res,
+        Transform, With, Without,
     },
 };
-use bevy_camera::primitives::Aabb;
+use bevy_camera::primitives::MeshAabb;
 use bevy_mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes};
 use bevy_rapier3d::prelude::{Collider, CollisionGroups};
 
@@ -24,7 +24,8 @@ use crate::{
 pub fn npc_model_add_collider_system(
     mut commands: Commands,
     query_models: Query<(Entity, &NpcModel, &SkinnedMesh), Without<ColliderEntity>>,
-    query_aabb: Query<Option<&Aabb>, With<SkinnedMesh>>,
+    query_part_mesh: Query<&Mesh3d, With<SkinnedMesh>>,
+    meshes: Res<Assets<Mesh>>,
     inverse_bindposes: Res<Assets<SkinnedMeshInverseBindposes>>,
     zmo_assets: Res<Assets<ZmoAsset>>,
     asset_server: Res<AssetServer>,
@@ -37,7 +38,13 @@ pub fn npc_model_add_collider_system(
 
         // Collect the AABB of skinned mesh parts
         for part_entity in npc_model.model_parts.iter() {
-            match query_aabb.get(*part_entity) {
+            // Bind-pose bounds straight from the mesh: the part's Aabb component
+            // follows the animated pose (DynamicSkinnedMeshBounds), which would make
+            // the collider size depend on the pose at creation time.
+            let bind_pose_aabb = query_part_mesh
+                .get(*part_entity)
+                .map(|mesh3d| meshes.get(&mesh3d.0).and_then(|mesh| mesh.compute_aabb()));
+            match bind_pose_aabb {
                 Ok(Some(aabb)) => {
                     min = Some(min.map_or_else(|| aabb.min(), |min| min.min(aabb.min())));
                     max = Some(max.map_or_else(|| aabb.max(), |max| max.max(aabb.max())));

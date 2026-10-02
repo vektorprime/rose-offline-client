@@ -12,9 +12,12 @@ use rose_game_common::components::{
 
 use crate::{
     components::{Cooldowns, PlayerCharacter},
-    events::{NpcStoreEvent, NumberInputDialogEvent, PersonalStoreEvent, PlayerCommandEvent},
+    events::{
+        ChatboxEvent, NpcStoreEvent, NumberInputDialogEvent, PersonalStoreEvent, PlayerCommandEvent,
+    },
     resources::{GameData, UiResources},
     ui::{
+        chat_feedback::{ChatFeedback, ChatFeedbackThrottle},
         tooltips::{PlayerTooltipQuery, PlayerTooltipQueryItem},
         tooltip_on_hover,
         widgets::{DataBindings, Dialog, Widget},
@@ -513,6 +516,10 @@ pub fn ui_inventory_system(
     mut npc_store_events: MessageWriter<NpcStoreEvent>,
     mut personal_store_events: MessageWriter<PersonalStoreEvent>,
     mut number_input_dialog_events: MessageWriter<NumberInputDialogEvent>,
+    (mut chatbox_events, mut chat_feedback): (
+        MessageWriter<ChatboxEvent>,
+        Local<ChatFeedbackThrottle>,
+    ),
 ) {
     let ui_state_inventory = &mut *ui_state_inventory;
     let dialog = if let Some(dialog) = ui_state_inventory
@@ -710,20 +717,27 @@ pub fn ui_inventory_system(
         }
     }
 
-    if response_drop_money_button.map_or(false, |r| r.clicked()) && player.1.money.0 > 0 {
-        number_input_dialog_events.write(NumberInputDialogEvent::Show {
-            max_value: Some(player.1.money.0 as usize),
-            modal: false,
-            ok: Some(Box::new(move |commands, amount| {
-                commands.queue(move |world: &mut World| {
-                    if let Some(mut player_command_events) =
-                        world.get_resource_mut::<Messages<PlayerCommandEvent>>()
-                    {
-                        player_command_events.write(PlayerCommandEvent::DropMoney(amount));
-                    }
-                });
-            })),
-            cancel: None,
-        });
+    if response_drop_money_button.map_or(false, |r| r.clicked()) {
+        if player.1.money.0 > 0 {
+            number_input_dialog_events.write(NumberInputDialogEvent::Show {
+                max_value: Some(player.1.money.0 as usize),
+                modal: false,
+                ok: Some(Box::new(move |commands, amount| {
+                    commands.queue(move |world: &mut World| {
+                        if let Some(mut player_command_events) =
+                            world.get_resource_mut::<Messages<PlayerCommandEvent>>()
+                        {
+                            player_command_events.write(PlayerCommandEvent::DropMoney(amount));
+                        }
+                    });
+                })),
+                cancel: None,
+            });
+        } else {
+            chat_feedback.send(
+                &mut chatbox_events,
+                ChatFeedback::NotEnoughMoney.message(&game_data),
+            );
+        }
     }
 }

@@ -16,7 +16,10 @@ use bevy::{
         storage::ShaderBuffer,
     },
 };
-use bevy_camera::visibility::{InheritedVisibility, NoFrustumCulling, ViewVisibility};
+use bevy_camera::{
+    primitives::Aabb,
+    visibility::{InheritedVisibility, NoAutoAabb, ViewVisibility},
+};
 use bevy_mesh::{Mesh, PrimitiveTopology};
 use rose_file_readers::{
     EftFile, EftMesh, EftParticle, PtlFile, VfsPath, VfsPathBuf, VirtualFilesystem,
@@ -418,7 +421,7 @@ fn spawn_mesh(
                     let motion = asset_server.load(ZmoTextureAssetLoader::convert_path(
                         mesh_animation_path.path(),
                     ));
-                    entity_comands.insert(
+                    entity_comands.insert((
                         MeshAnimation::repeat(
                             motion,
                             if eft_mesh.repeat_count == 0 {
@@ -428,7 +431,11 @@ fn spawn_mesh(
                             },
                         )
                         .with_start_delay(eft_mesh.start_delay as f32 / 1000.0),
-                    );
+                        // The morph animation moves vertices outside the mesh's own
+                        // bounds: update_mesh_animation_aabb_system builds an Aabb
+                        // covering every animation frame instead.
+                        NoAutoAabb,
+                    ));
                 }
 
                 if let Some(transform_animation_path) = &eft_mesh.animation_file {
@@ -618,14 +625,15 @@ fn spawn_particle(
                         Visibility::default(),
                         InheritedVisibility::default(),
                         ViewVisibility::default(),
-                        // The placeholder mesh would give a zero-size Aabb at the emitter
-                        // origin, culling every particle once the origin leaves the view
-                        // (frustum and GPU occlusion culling). Particles are world-space and
-                        // not bounded by the mesh, so never cull them, like the old client.
-                        // Without an Aabb, Bevy's GPU culling also uses an infinite box.
-                        NoFrustumCulling,
-                        // ParticleMaterial never draws shadows; this only keeps the
-                        // unculled entities out of every shadow view's visibility lists.
+                        // The placeholder mesh says nothing about where the world-space
+                        // particles are, so Bevy must not derive the Aabb from it:
+                        // update_particle_aabb_system keeps it around the live particles
+                        // (frustum and GPU occlusion culling). Starts as a point at the
+                        // emitter until the first particles exist.
+                        Aabb::default(),
+                        NoAutoAabb,
+                        // ParticleMaterial never draws shadows; this keeps the entities
+                        // out of every shadow view's visibility lists.
                         NotShadowCaster,
                     ));
 

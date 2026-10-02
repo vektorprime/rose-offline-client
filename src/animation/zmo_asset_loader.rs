@@ -4,6 +4,7 @@ use bevy::asset::{
     io::Reader, Asset, AssetLoader, LoadContext, RenderAssetUsages, UntypedAssetId,
     VisitAssetDependencies,
 };
+use bevy::camera::primitives::Aabb;
 use bevy::math::{Quat, Vec3};
 use bevy::prelude::{Handle, Reflect, TypePath};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -37,6 +38,11 @@ pub struct ZmoAssetAnimationTexture {
     pub has_normal_channel: bool,
     pub has_alpha_channel: bool,
     pub has_uv1_channel: bool,
+    /// Mesh-space box around every animated vertex position of every frame (the
+    /// shader replaces positions with these). Includes the origin when some vertex
+    /// row has no position data, as the shader then reads zeros. `None` without a
+    /// position channel. Used as the culling bounds of morph-animated meshes.
+    pub position_bounds: Option<Aabb>,
 }
 
 #[derive(Reflect)]
@@ -308,6 +314,12 @@ impl AssetLoader for ZmoTextureAssetLoader {
                     let mut image_data = vec![0; num_vertices * stride * 16];
                     let mut alphas = Vec::new();
 
+                    // Culling bounds of every position the shader can read (frames
+                    // 0..num_frames of each vertex row).
+                    let mut position_min = Vec3::splat(f32::MAX);
+                    let mut position_max = Vec3::splat(f32::MIN);
+                    let mut position_rows_complete = vec![false; num_vertices];
+
                     for (vertex_id, channel) in zmo.channels.iter() {
                         match channel {
                             ZmoChannel::Position(values) => {
@@ -322,6 +334,20 @@ impl AssetLoader for ZmoTextureAssetLoader {
                                         .copy_from_slice(&(position.z / 100.0).to_le_bytes());
                                     image_data[offset + 8..offset + 12]
                                         .copy_from_slice(&(-position.y / 100.0).to_le_bytes());
+
+                                    if x < zmo.num_frames {
+                                        let position = Vec3::new(
+                                            position.x / 100.0,
+                                            position.z / 100.0,
+                                            -position.y / 100.0,
+                                        );
+                                        position_min = position_min.min(position);
+                                        position_max = position_max.max(position);
+                                    }
+                                }
+
+                                if values.len() >= zmo.num_frames {
+                                    position_rows_complete[y] = true;
                                 }
                             }
                             ZmoChannel::Normal(values) => {
@@ -357,6 +383,21 @@ impl AssetLoader for ZmoTextureAssetLoader {
                             _ => {}
                         }
                     }
+
+                    let position_bounds = if has_position_channel {
+                        // Rows (or frames) without position data hold zeros, which the
+                        // shader uses as positions too.
+                        if position_rows_complete.iter().any(|complete| !complete) {
+                            position_min = position_min.min(Vec3::ZERO);
+                            position_max = position_max.max(Vec3::ZERO);
+                        }
+                        position_min
+                            .cmple(position_max)
+                            .all()
+                            .then(|| Aabb::from_min_max(position_min, position_max))
+                    } else {
+                        None
+                    };
 
                     let texture_handle = load_context.add_labeled_asset(
                         "image".to_string(),
@@ -403,6 +444,7 @@ impl AssetLoader for ZmoTextureAssetLoader {
                             has_normal_channel,
                             has_alpha_channel,
                             has_uv1_channel,
+                            position_bounds,
                         }),
                         flags,
                     };

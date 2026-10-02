@@ -19,11 +19,10 @@ use crate::{
     components::{
         BoatState, ColliderParent, CollisionHeightOnly, CollisionPlayer, Command, EventObject,
         FlightState, NextCommand, Position, WarpObject, COLLISION_FILTER_COLLIDABLE,
-        COLLISION_FILTER_INSPECTABLE, COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_CHARACTER,
-        COLLISION_GROUP_ITEM_DROP, COLLISION_GROUP_NPC, COLLISION_GROUP_PHYSICS_TOY,
-        COLLISION_GROUP_PLAYER, COLLISION_GROUP_ZONE_EVENT_OBJECT,
-        COLLISION_GROUP_ZONE_WARP_OBJECT, COLLISION_GROUP_ZONE_TERRAIN,
-        COLLISION_GROUP_ZONE_WATER,
+        COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_CHARACTER, COLLISION_GROUP_ITEM_DROP,
+        COLLISION_GROUP_NPC, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_PLAYER,
+        COLLISION_GROUP_ZONE_EVENT_OBJECT, COLLISION_GROUP_ZONE_TERRAIN,
+        COLLISION_GROUP_ZONE_WARP_OBJECT, COLLISION_GROUP_ZONE_WATER,
     },
     events::QuestTriggerEvent,
     resources::{AppState, CurrentZone, GameConnection},
@@ -60,15 +59,19 @@ const NPC_BOAT_BLOCK_RADIUS_CM: f32 = 400.0;
 fn find_object_top_height(rapier_context: &RapierContext, feet_position: Vec3) -> Option<f32> {
     // Objects the entity's feet are inside of / touching. Terrain and water are
     // excluded so entities standing on flat ground are not affected. Zone objects
-    // are matched via MOVEABLE or INSPECTABLE so that NOT_MOVEABLE objects (castle
+    // are matched via MOVEABLE or COLLIDABLE so that NOT_MOVEABLE objects (castle
     // steps, buildings) are included - they also need to be stood on.
     //
+    // Not via INSPECTABLE: every zone object part accepts it, including parts with
+    // no ZSC collision shape and walk-through grass/bushes, which entities must
+    // wade through (the original client skips no-collision objects here too),
+    // not be lifted onto.
+    //
     // Entity-class colliders (player, NPCs, characters, item drops) are excluded
-    // from the memberships: otherwise the entity's OWN collider matches the query
-    // (its filter includes INSPECTABLE) and the upward ray climbs to the top of
-    // its own collider, launching the entity upward every frame.
+    // as well, so the upward ray can never climb the entity's OWN collider and
+    // launch the entity upward every frame.
     let object_groups = CollisionGroups::new(
-        COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_INSPECTABLE,
+        COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_COLLIDABLE,
         !COLLISION_GROUP_PHYSICS_TOY
             & !COLLISION_GROUP_ZONE_TERRAIN
             & !COLLISION_GROUP_ZONE_WATER
@@ -207,9 +210,11 @@ pub fn collision_height_only_system(
 
         // Cast ray downward to detect collision objects (bridges, platforms,
         // castle steps, etc.). Zone objects are matched via MOVEABLE or
-        // INSPECTABLE so NOT_MOVEABLE objects (steps, buildings) are included.
-        // Entity-class colliders are excluded so an entity never stands on its
-        // own (or another entity's) collider.
+        // COLLIDABLE so NOT_MOVEABLE objects (steps, buildings) are included,
+        // while parts without a collision shape and walk-through grass
+        // (INSPECTABLE only) are not stood on. Entity-class colliders are
+        // excluded so an entity never stands on its own (or another entity's)
+        // collider.
         let ray_origin = Vec3::new(
             position.x / 100.0,
             transform.translation.y + 1.0,
@@ -225,7 +230,7 @@ pub fn collision_height_only_system(
                 max_fall_distance,
                 false,
                 QueryFilter::new().groups(CollisionGroups::new(
-                    COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_INSPECTABLE,
+                    COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_COLLIDABLE,
                     !COLLISION_GROUP_PHYSICS_TOY
                         & !COLLISION_GROUP_ZONE_WATER
                         & !COLLISION_GROUP_PLAYER

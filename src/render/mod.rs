@@ -1,8 +1,12 @@
 use bevy::{
+    camera::visibility::VisibilitySystems,
     mesh::MeshVertexAttribute,
-    prelude::{App, Plugin},
+    prelude::{App, IntoScheduleConfigs, Plugin, PostUpdate},
     render::render_resource::VertexFormat,
 };
+
+// Aabbs for meshes the shader moves (GPU particles, ZMO morph animation)
+pub mod culling_bounds;
 
 // Custom terrain material with texture array support
 pub mod terrain_material;
@@ -56,9 +60,9 @@ pub use extension_material_plugin::RoseObjectMaterialPlugin;
 pub mod skinned_mesh_fix;
 pub use skinned_mesh_fix::SkinnedMeshFixPlugin;
 
-// Underwater rendering effect
+// Underwater camera state + water volume tracking (no screen effect)
 pub mod underwater_effect;
-pub use underwater_effect::{CameraUnderwaterState, UnderwaterEffectPlugin, UnderwaterSettings};
+pub use underwater_effect::{CameraUnderwaterState, UnderwaterStatePlugin};
 
 // Planar water reflections via a mirrored camera
 pub mod water_reflection;
@@ -110,6 +114,17 @@ impl Plugin for RoseRenderPlugin {
 
         // Register the water material plugin for animated water rendering
         app.add_plugins(WaterMaterialPlugin);
+
+        // Culling bounds Bevy's calculate_bounds cannot derive from the mesh. In
+        // CalculateBounds: after transform propagation, before the visibility checks.
+        app.add_systems(
+            PostUpdate,
+            (
+                culling_bounds::update_particle_aabb_system,
+                culling_bounds::update_mesh_animation_aabb_system,
+            )
+                .in_set(VisibilitySystems::CalculateBounds),
+        );
 
         bevy::log::info!(
             "[RENDER PLUGIN] RoseRenderPlugin - Materials registered via their own plugins"

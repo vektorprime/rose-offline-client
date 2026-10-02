@@ -1,6 +1,5 @@
 use bevy::{
     asset::RenderAssetUsages,
-    camera::visibility::NoFrustumCulling,
     light::{NotShadowCaster, NotShadowReceiver},
     math::{Affine2, Mat2},
     mesh::{Mesh, PrimitiveTopology},
@@ -207,7 +206,9 @@ impl DamageDigitsSpawner {
                         MeshMaterial3d(material),
                         Transform::from_translation(Vec3::new(x * DIGIT_SPACING, 0.0, 0.0)),
                         Visibility::default(),
-                        NoFrustumCulling,
+                        // Culled by the quad mesh's own Aabb (it turns with the
+                        // billboarding parent), which also gives GPU occlusion
+                        // culling a finite box.
                         NotShadowCaster,
                         NotShadowReceiver,
                     ));

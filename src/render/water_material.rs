@@ -1,20 +1,21 @@
 //! Custom procedural water material (no texture dependencies)
 //!
 //! This module implements a custom material that supports:
-//! - Fully procedural wave/color generation in WGSL
-//! - Physically-plausible alpha blending for water transparency
-//! - Depth write disabled for proper water rendering
-//! - Zone lighting integration
+//! - Fully procedural, physically based water shading in WGSL (Fresnel,
+//!   absorption, sun/moon glints, caustics, foam), lit by the view's actual
+//!   directional/ambient lights so day and night match the scene
+//! - Planar reflections from the mirrored reflection camera's render target
+//! - Premultiplied-alpha blending over the opaque scene, depth write disabled
 //! - Configurable water settings via WaterSettings resource
 
 use bevy::{
-    asset::{load_internal_asset, weak_handle, Asset, AssetApp, Handle},
+    asset::{load_internal_asset, weak_handle, Asset, AssetApp, AssetId, Assets, Handle},
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     image::Image,
-    math::{Vec3, Vec4},
-    pbr::{Material, MaterialPipeline, MaterialPipelineKey},
-    prelude::{App, Plugin},
     material::AlphaMode,
+    math::Vec4,
+    pbr::{Material, MaterialPipeline, MaterialPipelineKey},
+    prelude::{App, Local, Plugin, Res, ResMut, Update},
     reflect::TypePath,
     render::{
         render_asset::RenderAssets,
@@ -26,11 +27,15 @@ use bevy::{
 use bevy_mesh::{Mesh, MeshVertexBufferLayoutRef};
 use bevy_shader::{Shader, ShaderRef};
 
-use crate::resources::WaterSettings;
+use crate::{render::starry_sky_material::StarrySkySettings, resources::WaterSettings};
 
 /// Shader handle for the water material shader
 pub const WATER_MATERIAL_SHADER_HANDLE: Handle<bevy_shader::Shader> =
     weak_handle!("333959e6-4b35-d5d9-0000-000000000000");
+
+/// Number of vec4s in the material data storage buffer. Must match
+/// `water_material_data` in `water_material.wgsl`.
+const WATER_MATERIAL_DATA_LEN: usize = 8;
 
 /// Plugin that registers the water material
 pub struct WaterMaterialPlugin;
@@ -51,58 +56,79 @@ impl Plugin for WaterMaterialPlugin {
         // Note: prepass and shadows are controlled via enable_prepass() and enable_shadows() methods on Material trait
         app.add_plugins(bevy::pbr::MaterialPlugin::<WaterMaterial>::default());
 
+        app.add_systems(Update, sync_water_sky_night_factor);
+
         log::info!("[WATER MATERIAL] WaterMaterialPlugin loaded");
     }
 }
 
-/// Custom water material for fully procedural water shading
+/// Custom water material for fully procedural water shading.
+///
+/// Lighting (sun, moon, sky fill, ambient) and exposure come from Bevy's view
+/// bindings in the shader, so the material only carries the settings and the
+/// reflection inputs.
 #[derive(Asset, Debug, Clone, TypePath)]
 pub struct WaterMaterial {
-    /// Light direction for specular highlights (normalized, pointing towards light)
-    pub light_direction: Vec3,
-    /// Ambient light color
-    pub ambient_color: Vec4,
-    /// Diffuse light color
-    pub diffuse_color: Vec4,
     /// Water rendering settings
     pub settings: WaterSettings,
-    /// Fog color for distance blending (from zone lighting)
-    pub fog_color: Vec4,
-    /// Fog density for exponential fog (from zone lighting)
-    pub fog_density: f32,
-    /// Fog minimum density (from zone lighting)
-    pub fog_min_density: f32,
-    /// Fog maximum density (from zone lighting)
-    pub fog_max_density: f32,
     /// Off-screen texture containing the mirrored scene rendered by the
     /// reflection camera. Sampled in the fragment shader for planar reflections.
     pub reflection_texture: Handle<Image>,
-    /// DEBUG: reflection camera status written by the water reflection plugin
-    /// (0 = camera disabled, 1 = active but no entities visible, 2 = ok)
+    /// Reflection camera status written by the water reflection plugin
+    /// (0 = camera disabled: the texture is stale and must not be sampled,
+    /// 1 = active but no entities visible, 2 = few entities, 3 = ok)
     pub reflection_status: u32,
+    /// `StarrySkySettings::night_factor`, quantized (see
+    /// `sync_water_sky_night_factor`): how much the starry sky covers the
+    /// atmosphere, so the water's own sky estimate goes dark at night.
+    pub sky_night_factor: f32,
 }
 
 /// Default implementation for WaterMaterial
 impl Default for WaterMaterial {
     fn default() -> Self {
         Self {
-            // Default light direction pointing down and slightly forward
-            light_direction: Vec3::new(0.3, -0.8, 0.5).normalize(),
-            // Default ambient color (warm daylight)
-            ambient_color: Vec4::new(0.4, 0.4, 0.45, 1.0),
-            // Default diffuse color (bright sunlight)
-            diffuse_color: Vec4::new(0.8, 0.75, 0.7, 1.0),
             // Default water settings
             settings: WaterSettings::default(),
-            // Default fog settings (will be overridden by zone lighting)
-            fog_color: Vec4::new(0.2, 0.2, 0.2, 1.0),
-            fog_density: 0.0018,
-            fog_min_density: 0.0,
-            fog_max_density: 0.75,
             // Default handle; the water reflection plugin replaces it with the
             // actual reflection render target once it exists.
             reflection_texture: Handle::default(),
             reflection_status: 0,
+            sky_night_factor: 0.0,
+        }
+    }
+}
+
+/// Steps per unit of night factor. The night factor ramps every frame during
+/// evening and morning, and every change re-prepares the water bind group, so
+/// it is quantized (the steps are invisible in the water's sky reflection).
+const SKY_NIGHT_FACTOR_STEPS: f32 = 32.0;
+
+/// Copies the starry sky's night factor into every water material, only when
+/// the quantized value changes.
+fn sync_water_sky_night_factor(
+    starry_sky_settings: Option<Res<StarrySkySettings>>,
+    mut water_materials: ResMut<Assets<WaterMaterial>>,
+    mut stale_materials: Local<Vec<AssetId<WaterMaterial>>>,
+) {
+    let night_factor = starry_sky_settings
+        .map(|settings| settings.night_factor)
+        .unwrap_or(0.0)
+        .clamp(0.0, 1.0);
+    let night_factor = (night_factor * SKY_NIGHT_FACTOR_STEPS).round() / SKY_NIGHT_FACTOR_STEPS;
+
+    // Read-only scan first: any write through `get_mut` marks a material
+    // modified (re-prepared), even when the written value is identical.
+    stale_materials.clear();
+    stale_materials.extend(
+        water_materials
+            .iter()
+            .filter(|(_, material)| material.sky_night_factor != night_factor)
+            .map(|(id, _)| id),
+    );
+    for id in stale_materials.drain(..) {
+        if let Some(mut material) = water_materials.get_mut(id) {
+            material.sky_night_factor = night_factor;
         }
     }
 }
@@ -127,8 +153,11 @@ impl Material for WaterMaterial {
         WATER_MATERIAL_SHADER_HANDLE.into()
     }
 
+    /// The shader outputs premultiplied color: reflection, glints and foam are
+    /// added at full strength while alpha only says how much of the lake bed
+    /// behind the surface is hidden.
     fn alpha_mode(&self) -> AlphaMode {
-        AlphaMode::Blend
+        AlphaMode::Premultiplied
     }
 
     /// Disable prepass for transparent water
@@ -162,11 +191,10 @@ impl Material for WaterMaterial {
         ])?;
         descriptor.vertex.buffers = vec![vertex_layout];
 
-        // Configure additive blending for water
-        // Use alpha blending for more realistic water compositing.
+        // Premultiplied alpha (explicit, matching alpha_mode): out = src + dst * (1 - src.a).
         if let Some(fragment) = descriptor.fragment.as_mut() {
             for color_target_state in fragment.targets.iter_mut().filter_map(|x| x.as_mut()) {
-                color_target_state.blend = Some(BlendState::ALPHA_BLENDING);
+                color_target_state.blend = Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING);
             }
         }
 
@@ -203,84 +231,63 @@ impl AsBindGroup for WaterMaterial {
         (image_assets, fallback_image): &mut SystemParamItem<'_, '_, Self::Param>,
         _bindless: bool,
     ) -> Result<UnpreparedBindGroup, AsBindGroupError> {
+        let settings = &self.settings;
         // Pack all per-material values into a read-only storage buffer.
-        // Layout:
-        // [0] light_direction (vec4)
-        // [1] ambient_color (vec4)
-        // [2] diffuse_color (vec4)
-        // [3] settings_1: foam_intensity, foam_threshold, sss_intensity, refraction_strength
-        // [4] settings_2: wave_speed, fresnel_strength, specular_intensity, wave_amplitude
-        // [5] fog_color (vec4)
-        // [6] fog_params: density, min_density, max_density, wave_frequency
-        // [7] depth_1: min_depth, max_depth, shallow_threshold, bottom_visibility
-        // [8] deep_color (vec4)
-        // [9] shallow_color (vec4)
-        // [10] depth_scale: x, y, wave_layers (as float), caustics_intensity
-        // [11] caustics: scale, speed, water_surface_y, padding
-        let water_material_data = [
+        // Layout (must match the accessors in water_material.wgsl):
+        // [0] waves: wave_amplitude, wave_frequency, wave_speed, wave_layers
+        // [1] surface: fresnel_strength, specular_intensity, sss_intensity, refraction_strength
+        // [2] foam/caustics: foam_intensity, foam_threshold, caustics_intensity, caustics_scale
+        // [3] depth: min_depth, max_depth, shallow_threshold, bottom_visibility
+        // [4] deep_color
+        // [5] shallow_color
+        // [6] depth_gradient_scale.xy, caustics_speed, water_surface_y
+        // [7] reflection: enabled, debug_show_reflection, status, sky night factor
+        let water_material_data: [Vec4; WATER_MATERIAL_DATA_LEN] = [
             Vec4::new(
-                self.light_direction.x,
-                self.light_direction.y,
-                self.light_direction.z,
-                0.0,
-            ),
-            self.ambient_color,
-            self.diffuse_color,
-            Vec4::new(
-                self.settings.foam_intensity,
-                self.settings.foam_threshold,
-                self.settings.sss_intensity,
-                self.settings.refraction_strength,
+                settings.wave_amplitude,
+                settings.wave_frequency,
+                settings.wave_speed,
+                settings.wave_layers as f32,
             ),
             Vec4::new(
-                self.settings.wave_speed,
-                self.settings.fresnel_strength,
-                self.settings.specular_intensity,
-                self.settings.wave_amplitude,
-            ),
-            self.fog_color,
-            Vec4::new(
-                self.fog_density,
-                self.fog_min_density,
-                self.fog_max_density,
-                self.settings.wave_frequency,
+                settings.fresnel_strength,
+                settings.specular_intensity,
+                settings.sss_intensity,
+                settings.refraction_strength,
             ),
             Vec4::new(
-                self.settings.min_depth,
-                self.settings.max_depth,
-                self.settings.shallow_threshold,
-                self.settings.bottom_visibility,
-            ),
-            self.settings.deep_color,
-            self.settings.shallow_color,
-            Vec4::new(
-                self.settings.depth_gradient_scale[0],
-                self.settings.depth_gradient_scale[1],
-                self.settings.wave_layers as f32,
-                self.settings.caustics_intensity,
+                settings.foam_intensity,
+                settings.foam_threshold,
+                settings.caustics_intensity,
+                settings.caustics_scale,
             ),
             Vec4::new(
-                self.settings.caustics_scale,
-                self.settings.caustics_speed,
-                self.settings.water_surface_y,
-                0.0,
+                settings.min_depth,
+                settings.max_depth,
+                settings.shallow_threshold,
+                settings.bottom_visibility,
             ),
-            // [12] reflection plane: normal (0,1,0) + distance (water surface y)
-            Vec4::new(0.0, 1.0, 0.0, self.settings.water_surface_y),
-            // [13] reflection params: enabled, debug_show_reflection, status, padding
+            settings.deep_color,
+            settings.shallow_color,
             Vec4::new(
-                if self.settings.reflection_enabled {
+                settings.depth_gradient_scale[0],
+                settings.depth_gradient_scale[1],
+                settings.caustics_speed,
+                settings.water_surface_y,
+            ),
+            Vec4::new(
+                if settings.reflection_enabled {
                     1.0
                 } else {
                     0.0
                 },
-                if self.settings.debug_show_reflection {
+                if settings.debug_show_reflection {
                     1.0
                 } else {
                     0.0
                 },
                 self.reflection_status as f32,
-                0.0,
+                self.sky_night_factor,
             ),
         ];
         let water_material_data_buffer =
@@ -335,21 +342,8 @@ impl AsBindGroup for WaterMaterial {
         _bindless: bool,
     ) -> Vec<BindGroupLayoutEntry> {
         vec![
-            // Water material data in read-only storage buffer
-            // [0] light_direction
-            // [1] ambient_color
-            // [2] diffuse_color
-            // [3] water_settings_1: foam_intensity, foam_threshold, sss_intensity, refraction_strength
-            // [4] water_settings_2: wave_speed, fresnel_strength, specular_intensity, wave_amplitude
-            // [5] fog_color
-            // [6] fog_params: density, min_density, max_density, wave_frequency
-            // [7] depth_1: min_depth, max_depth, shallow_threshold, bottom_visibility
-            // [8] deep_color
-            // [9] shallow_color
-            // [10] depth_scale: x, y, wave_layers, caustics_intensity
-            // [11] caustics: scale, speed, water_surface_y, padding
-            // [12] reflection_plane: normal xyz, distance
-            // [13] reflection_params: enabled, padding
+            // Water material data in read-only storage buffer (layout documented
+            // in unprepared_bind_group)
             BindGroupLayoutEntry {
                 binding: 0,
                 visibility: ShaderStages::FRAGMENT,

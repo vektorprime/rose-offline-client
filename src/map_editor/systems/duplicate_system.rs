@@ -373,12 +373,8 @@ fn duplicate_child_parts(
                 );
             }
 
-            // Add rendering components
-            part_commands.insert(bevy::camera::visibility::NoFrustumCulling);
-            part_commands.insert(bevy::camera::primitives::Aabb::from_min_max(
-                Vec3::splat(-100000.0),
-                Vec3::splat(100000.0),
-            ));
+            // Add rendering components. No explicit Aabb: calculate_bounds derives
+            // tight bounds from the mesh, as for zone-loaded parts.
             part_commands.insert(RenderLayers::layer(0));
 
             // Add collision components

@@ -227,9 +227,22 @@ pub(super) fn spawn_object(
             handle
         };
 
+        // Wind sway kind from the mesh path (grass, leaves, tree tops, ...).
+        let wind_sway = WindSway::for_mesh_path(&zsc.meshes[mesh_id].path().to_string_lossy());
+
+        // Grass-kind vegetation (grass, bushes, plants) is walk-through: characters
+        // wade through it instead of bumping into it or stepping up onto it, even
+        // where the ZSC gives it a collision shape (e.g. Junon GRASS002/GRASS003).
+        // Its collider keeps only INSPECTABLE (map editor selection, the debug
+        // inspector, name-tag occlusion): no movement, ground-height, camera,
+        // click-to-move or physics-toy query accepts that bit alone.
+        let walk_through = wind_sway
+            .as_ref()
+            .is_some_and(|wind_sway| wind_sway.is_grass);
+
         let mut collision_filter = COLLISION_FILTER_INSPECTABLE;
 
-        if object_part.collision_shape.is_some() {
+        if object_part.collision_shape.is_some() && !walk_through {
             if collision_group != COLLISION_GROUP_ZONE_EVENT_OBJECT
                 && collision_group != COLLISION_GROUP_ZONE_WARP_OBJECT
                 && !object_part
@@ -323,72 +336,19 @@ pub(super) fn spawn_object(
             commands.entity(part_entity).insert(active_motion);
         }
 
-        // Add wind sway effect to grass and tree leaf models based on mesh path
-        let mesh_path_lower = zsc.meshes[mesh_id].path().to_string_lossy().to_lowercase();
+        // Wind sway rotates the part around its own spawn rotation. It only drives
+        // the part's Transform, so it works with or without movement collision.
+        if let Some(wind_sway) = wind_sway {
+            // Phase offset from the object position, so neighbours do not sway in sync
+            let phase_offset =
+                (object_instance.position.x * 0.1 + object_instance.position.y * 0.13).fract()
+                    * std::f32::consts::TAU;
 
-        // Store the part's rotation to use as base_rotation for wind sway
-        let part_base_rotation = part_transform.rotation;
-
-        // Generate a random phase offset based on object position for natural variation
-        let phase_offset = (object_instance.position.x * 0.1 + object_instance.position.y * 0.13)
-            .fract()
-            * std::f32::consts::TAU;
-
-        // Check for grass models (identified by "grass" in the mesh name)
-        if mesh_path_lower.contains("grass") {
             commands.entity(part_entity).insert(
-                WindSway::for_grass()
-                    .with_base_rotation(part_base_rotation)
+                wind_sway
+                    .with_base_rotation(part_transform.rotation)
                     .with_phase_offset(phase_offset),
             );
-        }
-        // Check for tree leaf models (identified by "leaf" or "leaves" in the mesh name)
-        else if mesh_path_lower.contains("leaf") || mesh_path_lower.contains("leaves") {
-            commands.entity(part_entity).insert(
-                WindSway::for_tree_leaves()
-                    .with_base_rotation(part_base_rotation)
-                    .with_phase_offset(phase_offset),
-            );
-        }
-        // Check for tree foliage (alternative naming conventions)
-        else if mesh_path_lower.contains("foliage") || mesh_path_lower.contains("canopy") {
-            commands.entity(part_entity).insert(
-                WindSway::for_tree_leaves()
-                    .with_base_rotation(part_base_rotation)
-                    .with_phase_offset(phase_offset),
-            );
-        }
-        // Check for bush/shrub models (similar swaying behavior to grass)
-        else if mesh_path_lower.contains("bush")
-            || mesh_path_lower.contains("shrub")
-            || mesh_path_lower.contains("plant")
-        {
-            commands.entity(part_entity).insert(
-                WindSway::for_grass()
-                    .with_base_rotation(part_base_rotation)
-                    .with_phase_offset(phase_offset),
-            );
-        }
-        // Check for tree models - apply wind sway to tree tops (leaves) but NOT trunks
-        // Tree naming convention: TREE004.ZMS = top/leaves (sway), TREE004B.ZMS = trunk (no sway)
-        // The "B" suffix indicates the trunk/base part which should remain static
-        else if mesh_path_lower.contains("tree") {
-            // Check if this is a trunk file (ends with "b.zms" or contains "b." before extension)
-            let is_trunk = mesh_path_lower.ends_with("b.zms")
-                || mesh_path_lower.ends_with("b")
-                || mesh_path_lower
-                    .rsplit_once('.')
-                    .map_or(false, |(name, _ext)| name.ends_with('b'));
-
-            if !is_trunk {
-                // This is the tree top/leaves - apply wind sway
-                commands.entity(part_entity).insert(
-                    WindSway::for_tree_leaves()
-                        .with_base_rotation(part_base_rotation)
-                        .with_phase_offset(phase_offset),
-                );
-            }
-            // If it's a trunk (ends with B), don't apply wind sway - trunk stays static
         }
 
         commands.entity(object_entity).add_child(part_entity);
@@ -492,10 +452,11 @@ pub(super) fn spawn_animated_object(
             Visibility::Visible,
             InheritedVisibility::default(),
             ViewVisibility::default(),
-            // The morph animation moves vertices outside the base mesh bounds, so
-            // bounds-based culling would pop them at screen edges (the original
-            // client also drew these without frustum culling).
-            bevy::camera::visibility::NoFrustumCulling,
+            // The morph animation moves vertices outside the base mesh bounds:
+            // update_mesh_animation_aabb_system (render/culling_bounds.rs) gives the
+            // entity an Aabb covering the mesh and every animation frame instead, so
+            // it is frustum, shadow-cascade and occlusion culled without popping.
+            bevy::camera::visibility::NoAutoAabb,
             RenderLayers::layer(0),
             SharedMeshCollider(bevy_rapier3d::prelude::TriMeshFlags::empty()),
             CollisionGroups::new(COLLISION_GROUP_ZONE_OBJECT, COLLISION_FILTER_INSPECTABLE),

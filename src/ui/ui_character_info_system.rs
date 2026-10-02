@@ -15,8 +15,10 @@ use rose_game_common::{
 
 use crate::{
     components::{Clan, PlayerCharacter},
+    events::ChatboxEvent,
     resources::{GameConnection, GameData, UiResources},
     ui::{
+        chat_feedback::{ChatFeedback, ChatFeedbackThrottle},
         widgets::{DataBindings, Dialog, DrawTextTrait},
         UiSoundEvent, UiStateWindows,
     },
@@ -77,6 +79,10 @@ pub fn ui_character_info_system(
     dialog_assets: Res<Assets<Dialog>>,
     game_connection: Option<Res<GameConnection>>,
     game_data: Res<GameData>,
+    (mut chatbox_events, mut chat_feedback): (
+        MessageWriter<ChatboxEvent>,
+        Local<ChatFeedbackThrottle>,
+    ),
 ) {
     let dialog = if let Some(dialog) = dialog_assets.get(&ui_resources.dialog_character_info) {
         dialog
@@ -228,28 +234,34 @@ pub fn ui_character_info_system(
         ui_state_windows.character_info_open = false;
     }
 
-    let stat_button_response = |basic_stat_type: BasicStatType,
-                                response: Option<egui::Response>| {
-        if let Some(response) = response {
-            if let Some(cost) = game_data
-                .ability_value_calculator
-                .calculate_basic_stat_increase_cost(player.basic_stats, basic_stat_type)
-            {
-                if response
-                    .on_hover_text(format!("Required Points: {}", cost))
-                    .clicked()
-                    && cost <= player.stat_points.points
+    let mut stat_button_response =
+        |basic_stat_type: BasicStatType, response: Option<egui::Response>| {
+            if let Some(response) = response {
+                if let Some(cost) = game_data
+                    .ability_value_calculator
+                    .calculate_basic_stat_increase_cost(player.basic_stats, basic_stat_type)
                 {
-                    if let Some(game_connection) = game_connection.as_ref() {
-                        game_connection
-                            .client_message_tx
-                            .send(ClientMessage::IncreaseBasicStat { basic_stat_type })
-                            .ok();
+                    if response
+                        .on_hover_text(format!("Required Points: {}", cost))
+                        .clicked()
+                    {
+                        if cost <= player.stat_points.points {
+                            if let Some(game_connection) = game_connection.as_ref() {
+                                game_connection
+                                    .client_message_tx
+                                    .send(ClientMessage::IncreaseBasicStat { basic_stat_type })
+                                    .ok();
+                            }
+                        } else {
+                            chat_feedback.send(
+                                &mut chatbox_events,
+                                ChatFeedback::NotEnoughStatPoints.message(&game_data),
+                            );
+                        }
                     }
                 }
             }
-        }
-    };
+        };
 
     stat_button_response(BasicStatType::Strength, response_raise_str_button);
     stat_button_response(BasicStatType::Dexterity, response_raise_dex_button);

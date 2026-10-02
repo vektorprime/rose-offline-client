@@ -17,10 +17,11 @@ use bevy::{
     prelude::{
         App, Assets, Color, Commands, Component, Entity, FromWorld, GlobalTransform, Image,
         InheritedVisibility, IntoScheduleConfigs, Local, Msaa, Plugin, Query, Res, ResMut,
-        Resource, Shader, Vec2, Vec3, ViewVisibility, World,
+        Resource, Shader, Vec2, Vec3, ViewVisibility, Without, World,
     },
     render::{
         render_asset::RenderAssets,
+        extract_component::{ExtractComponent, ExtractComponentPlugin},
         render_phase::{
             AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand,
             RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
@@ -72,6 +73,8 @@ impl Plugin for WorldUiRenderPlugin {
             Shader::from_wgsl
         );
 
+        app.add_plugins(ExtractComponentPlugin::<NoWorldUi>::default());
+
         if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app
                 .init_resource::<ExtractedWorldUi>()
@@ -99,6 +102,13 @@ impl Plugin for WorldUiRenderPlugin {
         render_app.init_resource::<WorldUiPipeline>();
     }
 }
+
+/// Camera marker: never draw world-space UI (name tags, chat bubbles) in this
+/// camera's view. Extracted to the camera's render entity, which is also its
+/// view entity, and filtered out in [`queue_world_ui_meshes`]. Used by the
+/// water reflection camera so tags are not mirrored into the water.
+#[derive(Component, Clone, Copy, Default, ExtractComponent)]
+pub struct NoWorldUi;
 
 #[derive(Component, Clone)]
 #[require(VisibilityClass)]
@@ -524,7 +534,8 @@ pub fn queue_world_ui_meshes(
     world_ui_pipeline: Res<WorldUiPipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<WorldUiPipeline>>,
     pipeline_cache: Res<PipelineCache>,
-    views: Query<(Entity, &ExtractedView, Option<&Msaa>)>,
+    // Views marked NoWorldUi (the water reflection camera) get no world UI.
+    views: Query<(Entity, &ExtractedView, Option<&Msaa>), Without<NoWorldUi>>,
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
     mut extracted_world_ui: ResMut<ExtractedWorldUi>,
     mut world_ui_meta: ResMut<WorldUiMeta>,
@@ -570,7 +581,8 @@ pub fn queue_world_ui_meshes(
         ));
     }
 
-    // NOTE: The vertex buffer is shared by all views (main camera, water reflection camera).
+    // NOTE: The vertex buffer is shared by all drawn views (the water reflection camera is
+    // excluded via NoWorldUi, but any other camera still adds a view).
     // Clear it once before the loop and upload once after, so each view's batch entities
     // reference disjoint, persistent vertex ranges. Clearing/uploading per view would leave
     // only the last view's vertices in the buffer and corrupt the other views' draws.

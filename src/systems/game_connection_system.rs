@@ -10,8 +10,8 @@ use bevy::{
     },
     math::{Quat, Vec3},
     prelude::{
-        Commands, Entity, GlobalTransform, MessageWriter, Mut, NextState, Res, ResMut, State,
-        Time, Transform, Visibility, World,
+        Commands, Entity, GlobalTransform, Local, MessageWriter, Mut, NextState, Res, ResMut,
+        State, Time, Transform, Visibility, World,
     },
 };
 
@@ -35,9 +35,9 @@ use rose_game_common::{
     },
     messages::{
         server::{
-            ClanCreateError, LearnSkillError, LevelUpSkillError, PartyMemberInfo,
-            PartyMemberInfoOffline, PersonalStoreTransactionStatus, PickupItemDropError,
-            ServerMessage, SpawnCommandState,
+            CancelCastingSkillReason, ClanCreateError, LearnSkillError, LevelUpSkillError,
+            NpcStoreTransactionError, PartyMemberInfo, PartyMemberInfoOffline,
+            PersonalStoreTransactionStatus, PickupItemDropError, ServerMessage, SpawnCommandState,
         },
         PartyItemSharing, PartyXpSharing,
     },
@@ -65,6 +65,7 @@ use crate::{
         WorldTime,
     },
     systems::network_thread_system::handle_connection_lost,
+    ui::{ChatFeedback, ChatFeedbackThrottle},
 };
 
 type SpawnTransformBundle = (
@@ -311,7 +312,11 @@ pub fn game_connection_system(
     connection_state: ConnectionState,
     mut app_state_next: ResMut<NextState<AppState>>,
     mut client_entity_list: ResMut<ClientEntityList>,
-    mut chatbox_events: MessageWriter<ChatboxEvent>,
+    // Grouped to stay within Bevy's 16 system parameter limit.
+    (mut chatbox_events, mut chat_feedback): (
+        MessageWriter<ChatboxEvent>,
+        Local<ChatFeedbackThrottle>,
+    ),
     mut chat_bubble_events: MessageWriter<ChatBubbleEvent>,
     mut game_connection_events: MessageWriter<GameConnectionEvent>,
     mut load_zone_events: MessageWriter<LoadZoneEvent>,
@@ -1160,7 +1165,10 @@ pub fn game_connection_system(
                 item,
             }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
+                    let is_player = client_entity_list.player_entity == Some(entity);
                     commands.queue(move |world: &mut World| {
+                        let mut ammo_used_up = false;
+
                         if let Some(mut equipment) = world.entity_mut(entity).get_mut::<Equipment>()
                         {
                             if let Some(equipped_ammo) =
@@ -1170,8 +1178,20 @@ pub fn game_connection_system(
                                     equipped_ammo.item = item.item;
                                 } else {
                                     equipment.equipped_ammo[ammo_index] = None;
+                                    // Unequipping sends UpdateInventory first, which already
+                                    // emptied the slot; an equipped stack that disappears here
+                                    // was shot away, and the server has stopped the attack.
+                                    ammo_used_up = is_player;
                                 }
                             }
+                        }
+
+                        if ammo_used_up {
+                            let message =
+                                ChatFeedback::AmmoUsedUp.message(world.resource::<GameData>());
+                            world
+                                .resource_mut::<Messages<ChatboxEvent>>()
+                                .write(ChatboxEvent::System(message));
                         }
                     });
                 }
@@ -1987,11 +2007,21 @@ pub fn game_connection_system(
                     });
                 }
             }
-            Ok(ServerMessage::CancelCastingSkill {
-                entity_id,
-                reason: _,
-            }) => {
+            Ok(ServerMessage::CancelCastingSkill { entity_id, reason }) => {
                 if let Some(entity) = client_entity_list.get(entity_id) {
+                    if client_entity_list.player_entity == Some(entity) {
+                        let refusal = match reason {
+                            CancelCastingSkillReason::NeedAbility => {
+                                ChatFeedback::SkillRequirements
+                            }
+                            CancelCastingSkillReason::NeedTarget
+                            | CancelCastingSkillReason::InvalidTarget => {
+                                ChatFeedback::InvalidTarget
+                            }
+                        };
+                        chat_feedback.send(&mut chatbox_events, refusal.message(&game_data));
+                    }
+
                     commands.queue(move |world: &mut World| {
                         let mut character = world.entity_mut(entity);
 
@@ -2109,10 +2139,17 @@ pub fn game_connection_system(
                 }
             }
             Ok(ServerMessage::NpcStoreTransactionError { error }) => {
-                let _ = chatbox_events.write(ChatboxEvent::System(format!(
-                    "Store transation failed with error {:?}",
-                    error
-                )));
+                let refusal = match error {
+                    NpcStoreTransactionError::PriceDifference => ChatFeedback::StorePricesChanged,
+                    NpcStoreTransactionError::NpcNotFound => ChatFeedback::StoreTransactionFailed,
+                    NpcStoreTransactionError::NpcTooFarAway => ChatFeedback::StoreTooFarAway,
+                    NpcStoreTransactionError::NotEnoughMoney => ChatFeedback::NotEnoughMoney,
+                    NpcStoreTransactionError::NotSameUnion => ChatFeedback::StoreNotSameUnion,
+                    NpcStoreTransactionError::NotEnoughUnionPoints => {
+                        ChatFeedback::StoreNotEnoughUnionPoints
+                    }
+                };
+                chat_feedback.send(&mut chatbox_events, refusal.message(&game_data));
             }
             Ok(ServerMessage::PartyCreate { entity_id }) => {
                 if let Some(inviter_entity) = client_entity_list.get(entity_id) {

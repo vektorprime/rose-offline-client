@@ -111,7 +111,7 @@ use render::{
     StarrySkyMaterial,
     StarrySkyMaterialPlugin,
     StarrySkySettings,
-    UnderwaterEffectPlugin,
+    UnderwaterStatePlugin,
     // Old 2D cloud system (DISABLED):
     // CloudMaterialPlugin,
     // spawn_cloud_layer,
@@ -958,8 +958,8 @@ fn run_client(config: &Config, app_state: AppState, mut systems_config: SystemsC
         // DISABLED: bevy_procedural_grass not compatible with Bevy 0.18
         // ProceduralGrassPlugin::default(),
 
-        // Underwater rendering effect
-        UnderwaterEffectPlugin,
+        // Water volumes + camera underwater state (reflections are off while submerged)
+        UnderwaterStatePlugin,
         // Planar water reflections (mirrored camera + off-screen texture)
         WaterReflectionPlugin,
         // Procedural starry sky with moon lighting
@@ -2046,7 +2046,7 @@ fn load_common_game_data(
             DeferredPrepass,
             // GPU Occlusion Culling - culls objects hidden behind other objects to improve performance
             OcclusionCulling,
-            // Underwater state tracking for underwater rendering effect
+            // Underwater state (water reflections are disabled while submerged)
             CameraUnderwaterState::default(),
         ))
         .id();
@@ -2275,18 +2275,14 @@ fn apply_post_processing_settings(
 
 /// System to apply water settings from the resource to water materials
 /// This allows live adjustment of water parameters via the Settings UI
-/// Also syncs fog parameters from ZoneLighting to integrate water with scene fog
 ///
 /// Runs every frame without a change gate (the compare is cheap), so a water
 /// material created by a zone load is synced on its first frame.
 fn apply_water_settings(
     water_settings: Res<WaterSettings>,
-    zone_lighting: Res<render::ZoneLighting>,
     mut water_materials: ResMut<Assets<WaterMaterial>>,
     mut stale_materials: Local<Vec<AssetId<WaterMaterial>>>,
 ) {
-    let fog_color = zone_lighting.fog_color.extend(1.0);
-
     // Find stale materials read-only, then `get_mut` only those:
     // `Assets::iter_mut` queues AssetEvent::Modified for EVERY asset it visits,
     // written or not, which re-prepared every WaterMaterial every frame.
@@ -2294,28 +2290,13 @@ fn apply_water_settings(
     stale_materials.extend(
         water_materials
             .iter()
-            .filter(|(_, material)| {
-                material.settings != *water_settings
-                    || material.fog_color != fog_color
-                    || material.fog_density != zone_lighting.fog_density
-                    || material.fog_min_density != zone_lighting.fog_min_density
-                    || material.fog_max_density != zone_lighting.fog_max_density
-            })
+            .filter(|(_, material)| material.settings != *water_settings)
             .map(|(id, _)| id),
     );
-
     for id in stale_materials.drain(..) {
-        let Some(mut material) = water_materials.get_mut(id) else {
-            continue;
-        };
-        if material.settings != *water_settings {
+        if let Some(mut material) = water_materials.get_mut(id) {
             material.settings = water_settings.clone();
         }
-        // Sync fog parameters from ZoneLighting for water-scene integration
-        material.fog_color = fog_color;
-        material.fog_density = zone_lighting.fog_density;
-        material.fog_min_density = zone_lighting.fog_min_density;
-        material.fog_max_density = zone_lighting.fog_max_density;
     }
 }
 
@@ -2404,7 +2385,18 @@ fn spawn_starry_sky_and_moon(
             MeshMaterial3d(sky_material_handle),
             Transform::from_xyz(0.0, 0.0, 0.0), // Center of world - sphere is large enough to contain camera
             Visibility::Visible,
-            bevy::camera::visibility::NoFrustumCulling, // CRITICAL: Prevent frustum culling of sky sphere
+            // Never frustum culled. NoFrustumCulling also stops Bevy from adding an Aabb,
+            // but GPU occlusion culling on the main camera tests every mesh's Aabb and
+            // treats a missing one as an infinite box (NaN projection, driver-dependent).
+            // The sphere follows the camera, so the camera is always inside this box and
+            // the sky can never be occluded.
+            bevy::camera::visibility::NoFrustumCulling,
+            bevy::camera::primitives::Aabb::from_min_max(
+                Vec3::splat(-sky_sphere_radius),
+                Vec3::splat(sky_sphere_radius),
+            ),
+            // The material has no shadow pass; keeps the sky out of every cascade's lists.
+            bevy::light::NotShadowCaster,
         ))
         .id();
 
