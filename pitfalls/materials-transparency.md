@@ -235,3 +235,27 @@ Additionally, shader/material binding layout drift occurred during the upgrade (
 
 ### Lesson Learned
 For Bevy 0.18 storage-buffer materials, avoid placeholder/manual bind groups unless absolutely necessary. Prefer derive-based [`AsBindGroup`](src/render/particle_material.rs) when the layout is straightforward, and keep WGSL binding indices in strict lockstep with Rust attributes.
+
+---
+
+## Effects Drawn as Black Boxes / Black Particle Squares (Fixed 2026-10-02)
+
+### Problem
+Some skill effects (e.g. the Muse's attack) showed a dark, shadow-casting cube instead of the glow. A few particle effects (CRITICALUP_01, _DEFENDUP_01, SKILL_HIT_01, ice bullet) showed black squares; Junon's water ripples/waterfalls drew solid.
+
+### Root Cause
+- Effect meshes (EFT) and zone morph objects (LIST_MORPH_OBJECT.STB columns 4-11) carry D3D render states: alpha blend on/off, src/dst blend factor, blend op, depth test/write. The `ExtendedMaterial<StandardMaterial, RoseEffectExtension>` port ignored them (only Opaque / Mask), so additive (SrcAlpha/One) meshes over black texture backgrounds rendered opaque.
+- `ParticleMaterial` emulated the PTL blend factors through Bevy's premultiplied blend state; dst factor InvSrcColor (4) fell back to normal alpha blending (opaque black quad) and blend ops ReverseSubtract/Max became additive.
+
+### Solution
+- `rose_effect_material()` (`src/render/effect_mesh_extension.rs`): blended / no-depth-write / no-depth-test meshes use `AlphaMode::Blend` (straight alpha) and a `#[bind_group_data]` key; `MaterialExtension::specialize` sets the D3D blend equation and depth write/compare on the main pass. Blended effect meshes are unlit and `NotShadowCaster`; the ZMO alpha channel multiplies alpha.
+- `ParticleMaterial` gets a key with the raw D3D values and sets the real blend state in `specialize`; the shader outputs straight color.
+- `d3d_blend_component()`: wgpu requires factors One with MIN/MAX (D3D ignores them there).
+
+### Files Modified
+- `src/render/effect_mesh_extension.rs`, `src/render/shaders/rose_effect_mesh.wgsl`
+- `src/render/particle_material.rs`, `src/render/shaders/particle.wgsl`
+- `src/effect_loader.rs`, `src/zone_loader/spawning/objects.rs`
+
+### Lesson Learned
+When porting fixed-function D3D effects, carry every render state (blend factors/op, depth test/write, two-sided) into the pipeline via a material key and `specialize`; approximating them with Bevy's `AlphaMode` presets breaks the less common modes.

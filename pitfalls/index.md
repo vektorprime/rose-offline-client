@@ -10,9 +10,9 @@ This folder contains documentation of issues encountered during development and 
 | [ui-tooltips.md](ui-tooltips.md) | Tooltip hover delay, tooltip display issues |
 | [networking.md](networking.md) | Network thread, respawn, and connection issues |
 | [rendering-camera.md](rendering-camera.md) | Depth of field, shadows, SSAO, TAA, camera setup |
-| [materials-transparency.md](materials-transparency.md) | Alpha modes, custom materials, texture arrays |
+| [materials-transparency.md](materials-transparency.md) | Alpha modes, custom materials, texture arrays, effect/particle D3D blend states (black boxes) |
 | [lighting.md](lighting.md) | Ambient light, photometric units, AutoExposure compensation curve, VolumetricFog ambient veil on zoomed-in models |
-| [terrain-physics.md](terrain-physics.md) | Terrain adherence, spawn height, bundle limits |
+| [terrain-physics.md](terrain-physics.md) | Terrain adherence, spawn height, bundle limits, NPCs/bots stuck under elevated platforms |
 | [new-terrain.md](new-terrain.md) | `--new-terrain` PBR terrain: dark patches from world-space normal-map bake, tangent-space channel order |
 | [water-system.md](water-system.md) | Water materials, fish spawning, shader migration, multi-view world UI buffer corruption |
 | [zone-loading.md](zone-loading.md) | Asset tracking, state initialization, skybox loading, zone data never freed / same-zone reloads |

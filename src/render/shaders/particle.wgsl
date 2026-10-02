@@ -132,31 +132,18 @@ fn vertex(model: VertexInput) -> VertexOutput {
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let texture_color = textureSample(base_color_texture, base_color_sampler, in.uv);
     let result = in.color * texture_color;
-    
-    // Discard pixels with very low alpha to prevent black box artifacts
-    // This is crucial for particles with black backgrounds in textures
-    if (result.a < 0.01) {
+
+    // The pipeline blends with the sequence's own D3D blend equation
+    // (ParticleMaterial::specialize), so the color goes out straight, like the
+    // original's texture * diffuse. Skip fragments that cannot change the target:
+    // zero alpha with source factor SrcAlpha (5) and destination factor One (2) or
+    // InvSrcAlpha (6), the common additive and alpha-blended sequences (not with
+    // MIN / MAX (4 / 5), which ignore the factors).
+    let uses_factors = blend_op != 4u && blend_op != 5u;
+    if (result.a < 0.004 && uses_factors && src_blend_factor == 5u
+        && (dst_blend_factor == 2u || dst_blend_factor == 6u)) {
         discard;
     }
-    
-    // Handle different blend modes to match ROSE engine behavior
-    // We use Bevy's Premultiplied alpha blend state: src * 1 + dst * (1 - src_alpha)
-    
-    var src_rgb: vec3<f32>;
-    if (src_blend_factor == 2u) { // BlendFactor::One
-        src_rgb = result.rgb;
-    } else { // Default to BlendFactor::SrcAlpha (5)
-        src_rgb = result.rgb * result.a;
-    }
 
-    var src_a: f32;
-    if (dst_blend_factor == 2u) { // BlendFactor::One (Additive)
-        src_a = 0.0;
-    } else if (dst_blend_factor == 1u) { // BlendFactor::Zero (Opaque)
-        src_a = 1.0;
-    } else { // Default to BlendFactor::OneMinusSrcAlpha (6)
-        src_a = result.a;
-    }
-    
-    return vec4<f32>(src_rgb, src_a);
+    return result;
 }

@@ -232,7 +232,7 @@ Attached to collider entities to trace back to the owning entity.
 
 ### 1. Ray Casting for Ground Detection
 
-From `src/systems/collision_system.rs:533-559` (player system; the NPC height-only variant is at `:159-192`):
+From `src/systems/collision_system.rs:827` (player system; the height-only variant is at `:404`):
 
 ```rust
 let ray_origin = Vec3::new(
@@ -265,7 +265,7 @@ let collision_height: Option<f32> = if let Some((_hit_entity, distance)) =
 - Position is in centimeters, converted to meters for physics
 - Ray starts 1.35m above entity (eye level)
 - Returns `Option<f32>` - None if no collision (falling off world)
-- The NPC height-only variant starts the ray 1.0m above the entity with `max_fall_distance = 100.0` (reduced from 10000.0 since entities now spawn at terrain height)
+- The height-only variant (NPCs, monsters, other characters, item drops) uses the same 1.35m step and `MOVEABLE` filter with `max_fall_distance = 100.0`; see [Height-Only Collision](#height-only-collision-npcs)
 
 ### 2. Shape Casting for Wall Collision
 
@@ -396,7 +396,7 @@ rapier_context.intersect_shape(
 
 ### Height-Only Collision (NPCs)
 
-From `src/systems/collision_system.rs:125-230`:
+Simplified from `src/systems/collision_system.rs:298` (without the server-height start, the inside-object lift and the zone-load hold described below):
 
 ```rust
 pub fn collision_height_only_system(
@@ -442,11 +442,15 @@ pub fn collision_height_only_system(
 }
 ```
 
-Notes on the current implementation:
-- The downward ray starts 1.0m above the entity with `max_fall_distance = 100.0` and its query filter matches zone objects via `COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_COLLIDABLE`, excluding entity-class groups (player/NPC/character/item-drop)
-- After the ground/collision height is found, `find_object_top_height` (same file, `:59`) raycasts upward through any zone object intersecting the entity's feet (e.g. spawning underneath castle steps) and lifts the entity to the top of the object. It uses the same `MOVEABLE | COLLIDABLE` membership (terrain and water excluded)
-- `COLLIDABLE` keeps NOT_MOVEABLE objects with a collision shape (castle steps, buildings, tree trunks) standable. Neither query uses `COLLISION_FILTER_INSPECTABLE`: every zone object part accepts it, so it would also lift entities onto parts without a ZSC collision shape and onto walk-through grass (see [Zone Objects](#zone-objects-shared-trimesh)). The original client skips no-collision objects for foot height as well
-- X/Z translation is synced from `Position` before the Y/gravity adjustment (`:216-217`)
+Notes on the current implementation (`collision_system.rs:298`):
+- **Standable surfaces** (`height_only_ground_groups`, `:78`): terrain and zone object parts accepting `COLLISION_FILTER_MOVEABLE` (ZSC collision shape, not `NOT_MOVEABLE`, not walk-through grass). This is the player's ground filter and the original client's rule for NPCs/monsters (`GetHeightTop`) and other avatars (foot ray): NOT_MOVEABLE parts (arches, roofs, walls, trunks) and INSPECTABLE-only parts are never stood on. Entity-class groups are excluded (no self-collision, see `pitfalls/flying.md`). Across all zones every IFO NPC stands on a MOVEABLE part
+- **Ground ray**: down from `feet + 1.35m` (`HEIGHT_ONLY_STEP_M`, the player's step, `1.8 * 75cm` in the original), `max_fall_distance = 100.0`. Entities climb steps and walk under bridges/arches
+- **Stuck inside an object** (`find_enclosing_object_top`, `:106`, cached per entity like the player's check): bots, vendors and item drops spawn at terrain height (XY only) and server-driven movers walk through object sides, so they can end up under a platform top more than a step above the feet. The ground ray cannot see it, and an overlap test cannot either (parry trimeshes are hollow surfaces: ball-vs-trimesh only sees faces within the ball radius). A ray cast **up** from the feet (MOVEABLE parts, no terrain) decides: zone meshes are wound outward, so a first hit on a **back face** (`TriMesh::is_backface` on the hit feature) means the feet are inside that part and the hit is its top; the entity is lifted there. A front face (bridge/overhang underside) never lifts, nor does a part whose AABB bottom is more than a step above the feet (decks, wall walks, ship hulls overhead) or an exit face steeper than ~45° (`MIN_WALKABLE_NORMAL_Y`). Walking entities (transform XY differs from `Position`) are lifted at most 5m (`MAX_WALKING_LIFT_M`), so movers cutting through a 16m castle wall are not popped onto the wall walk; standing ones (NPCs, vendors, drops) onto any enclosing top
+- **Server height for characters and NPCs**: other players, bots and vendor stalls are spawned at terrain height by `game_connection_system` (so are NPCs whose IFO height is not used, e.g. more than 10m above the terrain), but the server sends a meaningful z: town/vendor bots get the z of the NPC they are anchored on, buddy bots teleported to the player get the player's z (the original client also starts other avatars at the server z, `ResetPosZ`). On the frame `CollisionHeightOnly` is added to a `Character` or `Npc` client entity, its `Position.z` (not yet overwritten by this system) is used as the start height when a MOVEABLE object surface lies within a step of it (`object_surface_near`, `:143`). This also covers decks with an underside (harbour piers/pads in zones 3, 22, 27, lunar station 51), which the inside test rightly leaves alone. While zone colliders are pending the check is deferred (`ZoneColliderWait::server_heights`). Monsters are excluded: they keep their spawn point's z while roaming
+- **Zone load**: zone object colliders appear only after their meshes load, but `ZoneEvent::Loaded` sends `JoinZoneRequest` right after the zone entity spawns, so the server spawns NPCs first. While any `SharedMeshCollider` is pending (at most `ZONE_COLLIDER_WAIT_SECS = 20`), height-only entities do not descend (rising still works); otherwise NPCs placed on castle steps at their IFO height fell through to the terrain
+- X/Z translation is synced from `Position` together with Y, writing only on change
+
+The player keeps its own inside check (`find_object_top_height`, `:169`: foot-ball overlap with `MOVEABLE | COLLIDABLE` parts, then upward rays restricted to them).
 
 ### Player Collision System
 
@@ -497,7 +501,7 @@ Every part gets a collider; its filter decides which queries see it:
 | Collision shape, not `NOT_PICKABLE`, not a warp object | `+ CLICKABLE` |
 | Collision shape, not `NOT_MOVEABLE`, not a warp object | `+ MOVEABLE` |
 
-`INSPECTABLE` alone is accepted only by map editor selection, the debug inspector (`P`) and name-tag occlusion. Wall casts (player, sailing, NPC chase steering: `COLLIDABLE`), ground rays (`MOVEABLE`, `MOVEABLE | COLLIDABLE`), the orbit camera (`MOVEABLE | COLLIDABLE`) and click-to-move (`CLICKABLE`) ignore such parts, so characters walk through grass on the terrain. Wind sway (`wind_sway_system`) only writes the part's `Transform` and does not depend on the collider.
+`INSPECTABLE` alone is accepted only by map editor selection, the debug inspector (`P`) and name-tag occlusion. Wall casts (player, sailing, NPC chase steering: `COLLIDABLE`), ground rays (`MOVEABLE`), the player's inside check (`MOVEABLE | COLLIDABLE`), the orbit camera (`MOVEABLE | COLLIDABLE`) and click-to-move (`CLICKABLE`) ignore such parts, so characters walk through grass on the terrain. Wind sway (`wind_sway_system`) only writes the part's `Transform` and does not depend on the collider.
 
 **TriMeshFlags**:
 - `FIX_INTERNAL_EDGES`: Fixes non-manifold edges for better collision
@@ -811,7 +815,7 @@ commands.entity(entity).insert(ColliderEntity::new(collider_entity));
 **Symptom**: Player gets stuck on decorative physics objects.
 
 **Solution**: Physics toys are excluded from movement queries:
-- Ground raycast: `!COLLISION_GROUP_PHYSICS_TOY` (player system `:552`, height-only `:180`)
+- Ground raycast: `!COLLISION_GROUP_PHYSICS_TOY` (player system, and `height_only_ground_groups` for height-only entities)
 - Wall cast: `!COLLISION_GROUP_PHYSICS_TOY` (player system `:505`, sailing `:369`)
 
 **Trade-off**: Physics toys still collide with each other and can be inspected/picked up.

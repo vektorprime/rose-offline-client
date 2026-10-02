@@ -16,6 +16,7 @@ pub const PARTICLE_SHADER_HANDLE: Handle<Shader> =
 
 /// Custom particle material with storage buffers for particle data
 #[derive(Asset, TypePath, AsBindGroup, Clone)]
+#[bind_group_data(ParticleMaterialKey)]
 pub struct ParticleMaterial {
     #[storage(0, read_only)]
     pub positions: Handle<ShaderBuffer>,
@@ -30,6 +31,8 @@ pub struct ParticleMaterial {
     #[sampler(5)]
     pub texture: Handle<Image>,
 
+    /// Raw D3D render states of the PTL sequence (D3DBLENDOP / D3DBLEND values):
+    /// the pipeline uses them as its blend equation (see `specialize`).
     #[uniform(6)]
     pub blend_op: u32,
     #[uniform(7)]
@@ -55,6 +58,24 @@ impl Default for ParticleMaterial {
             dst_blend_factor: 0,
             billboard_type: 0,
             alpha_mode: AlphaMode::Premultiplied,
+        }
+    }
+}
+
+/// Pipeline key of [`ParticleMaterial`]: its blend equation.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ParticleMaterialKey {
+    blend_op: u32,
+    src_blend_factor: u32,
+    dst_blend_factor: u32,
+}
+
+impl From<&ParticleMaterial> for ParticleMaterialKey {
+    fn from(material: &ParticleMaterial) -> Self {
+        Self {
+            blend_op: material.blend_op,
+            src_blend_factor: material.src_blend_factor,
+            dst_blend_factor: material.dst_blend_factor,
         }
     }
 }
@@ -93,7 +114,7 @@ impl Material for ParticleMaterial {
         _pipeline: &MaterialPipeline,
         descriptor: &mut RenderPipelineDescriptor,
         _layout: &MeshVertexBufferLayoutRef,
-        _key: MaterialPipelineKey<Self>,
+        key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         // CRITICAL: Keep one empty vertex buffer layout (don't clear entirely)
         // This prevents index out of bounds errors in shadow/prepass systems
@@ -102,6 +123,24 @@ impl Material for ParticleMaterial {
             step_mode: VertexStepMode::Vertex,
             attributes: vec![],
         }];
+
+        // The sequence's own blend equation, like the original client. Emulating it
+        // through Bevy's premultiplied blend state drew inverse-source-color
+        // sequences as opaque quads (black squares around the texture) and turned
+        // reverse-subtract / max sequences into additive glows.
+        let component = crate::effect_loader::decode_blend_component(
+            key.bind_group_data.src_blend_factor,
+            key.bind_group_data.dst_blend_factor,
+            key.bind_group_data.blend_op,
+        );
+        if let Some(fragment) = descriptor.fragment.as_mut() {
+            for target in fragment.targets.iter_mut().flatten() {
+                target.blend = Some(BlendState {
+                    color: component,
+                    alpha: component,
+                });
+            }
+        }
 
         Ok(())
     }

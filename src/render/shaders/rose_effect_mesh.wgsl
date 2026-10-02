@@ -25,6 +25,7 @@
 #import bevy_pbr::forward_io::{Vertex, VertexOutput, FragmentOutput}
 #import bevy_pbr::pbr_fragment::pbr_input_from_standard_material
 #import bevy_pbr::pbr_functions::{alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing}
+#import bevy_pbr::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT
 #endif
 
 // Matches EffectMeshAnimationUniform (written by mesh_animation_system).
@@ -35,7 +36,7 @@ struct EffectMeshAnimationState {
     current_next_frame: u32,
     // Blend weight of the next frame
     next_weight: f32,
-    // Animated alpha (unused: effect materials are opaque or alpha-masked)
+    // Animated alpha of the current frame (ZMO alpha channel)
     alpha: f32,
 }
 
@@ -48,6 +49,7 @@ var<uniform> animation_state: EffectMeshAnimationState;
 const ANIMATE_POSITION: u32 = 1u;
 const ANIMATE_NORMAL: u32 = 2u;
 const ANIMATE_UV: u32 = 4u;
+const ANIMATE_ALPHA: u32 = 8u;
 
 struct MorphedVertex {
     position: vec3<f32>,
@@ -296,11 +298,30 @@ fn fragment(
 ) -> FragmentOutput {
     var pbr_input = pbr_input_from_standard_material(in, is_front);
 
+    // Animated alpha fades the mesh in and out (the original multiplies the
+    // output alpha by the ZMO alpha channel).
+    let flags = animation_state.flags;
+    if ((flags & ANIMATE_ALPHA) != 0u && (flags >> 4u) != 0u) {
+        pbr_input.material.base_color.a = pbr_input.material.base_color.a * animation_state.alpha;
+    }
+
     // ExtendedMaterial fragment shaders must discard masked pixels themselves.
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 
+#ifdef ROSE_EFFECT_ALPHA_TEST
+    // Alpha test of a blended mesh (alpha_discard only handles AlphaMode::Mask).
+    if (pbr_input.material.base_color.a < 0.5) {
+        discard;
+    }
+#endif
+
     var out: FragmentOutput;
-    out.color = apply_pbr_lighting(pbr_input);
+    if ((pbr_input.material.flags & STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u) {
+        out.color = apply_pbr_lighting(pbr_input);
+    } else {
+        // Unlit (glowing effect meshes): the texture color, like the particles.
+        out.color = pbr_input.material.base_color;
+    }
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
     return out;
 }

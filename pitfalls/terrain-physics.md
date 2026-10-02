@@ -59,3 +59,28 @@ commands.queue(move |world: &mut World| {
 2. Bevy's Bundle trait implementation limits tuples to ~15 components - split large spawns into multiple `insert()` calls
 3. Zone/level data must be added to Assets collection BEFORE events trigger systems that depend on that data
 4. Server position data (especially z/height) may be unreliable - use client-side terrain heightmap for ground placement
+
+---
+
+## NPCs / Bots Stuck Under Elevated Platforms (Fixed 2026-10-02)
+
+### Problem
+At the Junon Polis north gate (platform top 1.6 m above terrain), NPCs, vendor bots and the buddy bot Talez sometimes stood on the terrain under the platform (name tag visible, model hidden or only the hat poking through). Intermittent: right after `/mm 2` it failed, on a later visit it worked.
+
+### Root Cause
+1. Zone object colliders are built only after the object meshes load, but the server spawns the zone's NPCs right after JoinZoneRequest. With no platform collider the ground ray hit terrain and the NPCs fell to it.
+2. Characters (bots, vendors, server-teleported buddy bots) were placed at terrain height; the server's z was ignored and overwritten.
+3. Recovery was impossible: the height-only ground ray started only 1 m above the feet (below the 1.6 m top), and the "inside an object" test used an overlap ball, but trimesh colliders are hollow surfaces, so it never touched a face.
+
+### Solution
+In `collision_height_only_system` (`src/systems/collision_system.rs`):
+- No descending while any `SharedMeshCollider` is still pending (capped at 20 s).
+- Characters/NPCs start at the server's height on their first frame when a MOVEABLE object surface lies within a step of it (deferred until colliders exist).
+- Stuck-inside lift via one upward ray: a first hit on a trimesh BACK face means the feet are inside that part; lift onto it (not for bridge undersides, parts not reaching the feet, steep tops, or > 5 m while walking).
+- Ground ray starts 1.35 m above the feet (the player's step) and uses MOVEABLE only, like the player and the original client.
+
+### Files Modified
+- `src/systems/collision_system.rs`, `system-architecture/Physics.md`
+
+### Lesson Learned
+Entity heights computed against zone colliders must account for colliders that do not exist yet after a zone load. Trimesh colliders are hollow: use ray hits (and back-face tests) rather than overlap shapes to detect being inside an object. The server z is useful as a hint when an object surface supports it.

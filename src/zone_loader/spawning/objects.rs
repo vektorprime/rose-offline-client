@@ -372,6 +372,22 @@ pub(super) fn spawn_animated_object(
     let alpha_enabled = stb_morph_object.get_int(object_id, 4) != 0;
     let two_sided = stb_morph_object.get_int(object_id, 5) != 0;
     let alpha_test_enabled = stb_morph_object.get_int(object_id, 6) != 0;
+    let render_states = crate::render::EffectMeshRenderStates {
+        alpha_enabled,
+        alpha_test_enabled,
+        two_sided,
+        depth_test_enabled: stb_morph_object.get_int(object_id, 7) != 0,
+        depth_write_enabled: stb_morph_object.get_int(object_id, 8) != 0,
+        src_blend_factor: crate::effect_loader::decode_blend_factor(
+            stb_morph_object.get_int(object_id, 9) as u32,
+        ),
+        dst_blend_factor: crate::effect_loader::decode_blend_factor(
+            stb_morph_object.get_int(object_id, 10) as u32,
+        ),
+        blend_op: crate::effect_loader::decode_blend_op(
+            stb_morph_object.get_int(object_id, 11) as u32,
+        ),
+    };
 
     let object_transform = Transform::default()
         .with_translation(
@@ -408,33 +424,31 @@ pub(super) fn spawn_animated_object(
         asset_server.load(ZmoTextureAssetLoader::convert_path_texture(&motion_path));
     let motion_handle = asset_server.load(motion_path_buf.to_string_lossy().into_owned());
 
-    let material = effect_mesh_materials.add(ExtendedMaterial {
-        base: StandardMaterial {
+    // The STB's blend equation and depth states (blended morph objects such as
+    // glows and waterfalls were drawn opaque). rose_effect_material renders
+    // forward: the water reflection camera has no deferred prepass, so deferred
+    // animated objects were missing from reflections.
+    let material = effect_mesh_materials.add(crate::render::rose_effect_material(
+        StandardMaterial {
             base_color_texture: Some(texture_handle),
             // PBR properties for realistic lighting on animated objects
             perceptual_roughness: 0.8, // Higher roughness for matte vegetation/outdoor objects
             metallic: 0.0,             // Non-metallic for organic materials
-            alpha_mode: if alpha_test_enabled {
-                AlphaMode::Mask(0.5)
-            } else {
-                AlphaMode::Opaque
-            },
-            double_sided: two_sided,
-            // Forward, like the ROSE object materials: the water reflection camera
-            // has no deferred prepass, so deferred animated objects were missing
-            // from reflections.
-            opaque_render_method: bevy::material::OpaqueRendererMethod::Forward,
+            // Additive glows keep their texture color instead of sun shading.
+            unlit: alpha_enabled
+                && render_states.dst_blend_factor
+                    == bevy::render::render_resource::BlendFactor::One,
             ..Default::default()
         },
-        extension: RoseEffectExtension {
-            animation_texture: Some(motion_texture_handle.clone()),
-            animation_state: crate::render::EffectMeshAnimationUniform::default(),
-        },
-    });
+        Some(motion_texture_handle.clone()),
+        render_states,
+    ));
 
     // Determine if this animated object should cast shadows based on material transparency
-    // Opaque and alpha-masked materials cast shadows, alpha-blended materials don't
-    let is_transparent = alpha_enabled && !alpha_test_enabled;
+    // Opaque and alpha-masked materials cast shadows, blended ones (transparent pass) don't
+    let is_transparent = alpha_enabled
+        || !render_states.depth_write_enabled
+        || !render_states.depth_test_enabled;
 
     let animated_entity = commands
         .spawn((

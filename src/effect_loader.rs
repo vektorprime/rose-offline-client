@@ -12,7 +12,7 @@ use bevy::{
     },
     material::AlphaMode,
     render::{
-        render_resource::{BlendFactor, BlendOperation},
+        render_resource::{BlendComponent, BlendFactor, BlendOperation},
         storage::ShaderBuffer,
     },
 };
@@ -31,7 +31,8 @@ use crate::{
     audio::{AudioSource, GlobalSound, SoundGain, SpatialSound},
     components::{Effect, EffectMesh, EffectParticle, ParticleSequence},
     render::{
-        ParticleMaterial, ParticleRenderBillboardType, ParticleRenderData, RoseEffectExtension,
+        d3d_blend_component, rose_effect_material, EffectMeshRenderStates, ParticleMaterial,
+        ParticleRenderBillboardType, ParticleRenderData, RoseEffectExtension,
     },
     zms_asset_loader::ZmsNoSkinAssetLoader,
 };
@@ -306,38 +307,14 @@ pub fn decode_blend_factor(value: u32) -> BlendFactor {
     }
 }
 
-/// Convert BlendOperation to u32 for storage in material
-pub fn encode_blend_op(op: BlendOperation) -> u32 {
-    match op {
-        BlendOperation::Add => 0,
-        BlendOperation::Subtract => 1,
-        BlendOperation::ReverseSubtract => 2,
-        BlendOperation::Min => 3,
-        BlendOperation::Max => 4,
-    }
-}
-
-/// Convert BlendFactor to u32 for storage in material
-pub fn encode_blend_factor(factor: BlendFactor) -> u32 {
-    match factor {
-        BlendFactor::Zero => 1,
-        BlendFactor::One => 2,
-        BlendFactor::Src => 3,
-        BlendFactor::OneMinusSrc => 4,
-        BlendFactor::SrcAlpha => 5,
-        BlendFactor::OneMinusSrcAlpha => 6,
-        BlendFactor::DstAlpha => 7,
-        BlendFactor::OneMinusDstAlpha => 8,
-        BlendFactor::Dst => 9,
-        BlendFactor::OneMinusDst => 10,
-        BlendFactor::SrcAlphaSaturated => 11,
-        BlendFactor::Constant => 12,
-        BlendFactor::OneMinusConstant => 13,
-        BlendFactor::Src1 => 14,
-        BlendFactor::OneMinusSrc1 => 15,
-        BlendFactor::Src1Alpha => 16,
-        BlendFactor::OneMinusSrc1Alpha => 17,
-    }
+/// The blend equation of raw D3D render states (D3DBLEND / D3DBLENDOP values, as
+/// stored in EFT, PTL and LIST_MORPH_OBJECT files).
+pub fn decode_blend_component(src_blend: u32, dst_blend: u32, blend_op: u32) -> BlendComponent {
+    d3d_blend_component(
+        decode_blend_factor(src_blend),
+        decode_blend_factor(dst_blend),
+        decode_blend_op(blend_op),
+    )
 }
 
 fn spawn_mesh(
@@ -383,26 +360,33 @@ fn spawn_mesh(
                     asset_server.load::<bevy::prelude::Image>(&texture_path)
                 };
 
-                let material = effect_mesh_materials.add(ExtendedMaterial {
-                    base: StandardMaterial {
+                // The EFT's own blend equation and depth states: most effect meshes
+                // are additive over a black texture background, which was drawn as
+                // a black box while every effect mesh rendered opaque.
+                let material = effect_mesh_materials.add(rose_effect_material(
+                    StandardMaterial {
                         base_color_texture: Some(texture_handle),
-                        alpha_mode: if eft_mesh.alpha_test_enabled {
-                            AlphaMode::Mask(0.5)
-                        } else {
-                            AlphaMode::Opaque
-                        },
-                        double_sided: eft_mesh.two_sided,
+                        // Blended effect meshes glow with their texture color, like
+                        // the particles, instead of being shaded by the sun.
+                        unlit: eft_mesh.alpha_enabled,
                         ..Default::default()
                     },
-                    extension: RoseEffectExtension {
-                        animation_texture: eft_mesh.mesh_animation_file.as_ref().map(|path| {
-                            asset_server.load(ZmoTextureAssetLoader::convert_path_texture(
-                                path.path().to_str().unwrap(),
-                            ))
-                        }),
-                        animation_state: crate::render::EffectMeshAnimationUniform::default(),
+                    eft_mesh.mesh_animation_file.as_ref().map(|path| {
+                        asset_server.load(ZmoTextureAssetLoader::convert_path_texture(
+                            path.path().to_str().unwrap(),
+                        ))
+                    }),
+                    EffectMeshRenderStates {
+                        alpha_enabled: eft_mesh.alpha_enabled,
+                        alpha_test_enabled: eft_mesh.alpha_test_enabled,
+                        two_sided: eft_mesh.two_sided,
+                        depth_test_enabled: eft_mesh.depth_test_enabled,
+                        depth_write_enabled: eft_mesh.depth_write_enabled,
+                        src_blend_factor: decode_blend_factor(eft_mesh.src_blend_factor),
+                        dst_blend_factor: decode_blend_factor(eft_mesh.dst_blend_factor),
+                        blend_op: decode_blend_op(eft_mesh.blend_op),
                     },
-                });
+                ));
 
                 let mut entity_comands = child_builder.spawn((
                     EffectMesh {},
@@ -412,6 +396,8 @@ fn spawn_mesh(
                     InheritedVisibility::default(),
                     ViewVisibility::default(),
                     Transform::default(),
+                    // Effects never cast shadows in the original client.
+                    NotShadowCaster,
                 ));
                 entity_comands.insert(GlobalTransform::default());
 
@@ -584,13 +570,11 @@ fn spawn_particle(
                         sizes: sizes_buffer,
                         colors: colors_buffer,
                         textures: textures_buffer,
-                        blend_op: encode_blend_op(decode_blend_op(sequence.blend_op as u32)),
-                        src_blend_factor: encode_blend_factor(decode_blend_factor(
-                            sequence.src_blend_mode as u32,
-                        )),
-                        dst_blend_factor: encode_blend_factor(decode_blend_factor(
-                            sequence.dst_blend_mode as u32,
-                        )),
+                        // Raw D3D values, like particle_storage_buffer_update_system
+                        // writes them (ParticleMaterial::specialize decodes them).
+                        blend_op: sequence.blend_op as u32,
+                        src_blend_factor: sequence.src_blend_mode as u32,
+                        dst_blend_factor: sequence.dst_blend_mode as u32,
                         billboard_type: match sequence.align_type {
                             0 => 2, // Full billboard
                             1 => 0, // No billboard

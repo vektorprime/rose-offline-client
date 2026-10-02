@@ -1,8 +1,8 @@
 use bevy::{
     math::{Quat, Vec3},
     prelude::{
-        Assets, Commands, Entity, GlobalTransform, Local, MessageWriter, Query, Res, State,
-        Time, Transform, With, Without,
+        Assets, Commands, DetectChanges, Entity, GlobalTransform, Local, MessageWriter, Query, Ref,
+        Res, State, Time, Transform, With, Without,
     },
 };
 use std::collections::HashMap;
@@ -17,11 +17,11 @@ use rose_game_common::messages::client::ClientMessage;
 
 use crate::{
     components::{
-        BoatState, ColliderParent, CollisionHeightOnly, CollisionPlayer, Command, EventObject,
-        FlightState, NextCommand, Position, WarpObject, COLLISION_FILTER_COLLIDABLE,
-        COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_CHARACTER, COLLISION_GROUP_ITEM_DROP,
-        COLLISION_GROUP_NPC, COLLISION_GROUP_PHYSICS_TOY, COLLISION_GROUP_PLAYER,
-        COLLISION_GROUP_ZONE_EVENT_OBJECT, COLLISION_GROUP_ZONE_TERRAIN,
+        BoatState, ClientEntity, ClientEntityType, ColliderParent, CollisionHeightOnly,
+        CollisionPlayer, Command, EventObject, FlightState, NextCommand, Position, WarpObject,
+        COLLISION_FILTER_COLLIDABLE, COLLISION_FILTER_MOVEABLE, COLLISION_GROUP_CHARACTER,
+        COLLISION_GROUP_ITEM_DROP, COLLISION_GROUP_NPC, COLLISION_GROUP_PHYSICS_TOY,
+        COLLISION_GROUP_PLAYER, COLLISION_GROUP_ZONE_EVENT_OBJECT, COLLISION_GROUP_ZONE_TERRAIN,
         COLLISION_GROUP_ZONE_WARP_OBJECT, COLLISION_GROUP_ZONE_WATER,
     },
     events::QuestTriggerEvent,
@@ -32,6 +32,7 @@ use crate::{
 };
 
 use super::flight_movement_system::{send_move_collision, MoveCollisionThrottle};
+use super::SharedMeshCollider;
 
 /// Sailing collision tuning.
 ///
@@ -48,13 +49,122 @@ const TERRAIN_BLOCK_MARGIN_M: f32 = 0.25;
 /// Block radius around NPC boat centers in cm (hull is ~6.7 m long x ~3.5 m wide).
 const NPC_BOAT_BLOCK_RADIUS_CM: f32 = 400.0;
 
-/// Finds the top surface (in meters) of a zone object that an entity is currently
-/// inside of or touching at `feet_position` (e.g. an NPC spawned underneath castle
-/// steps). Mirrors the original game's `UpdateFootHeight_Other`: objects intersecting
-/// the entity's foot sphere get raycast upward to find their top, so entities stuck
-/// inside objects are placed on top of them instead of remaining underneath.
+/// Height (m) above the feet that the ground ray of height-only entities starts
+/// at, i.e. the highest step they climb. Same as the player's ground ray and the
+/// original client's foot ray for other avatars (1.8 * 75 cm).
+const HEIGHT_ONLY_STEP_M: f32 = 1.35;
+/// Reach (m) of the height-only ground ray and of the stuck-inside-object ray.
+const HEIGHT_ONLY_RAY_LENGTH_M: f32 = 100.0;
+/// Steepest top (normal y, ~45 degrees) an entity stuck inside an object is
+/// lifted onto: flat platforms, steps and decks, not statues or wall slopes.
+const MIN_WALKABLE_NORMAL_Y: f32 = 0.7;
+/// Highest lift (m) onto the top of an object for an entity that is walking: a
+/// server-driven mover walking into a platform, stair or bridge side is put on
+/// it, but one cutting through a castle wall is not popped onto the wall walk.
+/// Standing entities (NPCs, vendors, item drops) are lifted onto any top.
+const MAX_WALKING_LIFT_M: f32 = 5.0;
+/// Longest time (s) height-only entities wait for zone object colliders before
+/// gravity applies again, so a mesh that never loads cannot freeze them.
+const ZONE_COLLIDER_WAIT_SECS: f64 = 20.0;
+
+/// Zone surfaces height-only entities (NPCs, monsters, other characters, item
+/// drops) stand on: terrain and object parts accepting MOVEABLE, i.e. parts with a
+/// ZSC collision shape that are not NOT_MOVEABLE. That is the player's ground ray
+/// filter and the original client's rule for NPCs, monsters and other avatars
+/// (`GetHeightTop` and the foot ray both skip NOT_MOVEABLE objects). Walk-through
+/// grass and parts without a collision shape (INSPECTABLE only) and NOT_MOVEABLE
+/// parts (arches, roofs, walls, trunks) are never stood on. Entity-class groups are
+/// excluded as well, so an entity can never stand on its own collider.
+fn height_only_ground_groups() -> CollisionGroups {
+    CollisionGroups::new(
+        COLLISION_FILTER_MOVEABLE,
+        !COLLISION_GROUP_PHYSICS_TOY
+            & !COLLISION_GROUP_ZONE_WATER
+            & !COLLISION_GROUP_PLAYER
+            & !COLLISION_GROUP_NPC
+            & !COLLISION_GROUP_CHARACTER
+            & !COLLISION_GROUP_ITEM_DROP,
+    )
+}
+
+/// Top (m) of the zone object a height-only entity is stuck inside of, if any.
 ///
-/// Returns `None` when the entity is not intersecting any zone object, or when no
+/// Entities are placed by XY only: bots, vendors and item drops spawn at terrain
+/// height, NPCs can fall before their ground's collider exists, and server-driven
+/// movers walk straight through an object's side. When that object's top is more
+/// than a step above the feet (castle gate platforms, stairs, canal walkways)
+/// neither the downward ground ray nor an overlap test can find it: the ray starts
+/// below the top, and trimesh colliders are hollow surfaces, so an overlap test
+/// only sees faces within the query shape's radius.
+///
+/// Cast up from the feet instead. Zone meshes are wound outward, so a first hit
+/// on a BACK face means the feet are inside that part, and the hit is where they
+/// leave it: the top to stand on. A front face is the underside of a bridge or an
+/// overhang the entity walks under, which never lifts. Neither does a part that
+/// does not reach down to the feet (a deck, wall walk or ship hull overhead) or a
+/// steep exit face (statue, wall slope).
+fn find_enclosing_object_top(rapier_context: &RapierContext, feet_position: Vec3) -> Option<f32> {
+    // Slightly above the feet, so an entity standing on a top does not hit it.
+    let origin = feet_position + Vec3::new(0.0, 0.05, 0.0);
+    let mut groups = height_only_ground_groups();
+    groups.filters &= !COLLISION_GROUP_ZONE_TERRAIN;
+
+    let (hit_entity, hit) = rapier_context.cast_ray_and_get_normal(
+        origin,
+        Vec3::Y,
+        HEIGHT_ONLY_RAY_LENGTH_M,
+        false,
+        QueryFilter::new().groups(groups),
+    )?;
+
+    let collider = rapier_context
+        .colliders
+        .entity2collider()
+        .get(&hit_entity)
+        .and_then(|handle| rapier_context.colliders.colliders.get(*handle))?;
+    let trimesh = collider.shape().as_trimesh()?;
+
+    // The hit normal faces the ray origin; the exit face's outward normal is its
+    // opposite.
+    let exit_normal_y = -hit.normal.y;
+    if !trimesh.is_backface(hit.feature)
+        || exit_normal_y < MIN_WALKABLE_NORMAL_Y
+        || collider.compute_aabb().mins.y > feet_position.y + HEIGHT_ONLY_STEP_M
+    {
+        return None;
+    }
+
+    Some(origin.y + hit.time_of_impact)
+}
+
+/// Whether a zone object part (not terrain) has a standable surface within a step
+/// of `height` (m) at the XZ of `feet_position`, i.e. whether an entity reported
+/// at that height by the server can stand there.
+fn object_surface_near(rapier_context: &RapierContext, feet_position: Vec3, height: f32) -> bool {
+    let mut groups = height_only_ground_groups();
+    groups.filters &= !COLLISION_GROUP_ZONE_TERRAIN;
+
+    rapier_context
+        .cast_ray(
+            Vec3::new(
+                feet_position.x,
+                height + HEIGHT_ONLY_STEP_M,
+                feet_position.z,
+            ),
+            Vec3::new(0.0, -1.0, 0.0),
+            2.0 * HEIGHT_ONLY_STEP_M,
+            false,
+            QueryFilter::new().groups(groups),
+        )
+        .is_some()
+}
+
+/// Finds the top surface (in meters) of a zone object that the player is currently
+/// inside of or touching at `feet_position`. Objects intersecting the player's foot
+/// sphere get raycast upward to find their top, so a player pushed into an object
+/// is placed on top of it instead of remaining underneath.
+///
+/// Returns `None` when the player is not intersecting any zone object, or when no
 /// surface can be found above it.
 fn find_object_top_height(rapier_context: &RapierContext, feet_position: Vec3) -> Option<f32> {
     // Objects the entity's feet are inside of / touching. Terrain and water are
@@ -131,17 +241,18 @@ fn find_object_top_height(rapier_context: &RapierContext, feet_position: Vec3) -
     top_height
 }
 
-/// Throttled wrapper around [`find_object_top_height`].
-/// The raw query does intersect_shape + up to 16 upward rays. Running it per entity
-/// per frame costs hundreds of Rapier queries in NPC-heavy zones. Entities rarely
-/// teleport inside objects, so cache per entity and only recompute when moved >0.5m
-/// or every 30 frames. Returns cached None fast-path for the common open-ground case.
-fn find_object_top_height_cached(
-    rapier_context: &RapierContext,
-    feet_position: Vec3,
-    entity: Entity,
+/// Throttled wrapper around the object-top queries ([`find_object_top_height`] for
+/// the player, [`find_enclosing_object_top`] for height-only entities), which cost
+/// one or more Rapier queries each. Running them per entity per frame costs
+/// hundreds of queries in NPC-heavy zones. Entities rarely teleport inside
+/// objects, so cache per entity and only recompute when moved >0.5m or every 30
+/// frames. Returns cached None fast-path for the common open-ground case.
+fn cached_object_top_height(
     cache: &mut HashMap<Entity, (Vec3, Option<f32>, u64)>,
+    entity: Entity,
+    feet_position: Vec3,
     frame: u64,
+    query: impl FnOnce() -> Option<f32>,
 ) -> Option<f32> {
     if let Some((cached_pos, cached_top, cached_frame)) = cache.get(&entity) {
         let moved_sq = (*cached_pos - feet_position).length_squared();
@@ -149,7 +260,7 @@ fn find_object_top_height_cached(
             return *cached_top;
         }
     }
-    let top = find_object_top_height(rapier_context, feet_position);
+    let top = query();
     cache.insert(entity, (feet_position, top, frame));
     // Bound memory: zone transitions can orphan entries.
     if cache.len() > 2048 {
@@ -158,24 +269,47 @@ fn find_object_top_height_cached(
     top
 }
 
-/// Frame counter + per-entity top-height cache for [`collision_height_only_system`].
+/// Frame counter + per-entity top-height cache for [`collision_height_only_system`]
+/// and [`collision_player_system`].
 #[derive(Default)]
 pub struct ObjectTopCache {
     frame: u64,
     entries: HashMap<Entity, (Vec3, Option<f32>, u64)>,
 }
 
+/// Zone object collider loading state for [`collision_height_only_system`]: since
+/// when colliders have been pending, and the server heights of characters spawned
+/// meanwhile, which can only be checked against the objects once they exist.
+#[derive(Default)]
+pub struct ZoneColliderWait {
+    pending_since: Option<f64>,
+    server_heights: HashMap<Entity, f32>,
+}
+
+/// Keeps NPCs, monsters, other characters and item drops on the ground: terrain,
+/// or the MOVEABLE zone object below their feet (see [`height_only_ground_groups`]).
+///
+/// The ground ray starts one step above the feet, so entities climb steps and
+/// walk under bridges like the player. Characters start at the server's height
+/// when an object surface supports it, and entities stuck inside an object
+/// (placed by XY at terrain height, or walked into it by the server) are lifted
+/// onto its top by [`find_enclosing_object_top`].
 #[allow(clippy::too_many_arguments)]
 pub fn collision_height_only_system(
-    mut query_collision_entity: Query<
-        (Entity, &mut Position, &mut Transform),
-        With<CollisionHeightOnly>,
-    >,
+    mut query_collision_entity: Query<(
+        Entity,
+        &mut Position,
+        &mut Transform,
+        Ref<CollisionHeightOnly>,
+        Option<&ClientEntity>,
+    )>,
+    query_pending_zone_colliders: Query<(), With<SharedMeshCollider>>,
     rapier_context: ReadRapierContext,
     current_zone: Option<Res<CurrentZone>>,
     zone_loader_assets: Res<Assets<ZoneLoaderAsset>>,
     time: Res<Time>,
     mut top_cache: Local<ObjectTopCache>,
+    mut zone_collider_wait: Local<ZoneColliderWait>,
 ) {
     let Ok(rapier_context) = rapier_context.single() else {
         return;
@@ -203,47 +337,87 @@ pub fn collision_height_only_system(
     let frame = cache.frame;
     let cache_entries = &mut cache.entries;
 
-    for (entity, mut position, mut transform) in query_collision_entity.iter_mut() {
+    // Zone object colliders only exist once their meshes have loaded, but the
+    // server spawns the zone's NPCs right after the zone entity is spawned
+    // (JoinZoneRequest does not wait for the meshes). Until then the ground ray
+    // only sees terrain, and an NPC placed on castle steps at its IFO height would
+    // fall through them to the terrain. Do not let entities descend while
+    // colliders are pending (rising still works), bounded in time so a mesh that
+    // never loads cannot freeze them.
+    let now = time.elapsed_secs_f64();
+    let zone_collider_wait = &mut *zone_collider_wait;
+    let hold_height = if query_pending_zone_colliders.is_empty() {
+        zone_collider_wait.pending_since = None;
+        false
+    } else {
+        let pending_since = *zone_collider_wait.pending_since.get_or_insert(now);
+        now - pending_since < ZONE_COLLIDER_WAIT_SECS
+    };
+
+    for (entity, mut position, mut transform, height_only, client_entity) in
+        query_collision_entity.iter_mut()
+    {
         // Get terrain height from heightmap
         let terrain_height: f32 =
             current_zone_data.get_terrain_height(position.x, position.y) / 100.0;
+        let mut old_y = transform.translation.y;
 
-        // Cast ray downward to detect collision objects (bridges, platforms,
-        // castle steps, etc.). Zone objects are matched via MOVEABLE or
-        // COLLIDABLE so NOT_MOVEABLE objects (steps, buildings) are included,
-        // while parts without a collision shape and walk-through grass
-        // (INSPECTABLE only) are not stood on. Entity-class colliders are
-        // excluded so an entity never stands on its own (or another entity's)
-        // collider.
+        // Characters (other players, bots, vendor stalls) spawn at the terrain
+        // height, but the original client starts them at the server's height, and
+        // the server puts town and vendor bots at the height of the NPC they are
+        // anchored on (castle steps, harbour piers) and teleports buddy bots to the
+        // player's height. NPCs whose IFO height is not used (no match, or more than
+        // 10 m above the terrain) spawn at the terrain too. Start at the server's
+        // height when a zone object surface supports it: a pier deck has an
+        // underside, so an entity placed below it could not tell that it belongs on
+        // top. Checked once the zone colliders exist. Monsters keep their spawn
+        // point's height while they roam, so it is not used for them.
+        let use_server_height = height_only.is_added()
+            && client_entity.is_some_and(|client_entity| {
+                matches!(
+                    client_entity.entity_type,
+                    ClientEntityType::Character | ClientEntityType::Npc
+                )
+            });
+        let server_y = if hold_height {
+            if use_server_height {
+                zone_collider_wait
+                    .server_heights
+                    .insert(entity, position.z / 100.0);
+            }
+            None
+        } else if use_server_height {
+            Some(position.z / 100.0)
+        } else {
+            zone_collider_wait.server_heights.remove(&entity)
+        };
+        if let Some(server_y) = server_y {
+            let feet_position = Vec3::new(position.x / 100.0, old_y, -position.y / 100.0);
+            if server_y > old_y
+                && server_y - old_y <= HEIGHT_ONLY_RAY_LENGTH_M
+                && object_surface_near(&rapier_context, feet_position, server_y)
+            {
+                old_y = server_y;
+            }
+        }
+
+        // Ground below the feet: cast down from one step above them, so entities
+        // climb steps (bridges, platforms, castle steps) and walk under bridges and
+        // arches like the player does.
         let ray_origin = Vec3::new(
             position.x / 100.0,
-            transform.translation.y + 1.0,
+            old_y + HEIGHT_ONLY_STEP_M,
             -position.y / 100.0,
         );
-        let ray_direction = Vec3::new(0.0, -1.0, 0.0);
-        let max_fall_distance = 100.0; // Reduced from 10000.0 since entities now spawn at terrain height
-
-        let collision_height: Option<f32> = if let Some((_hit_entity, distance)) = rapier_context
+        let collision_height: Option<f32> = rapier_context
             .cast_ray(
                 ray_origin,
-                ray_direction,
-                max_fall_distance,
+                Vec3::new(0.0, -1.0, 0.0),
+                HEIGHT_ONLY_RAY_LENGTH_M,
                 false,
-                QueryFilter::new().groups(CollisionGroups::new(
-                    COLLISION_FILTER_MOVEABLE | COLLISION_FILTER_COLLIDABLE,
-                    !COLLISION_GROUP_PHYSICS_TOY
-                        & !COLLISION_GROUP_ZONE_WATER
-                        & !COLLISION_GROUP_PLAYER
-                        & !COLLISION_GROUP_NPC
-                        & !COLLISION_GROUP_CHARACTER
-                        & !COLLISION_GROUP_ITEM_DROP,
-                )),
-            ) {
-            let hit_y = (ray_origin + ray_direction * distance).y;
-            Some(hit_y)
-        } else {
-            None
-        };
+                QueryFilter::new().groups(height_only_ground_groups()),
+            )
+            .map(|(_hit_entity, distance)| ray_origin.y - distance);
 
         // Target height is the maximum of terrain height and collision height
         let target_y = if let Some(collision_height) = collision_height {
@@ -252,29 +426,27 @@ pub fn collision_height_only_system(
             terrain_height
         };
 
-        // If the entity is inside a zone object (e.g. spawned underneath castle
-        // steps), place it on top of that object instead of leaving it stuck below.
-        // Throttled + cached: raw query is intersect + up to 16 rays.
-        let feet_position = Vec3::new(
-            position.x / 100.0,
-            transform.translation.y + 0.1,
-            -position.y / 100.0,
-        );
-        // Single reborrow prepared before the loop; reuse frame + entries here.
-        let target_y = find_object_top_height_cached(
-            &rapier_context,
-            feet_position,
-            entity,
-            cache_entries,
-            frame,
-        )
-        .map_or(target_y, |object_top| target_y.max(object_top));
+        // If the entity is inside a zone object (e.g. a bot or vendor spawned at
+        // terrain height underneath a platform), place it on top of that object
+        // instead of leaving it stuck below. Throttled + cached.
+        let feet_position = Vec3::new(position.x / 100.0, old_y, -position.y / 100.0);
+        // The transform still holds last frame's XY while the entity walks.
+        let walking = transform.translation.x != feet_position.x
+            || transform.translation.z != feet_position.z;
+        let target_y =
+            cached_object_top_height(cache_entries, entity, feet_position, frame, || {
+                find_enclosing_object_top(&rapier_context, feet_position)
+            })
+            .filter(|&object_top| !walking || object_top - old_y <= MAX_WALKING_LIFT_M)
+            .map_or(target_y, |object_top| target_y.max(object_top));
 
         // Apply gravity-based falling
         let fall_distance = time.delta().as_secs_f32() * 9.81;
-        let old_y = transform.translation.y;
 
-        let new_y = if old_y - target_y > fall_distance {
+        let new_y = if hold_height && target_y < old_y {
+            // Ground may not be loaded yet: keep the height
+            old_y
+        } else if old_y - target_y > fall_distance {
             // Falling
             old_y - fall_distance
         } else {
@@ -295,6 +467,12 @@ pub fn collision_height_only_system(
         if position.z != new_z {
             position.z = new_z;
         }
+    }
+
+    // Every live entity's deferred server height was taken above; the rest belong
+    // to entities despawned while the zone was loading.
+    if !hold_height {
+        zone_collider_wait.server_heights.clear();
     }
 }
 
@@ -689,14 +867,11 @@ pub fn collision_player_system(
             transform.translation.y + 0.1,
             -position.y / 100.0,
         );
-        let target_y = find_object_top_height_cached(
-            &rapier_context,
-            feet_position,
-            entity,
-            cache_entries,
-            frame,
-        )
-        .map_or(target_y, |object_top| target_y.max(object_top));
+        let target_y =
+            cached_object_top_height(cache_entries, entity, feet_position, frame, || {
+                find_object_top_height(&rapier_context, feet_position)
+            })
+            .map_or(target_y, |object_top| target_y.max(object_top));
 
         // Update entity translation based on server-authoritative position
         // Z (height) is updated locally for smooth visual feedback
