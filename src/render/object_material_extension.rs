@@ -125,6 +125,12 @@ impl MaterialExtension for RoseObjectExtension {
         crate::render::extension_material_plugin::ROSE_OBJECT_EXTENSION_SHADER_HANDLE.into()
     }
 
+    /// Forward prepass: writes the cel outline class into the normal texture's alpha
+    /// (`rose_object_extension.wgsl`, read by `cel_outline.wgsl`).
+    fn prepass_fragment_shader() -> ShaderRef {
+        crate::render::extension_material_plugin::ROSE_OBJECT_EXTENSION_SHADER_HANDLE.into()
+    }
+
     fn specialize(
         _pipeline: &MaterialExtensionPipeline,
         descriptor: &mut RenderPipelineDescriptor,
@@ -141,6 +147,8 @@ impl MaterialExtension for RoseObjectExtension {
         {
             return Ok(());
         }
+
+        crate::render::cel_shading::push_toon_shader_def(descriptor);
 
         if key.bind_group_data.has_specular {
             if let Some(fragment) = descriptor.fragment.as_mut() {

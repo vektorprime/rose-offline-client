@@ -52,6 +52,13 @@ pub use object_material_extension::*;
 pub mod effect_mesh_extension;
 pub use effect_mesh_extension::*;
 
+// Cel shading: toon lighting shader libraries, and the screen-space outline pass
+pub mod cel_shading;
+pub use cel_shading::CelShadingPlugin;
+
+pub mod cel_outline;
+pub use cel_outline::{CelOutline, CelOutlinePlugin};
+
 pub mod extension_material_plugin;
 pub use extension_material_plugin::ExtensionMaterialPlugin;
 pub use extension_material_plugin::RoseObjectMaterialPlugin;
@@ -108,6 +115,10 @@ pub struct RoseRenderPlugin;
 impl Plugin for RoseRenderPlugin {
     fn build(&self, app: &mut App) {
         bevy::log::info!("[RENDER PLUGIN] RoseRenderPlugin - Registering material plugins");
+
+        // Cel shading shader libraries (imported by the ROSE material and terrain
+        // shaders) and the screen-space outline pass
+        app.add_plugins((CelShadingPlugin, CelOutlinePlugin));
 
         // Register the terrain material plugin
         app.add_plugins(TerrainMaterialPlugin);

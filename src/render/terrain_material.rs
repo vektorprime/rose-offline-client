@@ -40,6 +40,10 @@ use crate::render::{
 pub const TERRAIN_MATERIAL_SHADER_HANDLE: Handle<Shader> =
     weak_handle!("3d793925-0aff-89cb-0000-000000000000");
 
+/// Shader handle for the terrain depth/normal prepass shader
+pub const TERRAIN_PREPASS_SHADER_HANDLE: Handle<Shader> =
+    weak_handle!("3d793925-0aff-89cb-0000-000000000001");
+
 /// Maximum number of terrain tile textures supported
 pub const TERRAIN_MATERIAL_MAX_TEXTURES: usize = 100;
 
@@ -52,6 +56,12 @@ impl Plugin for TerrainMaterialPlugin {
             app,
             TERRAIN_MATERIAL_SHADER_HANDLE,
             "shaders/terrain_material.wgsl",
+            Shader::from_wgsl
+        );
+        load_internal_asset!(
+            app,
+            TERRAIN_PREPASS_SHADER_HANDLE,
+            "shaders/terrain_prepass.wgsl",
             Shader::from_wgsl
         );
 
@@ -220,9 +230,15 @@ impl Material for TerrainMaterial {
         AlphaMode::Opaque
     }
 
-    /// Disable prepass for custom material
-    fn enable_prepass() -> bool {
-        false
+    /// The terrain is in the depth/normal prepass (its own shader, for the custom
+    /// vertex layout), so the prepass depth and normal textures read by the cel outline
+    /// pass and SSAO contain it.
+    fn prepass_vertex_shader() -> ShaderRef {
+        TERRAIN_PREPASS_SHADER_HANDLE.into()
+    }
+
+    fn prepass_fragment_shader() -> ShaderRef {
+        TERRAIN_PREPASS_SHADER_HANDLE.into()
     }
 
     /// Terrain doesn't cast shadows

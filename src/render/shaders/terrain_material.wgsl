@@ -6,8 +6,9 @@
 //! - Two-layer blending with alpha
 //! - Lightmap support via UV0
 
-#import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_world, mesh_position_local_to_clip}
-#import bevy_pbr::mesh_view_bindings view
+#import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_world}
+#import bevy_pbr::view_transformations::position_world_to_clip
+#import rose::toon_bands::toon_key_band
 
 // Vertex input structure
 struct Vertex {
@@ -50,15 +51,14 @@ fn vertex(vertex: Vertex) -> VertexOutput {
     var out: VertexOutput;
     
     let world_from_local = get_world_from_local(vertex.instance_index);
-    
-    out.clip_position = mesh_position_local_to_clip(
-        world_from_local,
-        vec4<f32>(vertex.position, 1.0),
-    );
+
     out.world_position = mesh_position_local_to_world(
         world_from_local,
         vec4<f32>(vertex.position, 1.0),
     );
+    // Same expression as terrain_prepass.wgsl: the main pass depth-tests against the
+    // prepass depth (GreaterEqual), so both must produce bit-identical depths.
+    out.clip_position = position_world_to_clip(out.world_position.xyz);
     out.world_normal = mesh_position_local_to_world(
         world_from_local,
         vec4<f32>(vertex.normal, 0.0),
@@ -129,8 +129,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Diffuse from the sun (day) and the moon (night); each is black when
     // inactive, and both fade continuously with the sun's elevation.
-    let diffuse_light = light_color.rgb * max(dot(normal, light_dir), 0.0)
-        + moon_color.rgb * max(dot(normal, moon_dir), 0.0);
+    // N.L goes through the cel bands shared with the ROSE materials (toon_bands.wgsl).
+    let diffuse_light = light_color.rgb * toon_key_band(dot(normal, light_dir))
+        + moon_color.rgb * toon_key_band(dot(normal, moon_dir));
 
     // Combine with ambient light
     let lighting = ambient_color.rgb + diffuse_light;

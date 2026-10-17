@@ -26,6 +26,9 @@
 #import bevy_pbr::pbr_fragment::pbr_input_from_standard_material
 #import bevy_pbr::pbr_functions::{alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing}
 #import bevy_pbr::pbr_types::STANDARD_MATERIAL_FLAGS_UNLIT_BIT
+#ifdef ROSE_TOON
+#import rose::toon_lighting::toon_lighting
+#endif
 #endif
 
 // Matches EffectMeshAnimationUniform (written by mesh_animation_system).
@@ -317,7 +320,12 @@ fn fragment(
 
     var out: FragmentOutput;
     if ((pbr_input.material.flags & STANDARD_MATERIAL_FLAGS_UNLIT_BIT) == 0u) {
+        // Lit (animated zone objects): cel bands with ROSE_TOON, else PBR.
+#ifdef ROSE_TOON
+        out.color = toon_lighting(pbr_input, 0.0);
+#else
         out.color = apply_pbr_lighting(pbr_input);
+#endif
     } else {
         // Unlit (glowing effect meshes): the texture color, like the particles.
         out.color = pbr_input.material.base_color;

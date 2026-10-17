@@ -242,6 +242,10 @@ fn spawn_lights(mut commands: Commands, zone_lighting: Res<ZoneLighting>) {
             color: Color::srgb(0.75, 0.82, 1.0),
             illuminance: FILL_MAX_ILLUMINANCE,
             shadow_maps_enabled: false,
+            // Marks the fill light for the cel shader (toon_lighting.wgsl), which
+            // applies it as a flat lift with no terminator. The flag only affects Bevy
+            // lightmaps, which the game does not use.
+            affects_lightmapped_mesh_diffuse: false,
             ..Default::default()
         },
         // Fixed fill direction: high from the north-ish side so it almost always

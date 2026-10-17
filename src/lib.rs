@@ -2044,6 +2044,11 @@ fn load_common_game_data(
             // (e.g. --new-terrain StandardMaterial) is visible. It also lets the
             // deferred G-buffer pass replace the duplicate forward prepass.
             DeferredPrepass,
+            // Normals for the cel outline pass (also required by SSAO, which can be
+            // switched off; the outline pass must keep its normals regardless).
+            bevy::core_pipeline::prepass::NormalPrepass,
+            // Cel shading outlines (render/cel_outline.rs). Remove to disable them.
+            crate::render::CelOutline::default(),
             // GPU Occlusion Culling - culls objects hidden behind other objects to improve performance
             OcclusionCulling,
             // Underwater state (water reflections are disabled while submerged)

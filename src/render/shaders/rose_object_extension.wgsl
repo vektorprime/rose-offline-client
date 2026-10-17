@@ -9,18 +9,41 @@
 // only have access to bind groups 0, 1, and 2. Group 3 (zone lighting) is not
 // automatically available in the material extension pipeline.
 // Bevy's built-in fog system is used instead.
-
-#import bevy_pbr::pbr_fragment::pbr_input_from_standard_material
-#import bevy_pbr::pbr_functions::alpha_discard
+//
+// Pipelines using this file:
+// - forward main pass: lighting (cel lighting with ROSE_TOON, else PBR), lightmap,
+//   specular map, blood overlay;
+// - forward prepass (depth/normal, shadow maps of alpha-masked parts): alpha discard,
+//   and the cel outline class in the normal texture's alpha (see below);
+// - deferred G-buffer (DEFERRED_PREPASS): unused while rose_object_material() forces
+//   these materials forward, kept for completeness.
 
 #ifdef PREPASS_PIPELINE
-#import bevy_pbr::prepass_io::{VertexOutput, FragmentOutput}
+#import bevy_pbr::prepass_io
+#import bevy_pbr::prepass_io::VertexOutput
+#ifdef DEFERRED_PREPASS
+#import bevy_pbr::pbr_fragment::pbr_input_from_standard_material
+#import bevy_pbr::pbr_functions::alpha_discard
 #import bevy_pbr::pbr_deferred_functions::deferred_output
 #else
-#import bevy_pbr::forward_io::{VertexOutput, FragmentOutput}
-#import bevy_pbr::pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing}
-#import bevy_pbr::mesh_functions::get_tag
+#import bevy_pbr::{pbr_prepass_functions, pbr_functions}
 #endif
+#else
+#import bevy_pbr::forward_io::{VertexOutput, FragmentOutput}
+#import bevy_pbr::pbr_fragment::pbr_input_from_standard_material
+#import bevy_pbr::pbr_functions::{alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing}
+#import bevy_pbr::mesh_functions::get_tag
+#ifdef ROSE_TOON
+#import rose::toon_lighting::toon_lighting
+#endif
+#endif
+
+// Cel outline class written to the normal prepass alpha (Rgb10a2Unorm: 2 bits), read
+// by cel_outline.wgsl: 1 = regular outlines, 1/3 = alpha-masked parts (foliage, hair
+// cards, wings) whose cut-out edges would otherwise draw noise, so they only get
+// silhouettes against a much farther background. 0 is left for "nothing drawn".
+const OUTLINE_CLASS_DEFAULT: f32 = 1.0;
+const OUTLINE_CLASS_MASKED: f32 = 1.0 / 3.0;
 
 // Extension bindings from RoseObjectExtension
 // Lightmap parameters: x, y = the part's cell (column, row) in the lightmap page,
@@ -63,14 +86,15 @@ var blood_overlay_sampler: sampler;
 var<uniform> blood_params: vec4<f32>;
 
 #ifdef PREPASS_PIPELINE
+#ifdef DEFERRED_PREPASS
 @fragment
 fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
-) -> FragmentOutput {
+) -> prepass_io::FragmentOutput {
     // Generate PBR input from standard material
     var pbr_input = pbr_input_from_standard_material(in, is_front);
-    
+
     // CRITICAL: Apply alpha discard for foliage transparency in deferred prepass
     // Without this, pixels that should be transparent are rendered as opaque squares in the G-buffer
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
@@ -79,6 +103,50 @@ fn fragment(
     let out = deferred_output(in, pbr_input);
     return out;
 }
+#else ifdef PREPASS_FRAGMENT
+// Forward prepass, as Bevy's pbr_prepass.wgsl (these materials have no normal maps)
+// plus the outline class in the normal alpha.
+@fragment
+fn fragment(
+    in: VertexOutput,
+    @builtin(front_facing) is_front: bool,
+) -> prepass_io::FragmentOutput {
+#ifdef VISIBILITY_RANGE_DITHER
+    pbr_functions::visibility_range_dither(in.position, in.visibility_range_dither);
+#endif
+    pbr_prepass_functions::prepass_alpha_discard(in);
+
+    var out: prepass_io::FragmentOutput;
+
+#ifdef UNCLIPPED_DEPTH_ORTHO_EMULATION
+    out.frag_depth = in.unclipped_depth;
+#endif
+
+#ifdef NORMAL_PREPASS
+    // Back faces are only drawn for double-sided materials, where they face the other way.
+    let world_normal = select(-in.world_normal, in.world_normal, is_front);
+#ifdef MAY_DISCARD
+    let outline_class = OUTLINE_CLASS_MASKED;
+#else
+    let outline_class = OUTLINE_CLASS_DEFAULT;
+#endif
+    out.normal = vec4(normalize(world_normal) * 0.5 + vec3(0.5), outline_class);
+#endif
+
+#ifdef MOTION_VECTOR_PREPASS
+    out.motion_vector = pbr_prepass_functions::calculate_motion_vector(
+        in.world_position, in.previous_world_position);
+#endif
+
+    return out;
+}
+#else
+// Depth-only prepass of an alpha-masked part (shadow maps): discard only.
+@fragment
+fn fragment(in: VertexOutput) {
+    pbr_prepass_functions::prepass_alpha_discard(in);
+}
+#endif
 #else
 @fragment
 fn fragment(
@@ -98,12 +166,15 @@ fn fragment(
     // set when the material has a specular texture): the specular map's red channel
     // drives the PBR reflectance (0.0 = matte, 1.0 = shiny). Every other material
     // keeps the StandardMaterial reflectance; the unbound texture would be Bevy's
-    // white fallback (reflectance 1.0).
+    // white fallback (reflectance 1.0). With cel lighting the same value scales the
+    // hard highlight instead (0 = none).
+    var specular_strength = 0.0;
     #ifdef ROSE_OBJECT_SPECULAR
     #ifdef VERTEX_UVS_A
     {
         let specular_sample = textureSample(specular_texture, specular_sampler, in.uv);
         pbr_input.material.reflectance = vec3<f32>(specular_sample.r);
+        specular_strength = specular_sample.r;
     }
     #endif
     #endif
@@ -136,9 +207,13 @@ fn fragment(
     #endif
     #endif
     
-    // Apply standard Bevy PBR lighting
-// This includes response to directional lights, ambient lights, and environment
+    // Lighting: cel bands (ROSE_TOON, render/cel_shading.rs) or standard Bevy PBR.
+    // Both respond to the directional lights, ambient light and environment map.
+#ifdef ROSE_TOON
+let color = toon_lighting(pbr_input, specular_strength);
+#else
 let color = apply_pbr_lighting(pbr_input);
+#endif
 
 // Apply lightmap as ambient occlusion (multiply with lit color) BEFORE blood overlay
 // so that dark lightmap values don't make blood invisible in shadowed areas.

@@ -227,12 +227,9 @@ impl MaterialExtension for RoseEffectExtension {
         _layout: &MeshVertexBufferLayoutRef,
         key: MaterialExtensionKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        let Some(state) = key.bind_group_data.transparent_state else {
-            return Ok(());
-        };
-
-        // Transparent-pass materials have no prepass or shadow pipelines, but keep
-        // their depth-only pipelines untouched should one ever be built.
+        // Prepass pipelines (depth, normal, shadow maps) keep Bevy's fragment stage.
+        // Transparent-pass materials have none, but keep their depth-only pipelines
+        // untouched should one ever be built.
         if descriptor
             .vertex
             .shader_defs
@@ -240,6 +237,13 @@ impl MaterialExtension for RoseEffectExtension {
         {
             return Ok(());
         }
+
+        // Lit opaque morph objects use cel lighting; unlit effects ignore the def.
+        crate::render::cel_shading::push_toon_shader_def(descriptor);
+
+        let Some(state) = key.bind_group_data.transparent_state else {
+            return Ok(());
+        };
 
         if let Some(depth_stencil) = descriptor.depth_stencil.as_mut() {
             depth_stencil.depth_write_enabled = Some(state.depth_write_enabled);
