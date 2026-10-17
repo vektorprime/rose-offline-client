@@ -88,9 +88,9 @@ impl Default for CelOutline {
             thickness: 1.0,
             depth_threshold: 0.04,
             normal_threshold: 0.3,
-            masked_depth_scale: 5.0,
+            masked_depth_scale: 1.0,
             fade_start: 80.0,
-            fade_end: 300.0,
+            fade_end: 2000.0,
             reference_height: 1080.0,
             _padding: 0.0,
         }

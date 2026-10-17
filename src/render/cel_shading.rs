@@ -117,9 +117,10 @@ impl Default for CelShadingSettings {
             outline_opacity: 1.0,
             outline_depth_threshold: 0.04,
             outline_crease_angle: 45.0,
-            outline_foliage_scale: 5.0,
+            // Tuned in-game: 1.0 (same threshold as solid parts) looked best.
+            outline_foliage_scale: 1.0,
             outline_fade_start: 80.0,
-            outline_fade_end: 300.0,
+            outline_fade_end: 2000.0,
         }
     }
 }
