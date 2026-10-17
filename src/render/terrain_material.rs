@@ -21,6 +21,7 @@ use bevy::{
         render_asset::RenderAssets,
         render_resource::*,
         renderer::RenderDevice,
+        storage::GpuShaderBuffer,
         texture::{FallbackImage, GpuImage},
     },
     shader::{Shader, ShaderRef},
@@ -28,6 +29,7 @@ use bevy::{
 use bevy_mesh::MeshVertexBufferLayoutRef;
 
 use crate::graphics::GraphicsSettings;
+use crate::render::cel_shading::TOON_PARAMS_BUFFER_HANDLE;
 use crate::render::zone_lighting::{
     moon_light_factor, sun_light_factor, DaylightSettings, MOON_COLOR, MOON_MAX_ILLUMINANCE,
     SUN_MAX_ILLUMINANCE,
@@ -277,7 +279,11 @@ impl Material for TerrainMaterial {
 
 impl AsBindGroup for TerrainMaterial {
     type Data = TerrainMaterialKey;
-    type Param = (SRes<RenderAssets<GpuImage>>, SRes<FallbackImage>);
+    type Param = (
+        SRes<RenderAssets<GpuImage>>,
+        SRes<FallbackImage>,
+        SRes<RenderAssets<GpuShaderBuffer>>,
+    );
 
     fn label() -> &'static str {
         "terrain_material"
@@ -296,9 +302,15 @@ impl AsBindGroup for TerrainMaterial {
         layout_descriptor: &BindGroupLayoutDescriptor,
         render_device: &RenderDevice,
         pipeline_cache: &PipelineCache,
-        (image_assets, fallback_image): &mut SystemParamItem<'_, '_, Self::Param>,
+        (image_assets, fallback_image, shader_buffers): &mut SystemParamItem<'_, '_, Self::Param>,
     ) -> Result<PreparedBindGroup, AsBindGroupError> {
         use std::ops::Deref;
+
+        // Cel shading parameters, the buffer shared with the ROSE materials. It is
+        // written in place on settings changes, so this bind group stays valid.
+        let Some(toon_params) = shader_buffers.get(&TOON_PARAMS_BUFFER_HANDLE) else {
+            return Err(AsBindGroupError::RetryNextUpdate);
+        };
 
         // Get the actual bind group layout from the pipeline cache
         let layout = pipeline_cache.get_bind_group_layout(layout_descriptor);
@@ -384,6 +396,10 @@ impl AsBindGroup for TerrainMaterial {
                 binding: 2,
                 resource: lighting_buffer.as_entire_binding(),
             },
+            BindGroupEntry {
+                binding: 3,
+                resource: toon_params.buffer.as_entire_binding(),
+            },
         ];
 
         // Create bind group
@@ -433,6 +449,17 @@ impl AsBindGroup for TerrainMaterial {
             // Terrain lighting data in read-only storage buffer
             BindGroupLayoutEntry {
                 binding: 2,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            // Shared cel shading parameters (ToonParams) in a read-only storage buffer
+            BindGroupLayoutEntry {
+                binding: 3,
                 visibility: ShaderStages::FRAGMENT,
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Storage { read_only: true },

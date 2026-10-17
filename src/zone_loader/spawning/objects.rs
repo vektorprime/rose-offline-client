@@ -221,6 +221,7 @@ pub(super) fn spawn_object(
                         .then(|| specular_texture.image.clone()),
                     blood_overlay_texture: None,
                     blood_params: bevy::math::Vec4::new(0.0, 0.0, 0.0, 0.0),
+                    toon_params: crate::render::cel_shading::TOON_PARAMS_BUFFER_HANDLE,
                 },
             ));
             material_cache.insert(material_cache_key, handle.clone());

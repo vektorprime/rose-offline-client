@@ -390,6 +390,7 @@ fn place_model_at_position(
                 specular_texture: None, // No specular for placed objects
                 blood_overlay_texture: None,
                 blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
+                toon_params: crate::render::cel_shading::TOON_PARAMS_BUFFER_HANDLE,
             },
         ));
 

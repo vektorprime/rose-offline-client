@@ -1,15 +1,18 @@
 #define_import_path rose::toon_lighting
 
 // Cel ("toon") lighting for the ROSE object and effect materials, used in place of
-// Bevy's apply_pbr_lighting (shader def ROSE_TOON, see render/cel_shading.rs).
+// Bevy's apply_pbr_lighting while ToonParams.extras.z is 1 (see toon_bands.wgsl and
+// render/cel_shading.rs).
 //
 // Only directional lights are evaluated: the game spawns no point, spot or rect lights.
 // - Key lights (sun, moon): N.L and the shadow map go through the hard bands in
-//   toon_bands.wgsl.
+//   toon_bands.wgsl. The shade band keeps a share of the key light.
 // - Fill lights (the sky fill light, marked by affects_lightmapped_mesh_diffuse = false,
 //   which only matters for Bevy lightmaps, unused here): a flat lift with no
 //   terminator, so the key light's terminator is the only band edge across a model.
-// - Ambient and environment-map light: flat, sampled with a normal bent toward the sky.
+// - Ambient and environment-map light: flat, sampled with a normal bent toward the
+//   sky, and dimmed in the shade band so the bands stay visible when the key light is
+//   weak (night).
 // Units, exposure and the atmosphere's sun tint match apply_pbr_lighting, so the result
 // drops into the existing fog, tonemapping and auto-exposure chain.
 
@@ -25,7 +28,10 @@
     clustered_forward as clustering,
 }
 #import bevy_render::maths::PI
-#import rose::toon_bands::{toon_step, toon_key_band, toon_shadow_band, TOON_EDGE_SOFTNESS}
+#import rose::toon_bands::{
+    ToonParams, toon_step, toon_key_band, toon_shadow_band, toon_key_light_factor,
+    toon_ambient_factor,
+}
 
 #ifdef ENVIRONMENT_MAP
 #import bevy_pbr::environment_map
@@ -42,14 +48,16 @@ const TOON_FILL_LEVEL: f32 = 0.5;
 const TOON_INDIRECT_FLATTEN: f32 = 0.7;
 // Rim light on the lit side of silhouettes: starts where 1 - N.V passes TOON_RIM_EDGE.
 const TOON_RIM_EDGE: f32 = 0.72;
-const TOON_RIM_STRENGTH: f32 = 0.3;
-// Hard specular highlight (materials with a ROSE specular map only): N.H threshold
-// and strength relative to the diffuse key light.
+const TOON_RIM_SOFTNESS: f32 = 0.04;
+// Hard specular highlight (materials with a ROSE specular map only): N.H threshold.
 const TOON_SPECULAR_EDGE: f32 = 0.97;
-const TOON_SPECULAR_STRENGTH: f32 = 0.6;
+const TOON_SPECULAR_SOFTNESS: f32 = 0.01;
 
-// `specular_strength` (0..1) scales the hard highlight; 0 disables it.
-fn toon_lighting(in: PbrInput, specular_strength: f32) -> vec4<f32> {
+const LUMINANCE: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
+
+// `specular_strength` (0..1, the material's specular map) scales the hard highlight;
+// 0 disables it.
+fn toon_lighting(in: PbrInput, specular_strength: f32, params: ToonParams) -> vec4<f32> {
     let base_color = in.material.base_color;
     let diffuse_color = base_color.rgb * (1.0 - in.material.metallic);
     let N = in.N;
@@ -63,10 +71,15 @@ fn toon_lighting(in: PbrInput, specular_strength: f32) -> vec4<f32> {
         view_bindings::view.view_from_world[3].z
     ), in.world_position);
 
-    // Radiance reaching the surface from key lights, already banded.
+    // Key light radiance after the band factor (shade band included), and only the
+    // part in the lit bands (for the rim light).
     var key_light = vec3<f32>(0.0);
+    var key_lit_light = vec3<f32>(0.0);
     var fill_light = vec3<f32>(0.0);
     var specular_light = vec3<f32>(0.0);
+    // Key-light band averaged by each light's brightness, for the ambient factor.
+    var weighted_band = 0.0;
+    var band_weight = 0.0;
 
     let n_directional_lights = view_bindings::lights.n_directional_lights;
     for (var i: u32 = 0u; i < n_directional_lights; i = i + 1u) {
@@ -100,18 +113,24 @@ fn toon_lighting(in: PbrInput, specular_strength: f32) -> vec4<f32> {
                 i, in.world_position, in.world_normal, view_z, in.frag_coord.xy);
         }
 
-        let band = min(toon_key_band(dot(N, L)), toon_shadow_band(shadow));
-        key_light += radiance * band;
+        let band = min(toon_key_band(dot(N, L), params), toon_shadow_band(shadow, params));
+        key_light += radiance * toon_key_light_factor(band, params);
+        key_lit_light += radiance * band;
+
+        let brightness = dot(radiance, LUMINANCE);
+        weighted_band += band * brightness;
+        band_weight += brightness;
 
         if (specular_strength > 0.0) {
             let H = normalize(L + V);
-            let highlight = toon_step(TOON_SPECULAR_EDGE, TOON_EDGE_SOFTNESS * 0.5, dot(N, H));
-            specular_light += radiance * highlight * band * specular_strength * TOON_SPECULAR_STRENGTH;
+            let highlight = toon_step(TOON_SPECULAR_EDGE, TOON_SPECULAR_SOFTNESS, dot(N, H));
+            specular_light += radiance * highlight * band * specular_strength * params.extras.y;
         }
     }
 
-    let rim = toon_step(TOON_RIM_EDGE, TOON_EDGE_SOFTNESS * 2.0, 1.0 - n_dot_v) * TOON_RIM_STRENGTH;
-    let direct_light = (diffuse_color * (key_light * (1.0 + rim) + fill_light) + specular_light) / PI;
+    let rim = toon_step(TOON_RIM_EDGE, TOON_RIM_SOFTNESS, 1.0 - n_dot_v) * params.extras.x;
+    let direct_light =
+        (diffuse_color * (key_light + key_lit_light * rim + fill_light) + specular_light) / PI;
 
     // Flat indirect light: ambient plus the environment map's diffuse part, both seen
     // through a normal bent toward the sky so they do not shade across the model.
@@ -146,6 +165,10 @@ fn toon_lighting(in: PbrInput, specular_strength: f32) -> vec4<f32> {
     );
     indirect_light += environment_light.diffuse;
 #endif
+
+    // With no key light up (or only black ones), the surface counts as lit.
+    let average_band = select(1.0, weighted_band / band_weight, band_weight > 0.0);
+    indirect_light *= toon_ambient_factor(average_band, params);
 
     let emissive = in.material.emissive;
     let emissive_light = emissive.rgb * base_color.a

@@ -11,8 +11,8 @@
 // Bevy's built-in fog system is used instead.
 //
 // Pipelines using this file:
-// - forward main pass: lighting (cel lighting with ROSE_TOON, else PBR), lightmap,
-//   specular map, blood overlay;
+// - forward main pass: lighting (cel lighting or PBR, switched by the shared
+//   ToonParams buffer at binding 109), lightmap, specular map, blood overlay;
 // - forward prepass (depth/normal, shadow maps of alpha-masked parts): alpha discard,
 //   and the cel outline class in the normal texture's alpha (see below);
 // - deferred G-buffer (DEFERRED_PREPASS): unused while rose_object_material() forces
@@ -33,10 +33,11 @@
 #import bevy_pbr::pbr_fragment::pbr_input_from_standard_material
 #import bevy_pbr::pbr_functions::{alpha_discard, apply_pbr_lighting, main_pass_post_lighting_processing}
 #import bevy_pbr::mesh_functions::get_tag
-#ifdef ROSE_TOON
 #import rose::toon_lighting::toon_lighting
+#import rose::toon_bands::toon_enabled
 #endif
-#endif
+
+#import rose::toon_bands::ToonParams
 
 // Cel outline class written to the normal prepass alpha (Rgb10a2Unorm: 2 bits), read
 // by cel_outline.wgsl: 1 = regular outlines, 1/3 = alpha-masked parts (foliage, hair
@@ -84,6 +85,10 @@ var blood_overlay_sampler: sampler;
 // x = intensity [0..1], y = enabled flag (0/1), z/w reserved
 @group(#{MATERIAL_BIND_GROUP}) @binding(108)
 var<uniform> blood_params: vec4<f32>;
+
+// Cel shading parameters, one buffer shared by every ROSE material (cel_shading.rs)
+@group(#{MATERIAL_BIND_GROUP}) @binding(109)
+var<storage, read> toon_params: ToonParams;
 
 #ifdef PREPASS_PIPELINE
 #ifdef DEFERRED_PREPASS
@@ -207,13 +212,14 @@ fn fragment(
     #endif
     #endif
     
-    // Lighting: cel bands (ROSE_TOON, render/cel_shading.rs) or standard Bevy PBR.
-    // Both respond to the directional lights, ambient light and environment map.
-#ifdef ROSE_TOON
-let color = toon_lighting(pbr_input, specular_strength);
-#else
-let color = apply_pbr_lighting(pbr_input);
-#endif
+    // Lighting: cel bands (Settings > Cel Shading, render/cel_shading.rs) or standard
+    // Bevy PBR. Both respond to the directional lights, ambient light and environment map.
+var color: vec4<f32>;
+if (toon_enabled(toon_params)) {
+    color = toon_lighting(pbr_input, specular_strength, toon_params);
+} else {
+    color = apply_pbr_lighting(pbr_input);
+}
 
 // Apply lightmap as ambient occlusion (multiply with lit color) BEFORE blood overlay
 // so that dark lightmap values don't make blood invisible in shadowed areas.

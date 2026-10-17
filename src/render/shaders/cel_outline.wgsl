@@ -45,7 +45,7 @@ struct GBufferSample {
     // View-space distance along the view direction.
     distance: f32,
     normal: vec3<f32>,
-    class: u32,
+    outline_class: u32,
 }
 
 fn load_sample(pixel: vec2<i32>) -> GBufferSample {
@@ -59,9 +59,9 @@ fn load_sample(pixel: vec2<i32>) -> GBufferSample {
 
     let normal = textureLoad(normal_texture, p, 0);
     s.normal = normalize(normal.xyz * 2.0 - vec3<f32>(1.0));
-    s.class = u32(round(normal.a * 3.0));
+    s.outline_class = u32(round(normal.a * 3.0));
     if (depth <= 0.0) {
-        s.class = CLASS_NONE;
+        s.outline_class = CLASS_NONE;
     }
     return s;
 }
@@ -75,7 +75,7 @@ const DIRECTIONS: array<vec2<i32>, 8> = array<vec2<i32>, 8>(
 fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let pixel = vec2<i32>(floor(in.position.xy));
     let center = load_sample(pixel);
-    if (center.class == CLASS_NONE) {
+    if (center.outline_class == CLASS_NONE) {
         discard;
     }
 
@@ -100,7 +100,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
     let plane_slope = pixel_angle * tan_theta;
 
     var depth_threshold = settings.depth_threshold;
-    if (center.class == CLASS_MASKED) {
+    if (center.outline_class == CLASS_MASKED) {
         depth_threshold *= settings.masked_depth_scale;
     }
     let crease_threshold = 1.0 - settings.normal_threshold;
@@ -127,7 +127,7 @@ fn fragment(in: FullscreenVertexOutput) -> @location(0) vec4<f32> {
 
             // Crease between two regular surfaces at the same depth; drawn on the
             // nearer (or equal) side only.
-            if (center.class != CLASS_MASKED && neighbor.class > CLASS_MASKED
+            if (center.outline_class != CLASS_MASKED && neighbor.outline_class > CLASS_MASKED
                     && relative >= 0.0
                     && dot(center.normal, neighbor.normal) < crease_threshold) {
                 edge = 1.0;

@@ -56,7 +56,9 @@ pub const CEL_OUTLINE_SHADER_HANDLE: Handle<Shader> =
 
 /// Cel outline settings of a camera. Adding it enables the outline pass for that camera;
 /// removing it disables the pass. Matches `CelOutlineSettings` in `cel_outline.wgsl`.
-#[derive(Component, Clone, Copy, ExtractComponent, ShaderType)]
+/// On the main camera it is owned by `apply_cel_shading_settings_system`
+/// (from `CelShadingSettings`); do not insert it elsewhere.
+#[derive(Component, Clone, Copy, Debug, PartialEq, ExtractComponent, ShaderType)]
 pub struct CelOutline {
     /// Line color in linear RGB (as written to the HDR target); alpha is its opacity.
     pub color: Vec4,

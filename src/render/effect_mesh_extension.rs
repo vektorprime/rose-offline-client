@@ -14,7 +14,10 @@ use bevy::pbr::{
 };
 use bevy::prelude::*;
 use bevy::render::render_resource::*;
+use bevy::render::storage::ShaderBuffer;
 use bevy_mesh::MeshVertexBufferLayoutRef;
+
+use crate::render::cel_shading::TOON_PARAMS_BUFFER_HANDLE;
 use bevy_shader::{ShaderDefVal, ShaderRef};
 
 /// Animation flags for effect mesh animation
@@ -41,6 +44,11 @@ pub struct RoseEffectExtension {
     /// current_next_frame: lower 16 bits = current frame, upper 16 bits = next frame
     #[uniform(102)]
     pub animation_state: EffectMeshAnimationUniform,
+
+    /// Cel shading parameters: always [`TOON_PARAMS_BUFFER_HANDLE`], the buffer shared
+    /// by every ROSE material (see `render/cel_shading.rs`).
+    #[storage(103, read_only)]
+    pub toon_params: Handle<ShaderBuffer>,
 
     /// Pipeline state of a mesh drawn in the transparent pass (set by
     /// [`rose_effect_material`]); `None` keeps the base material's pipeline.
@@ -170,6 +178,7 @@ pub fn rose_effect_material(
         extension: RoseEffectExtension {
             animation_texture,
             animation_state: EffectMeshAnimationUniform::default(),
+            toon_params: TOON_PARAMS_BUFFER_HANDLE,
             transparent_state,
         },
     }
@@ -194,6 +203,7 @@ impl Default for RoseEffectExtension {
         Self {
             animation_texture: None,
             animation_state: EffectMeshAnimationUniform::default(),
+            toon_params: TOON_PARAMS_BUFFER_HANDLE,
             transparent_state: None,
         }
     }
@@ -237,9 +247,6 @@ impl MaterialExtension for RoseEffectExtension {
         {
             return Ok(());
         }
-
-        // Lit opaque morph objects use cel lighting; unlit effects ignore the def.
-        crate::render::cel_shading::push_toon_shader_def(descriptor);
 
         let Some(state) = key.bind_group_data.transparent_state else {
             return Ok(());

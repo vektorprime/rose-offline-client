@@ -13,7 +13,7 @@ use crate::{
     },
     graphics::{GraphicsSettings, SmaaQuality, TonemappingMode},
     render::{
-        DaylightSettings, SkyMode, SkySettings, StarrySkySettings, VolumetricCloudSettings,
+        CelShadingSettings, DaylightSettings, SkyMode, SkySettings, StarrySkySettings, VolumetricCloudSettings,
         ZoneLighting,
     },
     resources::{
@@ -191,6 +191,7 @@ enum SettingsPage {
     WindSway,
     PostProcessing,
     Graphics,
+    CelShading,
     Terrain,
     Bisect,
 }
@@ -269,6 +270,7 @@ pub struct SettingsSystemParams<'w, 's> {
     pub wind_sway_settings: Option<ResMut<'w, WindSwaySettings>>,
     pub post_processing_settings: ResMut<'w, PostProcessingSettings>,
     pub graphics_settings: ResMut<'w, GraphicsSettings>,
+    pub cel_shading_settings: ResMut<'w, CelShadingSettings>,
     pub terrain_settings: ResMut<'w, TerrainEnhancementSettings>,
     pub bisect_state: ResMut<'w, FlashBisectState>,
     pub zone_time: Option<Res<'w, ZoneTime>>,
@@ -363,6 +365,7 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
         mut wind_sway_settings,
         mut post_processing_settings,
         mut graphics_settings,
+        mut cel_shading_settings,
         mut terrain_settings,
         mut bisect_state,
         zone_time,
@@ -416,6 +419,11 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                     &mut ui_state_settings.page,
                     SettingsPage::Graphics,
                     "Graphics",
+                );
+                ui.selectable_value(
+                    &mut ui_state_settings.page,
+                    SettingsPage::CelShading,
+                    "Cel Shading",
                 );
                 ui.selectable_value(
                     &mut ui_state_settings.page,
@@ -507,6 +515,11 @@ pub fn ui_settings_system(mut params: SettingsSystemParams) {
                 SettingsPage::Graphics => {
                     edit_if_changed(&mut graphics_settings, |graphics| {
                         render_graphics_page(ui, graphics, &zone_time)
+                    });
+                }
+                SettingsPage::CelShading => {
+                    edit_if_changed(&mut cel_shading_settings, |cel| {
+                        render_cel_shading_page(ui, cel)
                     });
                 }
                 SettingsPage::Terrain => {
@@ -1478,6 +1491,68 @@ fn render_graphics_page(
     ui.separator();
     ui.label("Tip: Higher shadow quality improves visual fidelity but reduces FPS.");
     ui.label("Changes to MSAA and VSync may require restart to take full effect.");
+}
+
+fn render_cel_shading_page(ui: &mut egui::Ui, cel: &mut CelShadingSettings) {
+    ui.heading("Cel Lighting");
+    egui::Grid::new("cel_lighting_settings")
+        .num_columns(2)
+        .show(ui, |ui| {
+            settings_checkbox(ui, "Cel Lighting:", &mut cel.toon_lighting, "Enabled")
+                .on_hover_text("Hard light bands on characters, objects and terrain. Off = smooth PBR lighting.");
+            settings_slider(ui, "Terminator:", &mut cel.terminator, -0.5..=0.5, None)
+                .on_hover_text("Where the shade band ends (N.L). Lower = more of each model is lit.");
+            settings_slider(ui, "Full Light:", &mut cel.full_light, 0.0..=1.0, None)
+                .on_hover_text("Where the mid band ends and the fully lit band starts (N.L). Equal to Terminator = two bands only.");
+            settings_slider(ui, "Mid Band Level:", &mut cel.mid_band_level, 0.0..=1.0, None)
+                .on_hover_text("Brightness of the middle band between shade (0) and lit (1).");
+            settings_slider(ui, "Band Softness:", &mut cel.band_softness, 0.0..=0.2, None)
+                .on_hover_text("Width of the band edges. 0 = razor sharp, higher = smoother (less toon).");
+            settings_slider(ui, "Shade Brightness:", &mut cel.shade_key_light, 0.0..=1.0, None)
+                .on_hover_text("Share of the sun / moon light kept in the shade band and in cast shadows. Raise it if shadowed sides look black.");
+            settings_slider(ui, "Shade Ambient:", &mut cel.shade_ambient_light, 0.0..=1.0, None)
+                .on_hover_text("Share of the ambient light kept in the shade band. Lower keeps the bands visible at night.");
+            settings_slider(ui, "Shadow Softness:", &mut cel.shadow_softness, 0.0..=0.5, None)
+                .on_hover_text("Width of cast-shadow edges. 0 = razor sharp.");
+            settings_slider(ui, "Rim Light:", &mut cel.rim_strength, 0.0..=1.0, None)
+                .on_hover_text("Bright edge on the lit side of silhouettes.");
+            settings_slider(ui, "Specular Highlight:", &mut cel.specular_strength, 0.0..=2.0, None)
+                .on_hover_text("Hard highlight on shiny materials (those with a specular map).");
+        });
+
+    ui.separator();
+    ui.heading("Outlines");
+    egui::Grid::new("cel_outline_settings")
+        .num_columns(2)
+        .show(ui, |ui| {
+            settings_checkbox(ui, "Outlines:", &mut cel.outlines, "Enabled");
+            settings_slider(ui, "Thickness:", &mut cel.outline_thickness, 0.5..=6.0, Some("px @1080p"))
+                .on_hover_text("Line width, scaled with the screen resolution.");
+
+            ui.label("Color:");
+            let srgba = cel.outline_color.to_srgba();
+            let mut color_array = [srgba.red, srgba.green, srgba.blue];
+            if ui.color_edit_button_rgb(&mut color_array).changed() {
+                cel.outline_color = Color::srgb(color_array[0], color_array[1], color_array[2]);
+            }
+            ui.end_row();
+
+            settings_slider(ui, "Opacity:", &mut cel.outline_opacity, 0.0..=1.0, None);
+            settings_slider(ui, "Silhouette Threshold:", &mut cel.outline_depth_threshold, 0.005..=0.3, None)
+                .on_hover_text("How big a depth jump makes a silhouette line. Lower = more lines.");
+            settings_slider(ui, "Crease Angle:", &mut cel.outline_crease_angle, 10.0..=90.0, Some("deg"))
+                .on_hover_text("Corners sharper than this get a line. Lower = more lines inside models.");
+            settings_slider(ui, "Foliage Threshold:", &mut cel.outline_foliage_scale, 1.0..=20.0, Some("x"))
+                .on_hover_text("Silhouette threshold multiplier for alpha-masked parts (leaves, grass, hair cards). Higher = fewer lines inside trees.");
+            settings_slider(ui, "Fade Start:", &mut cel.outline_fade_start, 0.0..=1000.0, Some("m"));
+            settings_slider(ui, "Fade End:", &mut cel.outline_fade_end, 1.0..=2000.0, Some("m"))
+                .on_hover_text("Lines fade out between Fade Start and Fade End.");
+        });
+
+    ui.separator();
+    if ui.button("Reset to Defaults").clicked() {
+        *cel = CelShadingSettings::default();
+    }
 }
 
 fn render_terrain_page(ui: &mut egui::Ui, terrain_settings: &mut TerrainEnhancementSettings) {

@@ -8,7 +8,9 @@
 
 #import bevy_pbr::mesh_functions::{get_world_from_local, mesh_position_local_to_world}
 #import bevy_pbr::view_transformations::position_world_to_clip
-#import rose::toon_bands::toon_key_band
+#import rose::toon_bands::{
+    ToonParams, toon_enabled, toon_key_band, toon_key_light_factor, toon_ambient_factor,
+}
 
 // Vertex input structure
 struct Vertex {
@@ -45,6 +47,10 @@ var tile_array_sampler: sampler;
 // [4] = moon color (vec4, pre-scaled; black by day)
 @group(#{MATERIAL_BIND_GROUP}) @binding(2)
 var<storage, read> terrain_lighting: array<vec4<f32>, 5>;
+
+// Cel shading parameters, the buffer shared with the ROSE materials (cel_shading.rs)
+@group(#{MATERIAL_BIND_GROUP}) @binding(3)
+var<storage, read> toon_params: ToonParams;
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
@@ -129,12 +135,35 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Diffuse from the sun (day) and the moon (night); each is black when
     // inactive, and both fade continuously with the sun's elevation.
-    // N.L goes through the cel bands shared with the ROSE materials (toon_bands.wgsl).
-    let diffuse_light = light_color.rgb * toon_key_band(dot(normal, light_dir))
-        + moon_color.rgb * toon_key_band(dot(normal, moon_dir));
+    // With cel shading, N.L goes through the bands shared with the ROSE materials
+    // (toon_bands.wgsl) and the ambient light is dimmed in the shade band.
+    let sun_n_dot_l = dot(normal, light_dir);
+    let moon_n_dot_l = dot(normal, moon_dir);
+    var diffuse_light: vec3<f32>;
+    var ambient_light = ambient_color.rgb;
+    if (toon_enabled(toon_params)) {
+        let sun_band = toon_key_band(sun_n_dot_l, toon_params);
+        let moon_band = toon_key_band(moon_n_dot_l, toon_params);
+        diffuse_light = light_color.rgb * toon_key_light_factor(sun_band, toon_params)
+            + moon_color.rgb * toon_key_light_factor(moon_band, toon_params);
+
+        // Band averaged by the two lights' brightness (lit when both are off).
+        let sun_weight = dot(light_color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+        let moon_weight = dot(moon_color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+        let total_weight = sun_weight + moon_weight;
+        let average_band = select(
+            1.0,
+            (sun_band * sun_weight + moon_band * moon_weight) / total_weight,
+            total_weight > 0.0,
+        );
+        ambient_light *= toon_ambient_factor(average_band, toon_params);
+    } else {
+        diffuse_light = light_color.rgb * max(sun_n_dot_l, 0.0)
+            + moon_color.rgb * max(moon_n_dot_l, 0.0);
+    }
 
     // Combine with ambient light
-    let lighting = ambient_color.rgb + diffuse_light;
+    let lighting = ambient_light + diffuse_light;
     
     let final_color = vec4<f32>(terrain_color.rgb * lighting, 1.0);
 

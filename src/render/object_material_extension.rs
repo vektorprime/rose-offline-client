@@ -21,7 +21,9 @@ use bevy_image::Image;
 use bevy_mesh::MeshVertexBufferLayoutRef;
 use bevy_shader::{ShaderDefVal, ShaderRef};
 
-use crate::render::MESH_ATTRIBUTE_UV_1;
+use bevy::render::storage::ShaderBuffer;
+
+use crate::render::{cel_shading::TOON_PARAMS_BUFFER_HANDLE, MESH_ATTRIBUTE_UV_1};
 
 /// Material extension for ROSE object materials
 ///
@@ -60,6 +62,11 @@ pub struct RoseObjectExtension {
     /// - z/w: reserved
     #[uniform(108)]
     pub blood_params: Vec4,
+
+    /// Cel shading parameters: always [`TOON_PARAMS_BUFFER_HANDLE`], the buffer shared
+    /// by every ROSE material (see `render/cel_shading.rs`).
+    #[storage(109, read_only)]
+    pub toon_params: Handle<ShaderBuffer>,
 }
 
 impl Default for RoseObjectExtension {
@@ -70,6 +77,7 @@ impl Default for RoseObjectExtension {
             specular_texture: None,
             blood_overlay_texture: None,
             blood_params: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            toon_params: TOON_PARAMS_BUFFER_HANDLE,
         }
     }
 }
@@ -147,8 +155,6 @@ impl MaterialExtension for RoseObjectExtension {
         {
             return Ok(());
         }
-
-        crate::render::cel_shading::push_toon_shader_def(descriptor);
 
         if key.bind_group_data.has_specular {
             if let Some(fragment) = descriptor.fragment.as_mut() {

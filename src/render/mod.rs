@@ -54,7 +54,7 @@ pub use effect_mesh_extension::*;
 
 // Cel shading: toon lighting shader libraries, and the screen-space outline pass
 pub mod cel_shading;
-pub use cel_shading::CelShadingPlugin;
+pub use cel_shading::{CelShadingPlugin, CelShadingSettings};
 
 pub mod cel_outline;
 pub use cel_outline::{CelOutline, CelOutlinePlugin};
