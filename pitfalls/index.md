@@ -28,6 +28,7 @@ This folder contains documentation of issues encountered during development and 
 | [blender-io-rose.md](blender-io-rose.md) | Blender io_rose addon: alpha import, ZMS export crash, Y-flip round-trip orientation |
 | [damage-digits-camera3d.md](damage-digits-camera3d.md) | Damage digits: Text2d never renders under Camera3d, Mesh3d+StandardMaterial replacement |
 | [atmosphere-flash.md](atmosphere-flash.md) | Cyan full-screen flashes from despawning the Atmosphere entity at night |
+| [cel-shading.md](cel-shading.md) | Cel outline pass silently drawing nothing (WGSL reserved word in the shader) |
 | [postprocess-pass-race.md](postprocess-pass-race.md) | White flashes with SMAA / laggy 3D with tonemapping off: unordered post passes racing the ping-pong main texture |
 
 ## Quick Navigation by Bevy Version
@@ -50,6 +51,7 @@ This folder contains documentation of issues encountered during development and 
 - [`VolumetricFog::ambient_intensity` adds a near-camera white veil at any density](lighting.md) - models look shiny when zoomed in; keep it at 0
 - [Totally order every `post_process_write()` pass](postprocess-pass-race.md) - render passes are parallel systems; unordered ones race the main-texture ping-pong (white flash / stale frames)
 - [`&mut res.field`, `Assets::iter_mut()` and `AssetMut` writes flag changes even when nothing changes](performance-memory.md) - "write if changed" helpers must use `bypass_change_detection()` / compare first
+- [A WGSL reserved word (`class`) fails the pipeline at runtime and the pass draws nothing](cel-shading.md)
 - [`CreateBindGroupDirectly` materials leak a bind group per modification](performance-memory.md) - return `UnpreparedBindGroup` with `OwnedBindingResource`s instead
 
 ## Common Patterns to Watch For
