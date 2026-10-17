@@ -111,7 +111,8 @@ impl Default for CelShadingSettings {
             specular_strength: 0.6,
 
             outlines: true,
-            outline_thickness: 2.5,
+            // 1 px at 1080p, tuned in-game: 2.5 filled small distant models black.
+            outline_thickness: 1.0,
             outline_color: Color::BLACK,
             outline_opacity: 1.0,
             outline_depth_threshold: 0.04,

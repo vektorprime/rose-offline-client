@@ -85,7 +85,7 @@ impl Default for CelOutline {
     fn default() -> Self {
         Self {
             color: Vec4::new(0.0, 0.0, 0.0, 1.0),
-            thickness: 2.5,
+            thickness: 1.0,
             depth_threshold: 0.04,
             normal_threshold: 0.3,
             masked_depth_scale: 5.0,
